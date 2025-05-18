@@ -5,9 +5,10 @@ from pathlib import Path
 import json
 import logging
 import re # Pour les regex
-import imaplib # Pour lire les emails
-import email # Pour parser les emails
-from email.header import decode_header
+# imaplib and email are no longer needed for the primary email checking logic if using Graph API
+# import imaplib
+# import email
+# from email.header import decode_header
 import requests # Pour télécharger depuis Dropbox et appeler l'API Graph
 
 # Pour l'API Microsoft Graph (OneDrive) avec MSAL
@@ -26,19 +27,20 @@ DOWNLOAD_TEMP_DIR_RENDER = SIGNAL_DIR / "temp_downloads"
 SIGNAL_DIR.mkdir(parents=True, exist_ok=True)
 DOWNLOAD_TEMP_DIR_RENDER.mkdir(parents=True, exist_ok=True)
 
-# --- Config Email & Dropbox ---
-IMAP_SERVER = os.environ.get('IMAP_SERVER')
-EMAIL_ACCOUNT = os.environ.get('EMAIL_ACCOUNT')
-EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD')
-SENDER_OF_INTEREST = os.environ.get('SENDER_OF_INTEREST')
+# --- Config Email (SENDER_OF_INTEREST is still key) & Dropbox ---
+# IMAP_SERVER = os.environ.get('IMAP_SERVER') # No longer primary for email check
+# EMAIL_ACCOUNT = os.environ.get('EMAIL_ACCOUNT') # No longer primary for email check
+# EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD') # No longer primary for email check
+SENDER_OF_INTEREST = os.environ.get('SENDER_OF_INTEREST') # IMPORTANT: This should be the 'from' address as it appears in Hotmail for forwarded emails
 
-# --- Config API Microsoft Graph (OneDrive) ---
+# --- Config API Microsoft Graph (OneDrive & Mail) ---
 ONEDRIVE_CLIENT_ID = os.environ.get('ONEDRIVE_CLIENT_ID')
 ONEDRIVE_CLIENT_SECRET = os.environ.get('ONEDRIVE_CLIENT_SECRET')
 ONEDRIVE_REFRESH_TOKEN = os.environ.get('ONEDRIVE_REFRESH_TOKEN')
 
 ONEDRIVE_AUTHORITY = "https://login.microsoftonline.com/consumers"
-ONEDRIVE_SCOPES_DELEGATED = ["Files.ReadWrite", "User.Read", "offline_access"]
+# **** IMPORTANT: Added "Mail.Read" scope ****
+ONEDRIVE_SCOPES_DELEGATED = ["Files.ReadWrite", "User.Read", "offline_access", "Mail.Read"]
 ONEDRIVE_TARGET_PARENT_FOLDER_ID = os.environ.get('ONEDRIVE_TARGET_PARENT_FOLDER_ID', 'root')
 ONEDRIVE_TARGET_SUBFOLDER_NAME = os.environ.get('ONEDRIVE_TARGET_SUBFOLDER_NAME', "DropboxDownloadsWorkflow")
 
@@ -51,9 +53,9 @@ if ONEDRIVE_CLIENT_ID and ONEDRIVE_CLIENT_SECRET:
         client_credential=ONEDRIVE_CLIENT_SECRET
     )
 else:
-    app.logger.warning("ONEDRIVE_CLIENT_ID ou ONEDRIVE_CLIENT_SECRET manquant. L'intégration OneDrive sera désactivée.")
+    app.logger.warning("ONEDRIVE_CLIENT_ID ou ONEDRIVE_CLIENT_SECRET manquant. L'intégration OneDrive/Graph API sera désactivée.")
 
-# --- Fonctions Utilitaires ---
+# --- Fonctions Utilitaires (largely unchanged) ---
 def find_dropbox_links(text):
     pattern = r'https?://www\.dropbox\.com/scl/(?:fo|fi)/[a-zA-Z0-9_/\-]+?\?[^ \n\r<>"]+'
     links = re.findall(pattern, text)
@@ -69,31 +71,32 @@ def add_processed_email_id(email_id_str):
     with open(PROCESSED_EMAIL_IDS_FILE, 'a') as f:
         f.write(email_id_str + "\n")
 
-def get_onedrive_access_token():
+def get_onedrive_access_token(): # Renamed for clarity, but function is the same
     if not msal_app:
-        app.logger.error("MSAL ConfidentialClientApplication (msal_app) n'est pas configurée pour OneDrive.")
+        app.logger.error("MSAL ConfidentialClientApplication (msal_app) n'est pas configurée pour Graph API.")
         return None
     if not ONEDRIVE_REFRESH_TOKEN:
-        app.logger.error("ONEDRIVE_REFRESH_TOKEN manquant. Impossible d'obtenir un token d'accès OneDrive.")
+        app.logger.error("ONEDRIVE_REFRESH_TOKEN manquant. Impossible d'obtenir un token d'accès Graph API.")
         return None
 
-    app.logger.info("Tentative d'acquisition d'un token d'accès OneDrive en utilisant le refresh token.")
+    app.logger.info("Tentative d'acquisition d'un token d'accès Graph API en utilisant le refresh token.")
     result = msal_app.acquire_token_by_refresh_token(
         ONEDRIVE_REFRESH_TOKEN,
         scopes=ONEDRIVE_SCOPES_DELEGATED
     )
 
     if "access_token" in result:
-        app.logger.info("Nouveau token d'accès OneDrive obtenu avec succès via refresh token.")
+        app.logger.info("Nouveau token d'accès Graph API obtenu avec succès via refresh token.")
         new_rt = result.get("refresh_token")
         if new_rt and new_rt != ONEDRIVE_REFRESH_TOKEN:
-            app.logger.warning("Un nouveau refresh token OneDrive a été émis. Il est conseillé de le mettre à jour manuellement.")
-            # Potentiellement stocker new_rt si besoin, mais le refresh token initial est souvent à longue durée.
+            app.logger.warning("Un nouveau refresh token Graph API a été émis. "
+                               "Il est conseillé de le mettre à jour manuellement dans les variables d'environnement "
+                               "ou via le script get_refresh_token.py si des problèmes d'authentification surviennent.")
         return result['access_token']
     else:
         error_description = result.get('error_description', "Aucune description d'erreur fournie.")
         error_code = result.get('error', "Aucun code d'erreur fourni.")
-        app.logger.error(f"Erreur lors de l'acquisition du token OneDrive: {error_code} - {error_description}")
+        app.logger.error(f"Erreur lors de l'acquisition du token Graph API: {error_code} - {error_description}")
         app.logger.error(f"Détails complets de l'erreur MSAL: {result}")
         return None
 
@@ -192,7 +195,7 @@ def download_and_relay_to_onedrive(dropbox_url):
     modified_url = dropbox_url.replace("dl=0", "dl=1")
     modified_url = re.sub(r'dl=[^&]+', 'dl=1', modified_url)
     app.logger.info(f"Dropbox: Téléchargement depuis {modified_url}")
-    temp_filepath = None # Initialisation
+    temp_filepath = None 
 
     try:
         response = requests.get(modified_url, stream=True, allow_redirects=True, timeout=300)
@@ -217,11 +220,11 @@ def download_and_relay_to_onedrive(dropbox_url):
                 f.write(chunk)
         app.logger.info(f"Dropbox: Téléchargé '{filename_dropbox}' vers '{temp_filepath}'")
 
-        access_token = get_onedrive_access_token()
-        if access_token:
-            target_folder_id = ensure_onedrive_folder(access_token)
+        access_token_graph = get_onedrive_access_token() # Token for Graph API (OneDrive and Mail)
+        if access_token_graph:
+            target_folder_id = ensure_onedrive_folder(access_token_graph)
             if target_folder_id:
-                if upload_to_onedrive(temp_filepath, filename_onedrive, access_token, target_folder_id):
+                if upload_to_onedrive(temp_filepath, filename_onedrive, access_token_graph, target_folder_id):
                     app.logger.info(f"OneDrive: Succès upload de '{filename_onedrive}'")
                     if temp_filepath and temp_filepath.exists(): temp_filepath.unlink()
                     return True
@@ -230,10 +233,8 @@ def download_and_relay_to_onedrive(dropbox_url):
             else:
                 app.logger.error("OneDrive: Impossible d'obtenir/créer le dossier cible.")
         else:
-            app.logger.error("OneDrive: Impossible d'obtenir le token d'accès.")
+            app.logger.error("OneDrive: Impossible d'obtenir le token d'accès Graph API.")
         
-        # Conserver le fichier temp si l'upload a échoué mais le download a réussi
-        # if temp_filepath and temp_filepath.exists(): app.logger.info(f"Fichier temporaire {temp_filepath} conservé après échec d'upload.")
         return False
 
     except requests.exceptions.Timeout:
@@ -250,10 +251,106 @@ def download_and_relay_to_onedrive(dropbox_url):
              app.logger.info(f"Le fichier temporaire {temp_filepath} est conservé suite à l'erreur.")
         return False
 
-# --- Endpoint pour Déclencher la Vérification des Emails ---
+# --- Nouvelle fonction pour vérifier les emails via Microsoft Graph API ---
+def check_emails_via_graph_and_download():
+    app.logger.info("Déclenchement vérification emails via Graph API et téléchargement Dropbox.")
+    
+    access_token = get_onedrive_access_token()
+    if not access_token:
+        app.logger.error("Impossible d'obtenir un token d'accès Graph API pour lire les emails.")
+        return -1 # Indiquer une erreur
+
+    if not SENDER_OF_INTEREST:
+        app.logger.error("SENDER_OF_INTEREST n'est pas configuré. Impossible de filtrer les emails.")
+        return -1
+
+    headers = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'application/json'}
+    
+    # Filtre pour les emails non lus de l'expéditeur SENDER_OF_INTEREST
+    # SENDER_OF_INTEREST doit être l'adresse email telle qu'elle apparaît dans le champ 'from'
+    # des emails transférés dans votre boîte Hotmail.
+    filter_query = f"$filter=from/emailAddress/address eq '{SENDER_OF_INTEREST}' and isRead eq false"
+    
+    # Sélectionner les emails non lus, les plus récents en premier (orderBy), prendre les 20 premiers par ex.
+    # Vous pouvez ajuster $top selon le volume attendu.
+    messages_url = f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?{filter_query}&$orderBy=receivedDateTime desc&$top=20"
+    
+    num_downloaded_total = 0
+    processed_graph_email_ids = get_processed_email_ids()
+
+    try:
+        response = requests.get(messages_url, headers=headers)
+        response.raise_for_status()
+        emails_data = response.json().get('value', [])
+        app.logger.info(f"Trouvé {len(emails_data)} email(s) potentiels de '{SENDER_OF_INTEREST}' via Graph API (non lus, top 20).")
+
+        # Les emails sont déjà triés par receivedDateTime desc, donc on les traite dans cet ordre (plus récent d'abord)
+        for email_item in emails_data:
+            email_id_graph = email_item['id'] # ID unique de l'email dans Graph
+            
+            if email_id_graph in processed_graph_email_ids:
+                # app.logger.debug(f"Email Graph ID {email_id_graph} déjà traité, ignoré.")
+                continue
+            
+            subject = email_item.get('subject', "N/A")
+            app.logger.info(f"Traitement Email Graph ID: {email_id_graph}, Sujet: {subject}")
+            
+            # Le corps de l'email peut être en HTML ('body') ou texte ('bodyPreview')
+            # On préfère le corps HTML car il est plus susceptible de contenir les liens correctement.
+            # La propriété 'uniqueBody' est aussi une option si vous voulez le corps unique sans en-têtes de conversation.
+            body_content = email_item.get('body', {}).get('content', '') # HTML content
+            if not body_content: # Fallback to bodyPreview if HTML body is empty
+                body_content = email_item.get('bodyPreview', '')
+            
+            if body_content:
+                links_found = find_dropbox_links(body_content)
+                if links_found:
+                    app.logger.info(f"Email Graph ID {email_id_graph}: Liens Dropbox trouvés: {links_found}")
+                    success_for_this_email = True
+                    for link in links_found:
+                        if not download_and_relay_to_onedrive(link):
+                            success_for_this_email = False
+                            app.logger.error(f"Échec du traitement du lien {link} pour l'email Graph ID {email_id_graph}")
+                        else:
+                            num_downloaded_total += 1
+                    
+                    # Marquer l'email comme traité (ajout à processed_email_ids.txt)
+                    add_processed_email_id(email_id_graph)
+
+                    # Optionnel: Marquer l'email comme lu dans Outlook/Hotmail via Graph API
+                    # Ceci est utile pour ne pas le récupérer à nouveau si isRead eq false est dans le filtre
+                    mark_as_read_url = f"https://graph.microsoft.com/v1.0/me/messages/{email_id_graph}"
+                    patch_payload = {"isRead": True}
+                    try:
+                        mark_response = requests.patch(mark_as_read_url, headers=headers, json=patch_payload)
+                        mark_response.raise_for_status()
+                        app.logger.info(f"Email Graph ID {email_id_graph} marqué comme lu.")
+                    except requests.exceptions.RequestException as e_mark:
+                        app.logger.warning(f"Échec du marquage comme lu pour l'email Graph ID {email_id_graph}: {e_mark}")
+
+                else: # Aucun lien trouvé
+                    app.logger.info(f"Email Graph ID {email_id_graph}: Aucun lien Dropbox trouvé dans le corps.")
+                    add_processed_email_id(email_id_graph) # Marquer pour ne pas rescanner
+                    # On peut aussi le marquer comme lu ici si on ne veut plus le revoir
+            else: # Corps de l'email vide
+                app.logger.warning(f"Email Graph ID {email_id_graph}: Corps de l'email vide ou non récupérable.")
+                add_processed_email_id(email_id_graph) # Marquer pour ne pas rescanner
+
+    except requests.exceptions.RequestException as e_graph:
+        app.logger.error(f"Erreur API Graph lors de la lecture des emails: {e_graph}")
+        if hasattr(e_graph, 'response') and e_graph.response is not None:
+            app.logger.error(f"Réponse API Graph: {e_graph.response.status_code} - {e_graph.response.text}")
+        return -1 # Indiquer une erreur
+    except Exception as ex_general:
+        app.logger.error(f"Erreur inattendue pendant la lecture des emails via Graph API: {ex_general}", exc_info=True)
+        return -1
+
+    return num_downloaded_total
+
+# --- Endpoint pour Déclencher la Vérification des Emails (maintenant via Graph API) ---
 @app.route('/api/check_emails_and_download', methods=['POST'])
-def check_emails_and_download():
-    app.logger.info("Déclenchement manuel de la vérification des emails et téléchargement Dropbox vers OneDrive.")
+def api_check_emails_and_download():
+    app.logger.info("API: Déclenchement de la vérification des emails (via Graph API) et téléchargement.")
     
     lock_file = SIGNAL_DIR / "email_check.lock"
     if lock_file.exists():
@@ -263,163 +360,70 @@ def check_emails_and_download():
                  return jsonify({"status": "busy", "message": "Vérification des emails déjà en cours."}), 429
             else:
                 app.logger.warning("Ancien lock file trouvé, suppression et poursuite.")
-                lock_file.unlink()
+                lock_file.unlink(missing_ok=True)
         except OSError as e:
             app.logger.error(f"Erreur avec le lock file {lock_file}: {e}")
 
-    lock_file.touch()
+    try:
+        lock_file.touch()
+    except OSError as e:
+        app.logger.error(f"Impossible de créer le lock file {lock_file}: {e}")
+        return jsonify({"status": "error", "message": "Erreur interne (lock file)"}), 500
+
     num_downloaded = 0
     try:
-        if not all([IMAP_SERVER, EMAIL_ACCOUNT, EMAIL_PASSWORD, SENDER_OF_INTEREST]):
-            msg = "Configuration email incomplète."
+        # Configuration check for Graph API based email checking
+        if not all([ONEDRIVE_CLIENT_ID, ONEDRIVE_CLIENT_SECRET, ONEDRIVE_REFRESH_TOKEN, SENDER_OF_INTEREST]):
+            msg = "Configuration Graph API (Client ID/Secret/Refresh Token) ou SENDER_OF_INTEREST incomplète."
             app.logger.error(msg)
-            if lock_file.exists(): lock_file.unlink()
+            if lock_file.exists(): lock_file.unlink(missing_ok=True)
             return jsonify({"status": "error", "message": msg}), 500
 
-        if not all([ONEDRIVE_CLIENT_ID, ONEDRIVE_CLIENT_SECRET, ONEDRIVE_REFRESH_TOKEN]):
-            msg = "Configuration OneDrive incomplète."
-            app.logger.error(msg)
-            if lock_file.exists(): lock_file.unlink()
-            return jsonify({"status": "error", "message": msg}), 500
+        # Appel de la nouvelle fonction utilisant Graph API
+        num_downloaded = check_emails_via_graph_and_download()
 
-        mail_conn = imaplib.IMAP4_SSL(IMAP_SERVER)
-        mail_conn.login(EMAIL_ACCOUNT, EMAIL_PASSWORD)
-        mail_conn.select('inbox')
-        
-        processed_ids = get_processed_email_ids()
-        search_criteria = f'(FROM "{SENDER_OF_INTEREST}")'
-        status, messages = mail_conn.search(None, search_criteria)
-
-        if status == 'OK':
-            email_id_bytes_list = messages[0].split()
-            app.logger.info(f"Trouvé {len(email_id_bytes_list)} email(s) de '{SENDER_OF_INTEREST}' (avant filtrage).")
-
-            for email_id_bytes in reversed(email_id_bytes_list): 
-                email_id_str = email_id_bytes.decode()
-                if email_id_str in processed_ids:
-                    continue
-
-                app.logger.info(f"Traitement email ID: {email_id_str}")
-                _, msg_data = mail_conn.fetch(email_id_bytes, '(RFC822)')
-                if not msg_data or not msg_data[0]:
-                    app.logger.warning(f"Email ID {email_id_str}: Données de message vides.")
-                    add_processed_email_id(email_id_str)
-                    continue
-
-                msg_content = email.message_from_bytes(msg_data[0][1])
-                body_text = ""
-                if msg_content.is_multipart():
-                    for part in msg_content.walk():
-                        content_type = part.get_content_type()
-                        content_disposition = str(part.get("Content-Disposition"))
-                        if content_type in ["text/plain", "text/html"] and "attachment" not in content_disposition:
-                            try:
-                                payload = part.get_payload(decode=True)
-                                charset = part.get_content_charset() or 'utf-8'
-                                body_text += payload.decode(charset, errors='replace') + "\n"
-                            except Exception as e_decode:
-                                app.logger.warning(f"Email ID {email_id_str}: Erreur décodage partie ({content_type}): {e_decode}")
-                else:
-                    try:
-                        payload = msg_content.get_payload(decode=True)
-                        charset = msg_content.get_content_charset() or 'utf-8'
-                        body_text = payload.decode(charset, errors='replace')
-                    except Exception as e_decode_single:
-                        app.logger.warning(f"Email ID {email_id_str}: Erreur décodage corps (simple): {e_decode_single}")
-                
-                if body_text:
-                    links_found = find_dropbox_links(body_text)
-                    if links_found:
-                        app.logger.info(f"Email ID {email_id_str}: Liens Dropbox trouvés: {links_found}")
-                        for link in links_found:
-                            if download_and_relay_to_onedrive(link):
-                                num_downloaded += 1
-                            else:
-                                app.logger.error(f"Échec du traitement du lien {link} pour l'email ID {email_id_str}")
-                        add_processed_email_id(email_id_str)
-                    else:
-                        app.logger.info(f"Email ID {email_id_str}: Aucun lien Dropbox trouvé.")
-                        add_processed_email_id(email_id_str) 
-                else:
-                    app.logger.warning(f"Email ID {email_id_str}: Corps du texte vide ou non décodable.")
-                    add_processed_email_id(email_id_str)
+        if num_downloaded == -1: # Erreur signalée par la fonction
+            msg = "Une erreur est survenue pendant la vérification des emails via Graph API."
+            status_code = 500
         else:
-             app.logger.error(f"Échec de la recherche d'emails: {status}")
-        mail_conn.close()
-        mail_conn.logout()
+            msg = f"Vérification emails (Graph API) terminée. {num_downloaded} nouveau(x) fichier(s) transféré(s) vers OneDrive."
+            status_code = 200
         
-        msg = f"Vérification emails terminée. {num_downloaded} nouveau(x) fichier(s) transféré(s) vers OneDrive."
         app.logger.info(msg)
-        if lock_file.exists(): lock_file.unlink()
-        return jsonify({"status": "success", "message": msg, "files_downloaded": num_downloaded})
+        if lock_file.exists(): lock_file.unlink(missing_ok=True)
+        return jsonify({"status": "success" if status_code==200 else "error", "message": msg, "files_downloaded": num_downloaded if num_downloaded !=-1 else 0}), status_code
 
-    except imaplib.IMAP4.error as e_imap:
-        app.logger.error(f"Erreur IMAP: {e_imap}", exc_info=True)
-        if lock_file.exists(): lock_file.unlink()
-        return jsonify({"status": "error", "message": f"Erreur IMAP: {str(e_imap)}"}), 500
-    except Exception as e:
-        app.logger.error(f"Erreur inattendue pendant la vérification des emails: {e}", exc_info=True)
-        if lock_file.exists(): lock_file.unlink()
+    except Exception as e: # Catch-all pour les erreurs non prévues dans ce endpoint
+        app.logger.error(f"Erreur inattendue dans l'endpoint /api/check_emails_and_download: {e}", exc_info=True)
+        if lock_file.exists(): lock_file.unlink(missing_ok=True)
         return jsonify({"status": "error", "message": f"Erreur inattendue: {str(e)}"}), 500
 
 # --- Nouvelle Route Principale pour servir trigger_page.html ---
 @app.route('/')
 def serve_trigger_page():
-    """Sert la page HTML principale pour déclencher les actions."""
     app.logger.info("Route '/' appelée. Tentative de servir 'trigger_page.html'.")
-    # S'attend à ce que trigger_page.html soit dans le même dossier que app_render.py
-    # à la racine du projet déployé sur Render.
     directory_to_serve_from = '.' 
     file_to_serve = 'trigger_page.html'
-    
-    # Log pour débogage de l'emplacement des fichiers
-    # current_app.root_path est le dossier où app_render.py se trouve.
-    # send_from_directory cherche 'directory_to_serve_from' relatif à app.root_path
-    # (ou un chemin absolu s'il est fourni)
-    # Si directory_to_serve_from est '.', il cherche dans le même dossier que app_render.py.
     expected_file_location = Path(current_app.root_path) / directory_to_serve_from / file_to_serve
-    app.logger.info(f"Sert depuis le dossier: {Path(current_app.root_path) / directory_to_serve_from}")
-    app.logger.info(f"Chemin attendu du fichier: {expected_file_location.resolve()}")
     
     if not expected_file_location.is_file():
-        app.logger.error(f"ERREUR: '{file_to_serve}' NON TROUVÉ à l'emplacement attendu: {expected_file_location.resolve()}")
-        # Liste le contenu du répertoire pour aider au débogage
+        app.logger.error(f"ERREUR: '{file_to_serve}' NON TROUVÉ à: {expected_file_location.resolve()}")
         try:
             content_list = os.listdir(Path(current_app.root_path) / directory_to_serve_from)
             app.logger.info(f"Contenu du dossier '{Path(current_app.root_path) / directory_to_serve_from}': {content_list}")
-        except Exception as e_ls:
-            app.logger.error(f"Impossible de lister le contenu du dossier: {e_ls}")
-        return "Erreur: Fichier principal de l'interface non trouvé sur le serveur. Vérifiez les logs.", 404
-
+        except Exception as e_ls: app.logger.error(f"Impossible de lister le contenu du dossier: {e_ls}")
+        return "Erreur: Fichier principal de l'interface non trouvé. Vérifiez les logs.", 404
     try:
         return send_from_directory(directory_to_serve_from, file_to_serve)
-    except FileNotFoundError: # Devrait être attrapé par la vérification is_file() ci-dessus mais par sécurité
-        app.logger.error(f"ERREUR (FileNotFoundError) : '{file_to_serve}' non trouvé dans '{directory_to_serve_from}'.")
-        return "Erreur: Page principale non trouvée (HTML). Vérifiez les logs du serveur.", 404
     except Exception as e_send:
-        app.logger.error(f"Erreur avec send_from_directory pour '{file_to_serve}': {e_send}", exc_info=True)
+        app.logger.error(f"Erreur send_from_directory pour '{file_to_serve}': {e_send}", exc_info=True)
         return "Erreur interne du serveur lors de la tentative de servir la page.", 500
 
-
-# --- Ancienne route principale (maintenant commentée) ---
-# @app.route('/')
-# def home():
-#     return "Signal Server for Workflow Orchestration is running."
-
-# --- Route pour une page de statut (maintenant commentée ou à réadapter si besoin) ---
-# Si vous aviez un 'signal_status_page.html' distinct.
-# @app.route('/signal_status_page')
-# def signal_status_page():
-#     app.logger.info("Route '/signal_status_page' appelée.")
-#     return send_from_directory('.', 'signal_status_page.html')
-
-
-# --- Endpoints API de base (pour la gestion des signaux et statuts, si utilisés) ---
+# --- Endpoints API de base (pour la gestion des signaux et statuts) ---
 @app.route('/api/trigger_workflow', methods=['POST'])
 def trigger_workflow():
     timestamp = time.time()
-    with open(TRIGGER_SIGNAL_FILE, "w") as f:
-        f.write(str(timestamp))
+    with open(TRIGGER_SIGNAL_FILE, "w") as f: f.write(str(timestamp))
     app.logger.info(f"Workflow triggered via API at {timestamp}. Signal file updated.")
     return jsonify({"status": "success", "message": "Workflow triggered", "timestamp": timestamp})
 
@@ -428,7 +432,7 @@ def check_trigger():
     if TRIGGER_SIGNAL_FILE.exists():
         try:
             timestamp = TRIGGER_SIGNAL_FILE.read_text()
-            TRIGGER_SIGNAL_FILE.unlink() # Consommer le signal
+            TRIGGER_SIGNAL_FILE.unlink() 
             app.logger.info(f"Trigger signal consumed. Timestamp: {timestamp}")
             return jsonify({"triggered": True, "timestamp": float(timestamp)})
         except Exception as e:
@@ -439,20 +443,17 @@ def check_trigger():
 @app.route('/api/update_local_status', methods=['POST'])
 def update_local_status():
     data = request.json
-    with open(LOCAL_STATUS_FILE, "w") as f:
-        json.dump(data, f)
+    with open(LOCAL_STATUS_FILE, "w") as f: json.dump(data, f)
     app.logger.info(f"Local status updated: {data}")
     return jsonify({"status": "success", "message": "Local status updated"})
 
 @app.route('/api/get_local_status', methods=['GET'])
 def get_local_status():
     if LOCAL_STATUS_FILE.exists():
-        with open(LOCAL_STATUS_FILE, "r") as f:
-            status_data = json.load(f)
+        with open(LOCAL_STATUS_FILE, "r") as f: status_data = json.load(f)
         return jsonify(status_data)
     return jsonify({"status": "idle", "message": "No local status file found."})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
-    # debug=False est généralement mieux pour Render
     app.run(host='0.0.0.0', port=port, debug=os.environ.get('FLASK_DEBUG', 'False').lower() == 'true')
