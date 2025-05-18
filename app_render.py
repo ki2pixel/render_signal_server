@@ -28,10 +28,7 @@ SIGNAL_DIR.mkdir(parents=True, exist_ok=True)
 DOWNLOAD_TEMP_DIR_RENDER.mkdir(parents=True, exist_ok=True)
 
 # --- Config Email (SENDER_OF_INTEREST is still key) & Dropbox ---
-# IMAP_SERVER = os.environ.get('IMAP_SERVER') # No longer primary for email check
-# EMAIL_ACCOUNT = os.environ.get('EMAIL_ACCOUNT') # No longer primary for email check
-# EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD') # No longer primary for email check
-SENDER_OF_INTEREST = os.environ.get('SENDER_OF_INTEREST') # IMPORTANT: This should be the 'from' address as it appears in Hotmail for forwarded emails
+SENDER_OF_INTEREST = os.environ.get('SENDER_OF_INTEREST')
 
 # --- Config API Microsoft Graph (OneDrive & Mail) ---
 ONEDRIVE_CLIENT_ID = os.environ.get('ONEDRIVE_CLIENT_ID')
@@ -39,23 +36,23 @@ ONEDRIVE_CLIENT_SECRET = os.environ.get('ONEDRIVE_CLIENT_SECRET')
 ONEDRIVE_REFRESH_TOKEN = os.environ.get('ONEDRIVE_REFRESH_TOKEN')
 
 ONEDRIVE_AUTHORITY = "https://login.microsoftonline.com/consumers"
-# **** IMPORTANT: Added "Mail.Read" scope ****
-ONEDRIVE_SCOPES_DELEGATED = ["Files.ReadWrite", "User.Read", "offline_access", "Mail.Read"]
+# **** CORRECTION: "offline_access" retiré de cette liste ****
+ONEDRIVE_SCOPES_DELEGATED = ["Files.ReadWrite", "User.Read", "Mail.Read"]
 ONEDRIVE_TARGET_PARENT_FOLDER_ID = os.environ.get('ONEDRIVE_TARGET_PARENT_FOLDER_ID', 'root')
 ONEDRIVE_TARGET_SUBFOLDER_NAME = os.environ.get('ONEDRIVE_TARGET_SUBFOLDER_NAME', "DropboxDownloadsWorkflow")
 
-msal_app = None
+msal_app = None # Gardons le nom msal_app pour la simplicité
 if ONEDRIVE_CLIENT_ID and ONEDRIVE_CLIENT_SECRET:
     app.logger.info(f"Configuration de MSAL ConfidentialClientApplication avec Client ID et Authority: {ONEDRIVE_AUTHORITY}")
-    msal_app = ConfidentialClientApplication(
+    msal_app = ConfidentialClientApplication( # Nom de variable conservé : msal_app
         ONEDRIVE_CLIENT_ID,
         authority=ONEDRIVE_AUTHORITY,
         client_credential=ONEDRIVE_CLIENT_SECRET
     )
 else:
-    app.logger.warning("ONEDRIVE_CLIENT_ID ou ONEDRIVE_CLIENT_SECRET manquant. L'intégration OneDrive/Graph API sera désactivée.")
+    app.logger.warning("ONEDRIVE_CLIENT_ID ou ONEDRIVE_CLIENT_SECRET manquant. L'intégration Graph API sera désactivée.")
 
-# --- Fonctions Utilitaires (largely unchanged) ---
+# --- Fonctions Utilitaires ---
 def find_dropbox_links(text):
     pattern = r'https?://www\.dropbox\.com/scl/(?:fo|fi)/[a-zA-Z0-9_/\-]+?\?[^ \n\r<>"]+'
     links = re.findall(pattern, text)
@@ -71,18 +68,20 @@ def add_processed_email_id(email_id_str):
     with open(PROCESSED_EMAIL_IDS_FILE, 'a') as f:
         f.write(email_id_str + "\n")
 
-def get_onedrive_access_token(): # Renamed for clarity, but function is the same
-    if not msal_app:
+def get_onedrive_access_token():
+    if not msal_app: # Utilise msal_app
         app.logger.error("MSAL ConfidentialClientApplication (msal_app) n'est pas configurée pour Graph API.")
         return None
     if not ONEDRIVE_REFRESH_TOKEN:
         app.logger.error("ONEDRIVE_REFRESH_TOKEN manquant. Impossible d'obtenir un token d'accès Graph API.")
         return None
 
-    app.logger.info("Tentative d'acquisition d'un token d'accès Graph API en utilisant le refresh token.")
+    app.logger.info(f"Tentative d'acquisition d'un token d'accès Graph API en utilisant le refresh token pour les scopes: {ONEDRIVE_SCOPES_DELEGATED}")
+    
+    # Utilise msal_app et la liste de scopes corrigée
     result = msal_app.acquire_token_by_refresh_token(
         ONEDRIVE_REFRESH_TOKEN,
-        scopes=ONEDRIVE_SCOPES_DELEGATED
+        scopes=ONEDRIVE_SCOPES_DELEGATED # La liste corrigée sans "offline_access"
     )
 
     if "access_token" in result:
@@ -90,8 +89,7 @@ def get_onedrive_access_token(): # Renamed for clarity, but function is the same
         new_rt = result.get("refresh_token")
         if new_rt and new_rt != ONEDRIVE_REFRESH_TOKEN:
             app.logger.warning("Un nouveau refresh token Graph API a été émis. "
-                               "Il est conseillé de le mettre à jour manuellement dans les variables d'environnement "
-                               "ou via le script get_refresh_token.py si des problèmes d'authentification surviennent.")
+                               "Il est conseillé de le mettre à jour manuellement.")
         return result['access_token']
     else:
         error_description = result.get('error_description', "Aucune description d'erreur fournie.")
@@ -220,7 +218,7 @@ def download_and_relay_to_onedrive(dropbox_url):
                 f.write(chunk)
         app.logger.info(f"Dropbox: Téléchargé '{filename_dropbox}' vers '{temp_filepath}'")
 
-        access_token_graph = get_onedrive_access_token() # Token for Graph API (OneDrive and Mail)
+        access_token_graph = get_onedrive_access_token()
         if access_token_graph:
             target_folder_id = ensure_onedrive_folder(access_token_graph)
             if target_folder_id:
@@ -258,21 +256,14 @@ def check_emails_via_graph_and_download():
     access_token = get_onedrive_access_token()
     if not access_token:
         app.logger.error("Impossible d'obtenir un token d'accès Graph API pour lire les emails.")
-        return -1 # Indiquer une erreur
+        return -1 
 
     if not SENDER_OF_INTEREST:
         app.logger.error("SENDER_OF_INTEREST n'est pas configuré. Impossible de filtrer les emails.")
         return -1
 
     headers = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'application/json'}
-    
-    # Filtre pour les emails non lus de l'expéditeur SENDER_OF_INTEREST
-    # SENDER_OF_INTEREST doit être l'adresse email telle qu'elle apparaît dans le champ 'from'
-    # des emails transférés dans votre boîte Hotmail.
     filter_query = f"$filter=from/emailAddress/address eq '{SENDER_OF_INTEREST}' and isRead eq false"
-    
-    # Sélectionner les emails non lus, les plus récents en premier (orderBy), prendre les 20 premiers par ex.
-    # Vous pouvez ajuster $top selon le volume attendu.
     messages_url = f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?{filter_query}&$orderBy=receivedDateTime desc&$top=20"
     
     num_downloaded_total = 0
@@ -284,41 +275,29 @@ def check_emails_via_graph_and_download():
         emails_data = response.json().get('value', [])
         app.logger.info(f"Trouvé {len(emails_data)} email(s) potentiels de '{SENDER_OF_INTEREST}' via Graph API (non lus, top 20).")
 
-        # Les emails sont déjà triés par receivedDateTime desc, donc on les traite dans cet ordre (plus récent d'abord)
         for email_item in emails_data:
-            email_id_graph = email_item['id'] # ID unique de l'email dans Graph
-            
+            email_id_graph = email_item['id']
             if email_id_graph in processed_graph_email_ids:
-                # app.logger.debug(f"Email Graph ID {email_id_graph} déjà traité, ignoré.")
                 continue
             
             subject = email_item.get('subject', "N/A")
             app.logger.info(f"Traitement Email Graph ID: {email_id_graph}, Sujet: {subject}")
             
-            # Le corps de l'email peut être en HTML ('body') ou texte ('bodyPreview')
-            # On préfère le corps HTML car il est plus susceptible de contenir les liens correctement.
-            # La propriété 'uniqueBody' est aussi une option si vous voulez le corps unique sans en-têtes de conversation.
-            body_content = email_item.get('body', {}).get('content', '') # HTML content
-            if not body_content: # Fallback to bodyPreview if HTML body is empty
+            body_content = email_item.get('body', {}).get('content', '')
+            if not body_content:
                 body_content = email_item.get('bodyPreview', '')
             
             if body_content:
                 links_found = find_dropbox_links(body_content)
                 if links_found:
                     app.logger.info(f"Email Graph ID {email_id_graph}: Liens Dropbox trouvés: {links_found}")
-                    success_for_this_email = True
                     for link in links_found:
                         if not download_and_relay_to_onedrive(link):
-                            success_for_this_email = False
                             app.logger.error(f"Échec du traitement du lien {link} pour l'email Graph ID {email_id_graph}")
                         else:
                             num_downloaded_total += 1
                     
-                    # Marquer l'email comme traité (ajout à processed_email_ids.txt)
                     add_processed_email_id(email_id_graph)
-
-                    # Optionnel: Marquer l'email comme lu dans Outlook/Hotmail via Graph API
-                    # Ceci est utile pour ne pas le récupérer à nouveau si isRead eq false est dans le filtre
                     mark_as_read_url = f"https://graph.microsoft.com/v1.0/me/messages/{email_id_graph}"
                     patch_payload = {"isRead": True}
                     try:
@@ -327,20 +306,18 @@ def check_emails_via_graph_and_download():
                         app.logger.info(f"Email Graph ID {email_id_graph} marqué comme lu.")
                     except requests.exceptions.RequestException as e_mark:
                         app.logger.warning(f"Échec du marquage comme lu pour l'email Graph ID {email_id_graph}: {e_mark}")
-
-                else: # Aucun lien trouvé
-                    app.logger.info(f"Email Graph ID {email_id_graph}: Aucun lien Dropbox trouvé dans le corps.")
-                    add_processed_email_id(email_id_graph) # Marquer pour ne pas rescanner
-                    # On peut aussi le marquer comme lu ici si on ne veut plus le revoir
-            else: # Corps de l'email vide
-                app.logger.warning(f"Email Graph ID {email_id_graph}: Corps de l'email vide ou non récupérable.")
-                add_processed_email_id(email_id_graph) # Marquer pour ne pas rescanner
+                else:
+                    app.logger.info(f"Email Graph ID {email_id_graph}: Aucun lien Dropbox trouvé.")
+                    add_processed_email_id(email_id_graph)
+            else:
+                app.logger.warning(f"Email Graph ID {email_id_graph}: Corps de l'email vide.")
+                add_processed_email_id(email_id_graph)
 
     except requests.exceptions.RequestException as e_graph:
         app.logger.error(f"Erreur API Graph lors de la lecture des emails: {e_graph}")
         if hasattr(e_graph, 'response') and e_graph.response is not None:
             app.logger.error(f"Réponse API Graph: {e_graph.response.status_code} - {e_graph.response.text}")
-        return -1 # Indiquer une erreur
+        return -1
     except Exception as ex_general:
         app.logger.error(f"Erreur inattendue pendant la lecture des emails via Graph API: {ex_general}", exc_info=True)
         return -1
@@ -355,7 +332,7 @@ def api_check_emails_and_download():
     lock_file = SIGNAL_DIR / "email_check.lock"
     if lock_file.exists():
         try:
-            if time.time() - lock_file.stat().st_mtime < 300: # 5 minutes
+            if time.time() - lock_file.stat().st_mtime < 300:
                  app.logger.warning("Vérification des emails déjà en cours (lock file récent).")
                  return jsonify({"status": "busy", "message": "Vérification des emails déjà en cours."}), 429
             else:
@@ -372,17 +349,15 @@ def api_check_emails_and_download():
 
     num_downloaded = 0
     try:
-        # Configuration check for Graph API based email checking
         if not all([ONEDRIVE_CLIENT_ID, ONEDRIVE_CLIENT_SECRET, ONEDRIVE_REFRESH_TOKEN, SENDER_OF_INTEREST]):
-            msg = "Configuration Graph API (Client ID/Secret/Refresh Token) ou SENDER_OF_INTEREST incomplète."
+            msg = "Configuration Graph API ou SENDER_OF_INTEREST incomplète."
             app.logger.error(msg)
             if lock_file.exists(): lock_file.unlink(missing_ok=True)
             return jsonify({"status": "error", "message": msg}), 500
 
-        # Appel de la nouvelle fonction utilisant Graph API
         num_downloaded = check_emails_via_graph_and_download()
 
-        if num_downloaded == -1: # Erreur signalée par la fonction
+        if num_downloaded == -1:
             msg = "Une erreur est survenue pendant la vérification des emails via Graph API."
             status_code = 500
         else:
@@ -393,7 +368,7 @@ def api_check_emails_and_download():
         if lock_file.exists(): lock_file.unlink(missing_ok=True)
         return jsonify({"status": "success" if status_code==200 else "error", "message": msg, "files_downloaded": num_downloaded if num_downloaded !=-1 else 0}), status_code
 
-    except Exception as e: # Catch-all pour les erreurs non prévues dans ce endpoint
+    except Exception as e:
         app.logger.error(f"Erreur inattendue dans l'endpoint /api/check_emails_and_download: {e}", exc_info=True)
         if lock_file.exists(): lock_file.unlink(missing_ok=True)
         return jsonify({"status": "error", "message": f"Erreur inattendue: {str(e)}"}), 500
