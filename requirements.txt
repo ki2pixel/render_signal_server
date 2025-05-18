@@ -1,9 +1,7 @@
 Flask>=2.0
 requests
-# Pour l'API Gmail (si vous utilisez Gmail)
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
-# Pour l'API Microsoft Graph (OneDrive/Outlook)
-msal 
-# Ou si vous utilisez directement l'API REST, 'requests' suffit mais l'authentification est plus complexe.
+msal
+redis>=4.0  # Ou la version que vous souhaitez
