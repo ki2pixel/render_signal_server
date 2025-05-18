@@ -470,5 +470,3 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     # debug=False est généralement mieux pour Render, True pour le dev local si besoin
     app.run(host='0.0.0.0', port=port, debug=os.environ.get('FLASK_DEBUG', 'False').lower() == 'true')
-
---- END OF FILE app_render.py ---
