@@ -141,6 +141,11 @@
         <h1><span class="emoji">📡</span>Télécommande Workflow</h1>
         <button id="triggerBtn">🚀 Lancer Séquence (Étapes 0-4)</button>
         
+        <!-- START: Added button and paragraph for email check -->
+        <button id="checkEmailsBtn" style="background-color: #28a745; margin-top: 15px; display: block; width: 100%; padding: 15px 20px; font-size: 1.1em; font-weight: 600; color: white; border: none; border-radius: 6px; cursor: pointer;">📧 Vérifier Emails & Télécharger Dropbox vers OneDrive</button>
+        <p id="emailCheckStatusMsg" style="margin-top: 10px; text-align: center;"></p>
+        <!-- END: Added button and paragraph for email check -->
+        
         <div id="statusContainer" style="display:none;">
             <div id="statusTitle">Statut du Workflow Local</div>
             <div id="overallStatusText">En attente...</div>
@@ -246,6 +251,34 @@
                 }
             }, 3000); 
         }
+
+        // START: Added JavaScript for checkEmailsBtn
+        document.getElementById('checkEmailsBtn').addEventListener('click', async () => {
+            const emailStatusEl = document.getElementById('emailCheckStatusMsg');
+            const checkBtn = document.getElementById('checkEmailsBtn');
+            
+            checkBtn.disabled = true;
+            emailStatusEl.textContent = 'Lancement de la vérification des emails...';
+            emailStatusEl.style.color = 'var(--cork-text-primary)'; // Reset color
+
+            try {
+                const response = await fetch('/api/check_emails_and_download', { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    emailStatusEl.textContent = `Terminé : ${data.message || 'Opération effectuée.'}`;
+                    emailStatusEl.style.color = 'var(--cork-success)';
+                } else {
+                    emailStatusEl.textContent = `Erreur: ${data.message || 'Échec de la vérification des emails.'}`;
+                    emailStatusEl.style.color = 'var(--cork-danger)';
+                }
+            } catch (e) {
+                console.error("Erreur fetch check_emails:", e);
+                emailStatusEl.textContent = 'Erreur de communication pour la vérification des emails.';
+                emailStatusEl.style.color = 'var(--cork-danger)';
+            }
+            checkBtn.disabled = false;
+        });
+        // END: Added JavaScript for checkEmailsBtn
     </script>
 </body>
 </html>
