@@ -1,0 +1,2 @@
+Flask>=2.0
+requests # Si vous avez besoin de faire des appels sortants depuis ce serveur, pas nécessaire pour ce cas simple
