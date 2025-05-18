@@ -4,38 +4,115 @@
     <title>Déclencheur Workflow Distant</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 90vh; background-color: #333; color: #eee;}
-        button { padding: 15px 30px; font-size: 1.2em; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 5px; }
-        button:hover { background-color: #0056b3; }
-        #status { margin-top: 20px; }
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding-top: 20px; background-color: #282c34; color: #abb2bf; line-height: 1.6;}
+        h1 { color: #61afef; margin-bottom: 30px;}
+        button { padding: 12px 25px; font-size: 1.1em; cursor: pointer; background-color: #61afef; color: #282c34; border: none; border-radius: 5px; margin-bottom:20px; transition: background-color 0.2s; }
+        button:hover { background-color: #528baf; }
+        button:disabled { background-color: #555; color: #888; cursor: not-allowed;}
+        #statusContainer {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #444;
+            border-radius: 5px;
+            background-color: #333842;
+            width: 80%;
+            max-width: 600px;
+            text-align: left;
+        }
+        #statusTitle { font-weight: bold; color: #98c379; margin-bottom: 8px; }
+        #statusText, #progressTextRemote { margin-bottom: 5px; }
+        .progress-bar-remote-container { width: 100%; background-color: #555; border-radius: 3px; margin-top: 5px; display: none;}
+        .progress-bar-remote { width: 0%; height: 10px; background-color: #98c379; border-radius: 3px; transition: width 0.3s ease;}
     </style>
 </head>
 <body>
     <h1>Télécommande Workflow</h1>
     <button id="triggerBtn">🚀 Lancer le Workflow Principal (Étapes 0-4)</button>
-    <p id="statusMsg"></p>
+    
+    <div id="statusContainer" style="display:none;">
+        <div id="statusTitle">Statut du Workflow Local:</div>
+        <div id="overallStatusText">En attente...</div>
+        <div id="statusText"></div>
+        <div class="progress-bar-remote-container" id="progress-bar-remote-container">
+            <div class="progress-bar-remote" id="progress-bar-remote"></div>
+        </div>
+        <div id="progressTextRemote" style="font-size:0.8em; text-align:center;"></div>
+    </div>
+
     <script>
-        document.getElementById('triggerBtn').addEventListener('click', async () => {
-            const statusEl = document.getElementById('statusMsg');
-            statusEl.textContent = 'Envoi de la commande...';
+        const triggerButton = document.getElementById('triggerBtn');
+        const statusContainer = document.getElementById('statusContainer');
+        const overallStatusTextEl = document.getElementById('overallStatusText');
+        const statusTextEl = document.getElementById('statusText');
+        const progressBarRemoteContainer = document.getElementById('progress-bar-remote-container');
+        const progressBarRemote = document.getElementById('progress-bar-remote');
+        const progressTextRemoteEl = document.getElementById('progressTextRemote');
+        let statusPollingInterval;
+
+        triggerButton.addEventListener('click', async () => {
+            triggerButton.disabled = true;
+            overallStatusTextEl.textContent = 'Envoi de la commande...';
+            statusTextEl.textContent = '';
+            statusContainer.style.display = 'block';
+            progressBarRemoteContainer.style.display = 'none';
+
             try {
-                const response = await fetch('/api/trigger_workflow', { // Relatif à ce serveur Render
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    // Optionnel: vous pourriez envoyer un payload si besoin
-                    // body: JSON.stringify({ command: 'start_sequence_0_4' }) 
-                });
+                const response = await fetch('/api/trigger_workflow', { method: 'POST' });
                 const data = await response.json();
                 if (response.ok) {
-                    statusEl.textContent = 'Commande envoyée avec succès ! Vérifiez votre machine locale.';
+                    overallStatusTextEl.textContent = 'Commande envoyée !';
+                    statusTextEl.textContent = 'En attente de prise en charge par la machine locale...';
+                    startStatusPolling();
                 } else {
-                    statusEl.textContent = `Erreur: ${data.message || 'Échec envoi commande.'}`;
+                    overallStatusTextEl.textContent = `Erreur Envoi`;
+                    statusTextEl.textContent = data.message || 'Échec envoi commande.';
+                    triggerButton.disabled = false;
                 }
             } catch (e) {
-                console.error("Erreur fetch:", e);
-                statusEl.textContent = 'Erreur de communication avec le serveur de déclenchement (Render).';
+                console.error("Erreur fetch trigger_workflow:", e);
+                overallStatusTextEl.textContent = 'Erreur Communication';
+                statusTextEl.textContent = 'Erreur de communication avec le serveur de déclenchement.';
+                triggerButton.disabled = false;
             }
         });
+
+        function startStatusPolling() {
+            if (statusPollingInterval) clearInterval(statusPollingInterval);
+            statusPollingInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/get_local_status'); // Sur le serveur Render
+                    if (!response.ok) {
+                        console.warn("Avertissement: impossible de récupérer le statut local (réponse serveur non OK).");
+                        statusTextEl.textContent = "Difficulté à joindre le serveur de statut...";
+                        return;
+                    }
+                    const data = await response.json();
+
+                    overallStatusTextEl.textContent = data.overall_status || "Inconnu";
+                    statusTextEl.textContent = data.status_text || "Aucun détail.";
+
+                    if (data.progress_total > 0 && (data.overall_status === "En cours..." || data.overall_status === "Démarrage")) {
+                        const percentage = Math.round((data.progress_current / data.progress_total) * 100);
+                        progressBarRemote.style.width = `${percentage}%`;
+                        progressTextRemoteEl.textContent = `${percentage}% (${data.progress_current}/${data.progress_total})`;
+                        progressBarRemoteContainer.style.display = 'block';
+                    } else {
+                        progressBarRemoteContainer.style.display = 'none';
+                    }
+
+                    if (data.overall_status === "Terminée avec succès" || data.overall_status === "Terminée avec erreurs" || data.overall_status === "Échoué") {
+                        clearInterval(statusPollingInterval);
+                        triggerButton.disabled = false; // Réactiver pour un nouveau lancement
+                        if(data.overall_status === "Terminée avec succès") progressBarRemote.style.backgroundColor = '#61ef61'; // Vert
+                        else progressBarRemote.style.backgroundColor = '#ef6161'; // Rouge
+                    }
+                } catch (e) {
+                    console.error("Erreur polling statut:", e);
+                    statusTextEl.textContent = "Erreur de communication lors de la récupération du statut.";
+                    // Optionnel : arrêter le polling en cas d'erreurs répétées
+                }
+            }, 3000); // Interroger toutes les 3 secondes
+        }
     </script>
 </body>
 </html>
