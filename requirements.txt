@@ -1,2 +1,9 @@
 Flask>=2.0
-requests # Si vous avez besoin de faire des appels sortants depuis ce serveur, pas nécessaire pour ce cas simple
+requests
+# Pour l'API Gmail (si vous utilisez Gmail)
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+# Pour l'API Microsoft Graph (OneDrive/Outlook)
+msal 
+# Ou si vous utilisez directement l'API REST, 'requests' suffit mais l'authentification est plus complexe.
