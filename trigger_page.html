@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Déclencheur Workflow Distant</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 90vh; background-color: #333; color: #eee;}
+        button { padding: 15px 30px; font-size: 1.2em; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 5px; }
+        button:hover { background-color: #0056b3; }
+        #status { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Télécommande Workflow</h1>
+    <button id="triggerBtn">🚀 Lancer le Workflow Principal (Étapes 0-4)</button>
+    <p id="statusMsg"></p>
+    <script>
+        document.getElementById('triggerBtn').addEventListener('click', async () => {
+            const statusEl = document.getElementById('statusMsg');
+            statusEl.textContent = 'Envoi de la commande...';
+            try {
+                const response = await fetch('/api/trigger_workflow', { // Relatif à ce serveur Render
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    // Optionnel: vous pourriez envoyer un payload si besoin
+                    // body: JSON.stringify({ command: 'start_sequence_0_4' }) 
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    statusEl.textContent = 'Commande envoyée avec succès ! Vérifiez votre machine locale.';
+                } else {
+                    statusEl.textContent = `Erreur: ${data.message || 'Échec envoi commande.'}`;
+                }
+            } catch (e) {
+                console.error("Erreur fetch:", e);
+                statusEl.textContent = 'Erreur de communication avec le serveur de déclenchement (Render).';
+            }
+        });
+    </script>
+</body>
+</html>
