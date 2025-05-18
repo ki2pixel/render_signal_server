@@ -1,42 +1,155 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
-    <title>Déclencheur Workflow Distant</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 Déclencheur Workflow Distant 🌌</title>
+    <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700" rel="stylesheet">
     <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding-top: 20px; background-color: #282c34; color: #abb2bf; line-height: 1.6;}
-        h1 { color: #61afef; margin-bottom: 30px;}
-        button { padding: 12px 25px; font-size: 1.1em; cursor: pointer; background-color: #61afef; color: #282c34; border: none; border-radius: 5px; margin-bottom:20px; transition: background-color 0.2s; }
-        button:hover { background-color: #528baf; }
-        button:disabled { background-color: #555; color: #888; cursor: not-allowed;}
+        :root {
+            --cork-dark-bg: #060818; /* Fond très sombre de CORK */
+            --cork-card-bg: #0e1726; /* Fond des cartes/widgets */
+            --cork-text-primary: #e0e6ed; /* Texte principal clair */
+            --cork-text-secondary: #888ea8; /* Texte secondaire gris */
+            --cork-primary-accent: #4361ee; /* Bleu primaire de CORK */
+            --cork-secondary-accent: #1abc9c; /* Vert/Turquoise secondaire */
+            --cork-success: #1abc9c; 
+            --cork-warning: #e2a03f;
+            --cork-danger: #e7515a;
+            --cork-info: #2196f3;
+            --cork-border-color: #191e3a;
+        }
+
+        body {
+            font-family: 'Nunito', sans-serif;
+            margin: 0;
+            background-color: var(--cork-dark-bg);
+            color: var(--cork-text-primary);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 700px;
+            background-color: var(--cork-card-bg);
+            padding: 30px 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 25px 0 rgba(0,0,0,0.1);
+            border: 1px solid var(--cork-border-color);
+        }
+
+        h1 {
+            color: var(--cork-text-primary);
+            text-align: center;
+            font-size: 1.8em;
+            font-weight: 600;
+            margin-bottom: 30px;
+            letter-spacing: 0.5px;
+        }
+        h1 .emoji {
+            font-size: 1.5em;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+
+        #triggerBtn {
+            display: block;
+            width: 100%;
+            padding: 15px 20px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            background-image: linear-gradient(to right, var(--cork-primary-accent) 0%, #5470f1 51%, var(--cork-primary-accent) 100%);
+            background-size: 200% auto;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            margin-bottom: 30px;
+            transition: background-position 0.5s, transform 0.1s ease;
+            box-shadow: 0 5px 15px rgba(67, 97, 238, 0.4);
+        }
+        #triggerBtn:hover {
+            background-position: right center; /* change la direction du dégradé au survol */
+            transform: translateY(-2px);
+        }
+        #triggerBtn:disabled {
+            background-image: none;
+            background-color: #555e72; /* Couleur désactivée CORK-like */
+            color: var(--cork-text-secondary);
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
         #statusContainer {
             margin-top: 20px;
-            padding: 15px;
-            border: 1px solid #444;
-            border-radius: 5px;
-            background-color: #333842;
-            width: 80%;
-            max-width: 600px;
+            padding: 20px;
+            border: 1px solid var(--cork-border-color);
+            border-radius: 6px;
+            background-color: rgba(0,0,0,0.1); /* Léger fond plus sombre */
             text-align: left;
         }
-        #statusTitle { font-weight: bold; color: #98c379; margin-bottom: 8px; }
-        #statusText, #progressTextRemote { margin-bottom: 5px; }
-        .progress-bar-remote-container { width: 100%; background-color: #555; border-radius: 3px; margin-top: 5px; display: none;}
-        .progress-bar-remote { width: 0%; height: 10px; background-color: #98c379; border-radius: 3px; transition: width 0.3s ease;}
+        #statusTitle {
+            font-weight: 600;
+            color: var(--cork-secondary-accent); /* Utilisation de l'accent secondaire */
+            margin-bottom: 10px;
+            font-size: 1.1em;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--cork-border-color);
+        }
+        #overallStatusText, #statusText {
+            margin-bottom: 8px;
+            font-size: 0.95em;
+            line-height: 1.5;
+        }
+        #overallStatusText.status-success { color: var(--cork-success); font-weight: bold; }
+        #overallStatusText.status-error { color: var(--cork-danger); font-weight: bold; }
+        #overallStatusText.status-progress { color: var(--cork-info); font-weight: bold; }
+
+
+        .progress-bar-remote-container {
+            width: 100%;
+            background-color: var(--cork-border-color); /* Plus sombre pour le conteneur */
+            border-radius: 4px;
+            margin-top: 10px;
+            padding: 2px; /* Petit padding pour la bordure interne */
+            display: none; /* Caché par défaut */
+            box-sizing: border-box;
+        }
+        .progress-bar-remote {
+            width: 0%;
+            height: 12px;
+            background-color: var(--cork-primary-accent); /* Couleur principale pour la progression */
+            border-radius: 3px;
+            transition: width 0.4s ease, background-color 0.4s ease;
+        }
+        #progressTextRemote {
+            text-align: center;
+            margin-top: 6px;
+            font-size: 0.8em;
+            color: var(--cork-text-secondary);
+        }
     </style>
 </head>
 <body>
-    <h1>Télécommande Workflow</h1>
-    <button id="triggerBtn">🚀 Lancer le Workflow Principal (Étapes 0-4)</button>
-    
-    <div id="statusContainer" style="display:none;">
-        <div id="statusTitle">Statut du Workflow Local:</div>
-        <div id="overallStatusText">En attente...</div>
-        <div id="statusText"></div>
-        <div class="progress-bar-remote-container" id="progress-bar-remote-container">
-            <div class="progress-bar-remote" id="progress-bar-remote"></div>
+    <div class="container">
+        <h1><span class="emoji">📡</span>Télécommande Workflow</h1>
+        <button id="triggerBtn">🚀 Lancer Séquence (Étapes 0-4)</button>
+        
+        <div id="statusContainer" style="display:none;">
+            <div id="statusTitle">Statut du Workflow Local</div>
+            <div id="overallStatusText">En attente...</div>
+            <div id="statusText"></div>
+            <div class="progress-bar-remote-container" id="progress-bar-remote-container">
+                <div class="progress-bar-remote" id="progress-bar-remote"></div>
+            </div>
+            <div id="progressTextRemote"></div>
         </div>
-        <div id="progressTextRemote" style="font-size:0.8em; text-align:center;"></div>
     </div>
 
     <script>
@@ -52,6 +165,7 @@
         triggerButton.addEventListener('click', async () => {
             triggerButton.disabled = true;
             overallStatusTextEl.textContent = 'Envoi de la commande...';
+            overallStatusTextEl.className = 'status-progress';
             statusTextEl.textContent = '';
             statusContainer.style.display = 'block';
             progressBarRemoteContainer.style.display = 'none';
@@ -65,12 +179,14 @@
                     startStatusPolling();
                 } else {
                     overallStatusTextEl.textContent = `Erreur Envoi`;
+                    overallStatusTextEl.className = 'status-error';
                     statusTextEl.textContent = data.message || 'Échec envoi commande.';
                     triggerButton.disabled = false;
                 }
             } catch (e) {
                 console.error("Erreur fetch trigger_workflow:", e);
                 overallStatusTextEl.textContent = 'Erreur Communication';
+                overallStatusTextEl.className = 'status-error';
                 statusTextEl.textContent = 'Erreur de communication avec le serveur de déclenchement.';
                 triggerButton.disabled = false;
             }
@@ -80,10 +196,10 @@
             if (statusPollingInterval) clearInterval(statusPollingInterval);
             statusPollingInterval = setInterval(async () => {
                 try {
-                    const response = await fetch('/api/get_local_status'); // Sur le serveur Render
+                    const response = await fetch('/api/get_local_status');
                     if (!response.ok) {
                         console.warn("Avertissement: impossible de récupérer le statut local (réponse serveur non OK).");
-                        statusTextEl.textContent = "Difficulté à joindre le serveur de statut...";
+                        statusTextEl.textContent = "Difficulté à joindre le serveur de statut distant...";
                         return;
                     }
                     const data = await response.json();
@@ -91,27 +207,44 @@
                     overallStatusTextEl.textContent = data.overall_status || "Inconnu";
                     statusTextEl.textContent = data.status_text || "Aucun détail.";
 
-                    if (data.progress_total > 0 && (data.overall_status === "En cours..." || data.overall_status === "Démarrage")) {
+                    // Appliquer des classes pour la couleur du statut global
+                    if (data.overall_status === "Terminée avec succès") {
+                        overallStatusTextEl.className = 'status-success';
+                        progressBarRemote.style.backgroundColor = 'var(--cork-success)';
+                    } else if (data.overall_status === "Terminée avec erreurs" || data.overall_status === "Échoué") {
+                        overallStatusTextEl.className = 'status-error';
+                        progressBarRemote.style.backgroundColor = 'var(--cork-danger)';
+                    } else { // En cours, Démarrage, etc.
+                        overallStatusTextEl.className = 'status-progress';
+                        progressBarRemote.style.backgroundColor = 'var(--cork-primary-accent)';
+                    }
+
+
+                    if (data.progress_total > 0 && (data.overall_status === "En cours..." || data.overall_status === "Démarrage" || (data.status_text && data.status_text.toLowerCase().includes("lancement")))) {
                         const percentage = Math.round((data.progress_current / data.progress_total) * 100);
                         progressBarRemote.style.width = `${percentage}%`;
-                        progressTextRemoteEl.textContent = `${percentage}% (${data.progress_current}/${data.progress_total})`;
+                        // progressBarRemote.textContent = `${percentage}%`; // Optionnel: texte dans la barre elle-même
+                        progressTextRemoteEl.textContent = `${data.current_step_name || ''} ${percentage}% (${data.progress_current}/${data.progress_total})`;
                         progressBarRemoteContainer.style.display = 'block';
-                    } else {
+                    } else if (data.overall_status === "Terminée avec succès" || data.overall_status === "Terminée avec erreurs" || data.overall_status === "Échoué") {
+                        // Garder la barre à 100% si terminée (même avec erreurs, pour montrer la fin)
+                        progressBarRemote.style.width = `100%`;
+                        progressTextRemoteEl.textContent = ``; // On peut vider, le statut global suffit
+                        progressBarRemoteContainer.style.display = 'block'; // Garder visible
+                    }
+                     else {
                         progressBarRemoteContainer.style.display = 'none';
                     }
 
                     if (data.overall_status === "Terminée avec succès" || data.overall_status === "Terminée avec erreurs" || data.overall_status === "Échoué") {
                         clearInterval(statusPollingInterval);
-                        triggerButton.disabled = false; // Réactiver pour un nouveau lancement
-                        if(data.overall_status === "Terminée avec succès") progressBarRemote.style.backgroundColor = '#61ef61'; // Vert
-                        else progressBarRemote.style.backgroundColor = '#ef6161'; // Rouge
+                        triggerButton.disabled = false;
                     }
                 } catch (e) {
                     console.error("Erreur polling statut:", e);
-                    statusTextEl.textContent = "Erreur de communication lors de la récupération du statut.";
-                    // Optionnel : arrêter le polling en cas d'erreurs répétées
+                    statusTextEl.textContent = "Erreur de communication lors de la récupération du statut distant.";
                 }
-            }, 3000); // Interroger toutes les 3 secondes
+            }, 3000); 
         }
     </script>
 </body>
