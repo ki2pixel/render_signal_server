@@ -262,56 +262,86 @@ def check_emails_via_graph_and_download():
         app.logger.error("SENDER_OF_INTEREST n'est pas configuré. Impossible de filtrer les emails.")
         return -1
 
+    # Headers for Graph API requests. Content-Type is needed for PATCH, not harmful for GET.
     headers = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'application/json'}
-    filter_query = f"$filter=from/emailAddress/address eq '{SENDER_OF_INTEREST}' and isRead eq false"
-    messages_url = f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?{filter_query}&$orderBy=receivedDateTime desc&$top=20"
+    
+    # --- MODIFIED: Simplified Graph API query ---
+    # Filter only on isRead eq false and order by receivedDateTime.
+    # We will filter by SENDER_OF_INTEREST in Python.
+    filter_query_graph = "isRead eq false"
+    orderby_query_graph = "receivedDateTime desc"
+    top_query_graph = "20" # Fetch up to 20 most recent unread emails
+
+    messages_url = f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$filter={filter_query_graph}&$orderby={orderby_query_graph}&$top={top_query_graph}"
+    app.logger.info(f"Appel API Graph: {messages_url}")
     
     num_downloaded_total = 0
     processed_graph_email_ids = get_processed_email_ids()
 
     try:
-        response = requests.get(messages_url, headers=headers)
+        response = requests.get(messages_url, headers=headers) # For GET, Content-Type in headers is optional
         response.raise_for_status()
         emails_data = response.json().get('value', [])
-        app.logger.info(f"Trouvé {len(emails_data)} email(s) potentiels de '{SENDER_OF_INTEREST}' via Graph API (non lus, top 20).")
+        app.logger.info(f"Trouvé {len(emails_data)} email(s) non lus via Graph API (avant filtrage expéditeur en Python).")
 
         for email_item in emails_data:
             email_id_graph = email_item['id']
+            
             if email_id_graph in processed_graph_email_ids:
+                app.logger.debug(f"Email Graph ID: {email_id_graph} déjà traité, ignoré.")
                 continue
             
             subject = email_item.get('subject', "N/A")
-            app.logger.info(f"Traitement Email Graph ID: {email_id_graph}, Sujet: {subject}")
+            from_address_info = email_item.get('from', {}).get('emailAddress', {})
+            actual_sender_address = from_address_info.get('address', '').lower()
+            
+            app.logger.info(f"Examen Email Graph ID: {email_id_graph}, De: {actual_sender_address}, Sujet: '{subject}'")
+            
+            # --- NEW: Python-side filtering for SENDER_OF_INTEREST ---
+            if SENDER_OF_INTEREST.lower() != actual_sender_address:
+                app.logger.info(f"Email Graph ID {email_id_graph} ignoré (expéditeur '{actual_sender_address}' ne correspond pas à '{SENDER_OF_INTEREST.lower()}').")
+                # Mark as processed so we don't re-check this unread email from a different sender every time
+                add_processed_email_id(email_id_graph)
+                continue
+            
+            app.logger.info(f"Traitement Email Graph ID: {email_id_graph} (Expéditeur '{actual_sender_address}' CORRESPOND)")
             
             body_content = email_item.get('body', {}).get('content', '')
-            if not body_content:
+            if not body_content and email_item.get('bodyPreview'): # Check if bodyPreview exists
                 body_content = email_item.get('bodyPreview', '')
             
             if body_content:
                 links_found = find_dropbox_links(body_content)
                 if links_found:
                     app.logger.info(f"Email Graph ID {email_id_graph}: Liens Dropbox trouvés: {links_found}")
-                    for link in links_found:
-                        if not download_and_relay_to_onedrive(link):
-                            app.logger.error(f"Échec du traitement du lien {link} pour l'email Graph ID {email_id_graph}")
-                        else:
+                    successful_download_for_this_email = False
+                    for link_idx, link in enumerate(links_found):
+                        app.logger.info(f"Traitement du lien {link_idx+1}/{len(links_found)}: {link} pour l'email ID {email_id_graph}")
+                        if download_and_relay_to_onedrive(link):
                             num_downloaded_total += 1
+                            successful_download_for_this_email = True # At least one link processed successfully
+                        else:
+                            app.logger.error(f"Échec du traitement du lien {link} pour l'email Graph ID {email_id_graph}")
                     
+                    # Add to processed list and mark as read regardless of individual link download success/failure,
+                    # as long as it was from the SENDER_OF_INTEREST and had links.
+                    # This prevents reprocessing the same email with potentially problematic links.
                     add_processed_email_id(email_id_graph)
                     mark_as_read_url = f"https://graph.microsoft.com/v1.0/me/messages/{email_id_graph}"
                     patch_payload = {"isRead": True}
                     try:
+                        # Ensure headers for PATCH include Content-Type: application/json
                         mark_response = requests.patch(mark_as_read_url, headers=headers, json=patch_payload)
                         mark_response.raise_for_status()
                         app.logger.info(f"Email Graph ID {email_id_graph} marqué comme lu.")
                     except requests.exceptions.RequestException as e_mark:
                         app.logger.warning(f"Échec du marquage comme lu pour l'email Graph ID {email_id_graph}: {e_mark}")
                 else:
-                    app.logger.info(f"Email Graph ID {email_id_graph}: Aucun lien Dropbox trouvé.")
-                    add_processed_email_id(email_id_graph)
+                    app.logger.info(f"Email Graph ID {email_id_graph}: Aucun lien Dropbox trouvé dans le corps.")
+                    add_processed_email_id(email_id_graph) # Mark as processed if no links
             else:
-                app.logger.warning(f"Email Graph ID {email_id_graph}: Corps de l'email vide.")
-                add_processed_email_id(email_id_graph)
+                app.logger.warning(f"Email Graph ID {email_id_graph}: Corps de l'email vide ou non récupérable.")
+                add_processed_email_id(email_id_graph) # Mark as processed if empty body
 
     except requests.exceptions.RequestException as e_graph:
         app.logger.error(f"Erreur API Graph lors de la lecture des emails: {e_graph}")
