@@ -13,6 +13,7 @@ from msal import ConfidentialClientApplication
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# --- Config Fichiers ---
 SIGNAL_DIR = Path(os.environ.get("RENDER_DISC_PATH", "./signal_data"))
 DOWNLOAD_TEMP_DIR_RENDER = SIGNAL_DIR / "temp_downloads"
 PROCESSED_DROPBOX_URLS_ONEDRIVE_FILENAME = "processed_dropbox_urls_workflow.txt"
@@ -20,6 +21,7 @@ PROCESSED_DROPBOX_URLS_ONEDRIVE_FILENAME = "processed_dropbox_urls_workflow.txt"
 SIGNAL_DIR.mkdir(parents=True, exist_ok=True)
 DOWNLOAD_TEMP_DIR_RENDER.mkdir(parents=True, exist_ok=True)
 
+# --- Config API Microsoft Graph (OneDrive) ---
 ONEDRIVE_CLIENT_ID = os.environ.get('ONEDRIVE_CLIENT_ID')
 ONEDRIVE_CLIENT_SECRET = os.environ.get('ONEDRIVE_CLIENT_SECRET')
 ONEDRIVE_REFRESH_TOKEN = os.environ.get('ONEDRIVE_REFRESH_TOKEN')
@@ -28,9 +30,10 @@ ONEDRIVE_SCOPES_DELEGATED = ["Files.ReadWrite", "User.Read"]
 ONEDRIVE_TARGET_PARENT_FOLDER_ID = os.environ.get('ONEDRIVE_TARGET_PARENT_FOLDER_ID', 'root')
 ONEDRIVE_TARGET_SUBFOLDER_NAME = os.environ.get('ONEDRIVE_TARGET_SUBFOLDER_NAME', "DropboxDownloadsWorkflow")
 
-EXPECTED_API_TOKEN = os.environ.get("PROCESS_API_TOKEN") 
+# --- Config Sécurité API ---
+EXPECTED_API_TOKEN = os.environ.get("PROCESS_API_TOKEN") # Assurez-vous que cette variable d'env est définie sur Render
 if not EXPECTED_API_TOKEN:
-    app.logger.warning("CRITICAL SECURITY WARNING: La variable d'environnement pour le token API (ex: PROCESS_API_TOKEN) n'est pas définie côté serveur. L'API de traitement est non sécurisée.")
+    app.logger.warning("CRITICAL SECURITY WARNING: La variable d'environnement PROCESS_API_TOKEN n'est pas définie. L'API sera non sécurisée.")
 
 msal_app = None
 if ONEDRIVE_CLIENT_ID and ONEDRIVE_CLIENT_SECRET:
@@ -43,7 +46,7 @@ if ONEDRIVE_CLIENT_ID and ONEDRIVE_CLIENT_SECRET:
 else:
     app.logger.warning("ONEDRIVE_CLIENT_ID ou ONEDRIVE_CLIENT_SECRET manquant. Intégration Graph désactivée.")
 
-# --- Fonctions Utilitaires (inchangées par rapport à la version précédente pour Workflow B) ---
+# --- Fonctions Utilitaires (identiques à la version précédente qui fonctionnait avec PowerShell) ---
 def sanitize_filename(filename_str, max_length=200):
     sanitized = re.sub(r'[<>:"/\\|?*]', '_', filename_str)
     sanitized = re.sub(r'\.+', '.', sanitized).strip('.')
@@ -71,12 +74,14 @@ def get_onedrive_access_token():
 
 def ensure_onedrive_folder(access_token):
     headers = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'application/json'}
-    if ONEDRIVE_TARGET_PARENT_FOLDER_ID.lower() == 'root':
+    parent_id = ONEDRIVE_TARGET_PARENT_FOLDER_ID if ONEDRIVE_TARGET_PARENT_FOLDER_ID.lower() != 'root' else 'root'
+    
+    if parent_id == 'root':
         folder_check_url = f"https://graph.microsoft.com/v1.0/me/drive/root/children?$filter=name eq '{ONEDRIVE_TARGET_SUBFOLDER_NAME}'"
         folder_create_url = f"https://graph.microsoft.com/v1.0/me/drive/root/children"
     else:
-        folder_check_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{ONEDRIVE_TARGET_PARENT_FOLDER_ID}/children?$filter=name eq '{ONEDRIVE_TARGET_SUBFOLDER_NAME}'"
-        folder_create_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{ONEDRIVE_TARGET_PARENT_FOLDER_ID}/children"
+        folder_check_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{parent_id}/children?$filter=name eq '{ONEDRIVE_TARGET_SUBFOLDER_NAME}'"
+        folder_create_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{parent_id}/children"
     try:
         response = requests.get(folder_check_url, headers=headers)
         response.raise_for_status()
@@ -99,6 +104,7 @@ def ensure_onedrive_folder(access_token):
         return None
 
 def upload_to_onedrive(filepath, filename_onedrive, access_token, target_folder_id):
+    # (Code inchangé)
     if not access_token or not target_folder_id:
         app.logger.error("Token d'accès OneDrive ou ID dossier cible manquant pour l'upload.")
         return False
@@ -147,13 +153,14 @@ def upload_to_onedrive(filepath, filename_onedrive, access_token, target_folder_
         app.logger.error(f"Erreur API Graph upload vers OneDrive ({filename_onedrive_clean}): {e}")
         if hasattr(e, 'response') and e.response is not None: app.logger.error(f"Réponse API Graph: {e.response.status_code} - {e.response.text}")
         if 'upload_session_url' in locals() and file_size >= 4 * 1024 * 1024:
-            requests.delete(upload_session_url, headers={'Authorization': 'Bearer ' + access_token}) # Best effort
+            requests.delete(upload_session_url, headers={'Authorization': 'Bearer ' + access_token}) 
         return False
     except Exception as ex:
         app.logger.error(f"Erreur générale upload OneDrive ({filename_onedrive_clean}): {ex}", exc_info=True)
         return False
 
 def download_and_relay_to_onedrive(dropbox_url, access_token_graph, target_folder_id_onedrive, preferred_filename_from_subject=None):
+    # (Code inchangé)
     app.logger.info(f"Dropbox: URL originale: {dropbox_url}")
     unescaped_dropbox_url = html_parser.unescape(dropbox_url)
     modified_url = unescaped_dropbox_url.replace("dl=0", "dl=1")
@@ -164,7 +171,7 @@ def download_and_relay_to_onedrive(dropbox_url, access_token_graph, target_folde
     temp_filepath = None 
     try:
         headers_dropbox = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response = requests.get(modified_url, stream=True, allow_redirects=True, timeout=300, headers=headers_dropbox)
+        response = requests.get(modified_url, stream=True, allow_redirects=True, timeout=600, headers=headers_dropbox) # Timeout augmenté
         response.raise_for_status()
         filename_from_dropbox = "downloaded_file_from_dropbox"
         content_disposition = response.headers.get('content-disposition')
@@ -197,11 +204,14 @@ def download_and_relay_to_onedrive(dropbox_url, access_token_graph, target_folde
         if access_token_graph and target_folder_id_onedrive:
             if upload_to_onedrive(temp_filepath, filename_onedrive, access_token_graph, target_folder_id_onedrive):
                 app.logger.info(f"OneDrive: Succès upload de '{filename_onedrive}'")
-                return True
+                return True # La suppression du fichier temporaire est dans finally
             else:
                 app.logger.error(f"OneDrive: Échec upload de '{filename_onedrive}'")
         else:
             app.logger.error("OneDrive: Token d'accès ou ID dossier cible manquant pour l'upload.")
+        return False # Si l'upload échoue
+    except requests.exceptions.Timeout:
+        app.logger.error(f"Dropbox: Timeout (600s) lors du téléchargement pour {modified_url}")
         return False
     except requests.exceptions.RequestException as e:
         app.logger.error(f"Dropbox: Erreur de téléchargement {modified_url}: {e}")
@@ -218,7 +228,9 @@ def download_and_relay_to_onedrive(dropbox_url, access_token_graph, target_folde
             except OSError as e_unlink:
                 app.logger.error(f"Erreur suppression fichier temporaire '{temp_filepath}': {e_unlink}")
 
+
 def get_processed_urls_from_onedrive(access_token, target_folder_id):
+    # (Code inchangé)
     if not access_token or not target_folder_id: return set()
     download_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_DROPBOX_URLS_ONEDRIVE_FILENAME}:/content"
     headers = {'Authorization': 'Bearer ' + access_token}
@@ -239,6 +251,7 @@ def get_processed_urls_from_onedrive(access_token, target_folder_id):
     return processed_urls
 
 def update_processed_urls_on_onedrive(access_token, target_folder_id, urls_to_write_set):
+    # (Code inchangé)
     if not access_token or not target_folder_id: return False
     content_to_upload = "\n".join(sorted(list(urls_to_write_set))) if urls_to_write_set else ""
     upload_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_DROPBOX_URLS_ONEDRIVE_FILENAME}:/content?@microsoft.graph.conflictBehavior=replace"
@@ -254,48 +267,44 @@ def update_processed_urls_on_onedrive(access_token, target_folder_id, urls_to_wr
         return False
 # --- FIN Fonctions Utilitaires ---
 
+# --- ENDPOINT PRINCIPAL pour WORKFLOW B ---
 @app.route('/api/process_individual_dropbox_link', methods=['POST'])
 def api_process_individual_dropbox_link():
     received_token = request.headers.get('X-API-Token')
     if not EXPECTED_API_TOKEN:
-        app.logger.error("API_PROCESS_LINK: Mesure de sécurité non configurée côté serveur (EXPECTED_API_TOKEN manquant). Rejet de la requête.")
+        app.logger.error("API_PROCESS_LINK: Mesure de sécurité non configurée côté serveur (EXPECTED_API_TOKEN manquant). Rejet.")
         return jsonify({"status": "error", "message": "Erreur de configuration serveur"}), 500 
     if received_token != EXPECTED_API_TOKEN:
-        app.logger.warning(f"API_PROCESS_LINK: Tentative d'accès non autorisé. Token reçu: '{received_token}'") # Ne pas logger EXPECTED_API_TOKEN
+        app.logger.warning(f"API_PROCESS_LINK: Tentative d'accès non autorisé. Token reçu: '{received_token}'")
         return jsonify({"status": "error", "message": "Non autorisé"}), 401
     
     app.logger.info("API_PROCESS_LINK: Token API validé.")
 
-    # --- NOUVEAU LOGGING POUR DÉBOGUER LE PAYLOAD ---
     app.logger.info(f"API_PROCESS_LINK: Headers de la requête: {request.headers}")
     app.logger.info(f"API_PROCESS_LINK: Contenu brut de la requête (request.data): {request.data}")
     
     data = None
     try:
-        # Tenter de parser le JSON. force=True ignore le Content-Type si Flask a des soucis.
-        # silent=True retourne None au lieu de lever une erreur si ce n'est pas du JSON.
         data = request.get_json(silent=True) 
-        if data is None and request.data: # Si get_json(silent=True) retourne None mais qu'il y avait des données brutes
+        if data is None and request.data: 
             app.logger.warning(f"API_PROCESS_LINK: request.get_json(silent=True) a retourné None, mais request.data n'était pas vide. Tentative de parsing manuel.")
             try:
-                data = json.loads(request.data.decode('utf-8')) # Essayer de parser manuellement
+                data = json.loads(request.data.decode('utf-8'))
                 app.logger.info(f"API_PROCESS_LINK: Données JSON parsées manuellement: {data}")
             except json.JSONDecodeError as e_manual_json:
                 app.logger.error(f"API_PROCESS_LINK: Échec du parsing JSON manuel: {e_manual_json}. Données brutes: {request.data}")
                 return jsonify({"status": "error", "message": "Payload JSON invalide ou malformé (parsing manuel échoué)"}), 400
-            except Exception as e_decode:
+            except Exception as e_decode: # Catch other decoding errors like UnicodeDecodeError
                 app.logger.error(f"API_PROCESS_LINK: Erreur lors du décodage UTF-8 ou autre du payload: {e_decode}. Données brutes: {request.data}")
-                return jsonify({"status": "error", "message": "Erreur décodage payload"}), 400
-
+                return jsonify({"status": "error", "message": f"Erreur décodage payload: {e_decode}"}), 400
         app.logger.info(f"API_PROCESS_LINK: Données JSON parsées (après tentatives): {data}")
-    except Exception as e:
+    except Exception as e: # Catch unexpected errors during get_json itself
         app.logger.error(f"API_PROCESS_LINK: Exception lors de request.get_json() ou du parsing: {e}", exc_info=True)
-        # Ne pas retourner ici, la vérification 'if not data' ci-dessous gérera le cas où data est None.
+        # Fall through to the 'if not data' check
 
     if not data or 'dropbox_url' not in data:
         app.logger.error(f"API_PROCESS_LINK: Payload invalide. 'data' est None ou 'dropbox_url' est manquante. Données finales: {data}")
         return jsonify({"status": "error", "message": "dropbox_url manquante ou payload JSON invalide"}), 400
-    # --- FIN DU NOUVEAU LOGGING ---
 
     dropbox_url_to_process = data.get('dropbox_url')
     email_subject_for_filename = data.get('email_subject') 
@@ -315,6 +324,8 @@ def api_process_individual_dropbox_link():
 
     if dropbox_url_to_process in processed_urls:
         app.logger.info(f"API_PROCESS_LINK: URL {dropbox_url_to_process} déjà traitée. Ignorée.")
+        # Répondre 202 Accepted pour que Make.com ne considère pas cela comme une erreur à retenter indéfiniment.
+        # Ou 200 OK avec un message clair.
         return jsonify({"status": "skipped", "message": "URL déjà traitée"}), 200
 
     app.logger.info(f"API_PROCESS_LINK: Traitement de la nouvelle URL: {dropbox_url_to_process}")
@@ -330,38 +341,36 @@ def api_process_individual_dropbox_link():
         processed_urls.add(dropbox_url_to_process)
         if update_processed_urls_on_onedrive(access_token, target_folder_id, processed_urls):
             app.logger.info(f"API_PROCESS_LINK: URL {dropbox_url_to_process} traitée et ajoutée à la liste.")
-            return jsonify({"status": "success", "message": f"Lien Dropbox traité (Sujet: {email_subject_for_filename})."}), 200
+            # Répondre 202 Accepted pour indiquer que la demande a été acceptée pour traitement.
+            # Le client (Make.com) ne devrait pas attendre la fin du long upload.
+            return jsonify({"status": "accepted", "message": f"Traitement du lien Dropbox pour '{email_subject_for_filename}' initié."}), 202
         else:
             app.logger.error(f"API_PROCESS_LINK: URL {dropbox_url_to_process} traitée, MAIS échec màj liste URLs traitées sur OneDrive.")
-            return jsonify({"status": "partial_error", "message": "Fichier transféré mais échec màj liste URLs."}), 500 
+            return jsonify({"status": "error", "message": "Fichier transféré mais échec màj liste URLs traitées."}), 500 
     else:
         app.logger.error(f"API_PROCESS_LINK: Échec du traitement du lien Dropbox: {dropbox_url_to_process}")
-        return jsonify({"status": "error", "message": f"Échec traitement lien Dropbox (Sujet: {email_subject_for_filename})."}), 500
+        return jsonify({"status": "error", "message": f"Échec traitement lien Dropbox pour '{email_subject_for_filename}'."}), 500
 
+# --- Route pour servir une page de déclenchement simple (optionnel) ---
 @app.route('/')
 def serve_trigger_page():
     app.logger.info("Route '/' appelée. Tentative de servir 'trigger_page.html'.")
     serve_dir = Path(current_app.root_path)
-    file_to_serve = 'trigger_page.html'
+    file_to_serve = 'trigger_page.html' # Assurez-vous que ce fichier existe à la racine
     expected_file_location = serve_dir / file_to_serve
     if not expected_file_location.is_file():
         app.logger.error(f"ERREUR: '{file_to_serve}' NON TROUVÉ à {expected_file_location.resolve()}")
-        try:
-            content_list_root = os.listdir(serve_dir)
-            app.logger.info(f"Contenu du dossier racine de l'application ('{serve_dir}'): {content_list_root}")
-        except Exception as e_ls:
-            app.logger.error(f"Impossible de lister le contenu du dossier pour le débogage: {e_ls}")
-        return "Erreur: Fichier principal de l'interface non trouvé. Vérifiez les logs du serveur.", 404
+        return "Erreur: Fichier principal de l'interface non trouvé.", 404
     try:
         return send_from_directory(str(serve_dir), file_to_serve)
     except Exception as e_send:
-        app.logger.error(f"Erreur send_from_directory pour '{file_to_serve}' depuis '{serve_dir}': {e_send}", exc_info=True)
-        return "Erreur interne du serveur lors de la tentative de servir la page.", 500
+        app.logger.error(f"Erreur send_from_directory pour '{file_to_serve}': {e_send}", exc_info=True)
+        return "Erreur interne du serveur.", 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
+    port = int(os.environ.get('PORT', 10000)) # Render utilise PORT, souvent 10000
     flask_debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
     if not EXPECTED_API_TOKEN:
-        app.logger.critical("ALERTE DE SÉCURITÉ CRITIQUE: La variable d'environnement pour le token API (ex: PROCESS_API_TOKEN) N'EST PAS DÉFINIE. L'API EST OUVERTE SANS AUTHENTIFICATION.")
+        app.logger.critical("ALERTE DE SÉCURITÉ CRITIQUE: La variable d'environnement PROCESS_API_TOKEN N'EST PAS DÉFINIE. L'API EST OUVERTE SANS AUTHENTIFICATION.")
     app.logger.info(f"Démarrage du serveur Flask sur le port {port} avec debug={flask_debug_mode}")
     app.run(host='0.0.0.0', port=port, debug=flask_debug_mode)
