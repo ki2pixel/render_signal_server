@@ -267,21 +267,16 @@ def update_processed_urls_on_onedrive(access_token, target_folder_id, urls_to_wr
 # --- FIN Fonctions Utilitaires ---
 
 # --- ENDPOINT PRINCIPAL pour WORKFLOW B ---
-@app.route('/api/process_individual_dropbox_link', methods=['POST'])
+@app.route('/api/process_individual_dropbox_link', methods=['POST']) # Vérifiez ce chemin et methods=['POST']
 def api_process_individual_dropbox_link():
-    # Vérification du token d'API
+    # Vérification du token
     received_token = request.headers.get('X-API-Token')
-
     if not EXPECTED_API_TOKEN:
         app.logger.error("API_PROCESS_LINK: Mesure de sécurité non configurée côté serveur (EXPECTED_API_TOKEN manquant). Rejet de la requête.")
-        # Il est plus sûr de rejeter si le token attendu n'est pas configuré que de laisser passer.
         return jsonify({"status": "error", "message": "Erreur de configuration serveur"}), 500 
-    
     if received_token != EXPECTED_API_TOKEN:
-        app.logger.warning(f"API_PROCESS_LINK: Tentative d'accès non autorisé. Token reçu: '{received_token}' vs Attendu configuré.")
+        app.logger.warning(f"API_PROCESS_LINK: Tentative d'accès non autorisé. Token reçu: '{received_token}'")
         return jsonify({"status": "error", "message": "Non autorisé"}), 401
-
-    # Si on arrive ici, le token est valide ou EXPECTED_API_TOKEN n'était pas défini (et on a loggué l'avertissement au démarrage)
     app.logger.info("API_PROCESS_LINK: Token API validé.")
 
     data = request.json
@@ -295,9 +290,14 @@ def api_process_individual_dropbox_link():
 
     app.logger.info(f"API_PROCESS_LINK: Reçu demande pour URL: {dropbox_url_to_process} (Sujet: {email_subject_for_filename}, EmailID: {email_id_for_logging})")
 
+    # Logique de traitement (get_onedrive_access_token, ensure_onedrive_folder, etc.)
     access_token = get_onedrive_access_token()
-    if not access_token:
+    if not access_token: # ...
         return jsonify({"status": "error", "message": "Impossible d'obtenir token Graph API"}), 500
+    # ... (reste de la logique comme dans la version précédente)
+
+    # Pour l'instant, juste pour tester la route, vous pourriez simplifier temporairement:
+    # return jsonify({"status": "success", "message": f"Demande de traitement pour '{email_subject_for_filename}' reçue et acceptée."}), 202
 
     target_folder_id = ensure_onedrive_folder(access_token)
     if not target_folder_id:
@@ -325,7 +325,7 @@ def api_process_individual_dropbox_link():
             return jsonify({"status": "success", "message": f"Lien Dropbox traité (Sujet: {email_subject_for_filename})."}), 200
         else:
             app.logger.error(f"API_PROCESS_LINK: URL {dropbox_url_to_process} traitée, MAIS échec màj liste URLs traitées sur OneDrive.")
-            return jsonify({"status": "partial_error", "message": "Fichier transféré mais échec màj liste URLs."}), 500 # Ou 207
+            return jsonify({"status": "partial_error", "message": "Fichier transféré mais échec màj liste URLs."}), 500
     else:
         app.logger.error(f"API_PROCESS_LINK: Échec du traitement du lien Dropbox: {dropbox_url_to_process}")
         return jsonify({"status": "error", "message": f"Échec traitement lien Dropbox (Sujet: {email_subject_for_filename})."}), 500
