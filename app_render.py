@@ -1,5 +1,3 @@
---- START OF FILE app_render.py ---
-
 from flask import Flask, jsonify, request, send_from_directory, current_app
 import os
 import time
