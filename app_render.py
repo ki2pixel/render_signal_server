@@ -35,7 +35,8 @@ ONEDRIVE_CLIENT_ID = os.environ.get('ONEDRIVE_CLIENT_ID')
 ONEDRIVE_CLIENT_SECRET = os.environ.get('ONEDRIVE_CLIENT_SECRET')
 ONEDRIVE_REFRESH_TOKEN = os.environ.get('ONEDRIVE_REFRESH_TOKEN')
 ONEDRIVE_AUTHORITY = "https://login.microsoftonline.com/consumers"
-ONEDRIVE_SCOPES_DELEGATED = ["Files.ReadWrite", "User.Read", "Mail.Read"]
+# MODIFIÉ: Ajout de Mail.ReadWrite. Assurez-vous que le REFRESH_TOKEN a été obtenu avec ce scope.
+ONEDRIVE_SCOPES_DELEGATED = ["Files.ReadWrite", "User.Read", "Mail.ReadWrite"]
 
 ONEDRIVE_TARGET_PARENT_FOLDER_ID = os.environ.get('ONEDRIVE_TARGET_PARENT_FOLDER_ID', 'root')
 ONEDRIVE_TARGET_SUBFOLDER_NAME = os.environ.get('ONEDRIVE_TARGET_SUBFOLDER_NAME', "DropboxDownloadsWorkflow")
@@ -122,7 +123,7 @@ def ensure_onedrive_folder(access_token, subfolder_name=None, parent_folder_id=N
         return None
 
 # --- Fonctions pour Transfert Dropbox -> OneDrive (Rôle 2) ---
-# MODIFIED: Added job_id parameter for logging
+# job_id is passed for logging consistency
 def _try_cancel_upload_session(job_id, upload_session_url, filename_onedrive_clean, reason="erreur"):
     if not upload_session_url: return
     app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Tentative d'annulation session upload ({reason}) pour {filename_onedrive_clean}: {upload_session_url[:70]}...")
@@ -136,7 +137,7 @@ def _try_cancel_upload_session(job_id, upload_session_url, filename_onedrive_cle
     else:
         app.logger.warning(f"UPLOAD_ONEDRIVE [{job_id}]: Impossible d'obtenir un token pour annuler la session d'upload de {filename_onedrive_clean}.")
 
-# MODIFIED: Added job_id parameter for logging
+# job_id is passed for logging consistency
 def upload_to_onedrive(job_id, filepath, filename_onedrive, access_token, target_folder_id):
     if not access_token or not target_folder_id: app.logger.error(f"UPLOAD_ONEDRIVE [{job_id}]: Token/ID dossier manquant."); return False
     filename_onedrive_clean = sanitize_filename(filename_onedrive)
@@ -207,7 +208,7 @@ def upload_to_onedrive(job_id, filepath, filename_onedrive, access_token, target
         if file_size >= 4 * 1024 * 1024: _try_cancel_upload_session(job_id, upload_session_url, filename_onedrive_clean, "erreur générale Exception")
         return False
 
-# MODIFIED: Added job_id parameter for logging
+# job_id is passed for logging consistency
 def download_file_from_dropbox_and_upload_to_onedrive(job_id, dropbox_url, access_token_graph, target_folder_id_onedrive, subject_for_default_filename="FichierDropbox"):
     app.logger.info(f"DROPBOX_WORKER [{job_id}]: Traitement URL Dropbox: {dropbox_url}")
     unescaped_url = html_parser.unescape(dropbox_url)
@@ -265,7 +266,7 @@ def download_file_from_dropbox_and_upload_to_onedrive(job_id, dropbox_url, acces
         if total_length_dropbox and downloaded_length < total_length_dropbox:
             app.logger.warning(f"DROPBOX_WORKER [{job_id}]: Taille DL ({downloaded_length}) < attendue ({total_length_dropbox}) pour {filename_for_onedrive}.")
         app.logger.info(f"DROPBOX_WORKER [{job_id}]: Fichier Dropbox '{filename_for_onedrive}' téléchargé ({downloaded_length}b).")
-        if upload_to_onedrive(job_id, temp_filepath, filename_for_onedrive, access_token_graph, target_folder_id_onedrive): # Pass job_id
+        if upload_to_onedrive(job_id, temp_filepath, filename_for_onedrive, access_token_graph, target_folder_id_onedrive):
             app.logger.info(f"DROPBOX_WORKER [{job_id}]: Upload OneDrive de '{filename_for_onedrive}' réussi.")
             return True
         else: app.logger.error(f"DROPBOX_WORKER [{job_id}]: Échec upload OneDrive de '{filename_for_onedrive}'."); return False
@@ -280,7 +281,7 @@ def download_file_from_dropbox_and_upload_to_onedrive(job_id, dropbox_url, acces
             try: temp_filepath.unlink(); app.logger.info(f"DROPBOX_WORKER [{job_id}]: Fichier temp '{temp_filepath.name}' supprimé.")
             except OSError as e_unlink: app.logger.error(f"DROPBOX_WORKER [{job_id}]: Erreur suppression temp '{temp_filepath.name}': {e_unlink}")
 
-# MODIFIED: Added job_id parameter for logging in calls to get/add processed urls
+# job_id is passed for logging consistency
 def get_processed_urls_from_onedrive(job_id, access_token, target_folder_id):
     if not access_token or not target_folder_id: return set()
     download_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_URLS_ONEDRIVE_FILENAME}:/content"
@@ -298,10 +299,10 @@ def get_processed_urls_from_onedrive(job_id, access_token, target_folder_id):
     except requests.exceptions.RequestException as e: app.logger.error(f"DROPBOX_WORKER_DEDUP [{job_id}]: Erreur DL {PROCESSED_URLS_ONEDRIVE_FILENAME}: {e}")
     return processed_urls
 
-# MODIFIED: Added job_id parameter for logging
+# job_id is passed for logging consistency
 def add_processed_url_to_onedrive(job_id, access_token, target_folder_id, dropbox_url_processed):
     if not access_token or not target_folder_id or not dropbox_url_processed: return False
-    current_urls = get_processed_urls_from_onedrive(job_id, access_token, target_folder_id) # Pass job_id
+    current_urls = get_processed_urls_from_onedrive(job_id, access_token, target_folder_id)
     current_urls.add(dropbox_url_processed)
     content_to_upload = "\n".join(sorted(list(current_urls)))
     upload_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_URLS_ONEDRIVE_FILENAME}:/content?@microsoft.graph.conflictBehavior=replace"
@@ -313,22 +314,17 @@ def add_processed_url_to_onedrive(job_id, access_token, target_folder_id, dropbo
         return True
     except requests.exceptions.RequestException as e: app.logger.error(f"DROPBOX_WORKER_DEDUP [{job_id}]: Erreur UL {PROCESSED_URLS_ONEDRIVE_FILENAME}: {e}"); return False
 
-# MODIFIED: Incorporates job_id logic
 def process_dropbox_link_worker(dropbox_url, subject_for_default_filename, email_id_for_logging):
     # Create a job_id for this specific worker instance
-    # Use a portion of email_id if available, otherwise part of the URL (sanitized for logging)
-    if email_id_for_logging and email_id_for_logging != 'N/A':
-        # Take a safe portion of email_id, e.g., last 12 chars before possible special chars
-        job_id_base = re.sub(r'[^a-zA-Z0-9]', '', email_id_for_logging)[-12:] if email_id_for_logging else "NO_EMAIL_ID"
-        if not job_id_base: # if email_id was all special chars or too short
-             job_id_base = f"URL_{time.time_ns()}"[-12:] # Fallback to timestamp based
+    if email_id_for_logging and email_id_for_logging != 'N/A' and email_id_for_logging != 'N/A_EMAIL_ID':
+        job_id_base = re.sub(r'[^a-zA-Z0-9]', '', email_id_for_logging)[-12:]
+        if not job_id_base: job_id_base = f"TS_{time.time_ns()}"[-12:]
     else:
-        # Use a sanitized part of the URL or a timestamp if URL is too short/problematic
         sanitized_url_part = re.sub(r'[^a-zA-Z0-9]', '', dropbox_url)[-20:]
-        job_id_base = sanitized_url_part if len(sanitized_url_part) > 5 else f"URL_{time.time_ns()}"[-12:]
-    job_id = f"J{job_id_base}" # Prefix with J for Job
+        job_id_base = sanitized_url_part if len(sanitized_url_part) > 5 else f"URL_TS_{time.time_ns()}"[-12:]
+    job_id = f"J{job_id_base}"
 
-    app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: DÉMARRAGE EFFECTIF pour URL: '{dropbox_url}', Sujet Fallback: '{subject_for_default_filename}', EmailID Log: '{email_id_for_logging}'")
+    app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: DÉMARRAGE EFFECTIF pour URL: '{dropbox_url}', Sujet Fallback: '{subject_for_default_filename}'")
 
     if not dropbox_url or not isinstance(dropbox_url, str) or not dropbox_url.lower().startswith("https://www.dropbox.com/"):
         app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: URL Dropbox reçue invalide ou non-Dropbox: '{dropbox_url}'. Arrêt du worker.")
@@ -337,37 +333,55 @@ def process_dropbox_link_worker(dropbox_url, subject_for_default_filename, email
     access_token_graph = get_onedrive_access_token()
     if not access_token_graph: app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: Échec token Graph pour '{dropbox_url}'. Arrêt."); return
     
-    onedrive_target_folder_id = ensure_onedrive_folder(access_token_graph) # No job_id needed here, it's a global utility
+    onedrive_target_folder_id = ensure_onedrive_folder(access_token_graph)
     if not onedrive_target_folder_id: app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: Échec dossier OneDrive pour '{dropbox_url}'. Arrêt."); return
     
-    processed_urls = get_processed_urls_from_onedrive(job_id, access_token_graph, onedrive_target_folder_id) # Pass job_id
+    processed_urls = get_processed_urls_from_onedrive(job_id, access_token_graph, onedrive_target_folder_id)
     unescaped_received_url = html_parser.unescape(dropbox_url)
-
-    if dropbox_url in processed_urls or unescaped_received_url in processed_urls:
+    if dropbox_url in processed_urls or unescaped_received_url in processed_urls :
         app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: URL '{dropbox_url}' (ou sa forme unescaped) déjà traitée. Ignorée.")
         return
         
     app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: URL '{dropbox_url}' nouvelle. Lancement transfert.")
     success_transfer = download_file_from_dropbox_and_upload_to_onedrive(
-        job_id, dropbox_url, access_token_graph, onedrive_target_folder_id, subject_for_default_filename # Pass job_id
+        job_id, dropbox_url, access_token_graph, onedrive_target_folder_id, subject_for_default_filename
     )
     if success_transfer:
         app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: Transfert '{dropbox_url}' réussi. MàJ liste URLs traitées.")
-        if not add_processed_url_to_onedrive(job_id, access_token_graph, onedrive_target_folder_id, dropbox_url): # Pass job_id
+        if not add_processed_url_to_onedrive(job_id, access_token_graph, onedrive_target_folder_id, dropbox_url):
             app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: CRITIQUE - Fichier '{dropbox_url}' transféré mais échec màj {PROCESSED_URLS_ONEDRIVE_FILENAME}.")
     else: app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: Échec transfert '{dropbox_url}'.")
     app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: Fin tâche pour '{dropbox_url}'")
 
 # --- Fonctions pour Polling Email & Déclenchement Webhook (Rôle 1) ---
-# (get_processed_webhook_trigger_ids, add_processed_webhook_trigger_id, check_new_emails_and_trigger_make_webhook, background_email_poller remain unchanged)
-# ... (Le reste du script, y compris le poller d'email et les endpoints Flask, reste identique à la version précédente) ...
+def mark_email_as_read(access_token, message_id):
+    if not access_token or not message_id:
+        app.logger.error("MARK_AS_READ: Token d'accès ou ID de message manquant.")
+        return False
+    mark_as_read_url = f"https://graph.microsoft.com/v1.0/me/messages/{message_id}"
+    headers = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'application/json'}
+    payload = {"isRead": True}
+    try:
+        response = requests.patch(mark_as_read_url, headers=headers, json=payload, timeout=15)
+        response.raise_for_status() 
+        app.logger.info(f"MARK_AS_READ: Email ID {message_id} marqué comme lu avec succès.")
+        return True
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"MARK_AS_READ: Erreur API Graph lors du marquage comme lu pour email ID {message_id}: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            app.logger.error(f"MARK_AS_READ: Réponse API Graph: {e.response.status_code} - {e.response.text}")
+            if e.response.status_code == 403: # Forbidden
+                app.logger.error("MARK_AS_READ: Erreur 403 Forbidden. Vérifiez que la permission Mail.ReadWrite est accordée et incluse dans le token utilisé.")
+        return False
+    except Exception as ex_general:
+        app.logger.error(f"MARK_AS_READ: Erreur inattendue lors du marquage comme lu pour {message_id}: {ex_general}", exc_info=True)
+        return False
 
-# --- Fonctions pour Polling Email & Déclenchement Webhook (Rôle 1) ---
 def get_processed_webhook_trigger_ids(access_token, target_folder_id):
     if not access_token or not target_folder_id: return set()
     download_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME}:/content"
     headers = {'Authorization': 'Bearer ' + access_token}; ids = set()
-    app.logger.debug(f"EMAIL_POLLER_DEDUP: Lecture de {PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME}") # No job_id context here
+    app.logger.debug(f"EMAIL_POLLER_DEDUP: Lecture de {PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME}")
     try:
         response = requests.get(download_url, headers=headers, timeout=30)
         if response.status_code == 200:
@@ -382,7 +396,7 @@ def get_processed_webhook_trigger_ids(access_token, target_folder_id):
 
 def add_processed_webhook_trigger_id(access_token, target_folder_id, email_id_processed):
     if not access_token or not target_folder_id or not email_id_processed: return False
-    current_ids = get_processed_webhook_trigger_ids(access_token, target_folder_id) # No job_id context here
+    current_ids = get_processed_webhook_trigger_ids(access_token, target_folder_id)
     current_ids.add(email_id_processed)
     content_to_upload = "\n".join(sorted(list(current_ids)))
     upload_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME}:/content?@microsoft.graph.conflictBehavior=replace"
@@ -390,12 +404,12 @@ def add_processed_webhook_trigger_id(access_token, target_folder_id, email_id_pr
     try:
         response = requests.put(upload_url, headers=headers, data=content_to_upload.encode('utf-8'), timeout=60)
         response.raise_for_status()
-        app.logger.info(f"EMAIL_POLLER_DEDUP: {PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME} mis à jour ({len(current_ids)} IDs).") # No job_id context
+        app.logger.info(f"EMAIL_POLLER_DEDUP: {PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME} mis à jour ({len(current_ids)} IDs).")
         return True
     except requests.exceptions.RequestException as e: app.logger.error(f"EMAIL_POLLER_DEDUP: Erreur UL {PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME}: {e}"); return False
 
 def check_new_emails_and_trigger_make_webhook():
-    app.logger.info("EMAIL_POLLER: Vérification des nouveaux emails...") # No job_id context
+    app.logger.info("EMAIL_POLLER: Vérification des nouveaux emails...")
     if not SENDER_LIST_FOR_POLLING:
         app.logger.warning("EMAIL_POLLER: SENDER_LIST_FOR_POLLING est vide. Le poller ne peut pas filtrer efficacement par expéditeur.")
         return 0
@@ -421,10 +435,9 @@ def check_new_emails_and_trigger_make_webhook():
         since_datetime_iso_graph_compatible = since_datetime_for_graph.strftime('%Y-%m-%dT%H:%M:%SZ')
         
         filter_query = f"isRead eq false and receivedDateTime ge {since_datetime_iso_graph_compatible}"
-        
         messages_url = f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$filter={filter_query}&$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments&$top=100&$orderby=receivedDateTime desc"
         
-        app.logger.info(f"EMAIL_POLLER: Appel Graph API Mail (filtre simplifié sur date/isRead).")
+        app.logger.info(f"EMAIL_POLLER: Appel Graph API Mail (filtre: '{filter_query}').")
         headers_graph_mail = {'Authorization': 'Bearer ' + access_token, 'Prefer': 'outlook.body-content-type="text"'}
 
         response = requests.get(messages_url, headers=headers_graph_mail, timeout=30)
@@ -446,9 +459,9 @@ def check_new_emails_and_trigger_make_webhook():
 
         app.logger.info(f"EMAIL_POLLER: {len(relevant_emails)} email(s) pertinents trouvés après filtrage par expéditeur en Python.")
 
-        for email_data in reversed(relevant_emails): 
+        for email_data in reversed(relevant_emails):
             email_id_graph = email_data['id']
-            email_subject = email_data.get('subject', 'N/A') 
+            email_subject = email_data.get('subject', 'N/A')
             email_sender_address = email_data.get('from', {}).get('emailAddress', {}).get('address', 'N/A').lower()
 
             if email_id_graph in processed_trigger_ids:
@@ -457,7 +470,7 @@ def check_new_emails_and_trigger_make_webhook():
             
             app.logger.info(f"EMAIL_POLLER: Email pertinent trouvé (ID: {email_id_graph}, Sujet: '{str(email_subject)[:50]}...'). Déclenchement du webhook Make.")
             webhook_payload = {
-                "microsoft_graph_email_id": email_id_graph, # Important to pass this for job_id creation later
+                "microsoft_graph_email_id": email_id_graph,
                 "subject": email_subject, 
                 "receivedDateTime": email_data.get("receivedDateTime"),
                 "sender_address": email_sender_address,
@@ -467,10 +480,15 @@ def check_new_emails_and_trigger_make_webhook():
                 webhook_response = requests.post(MAKE_SCENARIO_WEBHOOK_URL, json=webhook_payload, timeout=20)
                 if webhook_response.status_code == 200 and "accepted" in webhook_response.text.lower():
                     app.logger.info(f"EMAIL_POLLER: Webhook Make appelé avec succès pour email ID {email_id_graph}. Réponse: {webhook_response.status_code} - {webhook_response.text}")
+                    
                     if add_processed_webhook_trigger_id(access_token, onedrive_processing_folder_id, email_id_graph):
                         triggered_count_this_run += 1
+                        if mark_email_as_read(access_token, email_id_graph):
+                            app.logger.info(f"EMAIL_POLLER: Email ID {email_id_graph} marqué comme lu sur le serveur.")
+                        else:
+                            app.logger.warning(f"EMAIL_POLLER: Échec du marquage comme lu pour email ID {email_id_graph}, mais le webhook a été appelé et l'ID est enregistré pour déduplication webhook.")
                     else:
-                        app.logger.error(f"EMAIL_POLLER: Échec de l'ajout de {email_id_graph} à la liste des triggers traités sur OneDrive.")
+                        app.logger.error(f"EMAIL_POLLER: Échec de l'ajout de {email_id_graph} à la liste des triggers traités sur OneDrive. L'email ne sera PAS marqué comme lu pour éviter des déclenchements multiples.")
                 else:
                     app.logger.error(f"EMAIL_POLLER: Erreur appel webhook Make pour {email_id_graph}. Statut: {webhook_response.status_code}, Réponse: {webhook_response.text[:200]}")
             except requests.exceptions.RequestException as e_wh:
@@ -530,16 +548,20 @@ def api_process_individual_dropbox_link():
     if not data or 'dropbox_url' not in data: app.logger.error(f"API_DROPBOX_PROCESS: Payload invalide. 'data': {data}"); return jsonify({"status": "error", "message": "dropbox_url manquante ou payload invalide"}), 400
     
     dropbox_url_to_process = data.get('dropbox_url')
-    email_subject_from_make = data.get('email_subject') 
+    email_subject_from_make = data.get('email_subject')
     email_subject_for_filename = email_subject_from_make if email_subject_from_make is not None else 'Fichier_Dropbox_Sujet_Absent'
     
-    # IMPORTANT: Ensure Make.com sends "microsoft_graph_email_id" in the payload for job_id creation
-    email_id_for_logging = data.get('microsoft_graph_email_id', 'N/A_EMAIL_ID') 
+    # Updated to use "microsoft_graph_email_id" as sent by the poller/Make
+    email_id_for_logging = data.get('microsoft_graph_email_id', 'N/A_EMAIL_ID')
     
     app.logger.info(f"API_DROPBOX_PROCESS: Demande reçue pour URL: {dropbox_url_to_process} (Sujet pour nom fichier: {email_subject_for_filename}, EmailID Graph: {email_id_for_logging})")
     
-    # Create a unique name for the thread using a part of the email_id or a timestamp for better log tracking
-    thread_name_suffix = email_id_for_logging[-15:].replace("=","").replace("/","_") if email_id_for_logging != 'N/A_EMAIL_ID' else str(time.time_ns())[-10:]
+    if email_id_for_logging and email_id_for_logging != 'N/A_EMAIL_ID':
+        thread_name_suffix = re.sub(r'[^a-zA-Z0-9]', '', email_id_for_logging)[-15:]
+        if not thread_name_suffix: thread_name_suffix = str(time.time_ns())[-10:]
+    else:
+        thread_name_suffix = str(time.time_ns())[-10:]
+        
     thread = threading.Thread(target=process_dropbox_link_worker, args=(dropbox_url_to_process, email_subject_for_filename, email_id_for_logging), name=f"DropboxWorker-{thread_name_suffix}")
     thread.daemon = True; thread.start()
     app.logger.info(f"API_DROPBOX_PROCESS: Tâche pour {dropbox_url_to_process} mise en file (thread démarré: {thread.name}).")
