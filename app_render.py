@@ -35,7 +35,11 @@ ONEDRIVE_CLIENT_ID = os.environ.get('ONEDRIVE_CLIENT_ID')
 ONEDRIVE_CLIENT_SECRET = os.environ.get('ONEDRIVE_CLIENT_SECRET')
 ONEDRIVE_REFRESH_TOKEN = os.environ.get('ONEDRIVE_REFRESH_TOKEN')
 ONEDRIVE_AUTHORITY = "https://login.microsoftonline.com/consumers"
-ONEDRIVE_SCOPES_DELEGATED = ["Files.ReadWrite", "User.Read", "Mail.Read", "offline_access"]
+# MODIFIÉ: Retrait de "offline_access" de la liste des scopes pour acquire_token_by_refresh_token
+ONEDRIVE_SCOPES_DELEGATED = ["Files.ReadWrite", "User.Read", "Mail.Read"]
+# Si vous avez besoin de marquer les emails comme lus, ajoutez "Mail.ReadWrite" ici ET assurez-vous que votre refresh token
+# a été généré avec cette permission Mail.ReadWrite. Pour l'instant, Mail.Read suffit pour lire.
+
 ONEDRIVE_TARGET_PARENT_FOLDER_ID = os.environ.get('ONEDRIVE_TARGET_PARENT_FOLDER_ID', 'root')
 ONEDRIVE_TARGET_SUBFOLDER_NAME = os.environ.get('ONEDRIVE_TARGET_SUBFOLDER_NAME', "DropboxDownloadsWorkflow")
 
@@ -43,7 +47,6 @@ ONEDRIVE_TARGET_SUBFOLDER_NAME = os.environ.get('ONEDRIVE_TARGET_SUBFOLDER_NAME'
 EMAIL_POLLING_INTERVAL_SECONDS = int(os.environ.get("EMAIL_POLLING_INTERVAL_SECONDS", 60))
 MAKE_SCENARIO_WEBHOOK_URL = os.environ.get("MAKE_SCENARIO_WEBHOOK_URL")
 
-# NOUVEAU: Gestion de plusieurs expéditeurs
 SENDER_OF_INTEREST_FOR_POLLING_RAW = os.environ.get("SENDER_OF_INTEREST_FOR_POLLING")
 SENDER_LIST_FOR_POLLING = []
 if SENDER_OF_INTEREST_FOR_POLLING_RAW:
@@ -87,6 +90,7 @@ def get_onedrive_access_token():
         return result['access_token']
     else:
         app.logger.error(f"MSAL_AUTH: Erreur acquisition token: {result.get('error')} - {result.get('error_description')}")
+        # L'erreur ValueError due aux scopes réservés sera loggée ici par MSAL directement si elle persiste.
         app.logger.error(f"MSAL_AUTH: Détails MSAL: {result}"); return None
 
 def ensure_onedrive_folder(access_token, subfolder_name=None, parent_folder_id=None):
@@ -357,7 +361,7 @@ def add_processed_webhook_trigger_id(access_token, target_folder_id, email_id_pr
 
 def check_new_emails_and_trigger_make_webhook(): # Rôle 1
     app.logger.info("EMAIL_POLLER: Vérification des nouveaux emails...")
-    if not SENDER_LIST_FOR_POLLING: # MODIFIÉ: Vérifier la liste parsée
+    if not SENDER_LIST_FOR_POLLING:
         app.logger.warning("EMAIL_POLLER: SENDER_LIST_FOR_POLLING est vide. Le poller ne peut pas filtrer efficacement par expéditeur.")
         return 0
     if not MAKE_SCENARIO_WEBHOOK_URL:
@@ -366,7 +370,8 @@ def check_new_emails_and_trigger_make_webhook(): # Rôle 1
 
     access_token = get_onedrive_access_token()
     if not access_token:
-        app.logger.error("EMAIL_POLLER: Impossible d'obtenir un token Graph API.")
+        # L'erreur exacte de l'obtention du token est déjà loggée par get_onedrive_access_token
+        app.logger.error("EMAIL_POLLER: Échec obtention token Graph API pour le polling.")
         return 0
 
     onedrive_processing_folder_id = ensure_onedrive_folder(access_token)
@@ -380,20 +385,16 @@ def check_new_emails_and_trigger_make_webhook(): # Rôle 1
     try:
         since_datetime_iso = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         
-        # MODIFIÉ: Construire la partie "from" de la requête Graph API pour plusieurs expéditeurs
         sender_filters_list = []
         for sender_email in SENDER_LIST_FOR_POLLING:
             sender_filters_list.append(f"from/emailAddress/address eq '{sender_email}'")
         sender_filter_string = " or ".join(sender_filters_list)
         
-        # Filtre complet
-        # S'assure qu'il y a bien un filtre expéditeur si la liste n'est pas vide (ce qui est déjà vérifié au début)
         filter_query = f"isRead eq false and ({sender_filter_string}) and receivedDateTime ge {since_datetime_iso}"
 
         messages_url = f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$filter={filter_query}&$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments&$top=50&$orderby=receivedDateTime desc"
         
         app.logger.info(f"EMAIL_POLLER: Appel Graph API Mail (filtré pour {len(SENDER_LIST_FOR_POLLING)} expéditeur(s) configuré(s)).")
-        # app.logger.debug(f"EMAIL_POLLER: URL Graph: {messages_url}") # Décommenter pour déboguer l'URL exacte si besoin
         headers_graph_mail = {'Authorization': 'Bearer ' + access_token, 'Prefer': 'outlook.body-content-type="text"'}
 
         response = requests.get(messages_url, headers=headers_graph_mail, timeout=30)
@@ -404,8 +405,6 @@ def check_new_emails_and_trigger_make_webhook(): # Rôle 1
         for email_data in reversed(emails):
             email_id_graph = email_data['id']
             email_subject = email_data.get('subject', 'N/A')
-            # email_sender_address = email_data.get('from', {}).get('emailAddress', {}).get('address', '').lower()
-            # Le filtre API devrait avoir fait le travail, pas besoin de re-vérifier le sender ici
             
             if email_id_graph in processed_trigger_ids:
                 app.logger.debug(f"EMAIL_POLLER: Webhook déjà déclenché pour email ID {email_id_graph}. Ignoré.")
@@ -442,7 +441,7 @@ def check_new_emails_and_trigger_make_webhook(): # Rôle 1
         if hasattr(e_graph, 'response') and e_graph.response is not None:
              app.logger.error(f"EMAIL_POLLER: Réponse API Graph Mail: {e_graph.response.status_code} - {e_graph.response.text}")
         return 0
-    except Exception as e_main:
+    except Exception as e_main: # Inclut ValueError de get_onedrive_access_token si les scopes sont mauvais
         app.logger.error(f"EMAIL_POLLER: Erreur inattendue: {e_main}", exc_info=True)
         return 0
 
@@ -453,18 +452,18 @@ def background_email_poller():
     MAX_CONSECUTIVE_ERRORS = 5
     while True:
         try:
-            # MODIFIÉ: Vérifier SENDER_LIST_FOR_POLLING
             if not all([ONEDRIVE_CLIENT_ID, ONEDRIVE_CLIENT_SECRET, ONEDRIVE_REFRESH_TOKEN, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
                 app.logger.warning("BACKGROUND_EMAIL_POLLER_THREAD: Configuration incomplète (OneDrive Auth, SENDER_LIST_FOR_POLLING vide, ou Webhook URL). Attente de 60s.")
                 time.sleep(60)
                 continue
             num_triggered = check_new_emails_and_trigger_make_webhook()
-            app.logger.info(f"BACKGROUND_EMAIL_POLLER_THREAD: Cycle de polling terminé. {num_triggered} webhook(s) déclenché(s).")
+            # Le log de num_triggered est déjà dans check_new_emails_and_trigger_make_webhook ou après son appel
+            app.logger.info(f"BACKGROUND_EMAIL_POLLER_THREAD: Cycle de polling terminé. {num_triggered} webhook(s) déclenché(s) dans ce cycle.")
             consecutive_errors = 0
             time.sleep(EMAIL_POLLING_INTERVAL_SECONDS)
-        except Exception as e:
+        except Exception as e: # Ce catch est pour les erreurs imprévues DANS la boucle elle-même, pas celles gérées dans check_new_emails...
             consecutive_errors += 1
-            app.logger.error(f"BACKGROUND_EMAIL_POLLER_THREAD: Erreur majeure dans la boucle de polling (erreur #{consecutive_errors}): {e}", exc_info=True)
+            app.logger.error(f"BACKGROUND_EMAIL_POLLER_THREAD: Erreur majeure non gérée dans la boucle de polling (erreur #{consecutive_errors}): {e}", exc_info=True)
             if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
                 app.logger.critical(f"BACKGROUND_EMAIL_POLLER_THREAD: Trop d'erreurs consécutives ({MAX_CONSECUTIVE_ERRORS}). Arrêt du thread de polling.")
                 break
@@ -541,11 +540,9 @@ def serve_trigger_page_main():
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-    # Condition pour démarrer le thread de fond que par le processus principal (pas par le reloader)
     start_background_threads = not debug_mode or os.environ.get("WERKZEUG_RUN_MAIN") == "true"
 
     if start_background_threads:
-        # MODIFIÉ: Vérifier SENDER_LIST_FOR_POLLING pour démarrer le thread
         if all([ONEDRIVE_CLIENT_ID, ONEDRIVE_CLIENT_SECRET, ONEDRIVE_REFRESH_TOKEN, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
             email_poll_thread = threading.Thread(target=background_email_poller, name="EmailPollerThread")
             email_poll_thread.daemon = True
