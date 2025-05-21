@@ -382,34 +382,51 @@ def check_new_emails_and_trigger_make_webhook():
         since_datetime_for_graph = (datetime.now(timezone.utc) - timedelta(days=1))
         since_datetime_iso_graph_compatible = since_datetime_for_graph.strftime('%Y-%m-%dT%H:%M:%SZ')
         
-        sender_filters_list = []
-        for sender_email in SENDER_LIST_FOR_POLLING:
-            sender_filters_list.append(f"from/emailAddress/address eq '{sender_email}'")
-        sender_filter_string = " or ".join(sender_filters_list)
+        # --- MODIFICATION DU FILTRE API GRAPH ---
+        # Filtre API Graph simplifié : uniquement sur isRead et receivedDateTime
+        filter_query = f"isRead eq false and receivedDateTime ge {since_datetime_iso_graph_compatible}"
         
-        filter_query = f"isRead eq false and ({sender_filter_string}) and receivedDateTime ge {since_datetime_iso_graph_compatible}"
-
-        messages_url = f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$filter={filter_query}&$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments&$top=50&$orderby=receivedDateTime desc"
+        # On demande plus d'emails ($top=100) car on va filtrer les expéditeurs en Python
+        messages_url = f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$filter={filter_query}&$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments&$top=100&$orderby=receivedDateTime desc" # $top augmenté
         
-        app.logger.info(f"EMAIL_POLLER: Appel Graph API Mail (filtré pour {len(SENDER_LIST_FOR_POLLING)} expéditeur(s) configuré(s)).")
+        app.logger.info(f"EMAIL_POLLER: Appel Graph API Mail (filtre simplifié sur date/isRead).")
+        # app.logger.debug(f"EMAIL_POLLER: URL Graph: {messages_url}") # Décommenter pour déboguer l'URL exacte si besoin
         headers_graph_mail = {'Authorization': 'Bearer ' + access_token, 'Prefer': 'outlook.body-content-type="text"'}
 
         response = requests.get(messages_url, headers=headers_graph_mail, timeout=30)
         response.raise_for_status()
-        emails = response.json().get('value', [])
-        app.logger.info(f"EMAIL_POLLER: {len(emails)} email(s) potentiellement pertinents trouvés après filtre API.")
+        emails_from_graph = response.json().get('value', []) # Renommé pour clarté
+        app.logger.info(f"EMAIL_POLLER: {len(emails_from_graph)} email(s) non lu(s) récents récupérés (avant filtre expéditeur Python).")
 
-        for email_data in reversed(emails):
+        # --- FILTRAGE DES EXPÉDITEURS EN PYTHON ---
+        relevant_emails = []
+        if SENDER_LIST_FOR_POLLING: # S'assurer que la liste n'est pas vide avant de filtrer
+            for email_data in emails_from_graph:
+                email_sender_info = email_data.get('from', {}).get('emailAddress', {})
+                email_sender_address = email_sender_info.get('address', '').lower()
+                if email_sender_address in SENDER_LIST_FOR_POLLING:
+                    relevant_emails.append(email_data)
+                else:
+                    app.logger.debug(f"EMAIL_POLLER: Email ID {email_data['id']} de {email_sender_address} ignoré (ne fait pas partie de SENDER_LIST_FOR_POLLING).")
+        else: # Si la liste des senders est vide, on ne peut pas filtrer, donc on ne traite rien
+            app.logger.warning("EMAIL_POLLER: SENDER_LIST_FOR_POLLING est vide, aucun email ne sera traité comme pertinent.")
+            relevant_emails = []
+        
+        app.logger.info(f"EMAIL_POLLER: {len(relevant_emails)} email(s) pertinents trouvés après filtrage par expéditeur en Python.")
+
+        for email_data in reversed(relevant_emails): # Traiter les plus anciens pertinents d'abord
             email_id_graph = email_data['id']
             email_subject = email_data.get('subject', 'N/A')
-            
+            email_sender_address = email_data.get('from', {}).get('emailAddress', {}).get('address', '').lower() # redondant mais OK
+
             if email_id_graph in processed_trigger_ids:
                 app.logger.debug(f"EMAIL_POLLER: Webhook déjà déclenché pour email ID {email_id_graph}. Ignoré.")
                 continue
-
+            
             body_preview = email_data.get('bodyPreview', '').lower()
-            if "dropbox.com" not in body_preview and not email_data.get('hasAttachments'):
-                 app.logger.info(f"EMAIL_POLLER: Email ID {email_id_graph} (Sujet: '{email_subject[:30]}...') ne semble pas contenir 'dropbox.com' dans l'aperçu et n'a pas de pièce jointe. Ignoré pour le webhook.")
+            # Vérification plus souple: "dropbox.com/scl/" ou "dropbox.com/s/"
+            if not ("dropbox.com/scl/" in body_preview or "dropbox.com/s/" in body_preview) and not email_data.get('hasAttachments'):
+                 app.logger.info(f"EMAIL_POLLER: Email ID {email_id_graph} (Sujet: '{email_subject[:30]}...') ne semble pas contenir de lien Dropbox pertinent dans l'aperçu. Ignoré pour le webhook.")
                  continue
 
             app.logger.info(f"EMAIL_POLLER: Email pertinent trouvé (ID: {email_id_graph}, Sujet: '{email_subject[:50]}...'). Déclenchement du webhook Make.")
@@ -417,7 +434,7 @@ def check_new_emails_and_trigger_make_webhook():
                 "microsoft_graph_email_id": email_id_graph,
                 "subject": email_subject,
                 "receivedDateTime": email_data.get("receivedDateTime"),
-                "sender_address": email_data.get('from', {}).get('emailAddress', {}).get('address', 'N/A'),
+                "sender_address": email_sender_address,
                 "bodyPreview": body_preview
             }
             try:
