@@ -1,3 +1,5 @@
+--- START OF FILE app_render.py ---
+
 from flask import Flask, jsonify, request, send_from_directory, current_app
 import os
 import time
@@ -122,26 +124,28 @@ def ensure_onedrive_folder(access_token, subfolder_name=None, parent_folder_id=N
         return None
 
 # --- Fonctions pour Transfert Dropbox -> OneDrive (Rôle 2) ---
-def _try_cancel_upload_session(upload_session_url, filename_onedrive_clean, reason="erreur"):
+# MODIFIED: Added job_id parameter for logging
+def _try_cancel_upload_session(job_id, upload_session_url, filename_onedrive_clean, reason="erreur"):
     if not upload_session_url: return
-    app.logger.info(f"UPLOAD_ONEDRIVE: Tentative d'annulation session upload ({reason}) pour {filename_onedrive_clean}: {upload_session_url[:70]}...")
+    app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Tentative d'annulation session upload ({reason}) pour {filename_onedrive_clean}: {upload_session_url[:70]}...")
     token_for_delete = get_onedrive_access_token()
     if token_for_delete:
         try:
             requests.delete(upload_session_url, headers={'Authorization': 'Bearer ' + token_for_delete}, timeout=10)
-            app.logger.info(f"UPLOAD_ONEDRIVE: Session upload pour {filename_onedrive_clean} annulée ou déjà expirée.")
+            app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Session upload pour {filename_onedrive_clean} annulée ou déjà expirée.")
         except requests.exceptions.RequestException as e_del:
-            app.logger.warning(f"UPLOAD_ONEDRIVE: Échec annulation session upload pour {filename_onedrive_clean}: {e_del}")
+            app.logger.warning(f"UPLOAD_ONEDRIVE [{job_id}]: Échec annulation session upload pour {filename_onedrive_clean}: {e_del}")
     else:
-        app.logger.warning(f"UPLOAD_ONEDRIVE: Impossible d'obtenir un token pour annuler la session d'upload de {filename_onedrive_clean}.")
+        app.logger.warning(f"UPLOAD_ONEDRIVE [{job_id}]: Impossible d'obtenir un token pour annuler la session d'upload de {filename_onedrive_clean}.")
 
-def upload_to_onedrive(filepath, filename_onedrive, access_token, target_folder_id):
-    if not access_token or not target_folder_id: app.logger.error("UPLOAD_ONEDRIVE: Token/ID dossier manquant."); return False
+# MODIFIED: Added job_id parameter for logging
+def upload_to_onedrive(job_id, filepath, filename_onedrive, access_token, target_folder_id):
+    if not access_token or not target_folder_id: app.logger.error(f"UPLOAD_ONEDRIVE [{job_id}]: Token/ID dossier manquant."); return False
     filename_onedrive_clean = sanitize_filename(filename_onedrive)
     upload_url_simple_put = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{filename_onedrive_clean}:/content?@microsoft.graph.conflictBehavior=rename"
     headers_put = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'application/octet-stream'}
     file_size = Path(filepath).stat().st_size
-    app.logger.info(f"UPLOAD_ONEDRIVE: Upload de '{Path(filepath).name}' ({file_size}b) vers OneDrive '{filename_onedrive_clean}'")
+    app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Upload de '{Path(filepath).name}' ({file_size}b) vers OneDrive '{filename_onedrive_clean}'")
     MAX_CHUNK_RETRIES = 3; RETRY_DELAY_SECONDS = 5; final_response = None
     upload_session_url = None
     try:
@@ -155,7 +159,7 @@ def upload_to_onedrive(filepath, filename_onedrive, access_token, target_folder_
             session_headers = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'application/json'}
             session_response = requests.post(create_session_url, headers=session_headers, json=session_payload, timeout=60)
             session_response.raise_for_status(); upload_session_url = session_response.json()['uploadUrl']
-            app.logger.info(f"UPLOAD_ONEDRIVE: Session upload OneDrive créée pour {filename_onedrive_clean}: {upload_session_url[:70]}...")
+            app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Session upload OneDrive créée pour {filename_onedrive_clean}: {upload_session_url[:70]}...")
             chunk_size = 10 * 1024 * 1024; chunks_uploaded_count = 0
             with open(filepath, 'rb') as f_data:
                 while True:
@@ -167,52 +171,53 @@ def upload_to_onedrive(filepath, filename_onedrive, access_token, target_folder_
                     current_chunk_retries = 0
                     while current_chunk_retries < MAX_CHUNK_RETRIES:
                         try:
-                            app.logger.info(f"UPLOAD_ONEDRIVE: Upload chunk (Try {current_chunk_retries + 1}/{MAX_CHUNK_RETRIES}): {filename_onedrive_clean} bytes {start_byte}-{end_byte}/{file_size} ({percentage_complete:.2f}%)")
+                            app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Upload chunk (Try {current_chunk_retries + 1}/{MAX_CHUNK_RETRIES}): {filename_onedrive_clean} bytes {start_byte}-{end_byte}/{file_size} ({percentage_complete:.2f}%)")
                             response_chunk = requests.put(upload_session_url, headers=chunk_headers, data=chunk, timeout=180)
                             response_chunk.raise_for_status(); final_response = response_chunk
-                            app.logger.info(f"UPLOAD_ONEDRIVE: Chunk {filename_onedrive_clean} bytes {start_byte}-{end_byte} ({percentage_complete:.2f}%) OK. Status: {response_chunk.status_code}")
+                            app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Chunk {filename_onedrive_clean} bytes {start_byte}-{end_byte} ({percentage_complete:.2f}%) OK. Status: {response_chunk.status_code}")
                             break
                         except requests.exceptions.RequestException as e_chunk:
-                            current_chunk_retries += 1; app.logger.warning(f"UPLOAD_ONEDRIVE: Erreur upload chunk {filename_onedrive_clean} (Try {current_chunk_retries}/{MAX_CHUNK_RETRIES}): {e_chunk}")
+                            current_chunk_retries += 1; app.logger.warning(f"UPLOAD_ONEDRIVE [{job_id}]: Erreur upload chunk {filename_onedrive_clean} (Try {current_chunk_retries}/{MAX_CHUNK_RETRIES}): {e_chunk}")
                             status_code_chunk = None
                             if hasattr(e_chunk, 'response') and e_chunk.response is not None:
                                 status_code_chunk = e_chunk.response.status_code
-                                app.logger.warning(f"UPLOAD_ONEDRIVE: Réponse API chunk: {status_code_chunk} - {e_chunk.response.text[:200]}")
+                                app.logger.warning(f"UPLOAD_ONEDRIVE [{job_id}]: Réponse API chunk: {status_code_chunk} - {e_chunk.response.text[:200]}")
                             is_retryable_status = status_code_chunk in [429, 500, 502, 503, 504]
                             is_network_error = status_code_chunk is None
                             if (is_retryable_status or is_network_error) and current_chunk_retries < MAX_CHUNK_RETRIES:
-                                delay = RETRY_DELAY_SECONDS * (2 ** (current_chunk_retries -1)); app.logger.info(f"UPLOAD_ONEDRIVE: Attente {delay}s avant retry chunk..."); time.sleep(delay)
+                                delay = RETRY_DELAY_SECONDS * (2 ** (current_chunk_retries -1)); app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Attente {delay}s avant retry chunk..."); time.sleep(delay)
                             else:
-                                app.logger.error(f"UPLOAD_ONEDRIVE: Échec final chunk {filename_onedrive_clean} après {current_chunk_retries} tentatives."); raise e_chunk
+                                app.logger.error(f"UPLOAD_ONEDRIVE [{job_id}]: Échec final chunk {filename_onedrive_clean} après {current_chunk_retries} tentatives."); raise e_chunk
                     else:
-                        app.logger.error(f"UPLOAD_ONEDRIVE: Max retries ({MAX_CHUNK_RETRIES}) atteint pour chunk {filename_onedrive_clean}. Abandon upload."); return False
+                        app.logger.error(f"UPLOAD_ONEDRIVE [{job_id}]: Max retries ({MAX_CHUNK_RETRIES}) atteint pour chunk {filename_onedrive_clean}. Abandon upload."); return False
                     chunks_uploaded_count += 1
-            app.logger.info(f"UPLOAD_ONEDRIVE: Tous les chunks de '{filename_onedrive_clean}' traités pour upload.")
+            app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Tous les chunks de '{filename_onedrive_clean}' traités pour upload.")
         if final_response and final_response.status_code < 300:
-            app.logger.info(f"UPLOAD_ONEDRIVE: Fichier '{filename_onedrive_clean}' uploadé avec succès. Statut final: {final_response.status_code}")
+            app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Fichier '{filename_onedrive_clean}' uploadé avec succès. Statut final: {final_response.status_code}")
             return True
         else:
             status_to_log = final_response.status_code if final_response else 'N/A'
-            app.logger.error(f"UPLOAD_ONEDRIVE: Erreur après tentatives d'upload ({filename_onedrive_clean}). Statut final: {status_to_log}")
+            app.logger.error(f"UPLOAD_ONEDRIVE [{job_id}]: Erreur après tentatives d'upload ({filename_onedrive_clean}). Statut final: {status_to_log}")
             return False
     except requests.exceptions.RequestException as e:
-        app.logger.error(f"UPLOAD_ONEDRIVE: Erreur API Graph upload ({filename_onedrive_clean}): {e}")
-        if hasattr(e, 'response') and e.response is not None: app.logger.error(f"UPLOAD_ONEDRIVE: Réponse API: {e.response.status_code} - {e.response.text}")
-        if file_size >= 4 * 1024 * 1024: _try_cancel_upload_session(upload_session_url, filename_onedrive_clean, "erreur RequestException")
+        app.logger.error(f"UPLOAD_ONEDRIVE [{job_id}]: Erreur API Graph upload ({filename_onedrive_clean}): {e}")
+        if hasattr(e, 'response') and e.response is not None: app.logger.error(f"UPLOAD_ONEDRIVE [{job_id}]: Réponse API: {e.response.status_code} - {e.response.text}")
+        if file_size >= 4 * 1024 * 1024: _try_cancel_upload_session(job_id, upload_session_url, filename_onedrive_clean, "erreur RequestException")
         return False
     except Exception as ex:
-        app.logger.error(f"UPLOAD_ONEDRIVE: Erreur générale non gérée pendant l'upload ({filename_onedrive_clean}): {ex}", exc_info=True)
-        if file_size >= 4 * 1024 * 1024: _try_cancel_upload_session(upload_session_url, filename_onedrive_clean, "erreur générale Exception")
+        app.logger.error(f"UPLOAD_ONEDRIVE [{job_id}]: Erreur générale non gérée pendant l'upload ({filename_onedrive_clean}): {ex}", exc_info=True)
+        if file_size >= 4 * 1024 * 1024: _try_cancel_upload_session(job_id, upload_session_url, filename_onedrive_clean, "erreur générale Exception")
         return False
 
-def download_file_from_dropbox_and_upload_to_onedrive(dropbox_url, access_token_graph, target_folder_id_onedrive, subject_for_default_filename="FichierDropbox"):
-    app.logger.info(f"DROPBOX_WORKER: Traitement URL Dropbox: {dropbox_url}")
+# MODIFIED: Added job_id parameter for logging
+def download_file_from_dropbox_and_upload_to_onedrive(job_id, dropbox_url, access_token_graph, target_folder_id_onedrive, subject_for_default_filename="FichierDropbox"):
+    app.logger.info(f"DROPBOX_WORKER [{job_id}]: Traitement URL Dropbox: {dropbox_url}")
     unescaped_url = html_parser.unescape(dropbox_url)
     modified_url = unescaped_url.replace("dl=0", "dl=1")
     modified_url = re.sub(r'dl=[^&?#]+', 'dl=1', modified_url)
     if '?dl=1' not in modified_url and '&dl=1' not in modified_url:
         modified_url += ("&" if "?" in modified_url else "?") + "dl=1"
-    app.logger.info(f"DROPBOX_WORKER: URL Dropbox finale pour téléchargement: {modified_url}")
+    app.logger.info(f"DROPBOX_WORKER [{job_id}]: URL Dropbox finale pour téléchargement: {modified_url}")
     temp_filepath = None; ts = time.strftime('%Y%m%d-%H%M%S')
     default_filename_base = sanitize_filename(subject_for_default_filename, 180)
     default_filename_with_ts = f"{default_filename_base}_{ts}.telechargement"
@@ -222,14 +227,14 @@ def download_file_from_dropbox_and_upload_to_onedrive(dropbox_url, access_token_
         response_db.raise_for_status()
         total_length_dropbox_str = response_db.headers.get('content-length')
         total_length_dropbox = int(total_length_dropbox_str) if total_length_dropbox_str and total_length_dropbox_str.isdigit() else None
-        if total_length_dropbox: app.logger.info(f"DROPBOX_WORKER: Taille fichier Dropbox: {total_length_dropbox} bytes.")
-        else: app.logger.warning("DROPBOX_WORKER: Content-Length Dropbox non trouvé/invalide. Progression DL non affichable.")
+        if total_length_dropbox: app.logger.info(f"DROPBOX_WORKER [{job_id}]: Taille fichier Dropbox: {total_length_dropbox} bytes.")
+        else: app.logger.warning(f"DROPBOX_WORKER [{job_id}]: Content-Length Dropbox non trouvé/invalide. Progression DL non affichable.")
         filename_for_onedrive = default_filename_with_ts
         content_disp = response_db.headers.get('content-disposition')
         if content_disp:
-            app.logger.debug(f"DROPBOX_WORKER: Content-Disposition Dropbox: '{content_disp}'")
+            app.logger.debug(f"DROPBOX_WORKER [{job_id}]: Content-Disposition Dropbox: '{content_disp}'")
             m_utf8 = re.search(r"filename\*=UTF-8''([^;\n\r]+)", content_disp, flags=re.IGNORECASE)
-            if m_utf8: filename_from_cd = requests.utils.unquote(m_utf8.group(1)); app.logger.info(f"DROPBOX_WORKER: Nom de fichier (filename* UTF-8) extrait: '{filename_from_cd}'")
+            if m_utf8: filename_from_cd = requests.utils.unquote(m_utf8.group(1)); app.logger.info(f"DROPBOX_WORKER [{job_id}]: Nom de fichier (filename* UTF-8) extrait: '{filename_from_cd}'")
             else:
                 m_simple = re.search(r'filename="([^"]+)"', content_disp, flags=re.IGNORECASE)
                 if m_simple:
@@ -237,18 +242,18 @@ def download_file_from_dropbox_and_upload_to_onedrive(dropbox_url, access_token_
                     if '%' in filename_from_cd:
                         try: filename_from_cd = requests.utils.unquote(filename_from_cd)
                         except Exception: pass
-                    app.logger.info(f"DROPBOX_WORKER: Nom de fichier (filename=\"\") extrait: '{filename_from_cd}'")
-                else: app.logger.warning(f"DROPBOX_WORKER: Impossible de parser 'filename' dans Content-Disposition."); filename_from_cd = None
+                    app.logger.info(f"DROPBOX_WORKER [{job_id}]: Nom de fichier (filename=\"\") extrait: '{filename_from_cd}'")
+                else: app.logger.warning(f"DROPBOX_WORKER [{job_id}]: Impossible de parser 'filename' dans Content-Disposition."); filename_from_cd = None
             if filename_from_cd:
                 filename_for_onedrive = sanitize_filename(filename_from_cd)
                 if "dropbox.com/scl/fo/" in unescaped_url and not any(filename_for_onedrive.lower().endswith(ext) for ext in ['.zip', '.rar', '.7z']):
                     filename_for_onedrive = os.path.splitext(filename_for_onedrive)[0] + ".zip"
-                    app.logger.info(f"DROPBOX_WORKER: Lien dossier Dropbox & pas d'ext d'archive -> .zip. Nom final: '{filename_for_onedrive}'")
-        else: app.logger.warning(f"DROPBOX_WORKER: Content-Disposition Dropbox non trouvé. Utilisation nom par défaut: '{filename_for_onedrive}'")
+                    app.logger.info(f"DROPBOX_WORKER [{job_id}]: Lien dossier Dropbox & pas d'ext d'archive -> .zip. Nom final: '{filename_for_onedrive}'")
+        else: app.logger.warning(f"DROPBOX_WORKER [{job_id}]: Content-Disposition Dropbox non trouvé. Utilisation nom par défaut: '{filename_for_onedrive}'")
         if not filename_for_onedrive: filename_for_onedrive = f"fichier_dropbox_{ts}.bin"
         filename_for_onedrive = sanitize_filename(filename_for_onedrive)
         temp_filepath = DOWNLOAD_TEMP_DIR_RENDER / filename_for_onedrive
-        app.logger.info(f"DROPBOX_WORKER: Téléchargement Dropbox vers: '{temp_filepath}'")
+        app.logger.info(f"DROPBOX_WORKER [{job_id}]: Téléchargement Dropbox vers: '{temp_filepath}'")
         downloaded_length = 0; last_logged_percentage_dl = -10
         with open(temp_filepath, 'wb') as f:
             for chunk_db in response_db.iter_content(chunk_size=1024*1024*2):
@@ -257,46 +262,48 @@ def download_file_from_dropbox_and_upload_to_onedrive(dropbox_url, access_token_
                     if total_length_dropbox and total_length_dropbox > 0:
                         percentage_dl = int((downloaded_length / total_length_dropbox) * 100)
                         if percentage_dl >= last_logged_percentage_dl + 5 or last_logged_percentage_dl < 0 :
-                            app.logger.info(f"DROPBOX_WORKER: DL Dropbox {filename_for_onedrive} en cours... {downloaded_length}/{total_length_dropbox}b ({percentage_dl}%)")
+                            app.logger.info(f"DROPBOX_WORKER [{job_id}]: DL Dropbox {filename_for_onedrive} en cours... {downloaded_length}/{total_length_dropbox}b ({percentage_dl}%)")
                             last_logged_percentage_dl = percentage_dl
         if total_length_dropbox and downloaded_length < total_length_dropbox:
-            app.logger.warning(f"DROPBOX_WORKER: Taille DL ({downloaded_length}) < attendue ({total_length_dropbox}) pour {filename_for_onedrive}.")
-        app.logger.info(f"DROPBOX_WORKER: Fichier Dropbox '{filename_for_onedrive}' téléchargé ({downloaded_length}b).")
-        if upload_to_onedrive(temp_filepath, filename_for_onedrive, access_token_graph, target_folder_id_onedrive):
-            app.logger.info(f"DROPBOX_WORKER: Upload OneDrive de '{filename_for_onedrive}' réussi.")
+            app.logger.warning(f"DROPBOX_WORKER [{job_id}]: Taille DL ({downloaded_length}) < attendue ({total_length_dropbox}) pour {filename_for_onedrive}.")
+        app.logger.info(f"DROPBOX_WORKER [{job_id}]: Fichier Dropbox '{filename_for_onedrive}' téléchargé ({downloaded_length}b).")
+        if upload_to_onedrive(job_id, temp_filepath, filename_for_onedrive, access_token_graph, target_folder_id_onedrive): # Pass job_id
+            app.logger.info(f"DROPBOX_WORKER [{job_id}]: Upload OneDrive de '{filename_for_onedrive}' réussi.")
             return True
-        else: app.logger.error(f"DROPBOX_WORKER: Échec upload OneDrive de '{filename_for_onedrive}'."); return False
-    except requests.exceptions.Timeout: app.logger.error(f"DROPBOX_WORKER: Timeout Dropbox pour {modified_url}"); return False
+        else: app.logger.error(f"DROPBOX_WORKER [{job_id}]: Échec upload OneDrive de '{filename_for_onedrive}'."); return False
+    except requests.exceptions.Timeout: app.logger.error(f"DROPBOX_WORKER [{job_id}]: Timeout Dropbox pour {modified_url}"); return False
     except requests.exceptions.RequestException as e:
-        app.logger.error(f"DROPBOX_WORKER: Erreur requête Dropbox {modified_url}: {e}")
-        if hasattr(e, 'response') and e.response is not None: app.logger.error(f"DROPBOX_WORKER: Réponse Dropbox: {e.response.status_code} - {e.response.text[:500]}...")
+        app.logger.error(f"DROPBOX_WORKER [{job_id}]: Erreur requête Dropbox {modified_url}: {e}")
+        if hasattr(e, 'response') and e.response is not None: app.logger.error(f"DROPBOX_WORKER [{job_id}]: Réponse Dropbox: {e.response.status_code} - {e.response.text[:500]}...")
         return False
-    except Exception as e_main: app.logger.error(f"DROPBOX_WORKER: Erreur générale DL/UL {dropbox_url}: {e_main}", exc_info=True); return False
+    except Exception as e_main: app.logger.error(f"DROPBOX_WORKER [{job_id}]: Erreur générale DL/UL {dropbox_url}: {e_main}", exc_info=True); return False
     finally:
         if temp_filepath and temp_filepath.exists():
-            try: temp_filepath.unlink(); app.logger.info(f"DROPBOX_WORKER: Fichier temp '{temp_filepath.name}' supprimé.")
-            except OSError as e_unlink: app.logger.error(f"DROPBOX_WORKER: Erreur suppression temp '{temp_filepath.name}': {e_unlink}")
+            try: temp_filepath.unlink(); app.logger.info(f"DROPBOX_WORKER [{job_id}]: Fichier temp '{temp_filepath.name}' supprimé.")
+            except OSError as e_unlink: app.logger.error(f"DROPBOX_WORKER [{job_id}]: Erreur suppression temp '{temp_filepath.name}': {e_unlink}")
 
-def get_processed_urls_from_onedrive(access_token, target_folder_id):
+# MODIFIED: Added job_id parameter for logging in calls to get/add processed urls
+def get_processed_urls_from_onedrive(job_id, access_token, target_folder_id):
     if not access_token or not target_folder_id: return set()
     download_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_URLS_ONEDRIVE_FILENAME}:/content"
     headers = {'Authorization': 'Bearer ' + access_token}; processed_urls = set()
-    app.logger.debug(f"DROPBOX_WORKER_DEDUP: Lecture de {PROCESSED_URLS_ONEDRIVE_FILENAME}")
+    app.logger.debug(f"DROPBOX_WORKER_DEDUP [{job_id}]: Lecture de {PROCESSED_URLS_ONEDRIVE_FILENAME}")
     try:
         response = requests.get(download_url, headers=headers, timeout=30)
         if response.status_code == 200:
             lines = response.text.splitlines()
             for line in lines:
                 if line.strip(): processed_urls.add(line.strip())
-            app.logger.info(f"DROPBOX_WORKER_DEDUP: Lu {len(processed_urls)} URLs depuis {PROCESSED_URLS_ONEDRIVE_FILENAME}.")
-        elif response.status_code == 404: app.logger.info(f"DROPBOX_WORKER_DEDUP: {PROCESSED_URLS_ONEDRIVE_FILENAME} non trouvé.")
+            app.logger.info(f"DROPBOX_WORKER_DEDUP [{job_id}]: Lu {len(processed_urls)} URLs depuis {PROCESSED_URLS_ONEDRIVE_FILENAME}.")
+        elif response.status_code == 404: app.logger.info(f"DROPBOX_WORKER_DEDUP [{job_id}]: {PROCESSED_URLS_ONEDRIVE_FILENAME} non trouvé.")
         else: response.raise_for_status()
-    except requests.exceptions.RequestException as e: app.logger.error(f"DROPBOX_WORKER_DEDUP: Erreur DL {PROCESSED_URLS_ONEDRIVE_FILENAME}: {e}")
+    except requests.exceptions.RequestException as e: app.logger.error(f"DROPBOX_WORKER_DEDUP [{job_id}]: Erreur DL {PROCESSED_URLS_ONEDRIVE_FILENAME}: {e}")
     return processed_urls
 
-def add_processed_url_to_onedrive(access_token, target_folder_id, dropbox_url_processed):
+# MODIFIED: Added job_id parameter for logging
+def add_processed_url_to_onedrive(job_id, access_token, target_folder_id, dropbox_url_processed):
     if not access_token or not target_folder_id or not dropbox_url_processed: return False
-    current_urls = get_processed_urls_from_onedrive(access_token, target_folder_id)
+    current_urls = get_processed_urls_from_onedrive(job_id, access_token, target_folder_id) # Pass job_id
     current_urls.add(dropbox_url_processed)
     content_to_upload = "\n".join(sorted(list(current_urls)))
     upload_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_URLS_ONEDRIVE_FILENAME}:/content?@microsoft.graph.conflictBehavior=replace"
@@ -304,53 +311,65 @@ def add_processed_url_to_onedrive(access_token, target_folder_id, dropbox_url_pr
     try:
         response = requests.put(upload_url, headers=headers, data=content_to_upload.encode('utf-8'), timeout=60)
         response.raise_for_status()
-        app.logger.info(f"DROPBOX_WORKER_DEDUP: {PROCESSED_URLS_ONEDRIVE_FILENAME} mis à jour ({len(current_urls)} URLs).")
+        app.logger.info(f"DROPBOX_WORKER_DEDUP [{job_id}]: {PROCESSED_URLS_ONEDRIVE_FILENAME} mis à jour ({len(current_urls)} URLs).")
         return True
-    except requests.exceptions.RequestException as e: app.logger.error(f"DROPBOX_WORKER_DEDUP: Erreur UL {PROCESSED_URLS_ONEDRIVE_FILENAME}: {e}"); return False
+    except requests.exceptions.RequestException as e: app.logger.error(f"DROPBOX_WORKER_DEDUP [{job_id}]: Erreur UL {PROCESSED_URLS_ONEDRIVE_FILENAME}: {e}"); return False
 
-# MODIFIED SECTION - process_dropbox_link_worker
+# MODIFIED: Incorporates job_id logic
 def process_dropbox_link_worker(dropbox_url, subject_for_default_filename, email_id_for_logging):
-    # MODIFIÉ: Ajout du log de démarrage effectif et validation URL
-    app.logger.info(f"DROPBOX_WORKER_THREAD: DÉMARRAGE EFFECTIF pour URL: '{dropbox_url}', Sujet Fallback: '{subject_for_default_filename}', EmailID Log: '{email_id_for_logging}'")
+    # Create a job_id for this specific worker instance
+    # Use a portion of email_id if available, otherwise part of the URL (sanitized for logging)
+    if email_id_for_logging and email_id_for_logging != 'N/A':
+        # Take a safe portion of email_id, e.g., last 12 chars before possible special chars
+        job_id_base = re.sub(r'[^a-zA-Z0-9]', '', email_id_for_logging)[-12:] if email_id_for_logging else "NO_EMAIL_ID"
+        if not job_id_base: # if email_id was all special chars or too short
+             job_id_base = f"URL_{time.time_ns()}"[-12:] # Fallback to timestamp based
+    else:
+        # Use a sanitized part of the URL or a timestamp if URL is too short/problematic
+        sanitized_url_part = re.sub(r'[^a-zA-Z0-9]', '', dropbox_url)[-20:]
+        job_id_base = sanitized_url_part if len(sanitized_url_part) > 5 else f"URL_{time.time_ns()}"[-12:]
+    job_id = f"J{job_id_base}" # Prefix with J for Job
+
+    app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: DÉMARRAGE EFFECTIF pour URL: '{dropbox_url}', Sujet Fallback: '{subject_for_default_filename}', EmailID Log: '{email_id_for_logging}'")
 
     if not dropbox_url or not isinstance(dropbox_url, str) or not dropbox_url.lower().startswith("https://www.dropbox.com/"):
-        app.logger.error(f"DROPBOX_WORKER_THREAD: URL Dropbox reçue invalide ou non-Dropbox: '{dropbox_url}'. Arrêt du worker.")
+        app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: URL Dropbox reçue invalide ou non-Dropbox: '{dropbox_url}'. Arrêt du worker.")
         return
 
     access_token_graph = get_onedrive_access_token()
-    if not access_token_graph: app.logger.error(f"DROPBOX_WORKER_THREAD: Échec token Graph pour '{dropbox_url}'. Arrêt."); return
+    if not access_token_graph: app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: Échec token Graph pour '{dropbox_url}'. Arrêt."); return
     
-    onedrive_target_folder_id = ensure_onedrive_folder(access_token_graph)
-    if not onedrive_target_folder_id: app.logger.error(f"DROPBOX_WORKER_THREAD: Échec dossier OneDrive pour '{dropbox_url}'. Arrêt."); return
+    onedrive_target_folder_id = ensure_onedrive_folder(access_token_graph) # No job_id needed here, it's a global utility
+    if not onedrive_target_folder_id: app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: Échec dossier OneDrive pour '{dropbox_url}'. Arrêt."); return
     
-    processed_urls = get_processed_urls_from_onedrive(access_token_graph, onedrive_target_folder_id)
-    # Utiliser unescape pour comparer avec ce qui est stocké, car les URLs stockées pourraient être déjà unescaped.
-    # Cependant, l'URL originale telle que reçue (dropbox_url) est ce qu'on veut vérifier et ajouter.
+    processed_urls = get_processed_urls_from_onedrive(job_id, access_token_graph, onedrive_target_folder_id) # Pass job_id
     unescaped_received_url = html_parser.unescape(dropbox_url)
 
     if dropbox_url in processed_urls or unescaped_received_url in processed_urls:
-        app.logger.info(f"DROPBOX_WORKER_THREAD: URL '{dropbox_url}' (ou sa forme unescaped) déjà traitée. Ignorée.")
+        app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: URL '{dropbox_url}' (ou sa forme unescaped) déjà traitée. Ignorée.")
         return
         
-    app.logger.info(f"DROPBOX_WORKER_THREAD: URL '{dropbox_url}' nouvelle. Lancement transfert.")
+    app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: URL '{dropbox_url}' nouvelle. Lancement transfert.")
     success_transfer = download_file_from_dropbox_and_upload_to_onedrive(
-        dropbox_url, access_token_graph, onedrive_target_folder_id, subject_for_default_filename
+        job_id, dropbox_url, access_token_graph, onedrive_target_folder_id, subject_for_default_filename # Pass job_id
     )
     if success_transfer:
-        app.logger.info(f"DROPBOX_WORKER_THREAD: Transfert '{dropbox_url}' réussi. MàJ liste URLs traitées.")
-        # Ajouter l'URL originale (potentiellement escapée) au fichier des URLs traitées
-        if not add_processed_url_to_onedrive(access_token_graph, onedrive_target_folder_id, dropbox_url):
-            app.logger.error(f"DROPBOX_WORKER_THREAD: CRITIQUE - Fichier '{dropbox_url}' transféré mais échec màj {PROCESSED_URLS_ONEDRIVE_FILENAME}.")
-    else: app.logger.error(f"DROPBOX_WORKER_THREAD: Échec transfert '{dropbox_url}'.")
-    app.logger.info(f"DROPBOX_WORKER_THREAD: Fin tâche pour '{dropbox_url}'")
-# END OF MODIFIED SECTION
+        app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: Transfert '{dropbox_url}' réussi. MàJ liste URLs traitées.")
+        if not add_processed_url_to_onedrive(job_id, access_token_graph, onedrive_target_folder_id, dropbox_url): # Pass job_id
+            app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: CRITIQUE - Fichier '{dropbox_url}' transféré mais échec màj {PROCESSED_URLS_ONEDRIVE_FILENAME}.")
+    else: app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: Échec transfert '{dropbox_url}'.")
+    app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: Fin tâche pour '{dropbox_url}'")
+
+# --- Fonctions pour Polling Email & Déclenchement Webhook (Rôle 1) ---
+# (get_processed_webhook_trigger_ids, add_processed_webhook_trigger_id, check_new_emails_and_trigger_make_webhook, background_email_poller remain unchanged)
+# ... (Le reste du script, y compris le poller d'email et les endpoints Flask, reste identique à la version précédente) ...
 
 # --- Fonctions pour Polling Email & Déclenchement Webhook (Rôle 1) ---
 def get_processed_webhook_trigger_ids(access_token, target_folder_id):
     if not access_token or not target_folder_id: return set()
     download_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME}:/content"
     headers = {'Authorization': 'Bearer ' + access_token}; ids = set()
-    app.logger.debug(f"EMAIL_POLLER_DEDUP: Lecture de {PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME}")
+    app.logger.debug(f"EMAIL_POLLER_DEDUP: Lecture de {PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME}") # No job_id context here
     try:
         response = requests.get(download_url, headers=headers, timeout=30)
         if response.status_code == 200:
@@ -365,7 +384,7 @@ def get_processed_webhook_trigger_ids(access_token, target_folder_id):
 
 def add_processed_webhook_trigger_id(access_token, target_folder_id, email_id_processed):
     if not access_token or not target_folder_id or not email_id_processed: return False
-    current_ids = get_processed_webhook_trigger_ids(access_token, target_folder_id)
+    current_ids = get_processed_webhook_trigger_ids(access_token, target_folder_id) # No job_id context here
     current_ids.add(email_id_processed)
     content_to_upload = "\n".join(sorted(list(current_ids)))
     upload_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME}:/content?@microsoft.graph.conflictBehavior=replace"
@@ -373,12 +392,12 @@ def add_processed_webhook_trigger_id(access_token, target_folder_id, email_id_pr
     try:
         response = requests.put(upload_url, headers=headers, data=content_to_upload.encode('utf-8'), timeout=60)
         response.raise_for_status()
-        app.logger.info(f"EMAIL_POLLER_DEDUP: {PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME} mis à jour ({len(current_ids)} IDs).")
+        app.logger.info(f"EMAIL_POLLER_DEDUP: {PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME} mis à jour ({len(current_ids)} IDs).") # No job_id context
         return True
     except requests.exceptions.RequestException as e: app.logger.error(f"EMAIL_POLLER_DEDUP: Erreur UL {PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME}: {e}"); return False
 
 def check_new_emails_and_trigger_make_webhook():
-    app.logger.info("EMAIL_POLLER: Vérification des nouveaux emails...")
+    app.logger.info("EMAIL_POLLER: Vérification des nouveaux emails...") # No job_id context
     if not SENDER_LIST_FOR_POLLING:
         app.logger.warning("EMAIL_POLLER: SENDER_LIST_FOR_POLLING est vide. Le poller ne peut pas filtrer efficacement par expéditeur.")
         return 0
@@ -440,7 +459,7 @@ def check_new_emails_and_trigger_make_webhook():
             
             app.logger.info(f"EMAIL_POLLER: Email pertinent trouvé (ID: {email_id_graph}, Sujet: '{str(email_subject)[:50]}...'). Déclenchement du webhook Make.")
             webhook_payload = {
-                "microsoft_graph_email_id": email_id_graph,
+                "microsoft_graph_email_id": email_id_graph, # Important to pass this for job_id creation later
                 "subject": email_subject, 
                 "receivedDateTime": email_data.get("receivedDateTime"),
                 "sender_address": email_sender_address,
@@ -516,12 +535,16 @@ def api_process_individual_dropbox_link():
     email_subject_from_make = data.get('email_subject') 
     email_subject_for_filename = email_subject_from_make if email_subject_from_make is not None else 'Fichier_Dropbox_Sujet_Absent'
     
-    email_id_for_logging = data.get('email_id', 'N/A') # Récupère email_id si Make.com l'envoie
+    # IMPORTANT: Ensure Make.com sends "microsoft_graph_email_id" in the payload for job_id creation
+    email_id_for_logging = data.get('microsoft_graph_email_id', 'N/A_EMAIL_ID') 
     
     app.logger.info(f"API_DROPBOX_PROCESS: Demande reçue pour URL: {dropbox_url_to_process} (Sujet pour nom fichier: {email_subject_for_filename}, EmailID Graph: {email_id_for_logging})")
-    thread = threading.Thread(target=process_dropbox_link_worker, args=(dropbox_url_to_process, email_subject_for_filename, email_id_for_logging), name=f"DropboxWorker-{email_id_for_logging[:10]}")
+    
+    # Create a unique name for the thread using a part of the email_id or a timestamp for better log tracking
+    thread_name_suffix = email_id_for_logging[-15:].replace("=","").replace("/","_") if email_id_for_logging != 'N/A_EMAIL_ID' else str(time.time_ns())[-10:]
+    thread = threading.Thread(target=process_dropbox_link_worker, args=(dropbox_url_to_process, email_subject_for_filename, email_id_for_logging), name=f"DropboxWorker-{thread_name_suffix}")
     thread.daemon = True; thread.start()
-    app.logger.info(f"API_DROPBOX_PROCESS: Tâche pour {dropbox_url_to_process} mise en file (thread démarré).")
+    app.logger.info(f"API_DROPBOX_PROCESS: Tâche pour {dropbox_url_to_process} mise en file (thread démarré: {thread.name}).")
     return jsonify({"status": "accepted", "message": "Demande de traitement reçue et mise en file d'attente."}), 202
 
 @app.route('/api/trigger_local_workflow', methods=['POST']) # Rôle 3
