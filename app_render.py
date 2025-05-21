@@ -424,10 +424,11 @@ def check_new_emails_and_trigger_make_webhook():
                 continue
             
             body_preview = email_data.get('bodyPreview', '').lower()
-            # Vérification plus souple: "dropbox.com/scl/" ou "dropbox.com/s/"
-            if not ("dropbox.com/scl/" in body_preview or "dropbox.com/s/" in body_preview) and not email_data.get('hasAttachments'):
-                 app.logger.info(f"EMAIL_POLLER: Email ID {email_id_graph} (Sujet: '{email_subject[:30]}...') ne semble pas contenir de lien Dropbox pertinent dans l'aperçu. Ignoré pour le webhook.")
-                 continue
+            # --- MODIFICATION DEMANDÉE: Commenter le bloc suivant ---
+            # if not ("dropbox.com/scl/" in body_preview or "dropbox.com/s/" in body_preview) and not email_data.get('hasAttachments'):
+            #      app.logger.info(f"EMAIL_POLLER: Email ID {email_id_graph} (Sujet: '{email_subject[:30]}...') ne semble pas contenir de lien Dropbox pertinent dans l'aperçu. Ignoré pour le webhook.")
+            #      continue
+            # --- FIN DE LA MODIFICATION DEMANDÉE ---
 
             app.logger.info(f"EMAIL_POLLER: Email pertinent trouvé (ID: {email_id_graph}, Sujet: '{email_subject[:50]}...'). Déclenchement du webhook Make.")
             webhook_payload = {
