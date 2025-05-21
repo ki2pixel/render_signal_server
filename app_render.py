@@ -58,7 +58,6 @@ def sanitize_filename(filename_str, max_length=230): # Limite OneDrive un peu pl
     return sanitized[:max_length]
 
 def get_onedrive_access_token():
-    # (Identique à la version précédente)
     if not msal_app: app.logger.error("MSAL non configuré."); return None
     if not ONEDRIVE_REFRESH_TOKEN: app.logger.error("ONEDRIVE_REFRESH_TOKEN manquant."); return None
     app.logger.info(f"Acquisition token Graph API pour scopes: {ONEDRIVE_SCOPES_DELEGATED}")
@@ -74,10 +73,9 @@ def get_onedrive_access_token():
         return None
 
 def ensure_onedrive_folder(access_token):
-    # (Identique à la version précédente)
     headers = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'application/json'}
     parent_id = ONEDRIVE_TARGET_PARENT_FOLDER_ID if ONEDRIVE_TARGET_PARENT_FOLDER_ID and ONEDRIVE_TARGET_PARENT_FOLDER_ID.lower() != 'root' else 'root'
-    subfolder_name_clean = sanitize_filename(ONEDRIVE_TARGET_SUBFOLDER_NAME, 100) # Nettoyer aussi le nom du sous-dossier
+    subfolder_name_clean = sanitize_filename(ONEDRIVE_TARGET_SUBFOLDER_NAME, 100) 
 
     if parent_id == 'root':
         folder_check_url = f"https://graph.microsoft.com/v1.0/me/drive/root/children?$filter=name eq '{subfolder_name_clean}'"
@@ -86,7 +84,7 @@ def ensure_onedrive_folder(access_token):
         folder_check_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{parent_id}/children?$filter=name eq '{subfolder_name_clean}'"
         folder_create_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{parent_id}/children"
     try:
-        response = requests.get(folder_check_url, headers=headers)
+        response = requests.get(folder_check_url, headers=headers, timeout=30)
         response.raise_for_status()
         children = response.json().get('value', [])
         if children:
@@ -96,7 +94,7 @@ def ensure_onedrive_folder(access_token):
         else:
             app.logger.info(f"Dossier OneDrive '{subfolder_name_clean}' non trouvé. Création.")
             payload = {"name": subfolder_name_clean, "folder": {}, "@microsoft.graph.conflictBehavior": "rename"}
-            response_create = requests.post(folder_create_url, headers=headers, json=payload)
+            response_create = requests.post(folder_create_url, headers=headers, json=payload, timeout=30)
             response_create.raise_for_status()
             folder_id = response_create.json()['id']
             app.logger.info(f"Dossier OneDrive '{subfolder_name_clean}' créé ID: {folder_id}")
@@ -106,7 +104,6 @@ def ensure_onedrive_folder(access_token):
         if hasattr(e, 'response') and e.response is not None: app.logger.error(f"Réponse API: {e.response.status_code} - {e.response.text}")
         return None
 
-# MODIFIED: upload_to_onedrive with chunk retries
 def upload_to_onedrive(filepath, filename_onedrive, access_token, target_folder_id):
     if not access_token or not target_folder_id: 
         app.logger.error("Upload: Token ou ID dossier manquant.")
@@ -120,24 +117,24 @@ def upload_to_onedrive(filepath, filename_onedrive, access_token, target_folder_
     app.logger.info(f"Upload de '{filepath.name}' ({file_size}b) vers OneDrive '{filename_onedrive_clean}'")
     
     final_response = None
-    upload_session_url = None # Initialize for potential use in finally/except
+    upload_session_url = None 
 
     try:
-        if file_size < 4 * 1024 * 1024: # Simple PUT for small files
+        if file_size < 4 * 1024 * 1024: 
             with open(filepath, 'rb') as f_data:
-                response = requests.put(upload_url_simple_put, headers=headers_put, data=f_data, timeout=60) # Timeout for small file upload
+                response = requests.put(upload_url_simple_put, headers=headers_put, data=f_data, timeout=60) 
                 response.raise_for_status()
                 final_response = response
-        else: # Chunked upload for large files
+        else: 
             create_session_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{filename_onedrive_clean}:/createUploadSession"
             session_payload = {"item": {"@microsoft.graph.conflictBehavior": "rename"}}
             session_headers = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'application/json'}
-            session_response = requests.post(create_session_url, headers=session_headers, json=session_payload, timeout=30) # Timeout for session creation
+            session_response = requests.post(create_session_url, headers=session_headers, json=session_payload, timeout=30) 
             session_response.raise_for_status()
             upload_session_url = session_response.json()['uploadUrl']
             app.logger.info(f"Session d'upload OneDrive créée: {upload_session_url}")
             
-            chunk_size = 10 * 1024 * 1024 # 10MB chunks
+            chunk_size = 10 * 1024 * 1024 
             chunks_uploaded_count = 0
             
             MAX_CHUNK_RETRIES = 3
@@ -147,10 +144,14 @@ def upload_to_onedrive(filepath, filename_onedrive, access_token, target_folder_
                 while True:
                     chunk = f_data.read(chunk_size)
                     if not chunk:
-                        break # End of file
+                        break 
                     
                     start_byte = chunks_uploaded_count * chunk_size
                     end_byte = start_byte + len(chunk) - 1
+                    
+                    # CALCUL DU POURCENTAGE pour OneDrive Upload
+                    percentage_complete = ((end_byte + 1) / file_size) * 100
+                    
                     chunk_headers = {
                         'Content-Length': str(len(chunk)),
                         'Content-Range': f'bytes {start_byte}-{end_byte}/{file_size}'
@@ -159,20 +160,21 @@ def upload_to_onedrive(filepath, filename_onedrive, access_token, target_folder_
                     current_chunk_retries = 0
                     while current_chunk_retries < MAX_CHUNK_RETRIES:
                         try:
+                            # LOG AVEC POURCENTAGE pour OneDrive Upload
                             app.logger.info(
                                 f"Upload chunk (Tentative {current_chunk_retries + 1}/{MAX_CHUNK_RETRIES}): "
-                                f"bytes {start_byte}-{end_byte}/{file_size} pour {filename_onedrive_clean}"
+                                f"bytes {start_byte}-{end_byte}/{file_size} ({percentage_complete:.2f}%) pour {filename_onedrive_clean}"
                             )
-                            # Timeout for individual chunk upload (e.g., 2 minutes per 10MB chunk)
                             response_chunk = requests.put(upload_session_url, headers=chunk_headers, data=chunk, timeout=120)
-                            response_chunk.raise_for_status() # Raises HTTPError for 4xx/5xx
+                            response_chunk.raise_for_status() 
                             
-                            final_response = response_chunk # Store response of the latest successful chunk
+                            final_response = response_chunk 
+                            # LOG DE SUCCÈS DU CHUNK AVEC POURCENTAGE pour OneDrive Upload
                             app.logger.info(
-                                f"Chunk bytes {start_byte}-{end_byte} pour {filename_onedrive_clean} uploadé avec succès. "
-                                f"Status: {response_chunk.status_code}"
+                                f"Chunk bytes {start_byte}-{end_byte} ({percentage_complete:.2f}%) pour {filename_onedrive_clean} "
+                                f"uploadé avec succès. Status: {response_chunk.status_code}"
                             )
-                            break # Successful chunk upload, exit retry loop
+                            break 
 
                         except requests.exceptions.RequestException as e_chunk:
                             current_chunk_retries += 1
@@ -187,46 +189,38 @@ def upload_to_onedrive(filepath, filename_onedrive, access_token, target_folder_
                                 response_text = e_chunk.response.text[:200] if e_chunk.response.text else '[No Response Body]'
                                 app.logger.warning(f"Réponse API pour chunk: {status_code} - {response_text}")
 
-                            is_retryable_status = status_code in [429, 500, 502, 503, 504] # Throttling or server errors
-                            is_network_error = status_code is None # e.g., Timeout, ConnectionError
+                            is_retryable_status = status_code in [429, 500, 502, 503, 504] 
+                            is_network_error = status_code is None 
 
                             if (is_retryable_status or is_network_error) and current_chunk_retries < MAX_CHUNK_RETRIES:
-                                delay = RETRY_DELAY_SECONDS * (2 ** (current_chunk_retries - 1)) # Exponential backoff
+                                delay = RETRY_DELAY_SECONDS * (2 ** (current_chunk_retries - 1)) 
                                 app.logger.info(
                                     f"Attente de {delay}s avant la prochaine tentative ({current_chunk_retries + 1}/{MAX_CHUNK_RETRIES}) "
                                     f"pour le chunk (bytes {start_byte}-{end_byte}) de {filename_onedrive_clean}."
                                 )
                                 time.sleep(delay)
-                                # Continue to the next iteration of the retry loop
                             else:
-                                # Not a retryable error, or max retries reached for this chunk
                                 app.logger.error(
                                     f"Échec final de l'upload du chunk (bytes {start_byte}-{end_byte}) pour {filename_onedrive_clean} "
                                     f"après {current_chunk_retries} tentatives ou en raison d'une erreur non récupérable."
                                 )
-                                raise e_chunk # Re-raise the exception to be caught by the outer try-except
-                    
-                    # If we are here, the 'break' from successful upload must have occurred.
-                    # If 'raise e_chunk' occurred, this part is skipped.
+                                raise e_chunk 
                     chunks_uploaded_count += 1
             
             app.logger.info(f"Tous les chunks de '{filepath.name}' ({filename_onedrive_clean}) ont été traités pour upload.")
 
-        # Check final response status (for both simple and chunked uploads)
-        if final_response and final_response.status_code < 300: # Typically 200, 201, 202
+        if final_response and final_response.status_code < 300: 
             app.logger.info(f"Fichier '{filename_onedrive_clean}' uploadé avec succès sur OneDrive. Statut: {final_response.status_code}")
             return True
         else:
             status_to_log = final_response.status_code if final_response else 'N/A'
             app.logger.error(f"Erreur après upload du fichier '{filename_onedrive_clean}' sur OneDrive. Statut final: {status_to_log}")
-            # If chunked upload failed and raised, this part might not be hit if exception isn't caught by final_response check
             return False
 
     except requests.exceptions.RequestException as e:
         app.logger.error(f"Erreur API Graph lors de l'upload du fichier '{filename_onedrive_clean}': {e}")
         if hasattr(e, 'response') and e.response is not None:
             app.logger.error(f"Réponse API (upload global): {e.response.status_code} - {e.response.text[:500]}")
-        # Attempt to cancel the upload session if it exists (for large file failures)
         if upload_session_url and file_size >= 4 * 1024 * 1024:
             try:
                 app.logger.info(f"Tentative d'annulation de la session d'upload pour {filename_onedrive_clean}: {upload_session_url}")
@@ -235,9 +229,8 @@ def upload_to_onedrive(filepath, filename_onedrive, access_token, target_folder_
             except requests.exceptions.RequestException as e_del:
                 app.logger.warning(f"Échec de l'annulation de la session d'upload pour {filename_onedrive_clean}: {e_del}")
         return False
-    except Exception as ex: # Catch any other unexpected errors
+    except Exception as ex: 
         app.logger.error(f"Erreur générale non gérée pendant l'upload de '{filename_onedrive_clean}': {ex}", exc_info=True)
-        # Also attempt to cancel session here if applicable
         if upload_session_url and file_size >= 4 * 1024 * 1024:
             try:
                 app.logger.info(f"Tentative d'annulation de la session d'upload (erreur générale) pour {filename_onedrive_clean}: {upload_session_url}")
@@ -265,9 +258,20 @@ def download_file_from_dropbox_and_upload_to_onedrive(dropbox_url, access_token_
 
     try:
         headers_db = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        # Increased timeout for Dropbox download, e.g., 30 minutes (1800s) for very large files
         response_db = requests.get(modified_url, stream=True, allow_redirects=True, timeout=1800, headers=headers_db) 
         response_db.raise_for_status()
+
+        # Obtenir la taille totale du fichier Dropbox si disponible pour le pourcentage
+        total_length_dropbox_str = response_db.headers.get('content-length')
+        total_length_dropbox = None
+        if total_length_dropbox_str:
+            try:
+                total_length_dropbox = int(total_length_dropbox_str)
+                app.logger.info(f"WORKER: Taille du fichier Dropbox: {total_length_dropbox} bytes.")
+            except ValueError:
+                app.logger.warning("WORKER: Impossible de parser Content-Length de Dropbox.")
+        else:
+            app.logger.warning("WORKER: En-tête Content-Length de Dropbox non trouvé. Progression du téléchargement non disponible.")
 
         filename_for_onedrive = default_filename_with_ts 
         content_disp = response_db.headers.get('content-disposition')
@@ -307,10 +311,24 @@ def download_file_from_dropbox_and_upload_to_onedrive(dropbox_url, access_token_
         temp_filepath = DOWNLOAD_TEMP_DIR_RENDER / filename_for_onedrive 
 
         app.logger.info(f"WORKER: Téléchargement Dropbox vers fichier temporaire: '{temp_filepath}'")
+        downloaded_length = 0
+        last_logged_percentage_dl = -10 # Pour éviter de logger trop souvent
+
         with open(temp_filepath, 'wb') as f:
-            for chunk in response_db.iter_content(chunk_size=1024*1024*2): 
-                f.write(chunk)
-        app.logger.info(f"WORKER: Fichier Dropbox téléchargé avec succès vers '{temp_filepath.name}'.")
+            for chunk_db in response_db.iter_content(chunk_size=1024*1024*2): # Chunks de 2MB
+                if chunk_db: 
+                    f.write(chunk_db)
+                    downloaded_length += len(chunk_db)
+                    if total_length_dropbox and total_length_dropbox > 0:
+                        percentage_dl = int((downloaded_length / total_length_dropbox) * 100)
+                        if percentage_dl >= last_logged_percentage_dl + 5 or last_logged_percentage_dl < 0 :
+                            app.logger.info(f"WORKER: Téléchargement Dropbox en cours... {downloaded_length}/{total_length_dropbox} bytes ({percentage_dl}%)")
+                            last_logged_percentage_dl = percentage_dl
+        
+        if total_length_dropbox and downloaded_length < total_length_dropbox:
+            app.logger.warning(f"WORKER: Taille téléchargée ({downloaded_length}) < taille attendue ({total_length_dropbox}). Le fichier pourrait être incomplet.")
+        
+        app.logger.info(f"WORKER: Fichier Dropbox téléchargé avec succès vers '{temp_filepath.name}'. Total bytes: {downloaded_length}")
 
         if upload_to_onedrive(temp_filepath, filename_for_onedrive, access_token_graph, target_folder_id_onedrive):
             app.logger.info(f"WORKER: Upload vers OneDrive de '{filename_for_onedrive}' réussi.")
@@ -319,7 +337,7 @@ def download_file_from_dropbox_and_upload_to_onedrive(dropbox_url, access_token_
             app.logger.error(f"WORKER: Échec de l'upload de '{filename_for_onedrive}' vers OneDrive.")
             return False
 
-    except requests.exceptions.Timeout as e_timeout: # Specific handling for timeout
+    except requests.exceptions.Timeout as e_timeout: 
         app.logger.error(f"WORKER: Timeout Dropbox ({str(e_timeout)}) lors du téléchargement de {modified_url}")
         return False
     except requests.exceptions.RequestException as e_req:
@@ -340,13 +358,12 @@ def download_file_from_dropbox_and_upload_to_onedrive(dropbox_url, access_token_
 
 
 def get_processed_urls_from_onedrive(access_token, target_folder_id):
-    # (Identique à la version précédente)
     if not access_token or not target_folder_id: return set()
     download_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_DROPBOX_URLS_ONEDRIVE_FILENAME}:/content"
     headers = {'Authorization': 'Bearer ' + access_token}
     processed_urls = set(); app.logger.debug(f"Tentative de lecture de {PROCESSED_DROPBOX_URLS_ONEDRIVE_FILENAME}")
     try:
-        response = requests.get(download_url, headers=headers, timeout=30) # Added timeout
+        response = requests.get(download_url, headers=headers, timeout=30)
         if response.status_code == 200:
             lines = response.text.splitlines()
             for line in lines:
@@ -361,13 +378,12 @@ def get_processed_urls_from_onedrive(access_token, target_folder_id):
     return processed_urls
 
 def update_processed_urls_on_onedrive(access_token, target_folder_id, urls_to_write_set):
-    # (Identique à la version précédente)
     if not access_token or not target_folder_id: return False
     content_to_upload = "\n".join(sorted(list(urls_to_write_set))) if urls_to_write_set else ""
     upload_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_DROPBOX_URLS_ONEDRIVE_FILENAME}:/content?@microsoft.graph.conflictBehavior=replace"
     headers = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'text/plain; charset=utf-8'}
     try:
-        response = requests.put(upload_url, headers=headers, data=content_to_upload.encode('utf-8'), timeout=30) # Added timeout
+        response = requests.put(upload_url, headers=headers, data=content_to_upload.encode('utf-8'), timeout=30)
         response.raise_for_status()
         app.logger.info(f"{PROCESSED_DROPBOX_URLS_ONEDRIVE_FILENAME} mis à jour avec {len(urls_to_write_set)} URLs.")
         return True
@@ -375,11 +391,9 @@ def update_processed_urls_on_onedrive(access_token, target_folder_id, urls_to_wr
         app.logger.error(f"Erreur upload {PROCESSED_DROPBOX_URLS_ONEDRIVE_FILENAME}: {e}")
         if hasattr(e, 'response') and e.response is not None: app.logger.error(f"Réponse API: {e.response.status_code} - {e.response.text}")
         return False
-# --- FIN Fonctions Utilitaires ---
 
 # --- WORKER THREAD POUR LE TRAITEMENT DROPBOX -> ONEDRIVE ---
 def process_dropbox_link_worker(dropbox_url, subject_for_default_filename, email_id_for_logging):
-    """Fonction exécutée dans un thread séparé pour gérer le transfert."""
     app.logger.info(f"WORKER_THREAD: Démarrage pour URL: {dropbox_url}, Sujet Fallback: {subject_for_default_filename}, EmailID: {email_id_for_logging}")
     
     access_token_graph = get_onedrive_access_token()
@@ -465,7 +479,7 @@ def api_process_individual_dropbox_link():
     return jsonify({"status": "accepted", "message": f"Demande de traitement pour le lien Dropbox reçue et mise en file d'attente."}), 202
 
 
-# --- ENDPOINTS POUR DÉCLENCHEMENT LOCAL (si vous souhaitez les garder) ---
+# --- ENDPOINTS POUR DÉCLENCHEMENT LOCAL ---
 @app.route('/api/trigger_local_workflow', methods=['POST'])
 def trigger_local_workflow():
     command_payload = request.json or {"command": "start_local_process", "timestamp": time.time()}
