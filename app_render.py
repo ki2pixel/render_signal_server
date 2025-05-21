@@ -70,10 +70,18 @@ app.logger.info(f"CONFIGURATION: Token attendu pour /api/process_individual_drop
 
 # --- Fonctions Utilitaires (Communes) ---
 def sanitize_filename(filename_str, max_length=230):
-    sanitized = re.sub(r'[<>:"/\\|?*]', '_', filename_str)
-    sanitized = re.sub(r'\.+', '.', sanitized).strip('.')
-    if not sanitized: sanitized = "fichier_sans_nom"
-    return sanitized[:max_length]
+    # MODIFIÉ: Ajout de la gestion de filename_str étant None et conversion explicite en str
+    if filename_str is None:
+        app.logger.warning("SANITIZE_FILENAME: filename_str était None, utilisation d'un nom par défaut.")
+        filename_str = "fichier_nom_absent" # ou une autre valeur par défaut significative
+    
+    # S'assurer que filename_str est une chaîne avant de l'utiliser avec re.sub
+    sanitized_filename = str(filename_str)
+    sanitized_filename = re.sub(r'[<>:"/\\|?*]', '_', sanitized_filename)
+    sanitized_filename = re.sub(r'\.+', '.', sanitized_filename).strip('.')
+    if not sanitized_filename: # Si le nom devient vide après nettoyage
+        sanitized_filename = "fichier_sans_nom_valide"
+    return sanitized_filename[:max_length]
 
 def get_onedrive_access_token():
     if not msal_app: app.logger.error("MSAL_AUTH: MSAL non configuré."); return None
@@ -132,7 +140,7 @@ def _try_cancel_upload_session(upload_session_url, filename_onedrive_clean, reas
 
 def upload_to_onedrive(filepath, filename_onedrive, access_token, target_folder_id):
     if not access_token or not target_folder_id: app.logger.error("UPLOAD_ONEDRIVE: Token/ID dossier manquant."); return False
-    filename_onedrive_clean = sanitize_filename(filename_onedrive)
+    filename_onedrive_clean = sanitize_filename(filename_onedrive) # filename_onedrive est le nom déjà "sain" pour le fichier temporaire, mais on le re-sanitize au cas où.
     upload_url_simple_put = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{filename_onedrive_clean}:/content?@microsoft.graph.conflictBehavior=rename"
     headers_put = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'application/octet-stream'}
     file_size = Path(filepath).stat().st_size
@@ -209,6 +217,8 @@ def download_file_from_dropbox_and_upload_to_onedrive(dropbox_url, access_token_
         modified_url += ("&" if "?" in modified_url else "?") + "dl=1"
     app.logger.info(f"DROPBOX_WORKER: URL Dropbox finale pour téléchargement: {modified_url}")
     temp_filepath = None; ts = time.strftime('%Y%m%d-%H%M%S')
+    
+    # subject_for_default_filename est maintenant garanti d'être une chaîne par l'appelant
     default_filename_base = sanitize_filename(subject_for_default_filename, 180)
     default_filename_with_ts = f"{default_filename_base}_{ts}.telechargement"
     try:
@@ -241,7 +251,11 @@ def download_file_from_dropbox_and_upload_to_onedrive(dropbox_url, access_token_
                     app.logger.info(f"DROPBOX_WORKER: Lien dossier Dropbox & pas d'ext d'archive -> .zip. Nom final: '{filename_for_onedrive}'")
         else: app.logger.warning(f"DROPBOX_WORKER: Content-Disposition Dropbox non trouvé. Utilisation nom par défaut: '{filename_for_onedrive}'")
         if not filename_for_onedrive: filename_for_onedrive = f"fichier_dropbox_{ts}.bin"
-        temp_filepath = DOWNLOAD_TEMP_DIR_RENDER / filename_for_onedrive
+        
+        # Sanitize final filename before creating temp file path
+        filename_for_onedrive = sanitize_filename(filename_for_onedrive) 
+        temp_filepath = DOWNLOAD_TEMP_DIR_RENDER / filename_for_onedrive # Utiliser le nom final pour le fichier temp aussi
+
         app.logger.info(f"DROPBOX_WORKER: Téléchargement Dropbox vers: '{temp_filepath}'")
         downloaded_length = 0; last_logged_percentage_dl = -10
         with open(temp_filepath, 'wb') as f:
@@ -256,6 +270,8 @@ def download_file_from_dropbox_and_upload_to_onedrive(dropbox_url, access_token_
         if total_length_dropbox and downloaded_length < total_length_dropbox:
             app.logger.warning(f"DROPBOX_WORKER: Taille DL ({downloaded_length}) < attendue ({total_length_dropbox}) pour {filename_for_onedrive}.")
         app.logger.info(f"DROPBOX_WORKER: Fichier Dropbox '{filename_for_onedrive}' téléchargé ({downloaded_length}b).")
+        
+        # filename_for_onedrive est déjà le nom final et sain.
         if upload_to_onedrive(temp_filepath, filename_for_onedrive, access_token_graph, target_folder_id_onedrive):
             app.logger.info(f"DROPBOX_WORKER: Upload OneDrive de '{filename_for_onedrive}' réussi.")
             return True
@@ -378,29 +394,24 @@ def check_new_emails_and_trigger_make_webhook():
     triggered_count_this_run = 0
 
     try:
-        # MODIFIÉ: Format de date pour filtre Graph API
         since_datetime_for_graph = (datetime.now(timezone.utc) - timedelta(days=1))
         since_datetime_iso_graph_compatible = since_datetime_for_graph.strftime('%Y-%m-%dT%H:%M:%SZ')
         
-        # --- MODIFICATION DU FILTRE API GRAPH ---
-        # Filtre API Graph simplifié : uniquement sur isRead et receivedDateTime
+        # Filtre API Graph simplifié
         filter_query = f"isRead eq false and receivedDateTime ge {since_datetime_iso_graph_compatible}"
         
-        # On demande plus d'emails ($top=100) car on va filtrer les expéditeurs en Python
-        messages_url = f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$filter={filter_query}&$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments&$top=100&$orderby=receivedDateTime desc" # $top augmenté
+        messages_url = f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$filter={filter_query}&$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments&$top=100&$orderby=receivedDateTime desc"
         
         app.logger.info(f"EMAIL_POLLER: Appel Graph API Mail (filtre simplifié sur date/isRead).")
-        # app.logger.debug(f"EMAIL_POLLER: URL Graph: {messages_url}") # Décommenter pour déboguer l'URL exacte si besoin
         headers_graph_mail = {'Authorization': 'Bearer ' + access_token, 'Prefer': 'outlook.body-content-type="text"'}
 
         response = requests.get(messages_url, headers=headers_graph_mail, timeout=30)
         response.raise_for_status()
-        emails_from_graph = response.json().get('value', []) # Renommé pour clarté
+        emails_from_graph = response.json().get('value', [])
         app.logger.info(f"EMAIL_POLLER: {len(emails_from_graph)} email(s) non lu(s) récents récupérés (avant filtre expéditeur Python).")
 
-        # --- FILTRAGE DES EXPÉDITEURS EN PYTHON ---
         relevant_emails = []
-        if SENDER_LIST_FOR_POLLING: # S'assurer que la liste n'est pas vide avant de filtrer
+        if SENDER_LIST_FOR_POLLING:
             for email_data in emails_from_graph:
                 email_sender_info = email_data.get('from', {}).get('emailAddress', {})
                 email_sender_address = email_sender_info.get('address', '').lower()
@@ -408,35 +419,34 @@ def check_new_emails_and_trigger_make_webhook():
                     relevant_emails.append(email_data)
                 else:
                     app.logger.debug(f"EMAIL_POLLER: Email ID {email_data['id']} de {email_sender_address} ignoré (ne fait pas partie de SENDER_LIST_FOR_POLLING).")
-        else: # Si la liste des senders est vide, on ne peut pas filtrer, donc on ne traite rien
+        else:
             app.logger.warning("EMAIL_POLLER: SENDER_LIST_FOR_POLLING est vide, aucun email ne sera traité comme pertinent.")
             relevant_emails = []
         
         app.logger.info(f"EMAIL_POLLER: {len(relevant_emails)} email(s) pertinents trouvés après filtrage par expéditeur en Python.")
 
-        for email_data in reversed(relevant_emails): # Traiter les plus anciens pertinents d'abord
+        for email_data in reversed(relevant_emails):
             email_id_graph = email_data['id']
             email_subject = email_data.get('subject', 'N/A')
-            email_sender_address = email_data.get('from', {}).get('emailAddress', {}).get('address', '').lower() # redondant mais OK
+            email_sender_address = email_data.get('from', {}).get('emailAddress', {}).get('address', '').lower()
 
             if email_id_graph in processed_trigger_ids:
                 app.logger.debug(f"EMAIL_POLLER: Webhook déjà déclenché pour email ID {email_id_graph}. Ignoré.")
                 continue
             
-            body_preview = email_data.get('bodyPreview', '').lower()
-            # --- MODIFICATION DEMANDÉE: Commenter le bloc suivant ---
+            # Option B: On supprime la vérification du lien Dropbox ici et on laisse Make.com s'en charger.
+            # body_preview = email_data.get('bodyPreview', '').lower()
             # if not ("dropbox.com/scl/" in body_preview or "dropbox.com/s/" in body_preview) and not email_data.get('hasAttachments'):
             #      app.logger.info(f"EMAIL_POLLER: Email ID {email_id_graph} (Sujet: '{email_subject[:30]}...') ne semble pas contenir de lien Dropbox pertinent dans l'aperçu. Ignoré pour le webhook.")
             #      continue
-            # --- FIN DE LA MODIFICATION DEMANDÉE ---
 
             app.logger.info(f"EMAIL_POLLER: Email pertinent trouvé (ID: {email_id_graph}, Sujet: '{email_subject[:50]}...'). Déclenchement du webhook Make.")
             webhook_payload = {
                 "microsoft_graph_email_id": email_id_graph,
-                "subject": email_subject,
+                "subject": email_subject, # Peut être None si l'email n'a pas de sujet
                 "receivedDateTime": email_data.get("receivedDateTime"),
-                "sender_address": email_sender_address,
-                "bodyPreview": body_preview
+                "sender_address": email_sender_address, # Sera l'adresse de l'expéditeur
+                "bodyPreview": email_data.get('bodyPreview', '') # Envoyer le bodyPreview
             }
             try:
                 webhook_response = requests.post(MAKE_SCENARIO_WEBHOOK_URL, json=webhook_payload, timeout=20)
@@ -501,10 +511,16 @@ def api_process_individual_dropbox_link():
             except Exception as e_parse: app.logger.error(f"API_DROPBOX_PROCESS: Échec parsing manuel: {e_parse}"); raise
         app.logger.info(f"API_DROPBOX_PROCESS: Données JSON parsées: {data if data else 'Aucune ou parsing échoué avant log'}")
     except Exception as e: app.logger.error(f"API_DROPBOX_PROCESS: Erreur parsing JSON initial: {e}", exc_info=True); return jsonify({"status": "error", "message": f"Erreur décodage JSON: {str(e)}"}), 400
+    
     if not data or 'dropbox_url' not in data: app.logger.error(f"API_DROPBOX_PROCESS: Payload invalide. 'data': {data}"); return jsonify({"status": "error", "message": "dropbox_url manquante ou payload invalide"}), 400
+    
     dropbox_url_to_process = data.get('dropbox_url')
-    email_subject_for_filename = data.get('email_subject', 'Fichier_Dropbox')
-    email_id_for_logging = data.get('email_id', 'N/A')
+    # MODIFIÉ: Gestion robuste de email_subject pouvant être None
+    email_subject_from_make = data.get('email_subject')
+    email_subject_for_filename = email_subject_from_make if email_subject_from_make is not None else 'Fichier_Dropbox_Sujet_Absent' # Valeur par défaut si None
+    
+    email_id_for_logging = data.get('email_id', 'N/A') # Cet ID est l'ID Graph de l'email original, utile pour le suivi
+    
     app.logger.info(f"API_DROPBOX_PROCESS: Demande reçue pour URL: {dropbox_url_to_process} (Sujet fallback: {email_subject_for_filename}, EmailID Graph: {email_id_for_logging})")
     thread = threading.Thread(target=process_dropbox_link_worker, args=(dropbox_url_to_process, email_subject_for_filename, email_id_for_logging), name=f"DropboxWorker-{email_id_for_logging[:10]}")
     thread.daemon = True; thread.start()
