@@ -165,6 +165,62 @@ def ensure_onedrive_folder(access_token, subfolder_name=None, parent_folder_id=N
         if hasattr(e, 'response') and e.response is not None: app.logger.error(f"ONEDRIVE_UTIL: Réponse API: {e.response.status_code} - {e.response.text}")
         return None
 
+# --- Fonctions pour la déduplication des URLs Dropbox traitées (Rôle 2) ---
+def get_processed_urls_from_onedrive(job_id, access_token, target_folder_id):
+    if not access_token or not target_folder_id:
+        app.logger.error(f"DROPBOX_WORKER_DEDUP [{job_id}]: Token ou ID dossier manquant pour get_processed_urls.")
+        return set()
+    # PROCESSED_URLS_ONEDRIVE_FILENAME is a global constant
+    download_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_URLS_ONEDRIVE_FILENAME}:/content"
+    headers = {'Authorization': 'Bearer ' + access_token}
+    processed_urls = set()
+    app.logger.debug(f"DROPBOX_WORKER_DEDUP [{job_id}]: Lecture de {PROCESSED_URLS_ONEDRIVE_FILENAME} depuis OneDrive.")
+    try:
+        response = requests.get(download_url, headers=headers, timeout=30)
+        if response.status_code == 200:
+            lines = response.text.splitlines()
+            for line in lines:
+                if line.strip():
+                    processed_urls.add(line.strip())
+            app.logger.info(f"DROPBOX_WORKER_DEDUP [{job_id}]: Lu {len(processed_urls)} URLs depuis {PROCESSED_URLS_ONEDRIVE_FILENAME}.")
+        elif response.status_code == 404:
+            app.logger.info(f"DROPBOX_WORKER_DEDUP [{job_id}]: Fichier {PROCESSED_URLS_ONEDRIVE_FILENAME} non trouvé sur OneDrive. Sera créé si besoin.")
+        else:
+            response.raise_for_status() # Gérer autres erreurs HTTP
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"DROPBOX_WORKER_DEDUP [{job_id}]: Erreur lors du téléchargement de {PROCESSED_URLS_ONEDRIVE_FILENAME}: {e}")
+        # En cas d'erreur, retourner un set vide pour ne pas bloquer mais logger l'erreur
+    return processed_urls
+
+def add_processed_url_to_onedrive(job_id, access_token, target_folder_id, dropbox_url_processed):
+    if not access_token or not target_folder_id or not dropbox_url_processed:
+        app.logger.error(f"DROPBOX_WORKER_DEDUP [{job_id}]: Paramètres manquants pour add_processed_url (token, folder_id, ou url).")
+        return False
+
+    # L'appel à get_processed_urls_from_onedrive doit aussi passer le job_id
+    current_urls = get_processed_urls_from_onedrive(job_id, access_token, target_folder_id)
+    
+    if dropbox_url_processed in current_urls:
+        app.logger.info(f"DROPBOX_WORKER_DEDUP [{job_id}]: URL '{dropbox_url_processed}' déjà dans la liste, pas besoin de rajouter.")
+        return True # Considéré comme un succès car l'état désiré est atteint
+
+    current_urls.add(dropbox_url_processed)
+    content_to_upload = "\n".join(sorted(list(current_urls)))
+    # PROCESSED_URLS_ONEDRIVE_FILENAME is a global constant
+    upload_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_URLS_ONEDRIVE_FILENAME}:/content?@microsoft.graph.conflictBehavior=replace"
+    headers = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'text/plain; charset=utf-8'}
+    app.logger.debug(f"DROPBOX_WORKER_DEDUP [{job_id}]: Tentative de mise à jour de {PROCESSED_URLS_ONEDRIVE_FILENAME} sur OneDrive avec {len(current_urls)} URLs.")
+    try:
+        response = requests.put(upload_url, headers=headers, data=content_to_upload.encode('utf-8'), timeout=60)
+        response.raise_for_status()
+        app.logger.info(f"DROPBOX_WORKER_DEDUP [{job_id}]: Fichier {PROCESSED_URLS_ONEDRIVE_FILENAME} mis à jour avec succès sur OneDrive ({len(current_urls)} URLs).")
+        return True
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"DROPBOX_WORKER_DEDUP [{job_id}]: Erreur lors de la mise à jour de {PROCESSED_URLS_ONEDRIVE_FILENAME} sur OneDrive: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            app.logger.error(f"DROPBOX_WORKER_DEDUP [{job_id}]: Réponse API: {e.response.status_code} - {e.response.text}")
+        return False
+
 # --- Fonctions pour Streaming Dropbox -> OneDrive (Rôle 2) ---
 def _try_cancel_upload_session_streaming(job_id, upload_session_url, filename_onedrive_clean, reason="erreur"):
     if not upload_session_url: return
@@ -211,13 +267,12 @@ def stream_dropbox_to_onedrive(job_id, dropbox_url, access_token_graph_initial, 
                 m_simple = re.search(r'filename="([^"]+)"', content_disp, flags=re.IGNORECASE)
                 if m_simple:
                     extracted_name = m_simple.group(1)
-                    # CORRECTION ICI:
                     if '%' in extracted_name:
                         try: 
                             extracted_name = requests.utils.unquote(extracted_name)
                         except Exception: 
                             app.logger.warning(f"STREAM_WORKER [{job_id}]: Échec du unquote sur extracted_name (filename simple): {extracted_name}")
-                            pass # Laisser extracted_name tel quel si unquote échoue
+                            pass 
             
             if extracted_name:
                 filename_for_onedrive = sanitize_filename(extracted_name)
@@ -234,10 +289,6 @@ def stream_dropbox_to_onedrive(job_id, dropbox_url, access_token_graph_initial, 
         else:
             app.logger.warning(f"STREAM_WORKER [{job_id}]: Taille du fichier Dropbox inconnue pour '{filename_for_onedrive}'.")
         
-        # Ne pas fermer response_meta_db ici, on va l'utiliser pour le stream si possible, sinon on le refera.
-        # Si la requête GET initiale pour les métadonnées a déjà commencé à streamer le corps, il faut la réutiliser.
-        # Pour simplifier, on va la fermer et refaire un GET pour le stream principal,
-        # bien que ce soit moins optimal (double requête).
         response_meta_db.close() 
 
     except requests.exceptions.RequestException as e_meta:
@@ -268,22 +319,22 @@ def stream_dropbox_to_onedrive(job_id, dropbox_url, access_token_graph_initial, 
     # 3. Streamer depuis Dropbox et uploader chunk par chunk vers OneDrive
     bytes_uploaded_total = 0
     MAX_CHUNK_RETRIES_ONEDRIVE = 3
-    RETRY_DELAY_SECONDS_ONEDRIVE = 10 # Augmenté un peu
+    RETRY_DELAY_SECONDS_ONEDRIVE = 10 
     
-    ONEDRIVE_CHUNK_SIZE = 10 * 1024 * 1024 # 10 MiB, multiple de 320 KiB
+    ONEDRIVE_CHUNK_SIZE = 10 * 1024 * 1024 
     DROPBOX_READ_CHUNK_SIZE = 1 * 1024 * 1024 
 
-    response_db_download = None # Pour le bloc finally
+    response_db_download = None 
     try:
         headers_db_download = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response_db_download = requests.get(modified_url, stream=True, allow_redirects=True, timeout=1800, headers=headers_db_download) # Timeout long pour gros fichiers
+        response_db_download = requests.get(modified_url, stream=True, allow_redirects=True, timeout=1800, headers=headers_db_download) 
         response_db_download.raise_for_status()
 
         chunk_buffer = b""
         last_onedrive_response = None
 
         for dropbox_chunk_data in response_db_download.iter_content(chunk_size=DROPBOX_READ_CHUNK_SIZE):
-            if not dropbox_chunk_data: # Fin du stream Dropbox
+            if not dropbox_chunk_data: 
                 app.logger.info(f"STREAM_WORKER [{job_id}]: Fin du stream de Dropbox pour '{filename_for_onedrive}'.")
                 break 
             
@@ -291,7 +342,7 @@ def stream_dropbox_to_onedrive(job_id, dropbox_url, access_token_graph_initial, 
 
             while len(chunk_buffer) >= ONEDRIVE_CHUNK_SIZE:
                 chunk_to_upload_onedrive = chunk_buffer[:ONEDRIVE_CHUNK_SIZE]
-                chunk_buffer = chunk_buffer[ONEDRIVE_CHUNK_SIZE:] # Ce qui reste dans le buffer
+                chunk_buffer = chunk_buffer[ONEDRIVE_CHUNK_SIZE:] 
 
                 start_byte = bytes_uploaded_total
                 end_byte = bytes_uploaded_total + len(chunk_to_upload_onedrive) - 1
@@ -299,7 +350,7 @@ def stream_dropbox_to_onedrive(job_id, dropbox_url, access_token_graph_initial, 
                 current_retries = 0
                 upload_successful_this_chunk = False
                 while current_retries < MAX_CHUNK_RETRIES_ONEDRIVE:
-                    access_token_for_chunk = get_onedrive_access_token() # Obtenir un token frais pour chaque chunk/retry
+                    access_token_for_chunk = get_onedrive_access_token() 
                     if not access_token_for_chunk:
                         app.logger.error(f"STREAM_WORKER [{job_id}]: Impossible d'obtenir un token pour upload chunk OneDrive. Tentative {current_retries+1}")
                         current_retries += 1
@@ -315,22 +366,22 @@ def stream_dropbox_to_onedrive(job_id, dropbox_url, access_token_graph_initial, 
                             'Content-Length': str(len(chunk_to_upload_onedrive)),
                             'Content-Range': f'bytes {start_byte}-{end_byte}/{file_size_dropbox if file_size_dropbox else "*"}'
                         }
-                        last_onedrive_response = requests.put(upload_session_url_onedrive, headers=chunk_headers_od, data=chunk_to_upload_onedrive, timeout=300) # Timeout plus long pour upload
+                        last_onedrive_response = requests.put(upload_session_url_onedrive, headers=chunk_headers_od, data=chunk_to_upload_onedrive, timeout=300) 
                         last_onedrive_response.raise_for_status()
                         
                         app.logger.info(f"STREAM_WORKER [{job_id}]: Chunk OneDrive {filename_for_onedrive} bytes {start_byte}-{end_byte} OK. Status: {last_onedrive_response.status_code}")
                         bytes_uploaded_total += len(chunk_to_upload_onedrive)
                         upload_successful_this_chunk = True
-                        if last_onedrive_response.status_code == 201: # Fichier complet uploadé
+                        if last_onedrive_response.status_code == 201: 
                             app.logger.info(f"STREAM_WORKER [{job_id}]: Fichier '{filename_for_onedrive}' streamé avec succès vers OneDrive (Statut 201).")
                             return True
-                        break # Sortir de la boucle de retries pour ce chunk
+                        break 
                     except requests.exceptions.RequestException as e_chunk_od:
                         current_retries += 1
                         app.logger.warning(f"STREAM_WORKER [{job_id}]: Erreur upload chunk OneDrive {filename_for_onedrive} (Try {current_retries}/{MAX_CHUNK_RETRIES_ONEDRIVE}): {e_chunk_od}")
                         if hasattr(e_chunk_od, 'response') and e_chunk_od.response is not None:
                             app.logger.warning(f"STREAM_WORKER [{job_id}]: Réponse API chunk: {e_chunk_od.response.status_code} - {e_chunk_od.response.text[:200]}")
-                            if e_chunk_od.response.status_code == 401 or e_chunk_od.response.status_code == 403 : # Unauthorized or Forbidden
+                            if e_chunk_od.response.status_code == 401 or e_chunk_od.response.status_code == 403 : 
                                 app.logger.error(f"STREAM_WORKER [{job_id}]: Erreur d'autorisation (401/403) sur chunk. Tentative de refresh token pour le prochain essai si applicable.")
                         
                         if current_retries >= MAX_CHUNK_RETRIES_ONEDRIVE:
@@ -344,13 +395,11 @@ def stream_dropbox_to_onedrive(job_id, dropbox_url, access_token_graph_initial, 
                      _try_cancel_upload_session_streaming(job_id, upload_session_url_onedrive, filename_for_onedrive, "échec tous retries chunk stream")
                      return False
         
-        # Traiter le dernier fragment restant dans le buffer (s'il y en a)
         if len(chunk_buffer) > 0:
             app.logger.info(f"STREAM_WORKER [{job_id}]: Upload du dernier fragment de {len(chunk_buffer)} bytes pour {filename_for_onedrive}")
             start_byte = bytes_uploaded_total
             end_byte = bytes_uploaded_total + len(chunk_buffer) - 1
             
-            # Boucle de retry pour le dernier fragment
             current_retries = 0
             upload_successful_this_chunk = False
             while current_retries < MAX_CHUNK_RETRIES_ONEDRIVE:
@@ -372,30 +421,26 @@ def stream_dropbox_to_onedrive(job_id, dropbox_url, access_token_graph_initial, 
                     last_onedrive_response.raise_for_status()
                     
                     app.logger.info(f"STREAM_WORKER [{job_id}]: DERNIER Chunk OneDrive {filename_for_onedrive} OK. Status: {last_onedrive_response.status_code}")
-                    bytes_uploaded_total += len(chunk_buffer) # Ajout ici aussi
+                    bytes_uploaded_total += len(chunk_buffer) 
                     upload_successful_this_chunk = True
-                    if last_onedrive_response.status_code == 201: # Fichier complet uploadé
+                    if last_onedrive_response.status_code == 201: 
                         app.logger.info(f"STREAM_WORKER [{job_id}]: Fichier '{filename_for_onedrive}' streamé avec succès vers OneDrive (Statut 201 sur dernier chunk).")
                         return True
-                    else: # Le dernier chunk DOIT retourner 201 ou 200 si la taille est connue et correspond.
+                    else: 
                         app.logger.warning(f"STREAM_WORKER [{job_id}]: Statut inattendu {last_onedrive_response.status_code} pour le dernier chunk de {filename_for_onedrive}. Bytes uploadés: {bytes_uploaded_total}, Attendu: {file_size_dropbox}")
-                        # On considère cela comme un succès si la taille correspond, sinon prudence
                         if file_size_dropbox is not None and bytes_uploaded_total == file_size_dropbox:
                             app.logger.info(f"STREAM_WORKER [{job_id}]: Taille correspond, considérant upload réussi pour {filename_for_onedrive}.")
                             return True
-                        # Si la taille est inconnue et qu'on reçoit 200/202, c'est ok aussi, mais l'API devrait retourner 201
                         elif file_size_dropbox is None and last_onedrive_response.status_code in [200, 202]:
                              app.logger.info(f"STREAM_WORKER [{job_id}]: Upload de {filename_for_onedrive} (taille inconnue) terminé avec statut {last_onedrive_response.status_code}. Considéré comme succès.")
                              return True
 
-                        # Si on n'est pas sûr, on annule.
                         _try_cancel_upload_session_streaming(job_id, upload_session_url_onedrive, filename_for_onedrive, "statut dernier chunk incertain")
-                        return False # Échec
+                        return False 
                     break 
                 except requests.exceptions.RequestException as e_chunk_od_last:
                     current_retries += 1
                     app.logger.warning(f"STREAM_WORKER [{job_id}]: Erreur upload DERNIER chunk OneDrive {filename_for_onedrive} (Try {current_retries}): {e_chunk_od_last}")
-                    # ... (logique de retry similaire)
                     if current_retries >= MAX_CHUNK_RETRIES_ONEDRIVE:
                         app.logger.error(f"STREAM_WORKER [{job_id}]: Échec final upload DERNIER chunk OneDrive pour {filename_for_onedrive}.")
                         _try_cancel_upload_session_streaming(job_id, upload_session_url_onedrive, filename_for_onedrive, "échec dernier chunk stream")
@@ -405,21 +450,19 @@ def stream_dropbox_to_onedrive(job_id, dropbox_url, access_token_graph_initial, 
                 _try_cancel_upload_session_streaming(job_id, upload_session_url_onedrive, filename_for_onedrive, "échec tous retries dernier chunk stream")
                 return False
 
-        # Vérification finale basée sur la taille si elle était connue
         if file_size_dropbox is not None:
             if bytes_uploaded_total == file_size_dropbox:
                 app.logger.info(f"STREAM_WORKER [{job_id}]: Vérification finale: {bytes_uploaded_total}/{file_size_dropbox} bytes streamés pour '{filename_for_onedrive}'. Succès.")
-                return True # OneDrive devrait déjà avoir renvoyé 201
+                return True 
             else:
                 app.logger.error(f"STREAM_WORKER [{job_id}]: Incohérence de taille finale pour '{filename_for_onedrive}'. Uploadé: {bytes_uploaded_total}, Attendu: {file_size_dropbox}.")
                 _try_cancel_upload_session_streaming(job_id, upload_session_url_onedrive, filename_for_onedrive, "incohérence taille finale")
                 return False
-        elif last_onedrive_response and last_onedrive_response.status_code == 201: # Si la taille était inconnue mais qu'on a eu un 201
+        elif last_onedrive_response and last_onedrive_response.status_code == 201: 
              app.logger.info(f"STREAM_WORKER [{job_id}]: Upload de {filename_for_onedrive} (taille inconnue) terminé avec statut 201. Succès.")
              return True
-        else: # Taille inconnue et pas de 201 clair
+        else: 
             app.logger.warning(f"STREAM_WORKER [{job_id}]: Fin du stream pour '{filename_for_onedrive}' (taille inconnue), statut final incertain. Uploaded: {bytes_uploaded_total}. Dernier statut OneDrive: {last_onedrive_response.status_code if last_onedrive_response else 'N/A'}")
-            # Il est plus sûr d'annuler si on n'a pas eu de 201 et que la taille était inconnue.
             _try_cancel_upload_session_streaming(job_id, upload_session_url_onedrive, filename_for_onedrive, "fin de stream incertaine (taille inconnue)")
             return False
 
@@ -439,16 +482,14 @@ def stream_dropbox_to_onedrive(job_id, dropbox_url, access_token_graph_initial, 
             except Exception as e_close:
                 app.logger.warning(f"STREAM_WORKER [{job_id}]: Erreur en fermant la connexion Dropbox: {e_close}")
 
-# Modifier process_dropbox_link_worker pour appeler la nouvelle fonction de streaming
 def process_dropbox_link_worker(dropbox_url, subject_for_default_filename, email_id_for_logging):
-    # Job ID generation (comme avant, mais s'assurer qu'il est unique et loggable)
     if email_id_for_logging and email_id_for_logging not in ['N/A', 'N/A_EMAIL_ID']:
         job_id_base = re.sub(r'[^a-zA-Z0-9]', '', email_id_for_logging)[-12:]
-        if not job_id_base: job_id_base = f"TS_{time.time_ns()}"[-12:] # Fallback
+        if not job_id_base: job_id_base = f"TS_{time.time_ns()}"[-12:] 
     else:
         sanitized_url_part = re.sub(r'[^a-zA-Z0-9]', '', dropbox_url)[-20:]
         job_id_base = sanitized_url_part if len(sanitized_url_part) > 5 else f"URL_TS_{time.time_ns()}"[-12:]
-    job_id = f"S-{job_id_base}" # 'S' pour Streaming
+    job_id = f"S-{job_id_base}" 
 
     app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: DÉMARRAGE (mode streaming) pour URL: '{dropbox_url}', Sujet Fallback: '{subject_for_default_filename}'")
 
@@ -462,7 +503,8 @@ def process_dropbox_link_worker(dropbox_url, subject_for_default_filename, email
     onedrive_target_folder_id = ensure_onedrive_folder(access_token_graph)
     if not onedrive_target_folder_id: app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: Échec dossier OneDrive. Arrêt."); return
     
-    processed_urls = get_processed_urls_from_onedrive(job_id, access_token_graph, onedrive_target_folder_id) # job_id passé
+    # Appel corrigé pour inclure job_id
+    processed_urls = get_processed_urls_from_onedrive(job_id, access_token_graph, onedrive_target_folder_id)
     unescaped_received_url = html_parser.unescape(dropbox_url)
     if dropbox_url in processed_urls or unescaped_received_url in processed_urls:
         app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: URL '{dropbox_url}' (ou unescaped) déjà traitée. Ignorée.")
@@ -476,28 +518,12 @@ def process_dropbox_link_worker(dropbox_url, subject_for_default_filename, email
     
     if success_transfer:
         app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: Streaming '{dropbox_url}' réussi. MàJ liste URLs traitées.")
-        if not add_processed_url_to_onedrive(job_id, access_token_graph, onedrive_target_folder_id, dropbox_url): # job_id passé
+        # Appel corrigé pour inclure job_id
+        if not add_processed_url_to_onedrive(job_id, access_token_graph, onedrive_target_folder_id, dropbox_url):
             app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: CRITIQUE - Fichier '{dropbox_url}' streamé mais échec màj {PROCESSED_URLS_ONEDRIVE_FILENAME}.")
     else: app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: Échec streaming '{dropbox_url}'.")
     app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: Fin tâche (streaming) pour '{dropbox_url}'")
 
-
-# --- Fonctions pour Polling Email & Déclenchement Webhook (Rôle 1) ---
-# (mark_email_as_read, get_processed_webhook_trigger_ids, add_processed_webhook_trigger_id, 
-#  check_new_emails_and_trigger_make_webhook, background_email_poller restent comme dans la version précédente
-#  avec la logique de plage horaire et le marquage comme lu)
-
-# --- ENDPOINTS FLASK ---
-# (api_process_individual_dropbox_link et les autres endpoints restent comme avant,
-#  s'assurant que email_id_for_logging est bien récupéré de "microsoft_graph_email_id")
-
-# ... (Le reste du script - fonctions de polling, endpoints Flask, __main__ - reste identique à la version précédente
-#      qui incluait déjà la logique de plage horaire et le marquage comme lu,
-#      et la logique de job_id dans les fonctions de déduplication.)
-#      Assurez-vous que `get_processed_urls_from_onedrive` et `add_processed_url_to_onedrive`
-#      acceptent bien le `job_id` pour la cohérence des logs, comme fait dans la version précédente.
-#      Je vais réintégrer le reste du code ici pour la complétude, en supposant que les modifications
-#      de job_id dans les fonctions de déduplication et la logique de plage horaire sont bien celles que nous avions.
 
 # --- Fonctions pour Polling Email & Déclenchement Webhook (Rôle 1) ---
 def mark_email_as_read(access_token, message_id):
