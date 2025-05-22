@@ -9,12 +9,7 @@ import html as html_parser
 import requests
 import threading
 from datetime import datetime, timedelta, timezone
-
-# --- Import for Timezone handling (Python 3.9+) ---
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:
-    ZoneInfo = None # Fallback for Python < 3.9 or if not available
+# from zoneinfo import ZoneInfo # Pour Python 3.9+ si gestion fuseaux horaires plus fine
 
 from msal import ConfidentialClientApplication
 
@@ -26,15 +21,60 @@ log_level = getattr(logging, log_level_str, logging.INFO)
 logging.basicConfig(level=log_level,
                     format='%(asctime)s - %(levelname)s - %(name)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s')
 
-# --- Configuration des Constantes et Variables d'Environnement ---
+# --- Configuration des Plages Horaires (Optionnel, comme discuté) ---
+# Par défaut, le polling est toujours actif. Définir les variables d'env pour restreindre.
+# Fuseau horaire pour l'évaluation des plages. 'UTC' est le plus simple si les heures sont données en UTC.
+# Ou utilisez "Europe/Paris", etc., si vous installez pytz ou utilisez zoneinfo.
+POLLING_TIMEZONE_STR = os.environ.get("POLLING_TIMEZONE", "UTC")
+POLLING_ACTIVE_START_HOUR = int(os.environ.get("POLLING_ACTIVE_START_HOUR", 0)) # 0-23
+POLLING_ACTIVE_END_HOUR = int(os.environ.get("POLLING_ACTIVE_END_HOUR", 24))   # 0-24 (24 signifie jusqu'à la fin de la journée)
+POLLING_ACTIVE_DAYS_RAW = os.environ.get("POLLING_ACTIVE_DAYS", "0,1,2,3,4,5,6") # Tous les jours par défaut
+POLLING_ACTIVE_DAYS = []
+if POLLING_ACTIVE_DAYS_RAW:
+    try:
+        POLLING_ACTIVE_DAYS = [int(day.strip()) for day in POLLING_ACTIVE_DAYS_RAW.split(',') if day.strip().isdigit() and 0 <= int(day.strip()) <= 6]
+    except ValueError:
+        app.logger.warning(f"CONFIGURATION POLLING: POLLING_ACTIVE_DAYS ('{POLLING_ACTIVE_DAYS_RAW}') mal formaté. Utilisation de tous les jours.")
+        POLLING_ACTIVE_DAYS = list(range(7))
+if not POLLING_ACTIVE_DAYS: POLLING_ACTIVE_DAYS = list(range(7))
+
+
+# Tentative d'utiliser zoneinfo (Python 3.9+) ou fallback sur UTC
+TZ_FOR_POLLING = None
+if POLLING_TIMEZONE_STR.upper() != "UTC":
+    try:
+        from zoneinfo import ZoneInfo
+        TZ_FOR_POLLING = ZoneInfo(POLLING_TIMEZONE_STR)
+        app.logger.info(f"CONFIGURATION POLLING: Utilisation du fuseau horaire '{POLLING_TIMEZONE_STR}' pour les plages actives.")
+    except ImportError:
+        app.logger.warning(f"CONFIGURATION POLLING: 'zoneinfo' non disponible (Python < 3.9?). Utilisation d'UTC pour les plages actives. POLLING_TIMEZONE_STR '{POLLING_TIMEZONE_STR}' ignoré.")
+        POLLING_TIMEZONE_STR = "UTC" # Force UTC si zoneinfo n'est pas là
+    except Exception as e_tz:
+        app.logger.warning(f"CONFIGURATION POLLING: Erreur chargement fuseau horaire '{POLLING_TIMEZONE_STR}': {e_tz}. Utilisation d'UTC.")
+        POLLING_TIMEZONE_STR = "UTC"
+if POLLING_TIMEZONE_STR.upper() == "UTC" and TZ_FOR_POLLING is None: # Pour s'assurer que timezone.utc est utilisé si c'est UTC
+    TZ_FOR_POLLING = timezone.utc
+    app.logger.info(f"CONFIGURATION POLLING: Utilisation du fuseau horaire 'UTC' pour les plages actives.")
+
+
+EMAIL_POLLING_INTERVAL_SECONDS = int(os.environ.get("EMAIL_POLLING_INTERVAL_SECONDS", 60))
+POLLING_INACTIVE_CHECK_INTERVAL_SECONDS = int(os.environ.get("POLLING_INACTIVE_CHECK_INTERVAL_SECONDS", 300))
+
+app.logger.info(f"CONFIGURATION POLLING: Intervalle emails pendant plage active: {EMAIL_POLLING_INTERVAL_SECONDS}s.")
+app.logger.info(f"CONFIGURATION POLLING: Plage horaire active (fuseau '{POLLING_TIMEZONE_STR}'): {POLLING_ACTIVE_START_HOUR:02d}:00 à {POLLING_ACTIVE_END_HOUR:02d}:00 (heure de fin exclusive).")
+app.logger.info(f"CONFIGURATION POLLING: Jours actifs (0=Lundi,...,6=Dimanche): {POLLING_ACTIVE_DAYS}")
+app.logger.info(f"CONFIGURATION POLLING: Intervalle de vérification hors plage active: {POLLING_INACTIVE_CHECK_INTERVAL_SECONDS}s.")
+
+
+# --- Configuration des Constantes et Variables d'Environnement (autres) ---
 SIGNAL_DIR = Path(os.environ.get("RENDER_DISC_PATH", "./signal_data_app_render"))
 TRIGGER_SIGNAL_FILE = SIGNAL_DIR / "local_workflow_trigger_signal.json"
-DOWNLOAD_TEMP_DIR_RENDER = SIGNAL_DIR / "temp_dropbox_downloads"
+# DOWNLOAD_TEMP_DIR_RENDER = SIGNAL_DIR / "temp_dropbox_downloads" # Plus nécessaire avec le streaming
 PROCESSED_URLS_ONEDRIVE_FILENAME = "processed_dropbox_urls_workflow.txt"
 PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME = "processed_webhook_triggers.txt"
 
 SIGNAL_DIR.mkdir(parents=True, exist_ok=True)
-DOWNLOAD_TEMP_DIR_RENDER.mkdir(parents=True, exist_ok=True)
+# DOWNLOAD_TEMP_DIR_RENDER.mkdir(parents=True, exist_ok=True) # Plus nécessaire
 
 # --- Configuration API Microsoft Graph (OneDrive & Mail) ---
 ONEDRIVE_CLIENT_ID = os.environ.get('ONEDRIVE_CLIENT_ID')
@@ -46,57 +86,7 @@ ONEDRIVE_SCOPES_DELEGATED = ["Files.ReadWrite", "User.Read", "Mail.ReadWrite"]
 ONEDRIVE_TARGET_PARENT_FOLDER_ID = os.environ.get('ONEDRIVE_TARGET_PARENT_FOLDER_ID', 'root')
 ONEDRIVE_TARGET_SUBFOLDER_NAME = os.environ.get('ONEDRIVE_TARGET_SUBFOLDER_NAME', "DropboxDownloadsWorkflow")
 
-# --- Configuration pour le Polling Email et Déclenchement Webhook Make ---
-EMAIL_POLLING_INTERVAL_SECONDS = int(os.environ.get("EMAIL_POLLING_INTERVAL_SECONDS", 60))
 MAKE_SCENARIO_WEBHOOK_URL = os.environ.get("MAKE_SCENARIO_WEBHOOK_URL")
-
-# --- Configuration pour les Plages Horaires Actives du Polling ---
-POLLING_TIMEZONE_STR = os.environ.get("POLLING_TIMEZONE", "UTC")
-POLLING_TARGET_TZ = None
-if ZoneInfo:
-    try:
-        POLLING_TARGET_TZ = ZoneInfo(POLLING_TIMEZONE_STR)
-        app.logger.info(f"CONFIGURATION POLLING: Utilisation du fuseau horaire '{POLLING_TIMEZONE_STR}' pour les plages actives.")
-    except Exception as e_tz:
-        app.logger.warning(f"CONFIGURATION POLLING: Fuseau horaire '{POLLING_TIMEZONE_STR}' invalide ou zoneinfo non disponible ({e_tz}). Utilisation UTC par défaut.")
-        POLLING_TARGET_TZ = timezone.utc
-else:
-    if POLLING_TIMEZONE_STR.upper() != "UTC":
-        app.logger.warning(f"CONFIGURATION POLLING: Le module 'zoneinfo' n'est pas disponible (Python < 3.9?). POLLING_TIMEZONE '{POLLING_TIMEZONE_STR}' ignoré. Utilisation UTC.")
-    POLLING_TARGET_TZ = timezone.utc
-
-# Heures de début/fin dans le fuseau POLLING_TARGET_TZ
-POLLING_ACTIVE_START_HOUR = int(os.environ.get("POLLING_ACTIVE_START_HOUR", 0))  # Défaut: 00:00
-POLLING_ACTIVE_END_HOUR = int(os.environ.get("POLLING_ACTIVE_END_HOUR", 24))    # Défaut: Jusqu'à 23:59:59 (fin exclusive)
-
-# Jours actifs (0=Lundi, ..., 6=Dimanche)
-POLLING_ACTIVE_DAYS_RAW = os.environ.get("POLLING_ACTIVE_DAYS", "0,1,2,3,4,5,6") # Défaut: Tous les jours
-_parsed_active_days = []
-if POLLING_ACTIVE_DAYS_RAW and POLLING_ACTIVE_DAYS_RAW.strip():
-    try:
-        # Essaye de parser les jours: "0, 1, 2" -> [0, 1, 2]
-        potential_days = [int(day.strip()) for day in POLLING_ACTIVE_DAYS_RAW.split(',') if day.strip().isdigit()]
-        # Filtre pour garder uniquement les jours valides (0-6)
-        _parsed_active_days = [d for d in potential_days if 0 <= d <= 6]
-        if len(_parsed_active_days) != len(potential_days):
-            app.logger.warning(f"CONFIGURATION POLLING: Certains jours dans POLLING_ACTIVE_DAYS ('{POLLING_ACTIVE_DAYS_RAW}') étaient invalides/hors plage [0-6] et ont été ignorés.")
-    except ValueError:
-        app.logger.error(f"CONFIGURATION POLLING: Erreur de valeur lors du parsing de POLLING_ACTIVE_DAYS: '{POLLING_ACTIVE_DAYS_RAW}'.")
-
-if _parsed_active_days:
-    POLLING_ACTIVE_DAYS = _parsed_active_days
-else:
-    if POLLING_ACTIVE_DAYS_RAW and POLLING_ACTIVE_DAYS_RAW.strip(): # Si l'utilisateur a fourni une valeur mais qu'elle était invalide
-        app.logger.warning(f"CONFIGURATION POLLING: POLLING_ACTIVE_DAYS ('{POLLING_ACTIVE_DAYS_RAW}') n'a pas pu être interprété ou ne contenait aucun jour valide [0-6]. Utilisation de tous les jours par défaut.")
-    POLLING_ACTIVE_DAYS = list(range(7)) # Fallback: Lundi à Dimanche
-
-POLLING_INACTIVE_CHECK_INTERVAL_SECONDS = int(os.environ.get("POLLING_INACTIVE_CHECK_INTERVAL_SECONDS", 300)) # 5 minutes par défaut
-
-app.logger.info(f"CONFIGURATION POLLING: Intervalle emails pendant plage active: {EMAIL_POLLING_INTERVAL_SECONDS}s.")
-app.logger.info(f"CONFIGURATION POLLING: Plage horaire active (fuseau '{POLLING_TIMEZONE_STR}'): {POLLING_ACTIVE_START_HOUR:02d}:00 à {POLLING_ACTIVE_END_HOUR:02d}:00 (heure de fin exclusive).")
-app.logger.info(f"CONFIGURATION POLLING: Jours actifs (0=Lundi,...,6=Dimanche): {POLLING_ACTIVE_DAYS}")
-app.logger.info(f"CONFIGURATION POLLING: Intervalle de vérification hors plage active: {POLLING_INACTIVE_CHECK_INTERVAL_SECONDS}s.")
-
 
 SENDER_OF_INTEREST_FOR_POLLING_RAW = os.environ.get("SENDER_OF_INTEREST_FOR_POLLING")
 SENDER_LIST_FOR_POLLING = []
@@ -104,7 +94,7 @@ if SENDER_OF_INTEREST_FOR_POLLING_RAW:
     SENDER_LIST_FOR_POLLING = [email.strip().lower() for email in SENDER_OF_INTEREST_FOR_POLLING_RAW.split(',') if email.strip()]
     app.logger.info(f"CONFIGURATION: Expéditeurs surveillés pour le polling ({len(SENDER_LIST_FOR_POLLING)}): {SENDER_LIST_FOR_POLLING}")
 else:
-    app.logger.warning("CONFIGURATION: SENDER_OF_INTEREST_FOR_POLLING n'est pas défini. Le poller d'email ne filtrera pas par expéditeur et pourrait ne pas démarrer si cette liste est requise.")
+    app.logger.warning("CONFIGURATION: SENDER_OF_INTEREST_FOR_POLLING n'est pas défini.")
 
 
 msal_app = None
@@ -118,10 +108,8 @@ else:
 
 EXPECTED_API_TOKEN = os.environ.get("PROCESS_API_TOKEN")
 if not EXPECTED_API_TOKEN:
-    app.logger.warning("CONFIGURATION: PROCESS_API_TOKEN non défini. L'endpoint de transfert de fichiers sera non sécurisé.")
-else: # Log only if token is set for security reasons
-    app.logger.info(f"CONFIGURATION: Token attendu pour /api/process_individual_dropbox_link: '{EXPECTED_API_TOKEN[:5]}...'")
-
+    app.logger.warning("CONFIGURATION: PROCESS_API_TOKEN non défini. Endpoint de transfert non sécurisé.")
+app.logger.info(f"CONFIGURATION: Token attendu pour /api/process_individual_dropbox_link: '{EXPECTED_API_TOKEN[:5]}...'")
 
 # --- Fonctions Utilitaires (Communes) ---
 def sanitize_filename(filename_str, max_length=230):
@@ -155,12 +143,13 @@ def ensure_onedrive_folder(access_token, subfolder_name=None, parent_folder_id=N
     headers = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'application/json'}
     effective_parent_id = target_parent_id if target_parent_id and target_parent_id.lower() != 'root' else 'root'
     subfolder_name_clean = sanitize_filename(target_subfolder_name, 100)
+    base_url = "https://graph.microsoft.com/v1.0/me/drive"
     if effective_parent_id == 'root':
-        folder_check_url = f"https://graph.microsoft.com/v1.0/me/drive/root/children?$filter=name eq '{subfolder_name_clean}'"
-        folder_create_url = f"https://graph.microsoft.com/v1.0/me/drive/root/children"
+        folder_check_url = f"{base_url}/root/children?$filter=name eq '{subfolder_name_clean}'"
+        folder_create_url = f"{base_url}/root/children"
     else:
-        folder_check_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{effective_parent_id}/children?$filter=name eq '{subfolder_name_clean}'"
-        folder_create_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{effective_parent_id}/children"
+        folder_check_url = f"{base_url}/items/{effective_parent_id}/children?$filter=name eq '{subfolder_name_clean}'"
+        folder_create_url = f"{base_url}/items/{effective_parent_id}/children"
     try:
         response = requests.get(folder_check_url, headers=headers, timeout=15)
         response.raise_for_status(); children = response.json().get('value', [])
@@ -176,231 +165,332 @@ def ensure_onedrive_folder(access_token, subfolder_name=None, parent_folder_id=N
         if hasattr(e, 'response') and e.response is not None: app.logger.error(f"ONEDRIVE_UTIL: Réponse API: {e.response.status_code} - {e.response.text}")
         return None
 
-# --- Fonctions pour Transfert Dropbox -> OneDrive (Rôle 2) ---
-def _try_cancel_upload_session(job_id, upload_session_url, filename_onedrive_clean, reason="erreur"):
+# --- Fonctions pour Streaming Dropbox -> OneDrive (Rôle 2) ---
+def _try_cancel_upload_session_streaming(job_id, upload_session_url, filename_onedrive_clean, reason="erreur"):
     if not upload_session_url: return
-    app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Tentative d'annulation session upload ({reason}) pour {filename_onedrive_clean}: {upload_session_url[:70]}...")
-    token_for_delete = get_onedrive_access_token()
+    app.logger.info(f"STREAM_WORKER [{job_id}]: Tentative d'annulation session upload ({reason}) pour {filename_onedrive_clean}: {upload_session_url[:70]}...")
+    token_for_delete = get_onedrive_access_token() # On a besoin d'un token potentiellement frais
     if token_for_delete:
         try:
             requests.delete(upload_session_url, headers={'Authorization': 'Bearer ' + token_for_delete}, timeout=10)
-            app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Session upload pour {filename_onedrive_clean} annulée ou déjà expirée.")
+            app.logger.info(f"STREAM_WORKER [{job_id}]: Session upload pour {filename_onedrive_clean} annulée ou déjà expirée.")
         except requests.exceptions.RequestException as e_del:
-            app.logger.warning(f"UPLOAD_ONEDRIVE [{job_id}]: Échec annulation session upload pour {filename_onedrive_clean}: {e_del}")
+            app.logger.warning(f"STREAM_WORKER [{job_id}]: Échec annulation session upload pour {filename_onedrive_clean}: {e_del}")
     else:
-        app.logger.warning(f"UPLOAD_ONEDRIVE [{job_id}]: Impossible d'obtenir un token pour annuler la session d'upload de {filename_onedrive_clean}.")
+        app.logger.warning(f"STREAM_WORKER [{job_id}]: Impossible d'obtenir un token pour annuler la session d'upload de {filename_onedrive_clean}.")
 
-def upload_to_onedrive(job_id, filepath, filename_onedrive, access_token, target_folder_id):
-    if not access_token or not target_folder_id: app.logger.error(f"UPLOAD_ONEDRIVE [{job_id}]: Token/ID dossier manquant."); return False
-    filename_onedrive_clean = sanitize_filename(filename_onedrive)
-    upload_url_simple_put = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{filename_onedrive_clean}:/content?@microsoft.graph.conflictBehavior=rename"
-    headers_put = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'application/octet-stream'}
-    file_size = Path(filepath).stat().st_size
-    app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Upload de '{Path(filepath).name}' ({file_size}b) vers OneDrive '{filename_onedrive_clean}'")
-    MAX_CHUNK_RETRIES = 3; RETRY_DELAY_SECONDS = 5; final_response = None
-    upload_session_url = None
-    try:
-        if file_size < 4 * 1024 * 1024:
-            with open(filepath, 'rb') as f_data:
-                response = requests.put(upload_url_simple_put, headers=headers_put, data=f_data, timeout=300)
-                response.raise_for_status(); final_response = response
-        else:
-            create_session_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{filename_onedrive_clean}:/createUploadSession"
-            session_payload = {"item": {"@microsoft.graph.conflictBehavior": "rename"}}
-            session_headers = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'application/json'}
-            session_response = requests.post(create_session_url, headers=session_headers, json=session_payload, timeout=60)
-            session_response.raise_for_status(); upload_session_url = session_response.json()['uploadUrl']
-            app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Session upload OneDrive créée pour {filename_onedrive_clean}: {upload_session_url[:70]}...")
-            chunk_size = 10 * 1024 * 1024; chunks_uploaded_count = 0
-            with open(filepath, 'rb') as f_data:
-                while True:
-                    chunk = f_data.read(chunk_size)
-                    if not chunk: break
-                    start_byte = chunks_uploaded_count * chunk_size; end_byte = start_byte + len(chunk) - 1
-                    percentage_complete = ((end_byte + 1) / file_size) * 100 if file_size > 0 else 0
-                    chunk_headers = {'Content-Length': str(len(chunk)), 'Content-Range': f'bytes {start_byte}-{end_byte}/{file_size}'}
-                    current_chunk_retries = 0
-                    while current_chunk_retries < MAX_CHUNK_RETRIES:
-                        try:
-                            app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Upload chunk (Try {current_chunk_retries + 1}/{MAX_CHUNK_RETRIES}): {filename_onedrive_clean} bytes {start_byte}-{end_byte}/{file_size} ({percentage_complete:.2f}%)")
-                            response_chunk = requests.put(upload_session_url, headers=chunk_headers, data=chunk, timeout=180)
-                            response_chunk.raise_for_status(); final_response = response_chunk
-                            app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Chunk {filename_onedrive_clean} bytes {start_byte}-{end_byte} ({percentage_complete:.2f}%) OK. Status: {response_chunk.status_code}")
-                            break
-                        except requests.exceptions.RequestException as e_chunk:
-                            current_chunk_retries += 1; app.logger.warning(f"UPLOAD_ONEDRIVE [{job_id}]: Erreur upload chunk {filename_onedrive_clean} (Try {current_chunk_retries}/{MAX_CHUNK_RETRIES}): {e_chunk}")
-                            status_code_chunk = None
-                            if hasattr(e_chunk, 'response') and e_chunk.response is not None:
-                                status_code_chunk = e_chunk.response.status_code
-                                app.logger.warning(f"UPLOAD_ONEDRIVE [{job_id}]: Réponse API chunk: {status_code_chunk} - {e_chunk.response.text[:200]}")
-                            is_retryable_status = status_code_chunk in [429, 500, 502, 503, 504]
-                            is_network_error = status_code_chunk is None
-                            if (is_retryable_status or is_network_error) and current_chunk_retries < MAX_CHUNK_RETRIES:
-                                delay = RETRY_DELAY_SECONDS * (2 ** (current_chunk_retries -1)); app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Attente {delay}s avant retry chunk..."); time.sleep(delay)
-                            else:
-                                app.logger.error(f"UPLOAD_ONEDRIVE [{job_id}]: Échec final chunk {filename_onedrive_clean} après {current_chunk_retries} tentatives."); raise e_chunk
-                    else: # This else belongs to the inner while loop (retries)
-                        app.logger.error(f"UPLOAD_ONEDRIVE [{job_id}]: Max retries ({MAX_CHUNK_RETRIES}) atteint pour chunk {filename_onedrive_clean}. Abandon upload."); return False
-                    chunks_uploaded_count += 1
-            app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Tous les chunks de '{filename_onedrive_clean}' traités pour upload.")
-        if final_response and final_response.status_code < 300:
-            app.logger.info(f"UPLOAD_ONEDRIVE [{job_id}]: Fichier '{filename_onedrive_clean}' uploadé avec succès. Statut final: {final_response.status_code}")
-            return True
-        else:
-            status_to_log = final_response.status_code if final_response else 'N/A'
-            app.logger.error(f"UPLOAD_ONEDRIVE [{job_id}]: Erreur après tentatives d'upload ({filename_onedrive_clean}). Statut final: {status_to_log}")
-            return False
-    except requests.exceptions.RequestException as e:
-        app.logger.error(f"UPLOAD_ONEDRIVE [{job_id}]: Erreur API Graph upload ({filename_onedrive_clean}): {e}")
-        if hasattr(e, 'response') and e.response is not None: app.logger.error(f"UPLOAD_ONEDRIVE [{job_id}]: Réponse API: {e.response.status_code} - {e.response.text}")
-        if file_size >= 4 * 1024 * 1024 and upload_session_url: _try_cancel_upload_session(job_id, upload_session_url, filename_onedrive_clean, "erreur RequestException")
-        return False
-    except Exception as ex:
-        app.logger.error(f"UPLOAD_ONEDRIVE [{job_id}]: Erreur générale non gérée pendant l'upload ({filename_onedrive_clean}): {ex}", exc_info=True)
-        if file_size >= 4 * 1024 * 1024 and upload_session_url: _try_cancel_upload_session(job_id, upload_session_url, filename_onedrive_clean, "erreur générale Exception")
-        return False
 
-def download_file_from_dropbox_and_upload_to_onedrive(job_id, dropbox_url, access_token_graph, target_folder_id_onedrive, subject_for_default_filename="FichierDropbox"):
-    app.logger.info(f"DROPBOX_WORKER [{job_id}]: Traitement URL Dropbox: {dropbox_url}")
+def stream_dropbox_to_onedrive(job_id, dropbox_url, access_token_graph_initial, target_folder_id_onedrive, subject_for_default_filename="FichierDropbox"):
+    app.logger.info(f"STREAM_WORKER [{job_id}]: Démarrage du streaming pour URL: {dropbox_url}")
+    
+    filename_for_onedrive = sanitize_filename(subject_for_default_filename if subject_for_default_filename else "FichierDropboxStream")
+    file_size_dropbox = None
+    upload_session_url_onedrive = None # Doit être défini pour le bloc finally
+
+    # 1. Préparer l'URL Dropbox et obtenir les métadonnées (nom de fichier, taille)
     unescaped_url = html_parser.unescape(dropbox_url)
     modified_url = unescaped_url.replace("dl=0", "dl=1")
     modified_url = re.sub(r'dl=[^&?#]+', 'dl=1', modified_url)
     if '?dl=1' not in modified_url and '&dl=1' not in modified_url:
         modified_url += ("&" if "?" in modified_url else "?") + "dl=1"
-    app.logger.info(f"DROPBOX_WORKER [{job_id}]: URL Dropbox finale pour téléchargement: {modified_url}")
-    temp_filepath = None; ts = time.strftime('%Y%m%d-%H%M%S')
-    default_filename_base = sanitize_filename(subject_for_default_filename, 180)
-    default_filename_with_ts = f"{default_filename_base}_{ts}.telechargement"
+    app.logger.info(f"STREAM_WORKER [{job_id}]: URL Dropbox pour stream: {modified_url}")
+
     try:
-        headers_db = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response_db = requests.get(modified_url, stream=True, allow_redirects=True, timeout=900, headers=headers_db)
-        response_db.raise_for_status()
-        total_length_dropbox_str = response_db.headers.get('content-length')
-        total_length_dropbox = int(total_length_dropbox_str) if total_length_dropbox_str and total_length_dropbox_str.isdigit() else None
-        if total_length_dropbox: app.logger.info(f"DROPBOX_WORKER [{job_id}]: Taille fichier Dropbox: {total_length_dropbox} bytes.")
-        else: app.logger.warning(f"DROPBOX_WORKER [{job_id}]: Content-Length Dropbox non trouvé/invalide. Progression DL non affichable.")
-        filename_for_onedrive = default_filename_with_ts
-        content_disp = response_db.headers.get('content-disposition')
+        headers_db_meta = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response_meta_db = requests.get(modified_url, stream=True, allow_redirects=True, timeout=60, headers=headers_db_meta)
+        response_meta_db.raise_for_status()
+
+        content_disp = response_meta_db.headers.get('content-disposition')
         if content_disp:
-            app.logger.debug(f"DROPBOX_WORKER [{job_id}]: Content-Disposition Dropbox: '{content_disp}'")
+            app.logger.debug(f"STREAM_WORKER [{job_id}]: Content-Disposition Dropbox: '{content_disp}'")
             m_utf8 = re.search(r"filename\*=UTF-8''([^;\n\r]+)", content_disp, flags=re.IGNORECASE)
-            if m_utf8: filename_from_cd = requests.utils.unquote(m_utf8.group(1)); app.logger.info(f"DROPBOX_WORKER [{job_id}]: Nom de fichier (filename* UTF-8) extrait: '{filename_from_cd}'")
+            extracted_name = None
+            if m_utf8: extracted_name = requests.utils.unquote(m_utf8.group(1))
             else:
                 m_simple = re.search(r'filename="([^"]+)"', content_disp, flags=re.IGNORECASE)
                 if m_simple:
-                    filename_from_cd = m_simple.group(1)
-                    if '%' in filename_from_cd:
-                        try: filename_from_cd = requests.utils.unquote(filename_from_cd)
-                        except Exception: pass # Keep as is if unquoting fails
-                    app.logger.info(f"DROPBOX_WORKER [{job_id}]: Nom de fichier (filename=\"\") extrait: '{filename_from_cd}'")
-                else: app.logger.warning(f"DROPBOX_WORKER [{job_id}]: Impossible de parser 'filename' dans Content-Disposition."); filename_from_cd = None
-            if filename_from_cd:
-                filename_for_onedrive = sanitize_filename(filename_from_cd)
-                if "dropbox.com/scl/fo/" in unescaped_url and not any(filename_for_onedrive.lower().endswith(ext) for ext in ['.zip', '.rar', '.7z']):
-                    filename_for_onedrive_base, _ = os.path.splitext(filename_for_onedrive)
-                    filename_for_onedrive = filename_for_onedrive_base + ".zip" # Ensure it ends with .zip, not double .zip.zip
-                    app.logger.info(f"DROPBOX_WORKER [{job_id}]: Lien dossier Dropbox & pas d'ext d'archive -> .zip. Nom final: '{filename_for_onedrive}'")
-        else: app.logger.warning(f"DROPBOX_WORKER [{job_id}]: Content-Disposition Dropbox non trouvé. Utilisation nom par défaut: '{filename_for_onedrive}'")
-        if not filename_for_onedrive: filename_for_onedrive = f"fichier_dropbox_{ts}.bin"
-        filename_for_onedrive = sanitize_filename(filename_for_onedrive) # Sanitize again after potential modifications
-        temp_filepath = DOWNLOAD_TEMP_DIR_RENDER / filename_for_onedrive
-        app.logger.info(f"DROPBOX_WORKER [{job_id}]: Téléchargement Dropbox vers: '{temp_filepath}'")
-        downloaded_length = 0; last_logged_percentage_dl = -10
-        with open(temp_filepath, 'wb') as f:
-            for chunk_db in response_db.iter_content(chunk_size=1024*1024*2): # 2MB chunks
-                if chunk_db:
-                    f.write(chunk_db); downloaded_length += len(chunk_db)
-                    if total_length_dropbox and total_length_dropbox > 0:
-                        percentage_dl = int((downloaded_length / total_length_dropbox) * 100)
-                        if percentage_dl >= last_logged_percentage_dl + 5 or last_logged_percentage_dl < 0 :
-                            app.logger.info(f"DROPBOX_WORKER [{job_id}]: DL Dropbox {filename_for_onedrive} en cours... {downloaded_length}/{total_length_dropbox}b ({percentage_dl}%)")
-                            last_logged_percentage_dl = percentage_dl
-        if total_length_dropbox and downloaded_length < total_length_dropbox:
-            app.logger.warning(f"DROPBOX_WORKER [{job_id}]: Taille DL ({downloaded_length}) < attendue ({total_length_dropbox}) pour {filename_for_onedrive}.")
-        app.logger.info(f"DROPBOX_WORKER [{job_id}]: Fichier Dropbox '{filename_for_onedrive}' téléchargé ({downloaded_length}b).")
-        if upload_to_onedrive(job_id, temp_filepath, filename_for_onedrive, access_token_graph, target_folder_id_onedrive):
-            app.logger.info(f"DROPBOX_WORKER [{job_id}]: Upload OneDrive de '{filename_for_onedrive}' réussi.")
-            return True
-        else: app.logger.error(f"DROPBOX_WORKER [{job_id}]: Échec upload OneDrive de '{filename_for_onedrive}'."); return False
-    except requests.exceptions.Timeout: app.logger.error(f"DROPBOX_WORKER [{job_id}]: Timeout Dropbox pour {modified_url}"); return False
-    except requests.exceptions.RequestException as e:
-        app.logger.error(f"DROPBOX_WORKER [{job_id}]: Erreur requête Dropbox {modified_url}: {e}")
-        if hasattr(e, 'response') and e.response is not None: app.logger.error(f"DROPBOX_WORKER [{job_id}]: Réponse Dropbox: {e.response.status_code} - {e.response.text[:500]}...")
+                    extracted_name = m_simple.group(1)
+                    if '%' in extracted_name: try: extracted_name = requests.utils.unquote(extracted_name)
+                    except Exception: pass
+            if extracted_name:
+                filename_for_onedrive = sanitize_filename(extracted_name)
+                app.logger.info(f"STREAM_WORKER [{job_id}]: Nom de fichier extrait de Dropbox: '{filename_for_onedrive}'")
+        
+        if "dropbox.com/scl/fo/" in unescaped_url and not any(filename_for_onedrive.lower().endswith(ext) for ext in ['.zip', '.rar', '.7z']):
+            filename_for_onedrive = os.path.splitext(filename_for_onedrive)[0] + ".zip"
+            app.logger.info(f"STREAM_WORKER [{job_id}]: Lien dossier Dropbox, nom de fichier ajusté en '.zip': '{filename_for_onedrive}'")
+
+        total_length_dropbox_str = response_meta_db.headers.get('content-length')
+        if total_length_dropbox_str and total_length_dropbox_str.isdigit():
+            file_size_dropbox = int(total_length_dropbox_str)
+            app.logger.info(f"STREAM_WORKER [{job_id}]: Fichier à streamer: '{filename_for_onedrive}', Taille estimée: {file_size_dropbox} bytes.")
+        else:
+            app.logger.warning(f"STREAM_WORKER [{job_id}]: Taille du fichier Dropbox inconnue pour '{filename_for_onedrive}'.")
+        
+        # Ne pas fermer response_meta_db ici, on va l'utiliser pour le stream si possible, sinon on le refera.
+        # Si la requête GET initiale pour les métadonnées a déjà commencé à streamer le corps, il faut la réutiliser.
+        # Pour simplifier, on va la fermer et refaire un GET pour le stream principal,
+        # bien que ce soit moins optimal (double requête).
+        response_meta_db.close() 
+
+    except requests.exceptions.RequestException as e_meta:
+        app.logger.error(f"STREAM_WORKER [{job_id}]: Erreur obtention métadonnées Dropbox pour {modified_url}: {e_meta}")
         return False
-    except Exception as e_main: app.logger.error(f"DROPBOX_WORKER [{job_id}]: Erreur générale DL/UL {dropbox_url}: {e_main}", exc_info=True); return False
+
+    # 2. Créer une session d'upload OneDrive
+    if not access_token_graph_initial or not target_folder_id_onedrive:
+        app.logger.error(f"STREAM_WORKER [{job_id}]: Token initial ou ID dossier OneDrive manquant.")
+        return False
+
+    create_session_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id_onedrive}:/{filename_for_onedrive}:/createUploadSession"
+    session_payload = {"item": {"@microsoft.graph.conflictBehavior": "rename", "name": filename_for_onedrive}}
+    session_headers = {'Authorization': 'Bearer ' + access_token_graph_initial, 'Content-Type': 'application/json'}
+    
+    try:
+        session_response = requests.post(create_session_url, headers=session_headers, json=session_payload, timeout=60)
+        session_response.raise_for_status()
+        upload_session_data = session_response.json()
+        upload_session_url_onedrive = upload_session_data['uploadUrl']
+        app.logger.info(f"STREAM_WORKER [{job_id}]: Session upload OneDrive créée pour '{filename_for_onedrive}': {upload_session_url_onedrive[:70]}...")
+    except requests.exceptions.RequestException as e_session:
+        app.logger.error(f"STREAM_WORKER [{job_id}]: Erreur création session upload OneDrive pour '{filename_for_onedrive}': {e_session}")
+        if hasattr(e_session, 'response') and e_session.response is not None:
+            app.logger.error(f"STREAM_WORKER [{job_id}]: Réponse API: {e_session.response.status_code} - {e_session.response.text}")
+        return False
+
+    # 3. Streamer depuis Dropbox et uploader chunk par chunk vers OneDrive
+    bytes_uploaded_total = 0
+    MAX_CHUNK_RETRIES_ONEDRIVE = 3
+    RETRY_DELAY_SECONDS_ONEDRIVE = 10 # Augmenté un peu
+    
+    ONEDRIVE_CHUNK_SIZE = 10 * 1024 * 1024 # 10 MiB, multiple de 320 KiB
+    DROPBOX_READ_CHUNK_SIZE = 1 * 1024 * 1024 
+
+    response_db_download = None # Pour le bloc finally
+    try:
+        headers_db_download = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response_db_download = requests.get(modified_url, stream=True, allow_redirects=True, timeout=1800, headers=headers_db_download) # Timeout long pour gros fichiers
+        response_db_download.raise_for_status()
+
+        chunk_buffer = b""
+        last_onedrive_response = None
+
+        for dropbox_chunk_data in response_db_download.iter_content(chunk_size=DROPBOX_READ_CHUNK_SIZE):
+            if not dropbox_chunk_data: # Fin du stream Dropbox
+                app.logger.info(f"STREAM_WORKER [{job_id}]: Fin du stream de Dropbox pour '{filename_for_onedrive}'.")
+                break 
+            
+            chunk_buffer += dropbox_chunk_data
+
+            while len(chunk_buffer) >= ONEDRIVE_CHUNK_SIZE:
+                chunk_to_upload_onedrive = chunk_buffer[:ONEDRIVE_CHUNK_SIZE]
+                chunk_buffer = chunk_buffer[ONEDRIVE_CHUNK_SIZE:] # Ce qui reste dans le buffer
+
+                start_byte = bytes_uploaded_total
+                end_byte = bytes_uploaded_total + len(chunk_to_upload_onedrive) - 1
+                
+                current_retries = 0
+                upload_successful_this_chunk = False
+                while current_retries < MAX_CHUNK_RETRIES_ONEDRIVE:
+                    access_token_for_chunk = get_onedrive_access_token() # Obtenir un token frais pour chaque chunk/retry
+                    if not access_token_for_chunk:
+                        app.logger.error(f"STREAM_WORKER [{job_id}]: Impossible d'obtenir un token pour upload chunk OneDrive. Tentative {current_retries+1}")
+                        current_retries += 1
+                        time.sleep(RETRY_DELAY_SECONDS_ONEDRIVE)
+                        continue
+
+                    try:
+                        percentage_str = f" ({( (end_byte + 1) / file_size_dropbox) * 100:.2f}%)" if file_size_dropbox else ""
+                        app.logger.info(f"STREAM_WORKER [{job_id}]: Upload chunk OneDrive (Try {current_retries+1}) {filename_for_onedrive} bytes {start_byte}-{end_byte}/{file_size_dropbox if file_size_dropbox else '*'}{percentage_str}")
+                        
+                        chunk_headers_od = {
+                            'Authorization': 'Bearer ' + access_token_for_chunk,
+                            'Content-Length': str(len(chunk_to_upload_onedrive)),
+                            'Content-Range': f'bytes {start_byte}-{end_byte}/{file_size_dropbox if file_size_dropbox else "*"}'
+                        }
+                        last_onedrive_response = requests.put(upload_session_url_onedrive, headers=chunk_headers_od, data=chunk_to_upload_onedrive, timeout=300) # Timeout plus long pour upload
+                        last_onedrive_response.raise_for_status()
+                        
+                        app.logger.info(f"STREAM_WORKER [{job_id}]: Chunk OneDrive {filename_for_onedrive} bytes {start_byte}-{end_byte} OK. Status: {last_onedrive_response.status_code}")
+                        bytes_uploaded_total += len(chunk_to_upload_onedrive)
+                        upload_successful_this_chunk = True
+                        if last_onedrive_response.status_code == 201: # Fichier complet uploadé
+                            app.logger.info(f"STREAM_WORKER [{job_id}]: Fichier '{filename_for_onedrive}' streamé avec succès vers OneDrive (Statut 201).")
+                            return True
+                        break # Sortir de la boucle de retries pour ce chunk
+                    except requests.exceptions.RequestException as e_chunk_od:
+                        current_retries += 1
+                        app.logger.warning(f"STREAM_WORKER [{job_id}]: Erreur upload chunk OneDrive {filename_for_onedrive} (Try {current_retries}/{MAX_CHUNK_RETRIES_ONEDRIVE}): {e_chunk_od}")
+                        if hasattr(e_chunk_od, 'response') and e_chunk_od.response is not None:
+                            app.logger.warning(f"STREAM_WORKER [{job_id}]: Réponse API chunk: {e_chunk_od.response.status_code} - {e_chunk_od.response.text[:200]}")
+                            if e_chunk_od.response.status_code == 401 or e_chunk_od.response.status_code == 403 : # Unauthorized or Forbidden
+                                app.logger.error(f"STREAM_WORKER [{job_id}]: Erreur d'autorisation (401/403) sur chunk. Tentative de refresh token pour le prochain essai si applicable.")
+                        
+                        if current_retries >= MAX_CHUNK_RETRIES_ONEDRIVE:
+                            app.logger.error(f"STREAM_WORKER [{job_id}]: Échec final upload chunk OneDrive pour {filename_for_onedrive} après {current_retries} tentatives.")
+                            _try_cancel_upload_session_streaming(job_id, upload_session_url_onedrive, filename_for_onedrive, "échec chunk stream")
+                            return False
+                        time.sleep(RETRY_DELAY_SECONDS_ONEDRIVE * (2**(current_retries-1)))
+                
+                if not upload_successful_this_chunk:
+                     app.logger.error(f"STREAM_WORKER [{job_id}]: Échec de l'upload du chunk après tous les retries pour {filename_for_onedrive}.")
+                     _try_cancel_upload_session_streaming(job_id, upload_session_url_onedrive, filename_for_onedrive, "échec tous retries chunk stream")
+                     return False
+        
+        # Traiter le dernier fragment restant dans le buffer (s'il y en a)
+        if len(chunk_buffer) > 0:
+            app.logger.info(f"STREAM_WORKER [{job_id}]: Upload du dernier fragment de {len(chunk_buffer)} bytes pour {filename_for_onedrive}")
+            start_byte = bytes_uploaded_total
+            end_byte = bytes_uploaded_total + len(chunk_buffer) - 1
+            
+            # Boucle de retry pour le dernier fragment
+            current_retries = 0
+            upload_successful_this_chunk = False
+            while current_retries < MAX_CHUNK_RETRIES_ONEDRIVE:
+                access_token_for_chunk = get_onedrive_access_token()
+                if not access_token_for_chunk:
+                    app.logger.error(f"STREAM_WORKER [{job_id}]: Impossible d'obtenir un token pour dernier chunk OneDrive. Tentative {current_retries+1}")
+                    current_retries += 1
+                    time.sleep(RETRY_DELAY_SECONDS_ONEDRIVE)
+                    continue
+                try:
+                    percentage_str = f" ({( (end_byte + 1) / file_size_dropbox) * 100:.2f}%)" if file_size_dropbox else ""
+                    app.logger.info(f"STREAM_WORKER [{job_id}]: Upload DERNIER chunk OneDrive (Try {current_retries+1}) {filename_for_onedrive} bytes {start_byte}-{end_byte}/{file_size_dropbox if file_size_dropbox else '*'}{percentage_str}")
+                    chunk_headers_od = {
+                        'Authorization': 'Bearer ' + access_token_for_chunk,
+                        'Content-Length': str(len(chunk_buffer)),
+                        'Content-Range': f'bytes {start_byte}-{end_byte}/{file_size_dropbox if file_size_dropbox else "*"}'
+                    }
+                    last_onedrive_response = requests.put(upload_session_url_onedrive, headers=chunk_headers_od, data=chunk_buffer, timeout=300)
+                    last_onedrive_response.raise_for_status()
+                    
+                    app.logger.info(f"STREAM_WORKER [{job_id}]: DERNIER Chunk OneDrive {filename_for_onedrive} OK. Status: {last_onedrive_response.status_code}")
+                    bytes_uploaded_total += len(chunk_buffer) # Ajout ici aussi
+                    upload_successful_this_chunk = True
+                    if last_onedrive_response.status_code == 201: # Fichier complet uploadé
+                        app.logger.info(f"STREAM_WORKER [{job_id}]: Fichier '{filename_for_onedrive}' streamé avec succès vers OneDrive (Statut 201 sur dernier chunk).")
+                        return True
+                    else: # Le dernier chunk DOIT retourner 201 ou 200 si la taille est connue et correspond.
+                        app.logger.warning(f"STREAM_WORKER [{job_id}]: Statut inattendu {last_onedrive_response.status_code} pour le dernier chunk de {filename_for_onedrive}. Bytes uploadés: {bytes_uploaded_total}, Attendu: {file_size_dropbox}")
+                        # On considère cela comme un succès si la taille correspond, sinon prudence
+                        if file_size_dropbox is not None and bytes_uploaded_total == file_size_dropbox:
+                            app.logger.info(f"STREAM_WORKER [{job_id}]: Taille correspond, considérant upload réussi pour {filename_for_onedrive}.")
+                            return True
+                        # Si la taille est inconnue et qu'on reçoit 200/202, c'est ok aussi, mais l'API devrait retourner 201
+                        elif file_size_dropbox is None and last_onedrive_response.status_code in [200, 202]:
+                             app.logger.info(f"STREAM_WORKER [{job_id}]: Upload de {filename_for_onedrive} (taille inconnue) terminé avec statut {last_onedrive_response.status_code}. Considéré comme succès.")
+                             return True
+
+                        # Si on n'est pas sûr, on annule.
+                        _try_cancel_upload_session_streaming(job_id, upload_session_url_onedrive, filename_for_onedrive, "statut dernier chunk incertain")
+                        return False # Échec
+                    break 
+                except requests.exceptions.RequestException as e_chunk_od_last:
+                    current_retries += 1
+                    app.logger.warning(f"STREAM_WORKER [{job_id}]: Erreur upload DERNIER chunk OneDrive {filename_for_onedrive} (Try {current_retries}): {e_chunk_od_last}")
+                    # ... (logique de retry similaire)
+                    if current_retries >= MAX_CHUNK_RETRIES_ONEDRIVE:
+                        app.logger.error(f"STREAM_WORKER [{job_id}]: Échec final upload DERNIER chunk OneDrive pour {filename_for_onedrive}.")
+                        _try_cancel_upload_session_streaming(job_id, upload_session_url_onedrive, filename_for_onedrive, "échec dernier chunk stream")
+                        return False
+                    time.sleep(RETRY_DELAY_SECONDS_ONEDRIVE * (2**(current_retries-1)))
+            if not upload_successful_this_chunk:
+                _try_cancel_upload_session_streaming(job_id, upload_session_url_onedrive, filename_for_onedrive, "échec tous retries dernier chunk stream")
+                return False
+
+        # Vérification finale basée sur la taille si elle était connue
+        if file_size_dropbox is not None:
+            if bytes_uploaded_total == file_size_dropbox:
+                app.logger.info(f"STREAM_WORKER [{job_id}]: Vérification finale: {bytes_uploaded_total}/{file_size_dropbox} bytes streamés pour '{filename_for_onedrive}'. Succès.")
+                return True # OneDrive devrait déjà avoir renvoyé 201
+            else:
+                app.logger.error(f"STREAM_WORKER [{job_id}]: Incohérence de taille finale pour '{filename_for_onedrive}'. Uploadé: {bytes_uploaded_total}, Attendu: {file_size_dropbox}.")
+                _try_cancel_upload_session_streaming(job_id, upload_session_url_onedrive, filename_for_onedrive, "incohérence taille finale")
+                return False
+        elif last_onedrive_response and last_onedrive_response.status_code == 201: # Si la taille était inconnue mais qu'on a eu un 201
+             app.logger.info(f"STREAM_WORKER [{job_id}]: Upload de {filename_for_onedrive} (taille inconnue) terminé avec statut 201. Succès.")
+             return True
+        else: # Taille inconnue et pas de 201 clair
+            app.logger.warning(f"STREAM_WORKER [{job_id}]: Fin du stream pour '{filename_for_onedrive}' (taille inconnue), statut final incertain. Uploaded: {bytes_uploaded_total}. Dernier statut OneDrive: {last_onedrive_response.status_code if last_onedrive_response else 'N/A'}")
+            # Il est plus sûr d'annuler si on n'a pas eu de 201 et que la taille était inconnue.
+            _try_cancel_upload_session_streaming(job_id, upload_session_url_onedrive, filename_for_onedrive, "fin de stream incertaine (taille inconnue)")
+            return False
+
+    except requests.exceptions.RequestException as e_download:
+        app.logger.error(f"STREAM_WORKER [{job_id}]: Erreur pendant le stream depuis Dropbox pour {modified_url}: {e_download}")
+        if upload_session_url_onedrive: _try_cancel_upload_session_streaming(job_id, upload_session_url_onedrive, filename_for_onedrive, "erreur stream Dropbox")
+        return False
+    except Exception as e_global_stream:
+        app.logger.error(f"STREAM_WORKER [{job_id}]: Erreur globale non gérée pendant le streaming de {filename_for_onedrive}: {e_global_stream}", exc_info=True)
+        if upload_session_url_onedrive: _try_cancel_upload_session_streaming(job_id, upload_session_url_onedrive, filename_for_onedrive, "erreur globale stream")
+        return False
     finally:
-        if temp_filepath and temp_filepath.exists():
-            try: temp_filepath.unlink(); app.logger.info(f"DROPBOX_WORKER [{job_id}]: Fichier temp '{temp_filepath.name}' supprimé.")
-            except OSError as e_unlink: app.logger.error(f"DROPBOX_WORKER [{job_id}]: Erreur suppression temp '{temp_filepath.name}': {e_unlink}")
+        if response_db_download:
+            try:
+                response_db_download.close()
+                app.logger.info(f"STREAM_WORKER [{job_id}]: Connexion de téléchargement Dropbox fermée.")
+            except Exception as e_close:
+                app.logger.warning(f"STREAM_WORKER [{job_id}]: Erreur en fermant la connexion Dropbox: {e_close}")
 
-def get_processed_urls_from_onedrive(job_id, access_token, target_folder_id):
-    if not access_token or not target_folder_id: return set()
-    download_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_URLS_ONEDRIVE_FILENAME}:/content"
-    headers = {'Authorization': 'Bearer ' + access_token}; processed_urls = set()
-    app.logger.debug(f"DROPBOX_WORKER_DEDUP [{job_id}]: Lecture de {PROCESSED_URLS_ONEDRIVE_FILENAME}")
-    try:
-        response = requests.get(download_url, headers=headers, timeout=30)
-        if response.status_code == 200:
-            lines = response.text.splitlines()
-            for line in lines:
-                if line.strip(): processed_urls.add(line.strip())
-            app.logger.info(f"DROPBOX_WORKER_DEDUP [{job_id}]: Lu {len(processed_urls)} URLs depuis {PROCESSED_URLS_ONEDRIVE_FILENAME}.")
-        elif response.status_code == 404: app.logger.info(f"DROPBOX_WORKER_DEDUP [{job_id}]: {PROCESSED_URLS_ONEDRIVE_FILENAME} non trouvé.")
-        else: response.raise_for_status()
-    except requests.exceptions.RequestException as e: app.logger.error(f"DROPBOX_WORKER_DEDUP [{job_id}]: Erreur DL {PROCESSED_URLS_ONEDRIVE_FILENAME}: {e}")
-    return processed_urls
-
-def add_processed_url_to_onedrive(job_id, access_token, target_folder_id, dropbox_url_processed):
-    if not access_token or not target_folder_id or not dropbox_url_processed: return False
-    current_urls = get_processed_urls_from_onedrive(job_id, access_token, target_folder_id)
-    current_urls.add(dropbox_url_processed)
-    content_to_upload = "\n".join(sorted(list(current_urls)))
-    upload_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{target_folder_id}:/{PROCESSED_URLS_ONEDRIVE_FILENAME}:/content?@microsoft.graph.conflictBehavior=replace"
-    headers = {'Authorization': 'Bearer ' + access_token, 'Content-Type': 'text/plain; charset=utf-8'}
-    try:
-        response = requests.put(upload_url, headers=headers, data=content_to_upload.encode('utf-8'), timeout=60)
-        response.raise_for_status()
-        app.logger.info(f"DROPBOX_WORKER_DEDUP [{job_id}]: {PROCESSED_URLS_ONEDRIVE_FILENAME} mis à jour ({len(current_urls)} URLs).")
-        return True
-    except requests.exceptions.RequestException as e: app.logger.error(f"DROPBOX_WORKER_DEDUP [{job_id}]: Erreur UL {PROCESSED_URLS_ONEDRIVE_FILENAME}: {e}"); return False
-
+# Modifier process_dropbox_link_worker pour appeler la nouvelle fonction de streaming
 def process_dropbox_link_worker(dropbox_url, subject_for_default_filename, email_id_for_logging):
-    if email_id_for_logging and email_id_for_logging != 'N/A' and email_id_for_logging != 'N/A_EMAIL_ID':
+    # Job ID generation (comme avant, mais s'assurer qu'il est unique et loggable)
+    if email_id_for_logging and email_id_for_logging not in ['N/A', 'N/A_EMAIL_ID']:
         job_id_base = re.sub(r'[^a-zA-Z0-9]', '', email_id_for_logging)[-12:]
-        if not job_id_base: job_id_base = f"TS_{time.time_ns() % 10**12:012}" # Ensure fixed length
+        if not job_id_base: job_id_base = f"TS_{time.time_ns()}"[-12:] # Fallback
     else:
         sanitized_url_part = re.sub(r'[^a-zA-Z0-9]', '', dropbox_url)[-20:]
-        job_id_base = sanitized_url_part if len(sanitized_url_part) > 5 else f"URL_TS_{time.time_ns() % 10**12:012}"
-    job_id = f"J{job_id_base}"
+        job_id_base = sanitized_url_part if len(sanitized_url_part) > 5 else f"URL_TS_{time.time_ns()}"[-12:]
+    job_id = f"S-{job_id_base}" # 'S' pour Streaming
 
-    app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: DÉMARRAGE EFFECTIF pour URL: '{dropbox_url}', Sujet Fallback: '{subject_for_default_filename}'")
+    app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: DÉMARRAGE (mode streaming) pour URL: '{dropbox_url}', Sujet Fallback: '{subject_for_default_filename}'")
 
     if not dropbox_url or not isinstance(dropbox_url, str) or not dropbox_url.lower().startswith("https://www.dropbox.com/"):
-        app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: URL Dropbox reçue invalide ou non-Dropbox: '{dropbox_url}'. Arrêt du worker.")
+        app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: URL Dropbox reçue invalide: '{dropbox_url}'. Arrêt.")
         return
 
     access_token_graph = get_onedrive_access_token()
-    if not access_token_graph: app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: Échec token Graph pour '{dropbox_url}'. Arrêt."); return
+    if not access_token_graph: app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: Échec token Graph. Arrêt."); return
     
     onedrive_target_folder_id = ensure_onedrive_folder(access_token_graph)
-    if not onedrive_target_folder_id: app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: Échec dossier OneDrive pour '{dropbox_url}'. Arrêt."); return
+    if not onedrive_target_folder_id: app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: Échec dossier OneDrive. Arrêt."); return
     
-    processed_urls = get_processed_urls_from_onedrive(job_id, access_token_graph, onedrive_target_folder_id)
+    processed_urls = get_processed_urls_from_onedrive(job_id, access_token_graph, onedrive_target_folder_id) # job_id passé
     unescaped_received_url = html_parser.unescape(dropbox_url)
-    if dropbox_url in processed_urls or unescaped_received_url in processed_urls :
-        app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: URL '{dropbox_url}' (ou sa forme unescaped) déjà traitée. Ignorée.")
+    if dropbox_url in processed_urls or unescaped_received_url in processed_urls:
+        app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: URL '{dropbox_url}' (ou unescaped) déjà traitée. Ignorée.")
         return
         
-    app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: URL '{dropbox_url}' nouvelle. Lancement transfert.")
-    success_transfer = download_file_from_dropbox_and_upload_to_onedrive(
+    app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: URL '{dropbox_url}' nouvelle. Lancement du streaming vers OneDrive.")
+    
+    success_transfer = stream_dropbox_to_onedrive(
         job_id, dropbox_url, access_token_graph, onedrive_target_folder_id, subject_for_default_filename
     )
+    
     if success_transfer:
-        app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: Transfert '{dropbox_url}' réussi. MàJ liste URLs traitées.")
-        if not add_processed_url_to_onedrive(job_id, access_token_graph, onedrive_target_folder_id, dropbox_url):
-            app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: CRITIQUE - Fichier '{dropbox_url}' transféré mais échec màj {PROCESSED_URLS_ONEDRIVE_FILENAME}.")
-    else: app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: Échec transfert '{dropbox_url}'.")
-    app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: Fin tâche pour '{dropbox_url}'")
+        app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: Streaming '{dropbox_url}' réussi. MàJ liste URLs traitées.")
+        if not add_processed_url_to_onedrive(job_id, access_token_graph, onedrive_target_folder_id, dropbox_url): # job_id passé
+            app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: CRITIQUE - Fichier '{dropbox_url}' streamé mais échec màj {PROCESSED_URLS_ONEDRIVE_FILENAME}.")
+    else: app.logger.error(f"DROPBOX_WORKER_THREAD [{job_id}]: Échec streaming '{dropbox_url}'.")
+    app.logger.info(f"DROPBOX_WORKER_THREAD [{job_id}]: Fin tâche (streaming) pour '{dropbox_url}'")
+
+
+# --- Fonctions pour Polling Email & Déclenchement Webhook (Rôle 1) ---
+# (mark_email_as_read, get_processed_webhook_trigger_ids, add_processed_webhook_trigger_id, 
+#  check_new_emails_and_trigger_make_webhook, background_email_poller restent comme dans la version précédente
+#  avec la logique de plage horaire et le marquage comme lu)
+
+# --- ENDPOINTS FLASK ---
+# (api_process_individual_dropbox_link et les autres endpoints restent comme avant,
+#  s'assurant que email_id_for_logging est bien récupéré de "microsoft_graph_email_id")
+
+# ... (Le reste du script - fonctions de polling, endpoints Flask, __main__ - reste identique à la version précédente
+#      qui incluait déjà la logique de plage horaire et le marquage comme lu,
+#      et la logique de job_id dans les fonctions de déduplication.)
+#      Assurez-vous que `get_processed_urls_from_onedrive` et `add_processed_url_to_onedrive`
+#      acceptent bien le `job_id` pour la cohérence des logs, comme fait dans la version précédente.
+#      Je vais réintégrer le reste du code ici pour la complétude, en supposant que les modifications
+#      de job_id dans les fonctions de déduplication et la logique de plage horaire sont bien celles que nous avions.
 
 # --- Fonctions pour Polling Email & Déclenchement Webhook (Rôle 1) ---
 def mark_email_as_read(access_token, message_id):
@@ -419,8 +509,8 @@ def mark_email_as_read(access_token, message_id):
         app.logger.error(f"MARK_AS_READ: Erreur API Graph lors du marquage comme lu pour email ID {message_id}: {e}")
         if hasattr(e, 'response') and e.response is not None:
             app.logger.error(f"MARK_AS_READ: Réponse API Graph: {e.response.status_code} - {e.response.text}")
-            if e.response.status_code == 403: # Forbidden
-                app.logger.error("MARK_AS_READ: Erreur 403 Forbidden. Vérifiez que la permission Mail.ReadWrite est accordée et incluse dans le token utilisé.")
+            if e.response.status_code == 403:
+                app.logger.error("MARK_AS_READ: Erreur 403 Forbidden. Vérifiez que la permission Mail.ReadWrite est accordée.")
         return False
     except Exception as ex_general:
         app.logger.error(f"MARK_AS_READ: Erreur inattendue lors du marquage comme lu pour {message_id}: {ex_general}", exc_info=True)
@@ -460,10 +550,10 @@ def add_processed_webhook_trigger_id(access_token, target_folder_id, email_id_pr
 def check_new_emails_and_trigger_make_webhook():
     app.logger.info("EMAIL_POLLER: Vérification des nouveaux emails...")
     if not SENDER_LIST_FOR_POLLING:
-        app.logger.warning("EMAIL_POLLER: SENDER_LIST_FOR_POLLING est vide. Le poller ne peut pas filtrer efficacement par expéditeur. Le cycle de polling est sauté.")
+        app.logger.warning("EMAIL_POLLER: SENDER_LIST_FOR_POLLING est vide.")
         return 0
     if not MAKE_SCENARIO_WEBHOOK_URL:
-        app.logger.error("EMAIL_POLLER: MAKE_SCENARIO_WEBHOOK_URL non configuré. Impossible de déclencher Make.")
+        app.logger.error("EMAIL_POLLER: MAKE_SCENARIO_WEBHOOK_URL non configuré.")
         return 0
 
     access_token = get_onedrive_access_token()
@@ -473,24 +563,18 @@ def check_new_emails_and_trigger_make_webhook():
 
     onedrive_processing_folder_id = ensure_onedrive_folder(access_token)
     if not onedrive_processing_folder_id:
-        app.logger.error("EMAIL_POLLER: Impossible de s'assurer de l'existence du dossier OneDrive pour la liste des triggers.")
+        app.logger.error("EMAIL_POLLER: Impossible de s'assurer de l'existence du dossier OneDrive pour les listes de déduplication.")
         return 0
 
     processed_trigger_ids = get_processed_webhook_trigger_ids(access_token, onedrive_processing_folder_id)
     triggered_count_this_run = 0
 
     try:
-        # Recherche des emails non lus des dernières 24h (pour ne pas surcharger Graph API)
-        # Le filtrage par `isRead eq false` est le principal critère, `receivedDateTime` est secondaire.
         since_datetime_for_graph = (datetime.now(timezone.utc) - timedelta(days=1))
         since_datetime_iso_graph_compatible = since_datetime_for_graph.strftime('%Y-%m-%dT%H:%M:%SZ')
         
         filter_query = f"isRead eq false and receivedDateTime ge {since_datetime_iso_graph_compatible}"
-        # Sélectionner les champs nécessaires pour réduire la taille de la réponse
-        messages_url = (f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?"
-                        f"$filter={filter_query}&"
-                        f"$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments&"
-                        f"$top=100&$orderby=receivedDateTime desc") # Plus récents en premier, mais on les traitera en ordre chronologique
+        messages_url = f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$filter={filter_query}&$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments&$top=100&$orderby=receivedDateTime desc"
         
         app.logger.info(f"EMAIL_POLLER: Appel Graph API Mail (filtre: '{filter_query}').")
         headers_graph_mail = {'Authorization': 'Bearer ' + access_token, 'Prefer': 'outlook.body-content-type="text"'}
@@ -501,57 +585,48 @@ def check_new_emails_and_trigger_make_webhook():
         app.logger.info(f"EMAIL_POLLER: {len(emails_from_graph)} email(s) non lu(s) récents récupérés (avant filtre expéditeur Python).")
 
         relevant_emails = []
-        if SENDER_LIST_FOR_POLLING: # Assurez-vous que cette liste est bien populée
+        if SENDER_LIST_FOR_POLLING:
             for email_data in emails_from_graph:
                 email_sender_info = email_data.get('from', {}).get('emailAddress', {})
                 email_sender_address = email_sender_info.get('address', '').lower()
                 if email_sender_address in SENDER_LIST_FOR_POLLING:
                     relevant_emails.append(email_data)
                 else:
-                    app.logger.debug(f"EMAIL_POLLER: Email ID {email_data['id']} de {email_sender_address} ignoré (ne fait pas partie de SENDER_LIST_FOR_POLLING).")
-        else: # Si SENDER_LIST_FOR_POLLING est vide, on ne peut pas filtrer. Logique déjà gérée en début de fonction.
-            pass 
+                    app.logger.debug(f"EMAIL_POLLER: Email ID {email_data['id']} de {email_sender_address} ignoré (pas dans SENDER_LIST_FOR_POLLING).")
+        else:
+            app.logger.warning("EMAIL_POLLER: SENDER_LIST_FOR_POLLING vide, aucun email ne sera traité comme pertinent.")
 
-        app.logger.info(f"EMAIL_POLLER: {len(relevant_emails)} email(s) pertinents trouvés après filtrage par expéditeur en Python.")
+        app.logger.info(f"EMAIL_POLLER: {len(relevant_emails)} email(s) pertinents trouvés après filtrage par expéditeur.")
 
-        # Traiter les emails du plus ancien au plus récent pour respecter l'ordre d'arrivée
-        for email_data in reversed(relevant_emails): 
+        for email_data in reversed(relevant_emails):
             email_id_graph = email_data['id']
             email_subject = email_data.get('subject', 'N/A')
-            email_sender_address = email_data.get('from', {}).get('emailAddress', {}).get('address', 'N/A').lower()
-
+            
             if email_id_graph in processed_trigger_ids:
                 app.logger.debug(f"EMAIL_POLLER: Webhook déjà déclenché pour email ID {email_id_graph}. Ignoré.")
-                continue # Passe à l'email suivant
+                continue
             
             app.logger.info(f"EMAIL_POLLER: Email pertinent trouvé (ID: {email_id_graph}, Sujet: '{str(email_subject)[:50]}...'). Déclenchement du webhook Make.")
             webhook_payload = {
-                "microsoft_graph_email_id": email_id_graph, # Important pour la déduplication et le worker
+                "microsoft_graph_email_id": email_id_graph,
                 "subject": email_subject, 
                 "receivedDateTime": email_data.get("receivedDateTime"),
-                "sender_address": email_sender_address,
-                "bodyPreview": email_data.get('bodyPreview', '') # Make peut utiliser ça pour extraire les URLs
+                "sender_address": email_data.get('from', {}).get('emailAddress', {}).get('address', 'N/A').lower(),
+                "bodyPreview": email_data.get('bodyPreview', '') 
             }
             try:
                 webhook_response = requests.post(MAKE_SCENARIO_WEBHOOK_URL, json=webhook_payload, timeout=20)
-                # Make renvoie souvent 200 OK avec "Accepted" dans le corps
                 if webhook_response.status_code == 200 and "accepted" in webhook_response.text.lower():
                     app.logger.info(f"EMAIL_POLLER: Webhook Make appelé avec succès pour email ID {email_id_graph}. Réponse: {webhook_response.status_code} - {webhook_response.text}")
                     
-                    # Enregistrer l'ID et marquer comme lu UNIQUEMENT si le webhook a été accepté
                     if add_processed_webhook_trigger_id(access_token, onedrive_processing_folder_id, email_id_graph):
                         triggered_count_this_run += 1
                         if mark_email_as_read(access_token, email_id_graph):
                             app.logger.info(f"EMAIL_POLLER: Email ID {email_id_graph} marqué comme lu sur le serveur.")
                         else:
-                            # Cas critique: webhook appelé, ID enregistré, mais pas marqué comme lu.
-                            # Le système est protégé contre les redéclenchements grâce à processed_trigger_ids.
-                            app.logger.warning(f"EMAIL_POLLER: Échec du marquage comme lu pour email ID {email_id_graph}, mais le webhook a été appelé et l'ID est enregistré pour déduplication webhook.")
+                            app.logger.warning(f"EMAIL_POLLER: Échec du marquage comme lu pour email ID {email_id_graph}, mais le webhook a été appelé et l'ID est enregistré.")
                     else:
-                        # Cas critique: webhook appelé, mais échec de l'enregistrement de l'ID.
-                        # L'email NE SERA PAS marqué comme lu pour permettre une nouvelle tentative au prochain cycle,
-                        # ce qui pourrait entraîner des déclenchements multiples si Make ne gère pas la déduplication.
-                        app.logger.error(f"EMAIL_POLLER: CRITIQUE - Échec de l'ajout de {email_id_graph} à la liste des triggers traités sur OneDrive. L'email ne sera PAS marqué comme lu pour éviter des déclenchements multiples non tracés.")
+                        app.logger.error(f"EMAIL_POLLER: Échec de l'ajout de {email_id_graph} à la liste des triggers traités. L'email ne sera PAS marqué comme lu.")
                 else:
                     app.logger.error(f"EMAIL_POLLER: Erreur appel webhook Make pour {email_id_graph}. Statut: {webhook_response.status_code}, Réponse: {webhook_response.text[:200]}")
             except requests.exceptions.RequestException as e_wh:
@@ -561,134 +636,119 @@ def check_new_emails_and_trigger_make_webhook():
         app.logger.error(f"EMAIL_POLLER: Erreur API Graph Mail: {e_graph}")
         if hasattr(e_graph, 'response') and e_graph.response is not None:
              app.logger.error(f"EMAIL_POLLER: Réponse API Graph Mail: {e_graph.response.status_code} - {e_graph.response.text}")
-        return 0 # Indique une erreur dans ce cycle
+        return 0
     except Exception as e_main:
         app.logger.error(f"EMAIL_POLLER: Erreur inattendue: {e_main}", exc_info=True)
-        return 0 # Indique une erreur
-
+        return 0
 
 # --- THREAD DE FOND POUR LE POLLING EMAIL (Rôle 1) ---
 def background_email_poller():
     app.logger.info(f"BACKGROUND_EMAIL_POLLER_THREAD: Démarrage du thread de polling des emails (Fuseau pour horaire: {POLLING_TIMEZONE_STR}).")
     consecutive_errors = 0
     MAX_CONSECUTIVE_ERRORS = 5
+    
+    global POLLING_ACTIVE_START_HOUR, POLLING_ACTIVE_END_HOUR, POLLING_ACTIVE_DAYS, POLLING_INACTIVE_CHECK_INTERVAL_SECONDS, EMAIL_POLLING_INTERVAL_SECONDS, TZ_FOR_POLLING
 
     while True:
         try:
-            # Déterminer l'heure actuelle dans le fuseau configuré
-            now_in_target_tz = datetime.now(POLLING_TARGET_TZ)
-            current_hour = now_in_target_tz.hour
-            current_weekday = now_in_target_tz.weekday() # Lundi=0, ..., Dimanche=6
+            now_in_polling_tz = datetime.now(TZ_FOR_POLLING)
+            current_hour = now_in_polling_tz.hour
+            current_weekday = now_in_polling_tz.weekday()
 
             is_active_day = current_weekday in POLLING_ACTIVE_DAYS
-            # POLLING_ACTIVE_END_HOUR est exclusif. Ex: si 19, actif pour les heures START_HOUR..18.
-            is_active_time = (POLLING_ACTIVE_START_HOUR <= current_hour < POLLING_ACTIVE_END_HOUR)
+            is_active_time = POLLING_ACTIVE_START_HOUR <= current_hour < POLLING_ACTIVE_END_HOUR
+
+            log_message_details = (
+                f"Jour: {current_weekday} [Actifs: {POLLING_ACTIVE_DAYS}], "
+                f"Heure: {current_hour:02d}h [Plage Active: {POLLING_ACTIVE_START_HOUR:02d}h-{POLLING_ACTIVE_END_HOUR:02d}h {POLLING_TIMEZONE_STR}]"
+            )
 
             if is_active_day and is_active_time:
-                app.logger.info(f"BACKGROUND_EMAIL_POLLER_THREAD: Dans la plage active (Jour: {current_weekday}, Heure: {current_hour:02d}h {POLLING_TIMEZONE_STR}). Démarrage du cycle de polling.")
-                
-                # Vérifier les configurations essentielles avant de lancer le vrai polling
+                app.logger.info(f"BACKGROUND_EMAIL_POLLER_THREAD: Dans la plage active ({log_message_details}). Démarrage du cycle de polling.")
                 if not all([ONEDRIVE_CLIENT_ID, ONEDRIVE_CLIENT_SECRET, ONEDRIVE_REFRESH_TOKEN, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
-                    app.logger.warning("BACKGROUND_EMAIL_POLLER_THREAD: Configuration polling incomplète (OneDrive Auth, SENDER_LIST_FOR_POLLING vide, ou Webhook URL). Attente de 60s avant nouvelle vérification de config/plage.")
-                    time.sleep(60) # Attendre un peu avant de revérifier la config ou la plage horaire
-                    continue # Retourne au début de la boucle while pour revérifier la plage et la config
+                    app.logger.warning("BACKGROUND_EMAIL_POLLER_THREAD: Configuration incomplète. Attente de 60s.")
+                    time.sleep(60)
+                    continue
                 
                 num_triggered = check_new_emails_and_trigger_make_webhook()
                 app.logger.info(f"BACKGROUND_EMAIL_POLLER_THREAD: Cycle de polling actif terminé. {num_triggered} webhook(s) déclenché(s) dans ce cycle.")
-                consecutive_errors = 0 # Réinitialiser les erreurs en cas de succès
+                consecutive_errors = 0
                 sleep_duration = EMAIL_POLLING_INTERVAL_SECONDS
-            
-            else: # Hors plage active (jour ou heure)
-                app.logger.info(f"BACKGROUND_EMAIL_POLLER_THREAD: Hors plage active (Jour: {current_weekday} [Actifs: {POLLING_ACTIVE_DAYS}], Heure: {current_hour:02d}h [Plage Active: {POLLING_ACTIVE_START_HOUR:02d}h-{POLLING_ACTIVE_END_HOUR:02d}h {POLLING_TIMEZONE_STR}]). Mise en veille.")
+            else:
+                app.logger.info(f"BACKGROUND_EMAIL_POLLER_THREAD: Hors plage active ({log_message_details}). Mise en veille.")
                 sleep_duration = POLLING_INACTIVE_CHECK_INTERVAL_SECONDS
             
-            app.logger.debug(f"BACKGROUND_EMAIL_POLLER_THREAD: Prochaine vérification/cycle dans {sleep_duration} secondes.")
             time.sleep(sleep_duration)
 
         except Exception as e:
             consecutive_errors += 1
-            app.logger.error(f"BACKGROUND_EMAIL_POLLER_THREAD: Erreur majeure non gérée dans la boucle de polling (erreur #{consecutive_errors}): {e}", exc_info=True)
+            app.logger.error(f"BACKGROUND_EMAIL_POLLER_THREAD: Erreur majeure non gérée (erreur #{consecutive_errors}): {e}", exc_info=True)
             if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
-                app.logger.critical(f"BACKGROUND_EMAIL_POLLER_THREAD: Trop d'erreurs consécutives ({MAX_CONSECUTIVE_ERRORS}). Arrêt du thread de polling.")
-                break # Sort de la boucle while, arrêtant le thread
-            
-            # Augmentation linéaire de la durée de la pause en cas d'erreurs répétées
-            error_sleep_duration = EMAIL_POLLING_INTERVAL_SECONDS * (consecutive_errors + 1)
-            app.logger.info(f"BACKGROUND_EMAIL_POLLER_THREAD: Attente de {error_sleep_duration}s après erreur avant de réessayer.")
-            time.sleep(error_sleep_duration)
+                app.logger.critical(f"BACKGROUND_EMAIL_POLLER_THREAD: Trop d'erreurs consécutives ({MAX_CONSECUTIVE_ERRORS}). Arrêt du thread.")
+                break
+            time.sleep(EMAIL_POLLING_INTERVAL_SECONDS * (2 ** consecutive_errors)) # Exponential backoff
 
 # --- ENDPOINTS FLASK ---
-@app.route('/api/process_individual_dropbox_link', methods=['POST']) # Rôle 2
+@app.route('/api/process_individual_dropbox_link', methods=['POST'])
 def api_process_individual_dropbox_link():
     received_token = request.headers.get('X-API-Token')
-    if EXPECTED_API_TOKEN and received_token != EXPECTED_API_TOKEN: # Check token only if EXPECTED_API_TOKEN is set
-        app.logger.warning(f"API_DROPBOX_PROCESS: Accès non autorisé. Token reçu: '{received_token}'."); 
-        return jsonify({"status": "error", "message": "Non autorisé"}), 401
-    elif not EXPECTED_API_TOKEN:
-        app.logger.warning("API_DROPBOX_PROCESS: PROCESS_API_TOKEN non configuré. Endpoint non sécurisé (accès autorisé).")
-
-    app.logger.info("API_DROPBOX_PROCESS: Requête reçue (Token validé ou non requis).")
-    app.logger.debug(f"API_DROPBOX_PROCESS: Headers: {dict(request.headers)}")
-    app.logger.debug(f"API_DROPBOX_PROCESS: Données brutes (premiers 200 chars): {request.data[:200]}")
+    if not EXPECTED_API_TOKEN: app.logger.error("API_DROPBOX_PROCESS: PROCESS_API_TOKEN non configuré."); return jsonify({"status": "error", "message": "Erreur de configuration serveur"}), 500
+    if received_token != EXPECTED_API_TOKEN: app.logger.warning(f"API_DROPBOX_PROCESS: Accès non autorisé. Token: '{received_token}'."); return jsonify({"status": "error", "message": "Non autorisé"}), 401
+    app.logger.info("API_DROPBOX_PROCESS: Token API validé.")
+    
     data = None
     try:
         data = request.get_json(silent=True)
-        if data is None and request.data: # If get_json failed but there's data, try manual parsing
-            app.logger.warning(f"API_DROPBOX_PROCESS: get_json(silent=True) a retourné None. Tentative de parsing manuel du corps de la requête.")
-            try: 
-                data = json.loads(request.data.decode('utf-8'))
-            except Exception as e_parse: 
-                app.logger.error(f"API_DROPBOX_PROCESS: Échec du parsing manuel du JSON: {e_parse}")
-                raise ValueError(f"Échec du parsing manuel du JSON: {e_parse}") # Raise to be caught by outer try-except
-        app.logger.info(f"API_DROPBOX_PROCESS: Données JSON parsées: {str(data)[:500] if data else 'Aucune ou parsing échoué avant log'}") # Log first 500 chars
-    except Exception as e: 
-        app.logger.error(f"API_DROPBOX_PROCESS: Erreur lors du parsing JSON initial: {e}", exc_info=True)
-        return jsonify({"status": "error", "message": f"Erreur lors du décodage du JSON: {str(e)}"}), 400
+        if data is None and request.data:
+            try: data = json.loads(request.data.decode('utf-8'))
+            except Exception as e_parse: app.logger.error(f"API_DROPBOX_PROCESS: Échec parsing manuel: {e_parse}"); raise
+        app.logger.info(f"API_DROPBOX_PROCESS: Données JSON: {str(data)[:500]}{'...' if len(str(data)) > 500 else ''}")
+    except Exception as e: app.logger.error(f"API_DROPBOX_PROCESS: Erreur parsing JSON: {e}", exc_info=True); return jsonify({"status": "error", "message": f"Erreur JSON: {str(e)}"}), 400
     
     if not data or 'dropbox_url' not in data: 
-        app.logger.error(f"API_DROPBOX_PROCESS: Payload invalide ou 'dropbox_url' manquante. 'data': {str(data)[:500]}")
+        app.logger.error(f"API_DROPBOX_PROCESS: Payload invalide. 'data': {data}"); 
         return jsonify({"status": "error", "message": "dropbox_url manquante ou payload invalide"}), 400
     
     dropbox_url_to_process = data.get('dropbox_url')
     email_subject_from_make = data.get('email_subject')
     email_subject_for_filename = email_subject_from_make if email_subject_from_make is not None else 'Fichier_Dropbox_Sujet_Absent'
     
-    email_id_for_logging = data.get('microsoft_graph_email_id', 'N/A_EMAIL_ID') # Correspond au payload du webhook
+    email_id_for_logging = data.get('microsoft_graph_email_id', 'N/A_EMAIL_ID')
     
-    app.logger.info(f"API_DROPBOX_PROCESS: Demande reçue pour URL: {dropbox_url_to_process} (Sujet pour nom fichier: {email_subject_for_filename}, EmailID Graph: {email_id_for_logging})")
+    app.logger.info(f"API_DROPBOX_PROCESS: Demande reçue pour URL: {dropbox_url_to_process} (Sujet: {email_subject_for_filename}, EmailID: {email_id_for_logging})")
     
-    if email_id_for_logging and email_id_for_logging != 'N/A_EMAIL_ID':
+    if email_id_for_logging and email_id_for_logging not in ['N/A', 'N/A_EMAIL_ID']:
         thread_name_suffix = re.sub(r'[^a-zA-Z0-9]', '', email_id_for_logging)[-15:]
-        if not thread_name_suffix: thread_name_suffix = str(time.time_ns() % 10**10).zfill(10) # Fallback unique ID
+        if not thread_name_suffix : thread_name_suffix = str(time.time_ns())[-10:]
     else:
-        thread_name_suffix = str(time.time_ns() % 10**10).zfill(10)
+        thread_name_suffix = str(time.time_ns())[-10:]
         
-    thread = threading.Thread(target=process_dropbox_link_worker, args=(dropbox_url_to_process, email_subject_for_filename, email_id_for_logging), name=f"DropboxWorker-{thread_name_suffix}")
+    thread = threading.Thread(target=process_dropbox_link_worker, args=(dropbox_url_to_process, email_subject_for_filename, email_id_for_logging), name=f"StreamWorker-{thread_name_suffix}")
     thread.daemon = True; thread.start()
-    app.logger.info(f"API_DROPBOX_PROCESS: Tâche pour {dropbox_url_to_process} mise en file (thread démarré: {thread.name}).")
-    return jsonify({"status": "accepted", "message": "Demande de traitement reçue et mise en file d'attente."}), 202
+    app.logger.info(f"API_DROPBOX_PROCESS: Tâche de streaming pour {dropbox_url_to_process} mise en file (thread: {thread.name}).")
+    return jsonify({"status": "accepted", "message": "Demande de traitement (streaming) reçue."}), 202
 
-@app.route('/api/trigger_local_workflow', methods=['POST']) # Rôle 3
+@app.route('/api/trigger_local_workflow', methods=['POST'])
 def trigger_local_workflow():
     command_payload = request.json or {"command": "start_local_process", "timestamp": time.time()}
     try:
         with open(TRIGGER_SIGNAL_FILE, "w") as f: json.dump(command_payload, f)
         app.logger.info(f"LOCAL_TRIGGER_API: Signal local posé sur {TRIGGER_SIGNAL_FILE}. Payload: {command_payload}")
-        return jsonify({"status": "success", "message": "Signal pour workflow local posé", "payload": command_payload}), 200
-    except Exception as e: app.logger.error(f"LOCAL_TRIGGER_API: Erreur pose signal local: {e}", exc_info=True); return jsonify({"status": "error", "message": "Erreur interne pose signal"}), 500
+        return jsonify({"status": "success", "message": "Signal pour workflow local posé"}), 200
+    except Exception as e: app.logger.error(f"LOCAL_TRIGGER_API: Erreur pose signal: {e}", exc_info=True); return jsonify({"status": "error", "message": "Erreur interne pose signal"}), 500
 
-@app.route('/api/check_trigger', methods=['GET']) # Rôle 3
+@app.route('/api/check_trigger', methods=['GET'])
 def check_local_workflow_trigger():
     response_data = {'command_pending': False, 'payload': None}
     if TRIGGER_SIGNAL_FILE.exists():
         try:
             with open(TRIGGER_SIGNAL_FILE, 'r') as f: payload = json.load(f)
             response_data['command_pending'] = True; response_data['payload'] = payload
-            TRIGGER_SIGNAL_FILE.unlink(); app.logger.info(f"LOCAL_TRIGGER_API: Signal local lu et supprimé de {TRIGGER_SIGNAL_FILE}. P: {payload}")
+            TRIGGER_SIGNAL_FILE.unlink(); app.logger.info(f"LOCAL_TRIGGER_API: Signal local lu et supprimé. P: {payload}")
         except Exception as e: app.logger.error(f"LOCAL_TRIGGER_API: Erreur traitement signal {TRIGGER_SIGNAL_FILE} : {e}", exc_info=True)
     return jsonify(response_data)
 
-@app.route('/api/ping', methods=['GET', 'HEAD']) # Rôle 4
+@app.route('/api/ping', methods=['GET', 'HEAD'])
 def api_ping():
     ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
     user_agent = request.headers.get('User-Agent', 'N/A')
@@ -706,35 +766,24 @@ def serve_trigger_page_main():
         app.logger.error(f"ROOT_ROUTE: ERREUR: trigger_page.html non trouvé dans {app.root_path}.")
         return "Erreur: Page principale non trouvée.", 404
     except Exception as e_send:
-        app.logger.error(f"ROOT_ROUTE: Erreur send_from_directory pour trigger_page.html: {e_send}", exc_info=True)
+        app.logger.error(f"ROOT_ROUTE: Erreur send_from_directory: {e_send}", exc_info=True)
         return "Erreur interne du serveur (UI).", 500
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-    # Condition pour démarrer les threads de fond seulement dans le processus principal de Werkzeug (si use_reloader=True)
-    # ou si le reloader n'est pas utilisé (debug_mode=False).
     start_background_threads = not debug_mode or os.environ.get("WERKZEUG_RUN_MAIN") == "true"
 
     if start_background_threads:
         if all([ONEDRIVE_CLIENT_ID, ONEDRIVE_CLIENT_SECRET, ONEDRIVE_REFRESH_TOKEN, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
             email_poll_thread = threading.Thread(target=background_email_poller, name="EmailPollerThread")
-            email_poll_thread.daemon = True # Permet au thread de se terminer quand le processus principal se termine
+            email_poll_thread.daemon = True
             email_poll_thread.start()
             app.logger.info(f"MAIN_APP: Thread de polling des emails démarré (expéditeurs: {len(SENDER_LIST_FOR_POLLING)}, fuseau plages: {POLLING_TIMEZONE_STR}).")
         else:
-            app.logger.warning("MAIN_APP: Thread de polling des emails NON démarré car la configuration est incomplète (Auth OneDrive, SENDER_LIST_FOR_POLLING vide, ou MAKE_SCENARIO_WEBHOOK_URL manquant).")
-    else:
-        if debug_mode: # Si en mode debug mais pas le processus principal de Werkzeug
-            app.logger.info("MAIN_APP: Thread de polling des emails non démarré (processus enfant de Werkzeug ou debug_mode sans WERKZEUG_RUN_MAIN='true').")
-
+            app.logger.warning("MAIN_APP: Thread de polling des emails NON démarré car configuration incomplète.")
 
     port = int(os.environ.get('PORT', 10000))
     if not EXPECTED_API_TOKEN:
-        app.logger.critical("MAIN_APP: ALERTE SÉCURITÉ: PROCESS_API_TOKEN N'EST PAS DÉFINIE. L'API de transfert de fichiers est NON SÉCURISÉE.")
-    
+        app.logger.critical("MAIN_APP: ALERTE SÉCURITÉ: PROCESS_API_TOKEN N'EST PAS DÉFINI.")
     app.logger.info(f"MAIN_APP: Démarrage serveur Flask sur le port {port} avec debug={debug_mode}")
-    # use_reloader est True par défaut si debug est True, sauf si explicitement mis à False.
-    # S'assurer que le reloader est utilisé seulement si debug_mode est True et que ce n'est pas le processus principal de Werkzeug qui le relance.
-    # La condition `start_background_threads` gère déjà quand les threads doivent être démarrés.
-    # `use_reloader` devrait être `debug_mode` pour un comportement Flask standard.
-    app.run(host='0.0.0.0', port=port, debug=debug_mode, use_reloader=debug_mode)
+    app.run(host='0.0.0.0', port=port, debug=debug_mode, use_reloader=(debug_mode and os.environ.get("WERKZEUG_RUN_MAIN") != "true"))
