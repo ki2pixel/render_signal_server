@@ -271,7 +271,7 @@ def stream_dropbox_to_onedrive(job_id, dropbox_url, access_token_graph_initial, 
     bytes_uploaded_total = 0
     MAX_CHUNK_RETRIES_ONEDRIVE = 3
     RETRY_DELAY_SECONDS_ONEDRIVE = 10
-    ONEDRIVE_CHUNK_SIZE = 10 * 1024 * 1024
+    ONEDRIVE_CHUNK_SIZE = 20 * 1024 * 1024
     DROPBOX_READ_CHUNK_SIZE = 1 * 1024 * 1024
     response_db_download = None
     try:
