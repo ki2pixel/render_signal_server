@@ -205,13 +205,20 @@ def stream_dropbox_to_onedrive(job_id, dropbox_url, access_token_graph_initial, 
             app.logger.debug(f"STREAM_WORKER [{job_id}]: Content-Disposition Dropbox: '{content_disp}'")
             m_utf8 = re.search(r"filename\*=UTF-8''([^;\n\r]+)", content_disp, flags=re.IGNORECASE)
             extracted_name = None
-            if m_utf8: extracted_name = requests.utils.unquote(m_utf8.group(1))
+            if m_utf8: 
+                extracted_name = requests.utils.unquote(m_utf8.group(1))
             else:
                 m_simple = re.search(r'filename="([^"]+)"', content_disp, flags=re.IGNORECASE)
                 if m_simple:
                     extracted_name = m_simple.group(1)
-                    if '%' in extracted_name: try: extracted_name = requests.utils.unquote(extracted_name)
-                    except Exception: pass
+                    # CORRECTION ICI:
+                    if '%' in extracted_name:
+                        try: 
+                            extracted_name = requests.utils.unquote(extracted_name)
+                        except Exception: 
+                            app.logger.warning(f"STREAM_WORKER [{job_id}]: Échec du unquote sur extracted_name (filename simple): {extracted_name}")
+                            pass # Laisser extracted_name tel quel si unquote échoue
+            
             if extracted_name:
                 filename_for_onedrive = sanitize_filename(extracted_name)
                 app.logger.info(f"STREAM_WORKER [{job_id}]: Nom de fichier extrait de Dropbox: '{filename_for_onedrive}'")
