@@ -1,4 +1,6 @@
-from flask import Flask, jsonify, request, send_from_directory, current_app
+from flask import Flask, jsonify, request, send_from_directory, current_app # Removed session, redirect, url_for as not used in this iteration
+from flask_httpauth import HTTPBasicAuth # Importation
+# from werkzeug.security import generate_password_hash, check_password_hash # For optional password hashing
 import os
 import time
 from pathlib import Path
@@ -17,6 +19,43 @@ except ImportError:
 from msal import ConfidentialClientApplication
 
 app = Flask(__name__)
+auth = HTTPBasicAuth() # Initialisation
+
+# --- Configuration des Identifiants pour la page de trigger ---
+TRIGGER_PAGE_USER_ENV = os.environ.get("TRIGGER_PAGE_USER")
+TRIGGER_PAGE_PASSWORD_ENV = os.environ.get("TRIGGER_PAGE_PASSWORD")
+
+users = {}
+if TRIGGER_PAGE_USER_ENV and TRIGGER_PAGE_PASSWORD_ENV:
+    # Optionnel mais recommandé: stocker le hash du mot de passe
+    # users[TRIGGER_PAGE_USER_ENV] = generate_password_hash(TRIGGER_PAGE_PASSWORD_ENV)
+    users[TRIGGER_PAGE_USER_ENV] = TRIGGER_PAGE_PASSWORD_ENV # Version simple sans hash
+    app.logger.info(f"CFG AUTH: Trigger page user '{TRIGGER_PAGE_USER_ENV}' configured for HTTP Basic Auth.")
+else:
+    app.logger.warning("CFG AUTH: TRIGGER_PAGE_USER or TRIGGER_PAGE_PASSWORD not set. HTTP Basic Auth for trigger page will NOT be enforced actively (all attempts will pass verify_password).")
+
+
+@auth.verify_password
+def verify_password(username, password):
+    if not users: 
+        # If users dict is empty (meaning TRIGGER_PAGE_USER/PASSWORD env vars were not set or empty),
+        # allow access. This makes auth optional based on env var presence.
+        app.logger.debug("AUTH: No users configured for HTTP Basic Auth, access granted by default.")
+        return "anonymous_or_no_auth_user" # Return a truthy value to grant access
+
+    user_stored_password = users.get(username)
+    if user_stored_password:
+        # If you store hashes:
+        # if check_password_hash(user_stored_password, password):
+        #     app.logger.info(f"AUTH: User '{username}' authenticated successfully via HTTP Basic Auth.")
+        #     return username
+        # Version simple sans hash:
+        if user_stored_password == password:
+            app.logger.info(f"AUTH: User '{username}' authenticated successfully via HTTP Basic Auth.")
+            return username
+    app.logger.warning(f"AUTH: HTTP Basic Authentication failed for user '{username}'.")
+    return None
+
 
 # --- Configuration du Logging ---
 log_level_str = os.environ.get('FLASK_LOG_LEVEL', 'INFO').upper()
@@ -109,17 +148,6 @@ else:
 
 REMOTE_UI_ACCESS_TOKEN_ENV = os.environ.get("0wbgXHIf3e!MqE")
 INTERNAL_WORKER_COMMS_TOKEN_ENV = os.environ.get("Fn*G14Vb!Hkra7")
-
-if not REMOTE_UI_ACCESS_TOKEN_ENV:
-    app.logger.warning("CFG TOKEN: REMOTE_UI_ACCESS_TOKEN_ENV not set. Endpoint /api/get_local_status will be INSECURE if accessed directly without a token check in a reverse proxy, for example.")
-else:
-    app.logger.info(f"CFG TOKEN: REMOTE_UI_ACCESS_TOKEN_ENV for UI access to /api/get_local_status configured: '{REMOTE_UI_ACCESS_TOKEN_ENV[:5]}...'")
-
-if not INTERNAL_WORKER_COMMS_TOKEN_ENV:
-    app.logger.warning("CFG TOKEN: INTERNAL_WORKER_COMMS_TOKEN_ENV not set. Communication with local worker app_new.py (for /api/get_remote_status_summary) will be INSECURE.")
-else:
-    app.logger.info(f"CFG TOKEN: INTERNAL_WORKER_COMMS_TOKEN_ENV for worker communication configured.")
-
 
 # --- Fonctions Utilitaires OneDrive & MSAL ---
 def sanitize_filename(filename_str, max_length=230):
@@ -393,147 +421,71 @@ def background_email_poller():
 
 # --- Endpoints API ---
 
+# Endpoints NOT protected by HTTP Basic Auth (used by other services)
 @app.route('/api/register_local_downloader_url', methods=['POST'])
 def register_local_downloader_url():
     global REGISTER_LOCAL_URL_TOKEN
-
     received_token = request.headers.get('X-Register-Token')
     if REGISTER_LOCAL_URL_TOKEN and received_token != REGISTER_LOCAL_URL_TOKEN:
-        app.logger.warning(f"API_REG_LT_URL: Unauthorized access attempt to register local URL. Token: '{str(received_token)[:20]}...'")
+        app.logger.warning(f"API_REG_LT_URL: Unauthorized access attempt. Token: '{str(received_token)[:20]}...'")
         return jsonify({"status": "error", "message": "Unauthorized"}), 401
-    
     try:
         data = request.get_json()
-        if not data:
-            app.logger.error("API_REG_LT_URL: No JSON payload received.")
-            return jsonify({"status": "error", "message": "Invalid JSON payload"}), 400
-    except Exception as e_json:
-        app.logger.error(f"API_REG_LT_URL: Error parsing JSON payload: {e_json}")
-        return jsonify({"status": "error", "message": "Malformed JSON payload"}), 400
-
+        if not data: return jsonify({"status": "error", "message": "Invalid JSON payload"}), 400
+    except Exception as e_json: return jsonify({"status": "error", "message": "Malformed JSON payload"}), 400
     new_lt_url = data.get('localtunnel_url')
-
-    if new_lt_url and not isinstance(new_lt_url, str):
-        app.logger.error(f"API_REG_LT_URL: 'localtunnel_url' field is not a string: {type(new_lt_url)}")
-        return jsonify({"status": "error", "message": "'localtunnel_url' must be a string or null."}), 400
-        
-    if new_lt_url and not (new_lt_url.startswith("http://") or new_lt_url.startswith("https://")):
-        app.logger.error(f"API_REG_LT_URL: Invalid localtunnel URL format received: '{new_lt_url}'")
-        return jsonify({"status": "error", "message": "Invalid localtunnel URL format."}), 400
-
+    if new_lt_url and not isinstance(new_lt_url, str): return jsonify({"status": "error", "message": "'localtunnel_url' must be a string or null."}), 400
+    if new_lt_url and not (new_lt_url.startswith("http://") or new_lt_url.startswith("https://")): return jsonify({"status": "error", "message": "Invalid localtunnel URL format."}), 400
     try:
         if new_lt_url:
-            with open(LOCALTUNNEL_URL_FILE, "w") as f:
-                f.write(new_lt_url)
-            app.logger.info(f"API_REG_LT_URL: Localtunnel URL for local worker registered: '{new_lt_url}'")
+            with open(LOCALTUNNEL_URL_FILE, "w") as f: f.write(new_lt_url)
+            app.logger.info(f"API_REG_LT_URL: Localtunnel URL registered: '{new_lt_url}'")
             return jsonify({"status": "success", "message": "Localtunnel URL registered."}), 200
         else:
-            if LOCALTUNNEL_URL_FILE.exists():
-                LOCALTUNNEL_URL_FILE.unlink()
-                app.logger.info(f"API_REG_LT_URL: Localtunnel URL file removed (local worker likely stopped or unregistered).")
-            else:
-                app.logger.info(f"API_REG_LT_URL: Received request to unregister localtunnel URL, but no file existed. No action taken.")
+            if LOCALTUNNEL_URL_FILE.exists(): LOCALTUNNEL_URL_FILE.unlink()
+            app.logger.info(f"API_REG_LT_URL: Localtunnel URL unregistered/cleared.")
             return jsonify({"status": "success", "message": "Localtunnel URL unregistered/cleared."}), 200
-            
     except Exception as e:
-        app.logger.error(f"API_REG_LT_URL: Server error during file operation for localtunnel URL: {e}", exc_info=True)
+        app.logger.error(f"API_REG_LT_URL: Server error for localtunnel URL: {e}", exc_info=True)
         return jsonify({"status": "error", "message": "Server error processing localtunnel URL registration."}), 500
 
 @app.route('/api/get_local_downloader_url', methods=['GET'])
 def get_local_downloader_url_for_make():
     received_token = request.headers.get('X-API-Token')
-    if not EXPECTED_API_TOKEN :
-        app.logger.critical("API_GET_LT_URL: EXPECTED_API_TOKEN not set on server. Endpoint is insecure but proceeding.")
+    if not EXPECTED_API_TOKEN: app.logger.critical("API_GET_LT_URL: EXPECTED_API_TOKEN not set. Endpoint insecure.")
     elif received_token != EXPECTED_API_TOKEN:
-        app.logger.warning(f"API_GET_LT_URL: Unauthorized access attempt to get local URL. Token: '{str(received_token)[:20]}...'")
+        app.logger.warning(f"API_GET_LT_URL: Unauthorized access. Token: '{str(received_token)[:20]}...'")
         return jsonify({"status": "error", "message": "Unauthorized"}), 401
-        
     if LOCALTUNNEL_URL_FILE.exists():
         try:
-            with open(LOCALTUNNEL_URL_FILE, "r") as f:
-                lt_url = f.read().strip()
-            if lt_url:
-                app.logger.info(f"API_GET_LT_URL: Providing localtunnel URL to Make.com: '{lt_url}'")
-                return jsonify({"status": "success", "localtunnel_url": lt_url}), 200
-            else:
-                app.logger.warning("API_GET_LT_URL: Localtunnel URL file found but is empty. Local worker may not be ready.")
-                return jsonify({"status": "error", "message": "Local worker URL is currently not available (empty file)."}), 404
-        except Exception as e:
-            app.logger.error(f"API_GET_LT_URL: Error reading localtunnel URL file: {e}", exc_info=True)
-            return jsonify({"status": "error", "message": "Server error reading local worker URL."}), 500
-    else:
-        app.logger.warning("API_GET_LT_URL: Localtunnel URL file not found. Local worker may not have registered yet or is offline.")
-        return jsonify({"status": "error", "message": "Local worker URL not registered or currently unavailable."}), 404
+            with open(LOCALTUNNEL_URL_FILE, "r") as f: lt_url = f.read().strip()
+            if lt_url: return jsonify({"status": "success", "localtunnel_url": lt_url}), 200
+            else: return jsonify({"status": "error", "message": "Local worker URL not available (empty file)."}), 404
+        except Exception as e: return jsonify({"status": "error", "message": "Server error reading local worker URL."}), 500
+    else: return jsonify({"status": "error", "message": "Local worker URL not registered or unavailable."}), 404
 
 @app.route('/api/log_processed_url', methods=['POST'])
 def api_log_processed_url():
     api_token = request.headers.get('X-API-Token')
-    if not EXPECTED_API_TOKEN:
-        app.logger.error("API_LOG_URL: PROCESS_API_TOKEN not configured. Cannot authenticate.")
-        return jsonify({"status": "error", "message": "Server configuration error: API token not set."}), 500
-    if api_token != EXPECTED_API_TOKEN:
-        app.logger.warning(f"API_LOG_URL: Unauthorized access attempt. Token: '{str(api_token)[:20]}...'")
-        return jsonify({"status": "error", "message": "Unauthorized."}), 401
-    
-    app.logger.info("API_LOG_URL: API token validated for logging processed URL.")
-    
+    if not EXPECTED_API_TOKEN: return jsonify({"status": "error", "message": "Server config error: API token not set."}), 500
+    if api_token != EXPECTED_API_TOKEN: return jsonify({"status": "error", "message": "Unauthorized."}), 401
     try: data = request.get_json()
-    except Exception as e_json: app.logger.error(f"API_LOG_URL: JSON parsing error: {e_json}"); return jsonify({"s":"err","m":f"JSON format error: {e_json}"}),400
-
-    if not data or 'dropbox_url' not in data:
-        app.logger.error(f"API_LOG_URL: 'dropbox_url' missing in payload. Data: {data}")
-        return jsonify({"status": "error", "message": "'dropbox_url' is required."}), 400
-        
+    except Exception: return jsonify({"s":"err","m":"JSON format error"}),400
+    if not data or 'dropbox_url' not in data: return jsonify({"status": "error", "message": "'dropbox_url' is required."}), 400
     dropbox_url = data.get('dropbox_url')
-    email_subject = data.get('email_subject', 'N/A_Subject_From_Local_Worker')
-    email_id = data.get('microsoft_graph_email_id', 'N/A_EmailID_From_Local_Worker')
-    job_id_log = f"LOGURL_{str(email_id)[-10:]}_{time.time_ns() % 100000}"
-
     if not isinstance(dropbox_url, str) or not dropbox_url.lower().startswith("https://www.dropbox.com/"):
-        app.logger.error(f"API_LOG_URL [{job_id_log}]: Invalid Dropbox URL format: '{dropbox_url}'")
         return jsonify({"status": "error", "message": "Invalid Dropbox URL format."}), 400
-
-    app.logger.info(f"API_LOG_URL [{job_id_log}]: Request to log URL: '{dropbox_url}', Subject: '{email_subject}', EmailID: '{email_id}'")
-
-    if not msal_app: app.logger.error(f"API_LOG_URL [{job_id_log}]: MSAL not configured."); return jsonify({"status":"error", "message":"OneDrive service not configured on server"}), 503
-
+    if not msal_app: return jsonify({"status":"error", "message":"OneDrive service not configured"}), 503
     token = get_onedrive_access_token()
-    if not token:
-        app.logger.error(f"API_LOG_URL [{job_id_log}]: Failed to get OneDrive token.")
-        return jsonify({"status": "error", "message": "Failed to obtain OneDrive token for logging."}), 500
-    
+    if not token: return jsonify({"status": "error", "message": "Failed to obtain OneDrive token."}), 500
     onedrive_app_folder_id = ensure_onedrive_folder(token)
-    if not onedrive_app_folder_id:
-        app.logger.error(f"API_LOG_URL [{job_id_log}]: Failed to ensure OneDrive folder.")
-        return jsonify({"status": "error", "message": "Failed to access OneDrive target folder for logging."}), 500
-        
-    if add_item_to_onedrive_file(f"LOG_URL_{job_id_log}", token, onedrive_app_folder_id, PROCESSED_URLS_ONEDRIVE_FILENAME, dropbox_url):
-        app.logger.info(f"API_LOG_URL [{job_id_log}]: Successfully logged URL '{dropbox_url}' to {PROCESSED_URLS_ONEDRIVE_FILENAME}.")
-        return jsonify({"status": "success", "message": f"URL '{dropbox_url}' logged as processed."}), 200
-    else:
-        app.logger.error(f"API_LOG_URL [{job_id_log}]: Failed to log URL '{dropbox_url}' to {PROCESSED_URLS_ONEDRIVE_FILENAME}.")
-        return jsonify({"status": "error", "message": f"Failed to update persistent log for URL '{dropbox_url}'."}), 500
-
-@app.route('/api/trigger_local_workflow', methods=['POST'])
-def trigger_local_workflow():
-    payload = request.json
-    if not payload: payload = {"command": "start_manual_generic", "timestamp_utc": datetime.now(timezone.utc).isoformat()}
-    elif not isinstance(payload, dict): 
-        app.logger.warning(f"LOCAL_TRIGGER_API: Payload received is not a dictionary: {payload}. Wrapping it.")
-        payload = {"command": "start_manual_generic", "original_payload": payload, "timestamp_utc": datetime.now(timezone.utc).isoformat()}
-    else: 
-        payload.setdefault("timestamp_utc", datetime.now(timezone.utc).isoformat())
-
-    try:
-        with open(TRIGGER_SIGNAL_FILE, "w") as f: json.dump(payload, f)
-        app.logger.info(f"LOCAL_TRIGGER_API: Signal file '{TRIGGER_SIGNAL_FILE}' created/updated. Payload: {payload}")
-        return jsonify({"status": "ok", "message": "Local workflow signal set."}), 200
-    except Exception as e:
-        app.logger.error(f"LOCAL_TRIGGER_API: Error writing signal file '{TRIGGER_SIGNAL_FILE}': {e}", exc_info=True)
-        return jsonify({"status": "error", "message": "Internal server error setting signal."}), 500
+    if not onedrive_app_folder_id: return jsonify({"status": "error", "message": "Failed to access OneDrive target folder."}), 500
+    if add_item_to_onedrive_file("LOG_URL", token, onedrive_app_folder_id, PROCESSED_URLS_ONEDRIVE_FILENAME, dropbox_url):
+        return jsonify({"status": "success", "message": f"URL logged."}), 200
+    else: return jsonify({"status": "error", "message": f"Failed to update log."}), 500
 
 @app.route('/api/check_trigger', methods=['GET'])
-def check_local_workflow_trigger():
+def check_local_workflow_trigger(): # Polled by app_new.py, not user facing
     response_data = {'command_pending': False, 'payload': None}
     if TRIGGER_SIGNAL_FILE.exists():
         try:
@@ -541,69 +493,68 @@ def check_local_workflow_trigger():
             response_data['command_pending'] = True
             response_data['payload'] = payload_from_file
             TRIGGER_SIGNAL_FILE.unlink()
-            app.logger.info(f"LOCAL_CHECK_API: Signal read from '{TRIGGER_SIGNAL_FILE}' and file deleted. Payload: {payload_from_file}")
+            app.logger.info(f"LOCAL_CHECK_API: Signal read and file deleted. Payload: {payload_from_file}")
         except Exception as e:
-            app.logger.error(f"LOCAL_CHECK_API: Error processing/deleting signal file '{TRIGGER_SIGNAL_FILE}': {e}", exc_info=True)
+            app.logger.error(f"LOCAL_CHECK_API: Error processing signal file: {e}", exc_info=True)
     return jsonify(response_data)
 
 @app.route('/api/ping', methods=['GET','HEAD'])
-def api_ping():
+def api_ping(): # Public ping, no auth
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    user_agent = request.headers.get('User-Agent', 'N/A_User_Agent')
-    app.logger.info(f"PING_API: Received /api/ping from IP:{client_ip}, UA:{user_agent} at {datetime.now(timezone.utc).isoformat()}")
+    app.logger.info(f"PING_API: Received /api/ping from IP:{client_ip}")
     response = jsonify({"status":"pong", "timestamp_utc": datetime.now(timezone.utc).isoformat()})
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
     return response, 200
 
+
+# Endpoints PROTECTED by HTTP Basic Auth (for trigger_page.html)
 @app.route('/')
+@auth.login_required
 def serve_trigger_page_main():
-    app.logger.info("ROOT_UI: Request for '/'. Attempting to serve 'trigger_page.html'.")
+    if not users and (TRIGGER_PAGE_USER_ENV or TRIGGER_PAGE_PASSWORD_ENV):
+        app.logger.error("AUTH ERROR: User/password env vars set, but 'users' dict is empty. Check config.")
+        return "Server authentication configuration error.", 500
+    
+    # auth.current_user() will be the username if authenticated, or the default from verify_password if no users are set
+    app.logger.info(f"ROOT_UI: Request for '/' by user '{auth.current_user()}'. Serving 'trigger_page.html'.")
     try:
         if not os.path.exists(os.path.join(app.root_path, 'trigger_page.html')):
-            app.logger.error(f"ROOT_UI: CRITICAL - 'trigger_page.html' does NOT exist in application root path ({app.root_path}). Check deployment.")
+            app.logger.error(f"ROOT_UI: CRITICAL - 'trigger_page.html' does NOT exist in ({app.root_path}).")
             return "Error: Main page content not found (file missing).", 404
         return send_from_directory(app.root_path, 'trigger_page.html')
     except FileNotFoundError:
-        app.logger.error(f"ROOT_UI: CRITICAL - 'trigger_page.html' not found in application root path ({app.root_path}).")
+        app.logger.error(f"ROOT_UI: CRITICAL - 'trigger_page.html' not found ({app.root_path}).")
         return "Error: Main page content not found.", 404
     except Exception as e:
         app.logger.error(f"ROOT_UI: Unexpected error serving 'trigger_page.html': {e}", exc_info=True)
         return "Internal server error serving UI.", 500
 
 @app.route('/api/get_local_status', methods=['GET'])
+@auth.login_required
 def get_local_status_proxied():
     global REMOTE_UI_ACCESS_TOKEN_ENV, INTERNAL_WORKER_COMMS_TOKEN_ENV
+    
+    app.logger.info(f"PROXY_STATUS: API /api/get_local_status called by user '{auth.current_user()}'.")
 
+    # ui_token check can be kept as an additional layer or removed if HTTP Basic Auth is considered sufficient.
+    # For this iteration, keeping it as per the plan.
     received_ui_token = request.args.get('ui_token')
     if REMOTE_UI_ACCESS_TOKEN_ENV:
         if not received_ui_token or received_ui_token != REMOTE_UI_ACCESS_TOKEN_ENV:
-            app.logger.warning(f"PROXY_STATUS: Unauthorized access attempt to /api/get_local_status. Missing or invalid ui_token.")
-            return jsonify({"error": "Unauthorized"}), 401
+            app.logger.warning(f"PROXY_STATUS: Invalid ui_token for /api/get_local_status by user '{auth.current_user()}'.")
+            return jsonify({"error": "Invalid UI token"}), 403 # Forbidden, as already auth'd by HTTP Basic.
     
     localtunnel_url = None
     if LOCALTUNNEL_URL_FILE.exists():
         try:
-            with open(LOCALTUNNEL_URL_FILE, "r") as f:
-                localtunnel_url = f.read().strip()
+            with open(LOCALTUNNEL_URL_FILE, "r") as f: localtunnel_url = f.read().strip()
         except Exception as e:
-            app.logger.error(f"PROXY_STATUS: Error reading localtunnel URL file: {e}")
-            return jsonify({
-                "overall_status_text": "Erreur Serveur Distant",
-                "status_text": "Impossible de lire l'URL du worker local.",
-                "progress_current": 0, "progress_total": 0, "current_step_name": None,
-                "recent_downloads": []
-            }), 500
+            app.logger.error(f"PROXY_STATUS: Error reading LT URL file: {e}")
+            return jsonify({"overall_status_text": "Erreur Serveur Distant", "status_text": "Err lecture URL worker."}), 500
 
     if not localtunnel_url:
-        app.logger.warning("PROXY_STATUS: Localtunnel URL not available for proxying status.")
-        return jsonify({
-            "overall_status_text": "Worker Local Indisponible",
-            "status_text": "Le worker local n'est pas connecté ou n'a pas communiqué son adresse.",
-            "progress_current": 0, "progress_total": 0, "current_step_name": None,
-            "recent_downloads": []
-        }), 503
+        app.logger.warning("PROXY_STATUS: LT URL not available.")
+        return jsonify({"overall_status_text": "Worker Local Indisponible", "status_text": "Worker non connecté."}), 503
 
     try:
         target_url = f"{localtunnel_url.rstrip('/')}/api/get_remote_status_summary"
@@ -611,15 +562,13 @@ def get_local_status_proxied():
         if INTERNAL_WORKER_COMMS_TOKEN_ENV:
             headers_to_worker['X-Worker-Token'] = INTERNAL_WORKER_COMMS_TOKEN_ENV
         else:
-            app.logger.warning(f"PROXY_STATUS: Communicating with worker {target_url} without X-Worker-Token as INTERNAL_WORKER_COMMS_TOKEN_ENV is not set.")
+            app.logger.warning(f"PROXY_STATUS: No INTERNAL_WORKER_COMMS_TOKEN_ENV. Calling {target_url} unauthenticated.")
             
         response_local = requests.get(target_url, headers=headers_to_worker, timeout=10)
-        response_local.raise_for_status() # Will raise HTTPError for 4xx/5xx responses
+        response_local.raise_for_status()
         local_data = response_local.json()
 
-        overall_status_text_val = "Inconnu"
-        status_text_detail_val = local_data.get("last_updated_utc", "")
-
+        overall_status_text_val = local_data.get("overall_status_code", "idle") # default to idle
         status_code_map = {
             "idle": "Inactif / Prêt",
             "auto_mode_active": "Mode Auto Actif - Séquence en cours",
@@ -628,9 +577,11 @@ def get_local_status_proxied():
             "completed_success_recent": "Terminée avec succès (récent)",
             "completed_error_recent": "Terminée avec erreurs (récent)",
         }
-        overall_status_text_val = status_code_map.get(local_data.get("overall_status_code"), "Statut Indéterminé")
-
+        overall_status_display_text = status_code_map.get(overall_status_text_val, "Statut Indéterminé")
+        
+        status_text_detail_val = local_data.get("last_updated_utc", "")
         current_step_name_val = local_data.get("current_step_name")
+
         if current_step_name_val:
             status_text_detail_val = f"Étape: {current_step_name_val}. (MàJ: {status_text_detail_val})"
         else:
@@ -639,89 +590,70 @@ def get_local_status_proxied():
         if local_data.get("last_updated_utc"):
             try:
                 last_update_dt_str = local_data["last_updated_utc"]
-                if last_update_dt_str.endswith('Z'): # Compatibility with ISO 8601 'Z' for UTC
-                    last_update_dt_str = last_update_dt_str[:-1] + '+00:00'
+                if last_update_dt_str.endswith('Z'): last_update_dt_str = last_update_dt_str[:-1] + '+00:00'
                 last_update_dt = datetime.fromisoformat(last_update_dt_str)
-                if last_update_dt.tzinfo is None: # Ensure timezone aware for comparison
-                    last_update_dt = last_update_dt.replace(tzinfo=timezone.utc)
-
+                if last_update_dt.tzinfo is None: last_update_dt = last_update_dt.replace(tzinfo=timezone.utc)
                 if datetime.now(timezone.utc) - last_update_dt > timedelta(minutes=2):
-                    overall_status_text_val += " (Statut Ancien?)"
-                    status_text_detail_val = "Dernier statut du worker local reçu il y a > 2 min. " + status_text_detail_val
-            except ValueError as e_date_parse:
-                app.logger.warning(f"PROXY_STATUS: Error parsing date '{local_data['last_updated_utc']}': {e_date_parse}")
+                    overall_status_display_text += " (Statut Ancien?)"
+            except ValueError as e_dt: app.logger.warning(f"PROXY_STATUS: Date parse error '{local_data['last_updated_utc']}': {e_dt}")
 
         return jsonify({
-            "overall_status_text": overall_status_text_val,
-            "status_text": status_text_detail_val,
-            "progress_current": local_data.get("progress_current", 0),
-            "progress_total": local_data.get("progress_total", 0),
-            "current_step_name": current_step_name_val,
-            "recent_downloads": local_data.get("recent_downloads", [])
+            "overall_status_text": overall_status_display_text, "status_text": status_text_detail_val,
+            "progress_current": local_data.get("progress_current", 0), "progress_total": local_data.get("progress_total", 0),
+            "current_step_name": current_step_name_val, "recent_downloads": local_data.get("recent_downloads", [])
         }), 200
 
     except requests.exceptions.Timeout:
-        app.logger.warning(f"PROXY_STATUS: Timeout connecting to local worker at {target_url}")
-        return jsonify({
-            "overall_status_text": "Worker Local (Timeout)", "status_text": "La connexion au worker local a expiré.",
-            "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
-        }), 504 
+        return jsonify({"overall_status_text": "Worker Local (Timeout)", "status_text": "Timeout connexion worker."}), 504 
     except requests.exceptions.ConnectionError:
-        app.logger.warning(f"PROXY_STATUS: Connection error to local worker at {target_url}")
-        return jsonify({
-            "overall_status_text": "Worker Local (Connexion Refusée)", "status_text": "Impossible de se connecter au worker local.",
-            "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
-        }), 502
-    except requests.exceptions.HTTPError as e_http: # Catch HTTPError separately for 401 from worker
-        app.logger.error(f"PROXY_STATUS: HTTPError from local worker {target_url}: {e_http}")
+        return jsonify({"overall_status_text": "Worker Local (Connexion Refusée)", "status_text": "Connexion worker refusée."}), 502
+    except requests.exceptions.HTTPError as e_http:
         if e_http.response.status_code == 401:
-            app.logger.error(f"PROXY_STATUS: Received 401 Unauthorized from local worker {target_url}. Check INTERNAL_WORKER_COMMS_TOKEN_ENV consistency.")
-            return jsonify({
-                "overall_status_text": "Erreur d'Authentification Interne",
-                "status_text": "Le serveur distant n'a pas pu s'authentifier auprès du worker local.",
-                "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
-            }), 401 # Propagate 401
-        # For other HTTP errors from worker
-        return jsonify({
-            "overall_status_text": f"Worker Local (Erreur {e_http.response.status_code})", "status_text": f"Erreur communication avec worker local.",
-            "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
-        }), e_http.response.status_code
-    except requests.exceptions.RequestException as e_req: # Other request errors
-        app.logger.error(f"PROXY_STATUS: RequestException to local worker {target_url}: {e_req}")
-        return jsonify({
-            "overall_status_text": "Worker Local (Erreur Réseau)", "status_text": "Erreur de communication réseau avec le worker local.",
-            "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
-        }), 503 # Service Unavailable is a reasonable general code here
+            app.logger.error(f"PROXY_STATUS: 401 Unauthorized from worker {target_url}. Check INTERNAL_WORKER_COMMS_TOKEN_ENV.")
+            return jsonify({"overall_status_text": "Erreur Authentification Interne", "status_text": "Auth vers worker local échouée."}), 401
+        return jsonify({"overall_status_text": f"Worker Local (Erreur HTTP {e_http.response.status_code})", "status_text": "Erreur HTTP du worker."}), e_http.response.status_code
+    except requests.exceptions.RequestException as e_req:
+        return jsonify({"overall_status_text": "Worker Local (Erreur Réseau)", "status_text": "Erreur réseau vers worker."}), 503
     except Exception as e_gen:
-        app.logger.error(f"PROXY_STATUS: Generic error proxying status from {target_url}: {e_gen}", exc_info=True)
-        return jsonify({
-            "overall_status_text": "Erreur Serveur Distant (Proxy)", "status_text": "Erreur interne récupération statut local.",
-            "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
-        }), 500
+        app.logger.error(f"PROXY_STATUS: Generic error for {target_url}: {e_gen}", exc_info=True)
+        return jsonify({"overall_status_text": "Erreur Serveur Distant (Proxy)", "status_text": "Erreur interne proxy."}), 500
+
+@app.route('/api/trigger_local_workflow', methods=['POST'])
+@auth.login_required
+def trigger_local_workflow_authed(): # Renamed to avoid conflict if old one existed without auth
+    app.logger.info(f"LOCAL_TRIGGER_API: Called by user '{auth.current_user()}'.")
+    payload = request.json
+    if not payload: payload = {"command": "start_manual_generic", "timestamp_utc": datetime.now(timezone.utc).isoformat()}
+    elif not isinstance(payload, dict): 
+        payload = {"command": "start_manual_generic", "original_payload": payload, "timestamp_utc": datetime.now(timezone.utc).isoformat()}
+    else: payload.setdefault("timestamp_utc", datetime.now(timezone.utc).isoformat())
+    try:
+        with open(TRIGGER_SIGNAL_FILE, "w") as f: json.dump(payload, f)
+        app.logger.info(f"LOCAL_TRIGGER_API: Signal file '{TRIGGER_SIGNAL_FILE}' set. Payload: {payload}")
+        return jsonify({"status": "ok", "message": "Local workflow signal set."}), 200
+    except Exception as e:
+        app.logger.error(f"LOCAL_TRIGGER_API: Error writing signal file: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": "Internal server error setting signal."}), 500
 
 @app.route('/api/check_emails_and_download', methods=['POST'])
-def api_check_emails_and_download():
-    app.logger.info("API_EMAIL_CHECK: Manual trigger for email check received.")
-    
+@auth.login_required
+def api_check_emails_and_download_authed(): # Renamed
+    app.logger.info(f"API_EMAIL_CHECK: Manual trigger from user '{auth.current_user()}'.")
     def run_email_check_task_in_thread():
         with app.app_context(): 
             try:
-                app.logger.info("API_EMAIL_CHECK_THREAD: Starting email check and Make trigger.")
+                app.logger.info("API_EMAIL_CHECK_THREAD: Starting email check...")
                 webhooks_triggered = check_new_emails_and_trigger_make_webhook()
-                app.logger.info(f"API_EMAIL_CHECK_THREAD: Email check finished. {webhooks_triggered} webhook(s) triggered.")
+                app.logger.info(f"API_EMAIL_CHECK_THREAD: Finished. {webhooks_triggered} webhook(s) triggered.")
             except Exception as e_thread:
-                app.logger.error(f"API_EMAIL_CHECK_THREAD: Error in email check thread: {e_thread}", exc_info=True)
+                app.logger.error(f"API_EMAIL_CHECK_THREAD: Error: {e_thread}", exc_info=True)
 
-    if not all([ONEDRIVE_CLIENT_ID, ONEDRIVE_CLIENT_SECRET, ONEDRIVE_REFRESH_TOKEN, 
-                SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL, msal_app]):
-        msg = "Configuration serveur incomplète pour le traitement des emails."
-        app.logger.error(f"API_EMAIL_CHECK: {msg}")
-        return jsonify({"status": "error", "message": msg}), 503
+    if not all([ONEDRIVE_CLIENT_ID, ONEDRIVE_CLIENT_SECRET, ONEDRIVE_REFRESH_TOKEN, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL, msal_app]):
+        return jsonify({"status": "error", "message": "Config serveur email incomplète."}), 503
 
     email_thread = threading.Thread(target=run_email_check_task_in_thread, name="ManualEmailCheckThread")
     email_thread.start()
-    
-    return jsonify({"status": "success", "message": "Vérification des emails et transfert vers OneDrive lancés en arrière-plan."}), 202
+    return jsonify({"status": "success", "message": "Vérification emails (arrière-plan) lancée."}), 202
 
 
 # --- Démarrage de l'Application et des Threads ---
@@ -730,32 +662,24 @@ if __name__ == '__main__':
     should_start_background_threads = not is_debug_mode or os.environ.get("WERKZEUG_RUN_MAIN") == "true"
 
     if should_start_background_threads:
-        app.logger.info("MAIN_APP: Preparing to start background threads (if configured).")
-        
-        if all([ONEDRIVE_CLIENT_ID, ONEDRIVE_CLIENT_SECRET, ONEDRIVE_REFRESH_TOKEN, msal_app]):
-            if SENDER_LIST_FOR_POLLING and MAKE_SCENARIO_WEBHOOK_URL:
-                email_poller_service_thread = threading.Thread(target=background_email_poller, name="EmailPollerThread")
-                email_poller_service_thread.daemon = True
-                email_poller_service_thread.start()
-                app.logger.info(f"MAIN_APP: Email polling thread started successfully. Monitoring {len(SENDER_LIST_FOR_POLLING)} senders.")
-            else:
-                app.logger.warning("MAIN_APP: Email polling thread NOT started. SENDER_LIST_FOR_POLLING or MAKE_SCENARIO_WEBHOOK_URL is not configured.")
+        app.logger.info("MAIN_APP: Preparing to start background threads.")
+        if all([ONEDRIVE_CLIENT_ID, ONEDRIVE_CLIENT_SECRET, ONEDRIVE_REFRESH_TOKEN, msal_app, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
+            email_poller_thread = threading.Thread(target=background_email_poller, name="EmailPollerThread", daemon=True)
+            email_poller_thread.start()
+            app.logger.info(f"MAIN_APP: Email polling thread started.")
         else:
-            app.logger.warning("MAIN_APP: Email polling thread NOT started due to missing OneDrive/MSAL configuration (Client ID, Secret, Refresh Token).")
+            app.logger.warning("MAIN_APP: Email polling thread NOT started due to incomplete OneDrive/MSAL/Webhook config.")
     else:
-        app.logger.info("MAIN_APP: Background threads will not be started by this Werkzeug child process (reloader active).")
+        app.logger.info("MAIN_APP: Background threads not started by this Werkzeug child process.")
 
     server_port = int(os.environ.get('PORT', 10000))
     
-    if not EXPECTED_API_TOKEN:
-        app.logger.critical("MAIN_APP: SECURITY ALERT - PROCESS_API_TOKEN (EXPECTED_API_TOKEN) IS NOT SET. Endpoints for Make.com are INSECURE.")
-    if not REGISTER_LOCAL_URL_TOKEN:
-        app.logger.warning("MAIN_APP: SECURITY NOTE - REGISTER_LOCAL_URL_TOKEN IS NOT SET. Endpoint for local worker URL registration is potentially INSECURE if not also disabled on app_new.py.")
-    if not REMOTE_UI_ACCESS_TOKEN_ENV:
-        app.logger.warning("MAIN_APP: SECURITY NOTE - REMOTE_UI_ACCESS_TOKEN_ENV IS NOT SET. /api/get_local_status is accessible without a token.")
-    if not INTERNAL_WORKER_COMMS_TOKEN_ENV:
-        app.logger.warning("MAIN_APP: SECURITY NOTE - INTERNAL_WORKER_COMMS_TOKEN_ENV IS NOT SET. Communication between app_render and app_new is unauthenticated.")
+    # Final security/config checks logging
+    if not users: app.logger.warning("MAIN_APP: HTTP Basic Auth for UI is not configured (TRIGGER_PAGE_USER/PASSWORD env vars not set). UI is unprotected.")
+    if not EXPECTED_API_TOKEN: app.logger.critical("MAIN_APP: PROCESS_API_TOKEN not set. Make.com endpoints INSECURE.")
+    if not REGISTER_LOCAL_URL_TOKEN: app.logger.warning("MAIN_APP: REGISTER_LOCAL_URL_TOKEN not set. Local worker registration endpoint potentially INSECURE.")
+    if not REMOTE_UI_ACCESS_TOKEN_ENV and users: app.logger.info("MAIN_APP: REMOTE_UI_ACCESS_TOKEN for /api/get_local_status is not set, but HTTP Basic Auth is active. ui_token check will be skipped if user is auth'd by Basic Auth.")
+    if not INTERNAL_WORKER_COMMS_TOKEN_ENV: app.logger.warning("MAIN_APP: INTERNAL_WORKER_COMMS_TOKEN not set. app_render <-> app_new communication unauthenticated.")
 
-
-    app.logger.info(f"MAIN_APP: Starting Flask development server on host 0.0.0.0, port {server_port}. Debug mode: {is_debug_mode}")
+    app.logger.info(f"MAIN_APP: Flask server starting on 0.0.0.0:{server_port}. Debug: {is_debug_mode}")
     app.run(host='0.0.0.0', port=server_port, debug=is_debug_mode, use_reloader=(is_debug_mode and os.environ.get("WERKZEUG_RUN_MAIN") != "true"))
