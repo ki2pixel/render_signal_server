@@ -135,8 +135,6 @@ def get_onedrive_access_token():
             app.logger.warning("MSAL: A new refresh token was issued by OneDrive. "
                                "IMPORTANT: Update the ONEDRIVE_REFRESH_TOKEN environment variable with this new token: "
                                f"'{token_result.get('refresh_token')}'")
-            # Vous pourriez ici essayer de mettre à jour la variable d'environnement si l'API de Render le permet,
-            # ou au moins le logger de manière très visible. Pour l'instant, on logue.
         return token_result['access_token']
     else:
         app.logger.error(f"MSAL: Failed to obtain access token. Error: {token_result.get('error')}, "
@@ -151,10 +149,8 @@ def ensure_onedrive_folder(access_token, subfolder_name=None, parent_folder_id=N
     
     parent_path_segment = f"items/{effective_parent_id}" if effective_parent_id and effective_parent_id.lower() != 'root' else "root"
     
-    # Sanitize folder name for the query and creation
     clean_target_folder_name = sanitize_filename(target_folder_name, 100)
 
-    # Check if folder exists
     check_url = f"https://graph.microsoft.com/v1.0/me/drive/{parent_path_segment}/children?$filter=name eq '{clean_target_folder_name}'"
     try:
         response = requests.get(check_url, headers=headers, timeout=15)
@@ -165,13 +161,12 @@ def ensure_onedrive_folder(access_token, subfolder_name=None, parent_folder_id=N
             app.logger.info(f"OD_UTIL: Folder '{clean_target_folder_name}' found with ID: {folder_id} under parent '{effective_parent_id}'.")
             return folder_id
         
-        # Folder does not exist, create it
         app.logger.info(f"OD_UTIL: Folder '{clean_target_folder_name}' not found under parent '{effective_parent_id}'. Attempting to create.")
         create_url = f"https://graph.microsoft.com/v1.0/me/drive/{parent_path_segment}/children"
         payload = {
             "name": clean_target_folder_name,
             "folder": {},
-            "@microsoft.graph.conflictBehavior": "rename" # or "fail" or "replace"
+            "@microsoft.graph.conflictBehavior": "rename"
         }
         response_create = requests.post(create_url, headers=headers, json=payload, timeout=15)
         response_create.raise_for_status()
@@ -204,7 +199,7 @@ def get_processed_items_from_onedrive_file(job_id_prefix, token, folder_id, file
         elif response.status_code == 404:
             app.logger.info(f"DEDUP_ITEMS [{job_id}]: File '{filename}' not found in OneDrive. Will be created if items are added.")
         else:
-            response.raise_for_status() # Raise HTTPError for other bad responses (4xx or 5xx)
+            response.raise_for_status()
     except requests.exceptions.RequestException as e:
         app.logger.error(f"DEDUP_ITEMS [{job_id}]: Error downloading '{filename}': {e}")
         if hasattr(e, 'response') and e.response is not None:
@@ -275,7 +270,6 @@ def check_new_emails_and_trigger_make_webhook():
         app.logger.error("POLLER: Failed to get OneDrive token for email polling.")
         return 0
     
-    # Ensure OneDrive folder exists for storing processed webhook trigger IDs
     onedrive_app_folder_id = ensure_onedrive_folder(token)
     if not onedrive_app_folder_id:
         app.logger.error("POLLER: Failed to ensure OneDrive folder for deduplication files. Cannot proceed.")
@@ -287,20 +281,14 @@ def check_new_emails_and_trigger_make_webhook():
     triggered_webhook_count = 0
     
     try:
-        # Look for emails in the last 2 days to catch any missed due to downtime/restarts
         since_date_str = (datetime.now(timezone.utc) - timedelta(days=2)).strftime('%Y-%m-%dT%H:%M:%SZ')
-        
-        # Build filter string for senders
         sender_filter_parts = [f"from/emailAddress/address eq '{sender}'" for sender in SENDER_LIST_FOR_POLLING]
         sender_filter_string = " or ".join(sender_filter_parts)
-        
-        # Final filter: unread, received since X, and from one of the specified senders
         filter_query = f"isRead eq false and receivedDateTime ge {since_date_str} and ({sender_filter_string})"
         
-        # Select necessary fields, get top N emails, order by oldest first to process in order
         graph_url = (f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?"
                      f"$filter={filter_query}&$select=id,subject,from,receivedDateTime,bodyPreview&"
-                     f"$top=25&$orderby=receivedDateTime asc") # Process oldest first
+                     f"$top=25&$orderby=receivedDateTime asc")
 
         app.logger.info(f"POLLER: Querying Graph API for emails. Filter: '{filter_query}'")
         headers_mail = {'Authorization': f'Bearer {token}', 'Prefer': 'outlook.body-content-type="text"'}
@@ -326,14 +314,13 @@ def check_new_emails_and_trigger_make_webhook():
                 "subject": mail_subject,
                 "receivedDateTime": mail.get("receivedDateTime"),
                 "sender_address": sender_address,
-                "bodyPreview": mail.get('bodyPreview', '') # Make.com will parse this for Dropbox links
+                "bodyPreview": mail.get('bodyPreview', '')
             }
             
             try:
                 webhook_response = requests.post(MAKE_SCENARIO_WEBHOOK_URL, json=payload_for_make, timeout=30)
                 if webhook_response.status_code == 200 and "accepted" in webhook_response.text.lower():
                     app.logger.info(f"POLLER: Make.com webhook call successful for email {mail_id}. Response: {webhook_response.status_code} - {webhook_response.text}")
-                    # Add to processed webhook triggers and mark email as read
                     if add_item_to_onedrive_file("WH_TRIG_ADD", token, onedrive_app_folder_id, PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME, mail_id):
                         triggered_webhook_count += 1
                         if not mark_email_as_read(token, mail_id):
@@ -352,10 +339,10 @@ def check_new_emails_and_trigger_make_webhook():
         app.logger.error(f"POLLER: Graph API error during email check: {e_graph}")
         if hasattr(e_graph, 'response') and e_graph.response is not None:
             app.logger.error(f"POLLER: API Response: {e_graph.response.status_code} - {e_graph.response.text[:500]}")
-        return 0 # Error occurred
+        return 0
     except Exception as e_general:
         app.logger.error(f"POLLER: Unexpected error during email polling cycle: {e_general}", exc_info=True)
-        return 0 # Error occurred
+        return 0
 
 def background_email_poller():
     app.logger.info(f"BG_POLLER: Email polling thread started. TZ for schedule: {POLLING_TIMEZONE_STR}.")
@@ -366,10 +353,9 @@ def background_email_poller():
         try:
             now_in_configured_tz = datetime.now(TZ_FOR_POLLING)
             current_hour = now_in_configured_tz.hour
-            current_weekday = now_in_configured_tz.weekday() # Monday is 0, Sunday is 6
+            current_weekday = now_in_configured_tz.weekday()
             
             is_active_day = current_weekday in POLLING_ACTIVE_DAYS
-            # End hour is exclusive, e.g., 7-21 means up to 20:59:59
             is_active_time = (POLLING_ACTIVE_START_HOUR <= current_hour < POLLING_ACTIVE_END_HOUR)
             
             log_schedule_details = (f"Day:{current_weekday}[Allowed:{POLLING_ACTIVE_DAYS}], "
@@ -378,7 +364,6 @@ def background_email_poller():
             if is_active_day and is_active_time:
                 app.logger.info(f"BG_POLLER: In active period ({log_schedule_details}). Starting email poll cycle.")
                 
-                # Double check essential configs before heavy lifting
                 if not all([ONEDRIVE_CLIENT_ID, ONEDRIVE_CLIENT_SECRET, ONEDRIVE_REFRESH_TOKEN, 
                             SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL, msal_app]):
                     app.logger.warning("BG_POLLER: Essential configuration for polling is incomplete. Waiting 60s and will re-check.")
@@ -387,7 +372,7 @@ def background_email_poller():
                 
                 webhooks_triggered = check_new_emails_and_trigger_make_webhook()
                 app.logger.info(f"BG_POLLER: Active email poll cycle finished. {webhooks_triggered} Make.com webhook(s) triggered.")
-                consecutive_error_count = 0 # Reset error count on a successful cycle
+                consecutive_error_count = 0
                 sleep_duration = EMAIL_POLLING_INTERVAL_SECONDS
             else:
                 app.logger.info(f"BG_POLLER: Outside active period ({log_schedule_details}). Sleeping until next check for active window.")
@@ -401,9 +386,8 @@ def background_email_poller():
             app.logger.error(f"BG_POLLER: Unhandled critical error in polling loop (Error #{consecutive_error_count}): {e}", exc_info=True)
             if consecutive_error_count >= MAX_CONSECUTIVE_ERRORS:
                 app.logger.critical(f"BG_POLLER: Reached maximum consecutive errors ({MAX_CONSECUTIVE_ERRORS}). Stopping email polling thread to prevent further issues.")
-                break # Exit the polling loop/thread
+                break
             
-            # Exponential backoff for retries after errors
             sleep_on_error_duration = max(60, EMAIL_POLLING_INTERVAL_SECONDS) * (2 ** consecutive_error_count)
             app.logger.info(f"BG_POLLER: Sleeping for {sleep_on_error_duration}s due to error before retrying.")
             time.sleep(sleep_on_error_duration)
@@ -412,11 +396,9 @@ def background_email_poller():
 
 @app.route('/api/register_local_downloader_url', methods=['POST'])
 def register_local_downloader_url():
-    # Endpoint for app_new.py to register its public localtunnel URL
-    global REGISTER_LOCAL_URL_TOKEN # Access to the global/module-level variable
+    global REGISTER_LOCAL_URL_TOKEN
 
     received_token = request.headers.get('X-Register-Token')
-    # If REGISTER_LOCAL_URL_TOKEN is set, it must match. If not set, endpoint is open (warning issued at startup).
     if REGISTER_LOCAL_URL_TOKEN and received_token != REGISTER_LOCAL_URL_TOKEN:
         app.logger.warning(f"API_REG_LT_URL: Unauthorized access attempt to register local URL. Token: '{str(received_token)[:20]}...'")
         return jsonify({"status": "error", "message": "Unauthorized"}), 401
@@ -430,7 +412,7 @@ def register_local_downloader_url():
         app.logger.error(f"API_REG_LT_URL: Error parsing JSON payload: {e_json}")
         return jsonify({"status": "error", "message": "Malformed JSON payload"}), 400
 
-    new_lt_url = data.get('localtunnel_url') # This can be a URL string or None
+    new_lt_url = data.get('localtunnel_url')
 
     if new_lt_url and not isinstance(new_lt_url, str):
         app.logger.error(f"API_REG_LT_URL: 'localtunnel_url' field is not a string: {type(new_lt_url)}")
@@ -441,12 +423,12 @@ def register_local_downloader_url():
         return jsonify({"status": "error", "message": "Invalid localtunnel URL format."}), 400
 
     try:
-        if new_lt_url: # If a URL is provided, write it
+        if new_lt_url:
             with open(LOCALTUNNEL_URL_FILE, "w") as f:
                 f.write(new_lt_url)
             app.logger.info(f"API_REG_LT_URL: Localtunnel URL for local worker registered: '{new_lt_url}'")
             return jsonify({"status": "success", "message": "Localtunnel URL registered."}), 200
-        else: # If new_lt_url is None or an empty string (explicitly unregistering)
+        else:
             if LOCALTUNNEL_URL_FILE.exists():
                 LOCALTUNNEL_URL_FILE.unlink()
                 app.logger.info(f"API_REG_LT_URL: Localtunnel URL file removed (local worker likely stopped or unregistered).")
@@ -460,9 +442,8 @@ def register_local_downloader_url():
 
 @app.route('/api/get_local_downloader_url', methods=['GET'])
 def get_local_downloader_url_for_make():
-    # Endpoint for Make.com to fetch the current public URL of app_new.py
-    received_token = request.headers.get('X-API-Token') # Using the general API token for Make.com
-    if not EXPECTED_API_TOKEN : # If token is not configured server-side, log critical and allow for now (legacy behavior or misconfig)
+    received_token = request.headers.get('X-API-Token')
+    if not EXPECTED_API_TOKEN :
         app.logger.critical("API_GET_LT_URL: EXPECTED_API_TOKEN not set on server. Endpoint is insecure but proceeding.")
     elif received_token != EXPECTED_API_TOKEN:
         app.logger.warning(f"API_GET_LT_URL: Unauthorized access attempt to get local URL. Token: '{str(received_token)[:20]}...'")
@@ -475,20 +456,19 @@ def get_local_downloader_url_for_make():
             if lt_url:
                 app.logger.info(f"API_GET_LT_URL: Providing localtunnel URL to Make.com: '{lt_url}'")
                 return jsonify({"status": "success", "localtunnel_url": lt_url}), 200
-            else: # File exists but is empty
+            else:
                 app.logger.warning("API_GET_LT_URL: Localtunnel URL file found but is empty. Local worker may not be ready.")
-                return jsonify({"status": "error", "message": "Local worker URL is currently not available (empty file)."}), 404 # Or 503 Service Unavailable
+                return jsonify({"status": "error", "message": "Local worker URL is currently not available (empty file)."}), 404
         except Exception as e:
             app.logger.error(f"API_GET_LT_URL: Error reading localtunnel URL file: {e}", exc_info=True)
             return jsonify({"status": "error", "message": "Server error reading local worker URL."}), 500
-    else: # File does not exist
+    else:
         app.logger.warning("API_GET_LT_URL: Localtunnel URL file not found. Local worker may not have registered yet or is offline.")
-        return jsonify({"status": "error", "message": "Local worker URL not registered or currently unavailable."}), 404 # Or 503
+        return jsonify({"status": "error", "message": "Local worker URL not registered or currently unavailable."}), 404
 
 @app.route('/api/log_processed_url', methods=['POST'])
 def api_log_processed_url():
-    # Called by app_new.py to log a Dropbox URL as processed in OneDrive
-    api_token = request.headers.get('X-API-Token') # Using the general API token for Make.com/internal calls
+    api_token = request.headers.get('X-API-Token')
     if not EXPECTED_API_TOKEN:
         app.logger.error("API_LOG_URL: PROCESS_API_TOKEN not configured. Cannot authenticate.")
         return jsonify({"status": "error", "message": "Server configuration error: API token not set."}), 500
@@ -506,7 +486,6 @@ def api_log_processed_url():
         return jsonify({"status": "error", "message": "'dropbox_url' is required."}), 400
         
     dropbox_url = data.get('dropbox_url')
-    # Optional info for logging context
     email_subject = data.get('email_subject', 'N/A_Subject_From_Local_Worker')
     email_id = data.get('microsoft_graph_email_id', 'N/A_EmailID_From_Local_Worker')
     job_id_log = f"LOGURL_{str(email_id)[-10:]}_{time.time_ns() % 100000}"
@@ -538,10 +517,13 @@ def api_log_processed_url():
 
 @app.route('/api/trigger_local_workflow', methods=['POST'])
 def trigger_local_workflow():
-    # For trigger_page.html -> app_new.py (via polling /api/check_trigger)
     payload = request.json
     if not payload: payload = {"command": "start_manual_generic", "timestamp_utc": datetime.now(timezone.utc).isoformat()}
-    else: payload.setdefault("timestamp_utc", datetime.now(timezone.utc).isoformat())
+    elif not isinstance(payload, dict): # Ensure payload is a dict for setdefault
+        app.logger.warning(f"LOCAL_TRIGGER_API: Payload received is not a dictionary: {payload}. Wrapping it.")
+        payload = {"command": "start_manual_generic", "original_payload": payload, "timestamp_utc": datetime.now(timezone.utc).isoformat()}
+    else: 
+        payload.setdefault("timestamp_utc", datetime.now(timezone.utc).isoformat())
 
     try:
         with open(TRIGGER_SIGNAL_FILE, "w") as f: json.dump(payload, f)
@@ -553,18 +535,16 @@ def trigger_local_workflow():
 
 @app.route('/api/check_trigger', methods=['GET'])
 def check_local_workflow_trigger():
-    # Polled by app_new.py to check for manual triggers from trigger_page.html
     response_data = {'command_pending': False, 'payload': None}
     if TRIGGER_SIGNAL_FILE.exists():
         try:
             with open(TRIGGER_SIGNAL_FILE, 'r') as f: payload_from_file = json.load(f)
             response_data['command_pending'] = True
             response_data['payload'] = payload_from_file
-            TRIGGER_SIGNAL_FILE.unlink() # Consume the signal
+            TRIGGER_SIGNAL_FILE.unlink()
             app.logger.info(f"LOCAL_CHECK_API: Signal read from '{TRIGGER_SIGNAL_FILE}' and file deleted. Payload: {payload_from_file}")
         except Exception as e:
             app.logger.error(f"LOCAL_CHECK_API: Error processing/deleting signal file '{TRIGGER_SIGNAL_FILE}': {e}", exc_info=True)
-            # If error, don't send corrupt data. Potentially leave file for manual inspection or delete if problematic.
     return jsonify(response_data)
 
 @app.route('/api/ping', methods=['GET','HEAD'])
@@ -582,29 +562,180 @@ def api_ping():
 def serve_trigger_page_main():
     app.logger.info("ROOT_UI: Request for '/'. Attempting to serve 'trigger_page.html'.")
     try:
+        # Check if the file exists to provide a more specific log if it doesn't
+        if not os.path.exists(os.path.join(app.root_path, 'trigger_page.html')):
+            app.logger.error(f"ROOT_UI: CRITICAL - 'trigger_page.html' does NOT exist in application root path ({app.root_path}). Check deployment.")
+            return "Error: Main page content not found (file missing).", 404
         return send_from_directory(app.root_path, 'trigger_page.html')
-    except FileNotFoundError:
+    except FileNotFoundError: # Should be caught by the check above, but as a fallback
         app.logger.error(f"ROOT_UI: CRITICAL - 'trigger_page.html' not found in application root path ({app.root_path}).")
         return "Error: Main page content not found.", 404
     except Exception as e:
         app.logger.error(f"ROOT_UI: Unexpected error serving 'trigger_page.html': {e}", exc_info=True)
         return "Internal server error serving UI.", 500
 
+@app.route('/api/get_local_status', methods=['GET'])
+def get_local_status_proxied():
+    localtunnel_url = None
+    if LOCALTUNNEL_URL_FILE.exists():
+        try:
+            with open(LOCALTUNNEL_URL_FILE, "r") as f:
+                localtunnel_url = f.read().strip()
+        except Exception as e:
+            app.logger.error(f"PROXY_STATUS: Error reading localtunnel URL file: {e}")
+            return jsonify({
+                "overall_status_text": "Erreur Serveur Distant",
+                "status_text": "Impossible de lire l'URL du worker local.",
+                "progress_current": 0, "progress_total": 0, "current_step_name": None,
+                "recent_downloads": []
+            }), 500
+
+    if not localtunnel_url:
+        app.logger.warning("PROXY_STATUS: Localtunnel URL not available for proxying status.")
+        return jsonify({
+            "overall_status_text": "Worker Local Indisponible",
+            "status_text": "Le worker local n'est pas connecté ou n'a pas communiqué son adresse.",
+            "progress_current": 0, "progress_total": 0, "current_step_name": None,
+            "recent_downloads": []
+        }), 503
+
+    try:
+        target_url = f"{localtunnel_url.rstrip('/')}/api/get_remote_status_summary"
+        # Add authentication header if app_new.py expects one for /api/get_remote_status_summary
+        # headers_proxy = {"X-Your-AppNew-Token": "YOUR_TOKEN_VALUE"}
+        # response_local = requests.get(target_url, timeout=10, headers=headers_proxy)
+        response_local = requests.get(target_url, timeout=10) 
+        response_local.raise_for_status()
+        local_data = response_local.json()
+
+        overall_status_text = "Inconnu"
+        status_text_detail = local_data.get("last_updated_utc", "")
+
+        status_code_map = {
+            "idle": "Inactif / Prêt",
+            "auto_mode_active": "Mode Auto Actif - Séquence en cours",
+            "sequence_running": "Séquence Manuelle en Cours",
+            "step_running": "Étape Individuelle en Cours",
+            # Potentially add "completed_ok" and "completed_error" if app_new sends them
+        }
+        overall_status_text = status_code_map.get(local_data.get("overall_status_code"), "Statut Indéterminé")
+
+        # If app_new.py doesn't send "completed_ok/error" but just "idle" after completion,
+        # we might need a way to know the outcome of the *last* sequence.
+        # For now, this logic assumes "idle" is the primary state when nothing is running.
+
+        if local_data.get("current_step_name"):
+            status_text_detail = f"Étape: {local_data['current_step_name']}. (MàJ: {status_text_detail})"
+        else:
+            status_text_detail = f"(MàJ: {status_text_detail})"
+        
+        if local_data.get("last_updated_utc"):
+            try:
+                last_update_dt_str = local_data["last_updated_utc"]
+                # Handle potential "Z" for UTC timezone offset
+                if last_update_dt_str.endswith('Z'):
+                    last_update_dt_str = last_update_dt_str[:-1] + '+00:00'
+                last_update_dt = datetime.fromisoformat(last_update_dt_str)
+                
+                # Ensure last_update_dt is offset-aware for comparison with offset-aware datetime.now(timezone.utc)
+                if last_update_dt.tzinfo is None or last_update_dt.tzinfo.utcoffset(last_update_dt) is None:
+                    last_update_dt = last_update_dt.replace(tzinfo=timezone.utc) # Assume UTC if not specified
+
+                if datetime.now(timezone.utc) - last_update_dt > timedelta(minutes=2):
+                    overall_status_text += " (Statut Ancien?)"
+                    status_text_detail = "Dernier statut du worker local reçu il y a > 2 min. " + status_text_detail
+            except ValueError as e_date:
+                app.logger.warning(f"PROXY_STATUS: Error parsing date '{local_data['last_updated_utc']}': {e_date}")
+
+
+        # Simple mapping for completion for now; app_new needs to send explicit completion states for better accuracy
+        is_completed_or_idle = local_data.get("overall_status_code") == "idle" # Or specific completion states
+        # This part of determining "Terminée avec succès/erreurs" is tricky without explicit state from app_new.py
+        # Placeholder logic:
+        if is_completed_or_idle and not local_data.get("current_step_name"):
+             # This isn't truly "Terminée", just "Inactif". The old logic had better completion status.
+             # To fix, app_new.py needs to report "last_sequence_status": "success" or "error".
+             # For now, we'll rely on "Inactif / Prêt".
+             pass
+
+
+        return jsonify({
+            "overall_status_text": overall_status_text,
+            "status_text": status_text_detail,
+            "progress_current": local_data.get("progress_current", 0),
+            "progress_total": local_data.get("progress_total", 0),
+            "current_step_name": local_data.get("current_step_name"),
+            "recent_downloads": local_data.get("recent_downloads", [])
+            # Add "is_completed_successfully": True/False if app_new can provide it
+        }), 200
+
+    except requests.exceptions.Timeout:
+        app.logger.warning(f"PROXY_STATUS: Timeout connecting to local worker at {target_url}")
+        return jsonify({
+            "overall_status_text": "Worker Local (Timeout)",
+            "status_text": "La connexion au worker local a expiré.",
+             "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
+        }), 504 
+    except requests.exceptions.ConnectionError:
+        app.logger.warning(f"PROXY_STATUS: Connection error to local worker at {target_url}")
+        return jsonify({
+            "overall_status_text": "Worker Local (Connexion Refusée)",
+            "status_text": "Impossible de se connecter au worker local.",
+             "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
+        }), 502
+    except requests.exceptions.RequestException as e_req:
+        app.logger.error(f"PROXY_STATUS: Error during request to local worker {target_url}: {e_req}")
+        status_code = e_req.response.status_code if e_req.response is not None else 500
+        return jsonify({
+            "overall_status_text": f"Worker Local (Erreur {status_code})",
+            "status_text": f"Erreur communication avec worker local.",
+             "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
+        }), status_code
+    except Exception as e_gen:
+        app.logger.error(f"PROXY_STATUS: Generic error proxying status from {target_url}: {e_gen}", exc_info=True)
+        return jsonify({
+            "overall_status_text": "Erreur Serveur Distant (Proxy)",
+            "status_text": "Erreur interne récupération statut local.",
+             "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
+        }), 500
+
+@app.route('/api/check_emails_and_download', methods=['POST'])
+def api_check_emails_and_download():
+    app.logger.info("API_EMAIL_CHECK: Manual trigger for email check received.")
+    
+    def run_email_check_task_in_thread():
+        with app.app_context(): 
+            try:
+                app.logger.info("API_EMAIL_CHECK_THREAD: Starting email check and Make trigger.")
+                webhooks_triggered = check_new_emails_and_trigger_make_webhook()
+                app.logger.info(f"API_EMAIL_CHECK_THREAD: Email check finished. {webhooks_triggered} webhook(s) triggered.")
+            except Exception as e_thread:
+                app.logger.error(f"API_EMAIL_CHECK_THREAD: Error in email check thread: {e_thread}", exc_info=True)
+
+    if not all([ONEDRIVE_CLIENT_ID, ONEDRIVE_CLIENT_SECRET, ONEDRIVE_REFRESH_TOKEN, 
+                SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL, msal_app]):
+        msg = "Configuration serveur incomplète pour le traitement des emails."
+        app.logger.error(f"API_EMAIL_CHECK: {msg}")
+        return jsonify({"status": "error", "message": msg}), 503
+
+    email_thread = threading.Thread(target=run_email_check_task_in_thread, name="ManualEmailCheckThread")
+    email_thread.start()
+    
+    return jsonify({"status": "success", "message": "Vérification des emails et transfert vers OneDrive lancés en arrière-plan."}), 202
+
+
 # --- Démarrage de l'Application et des Threads ---
 if __name__ == '__main__':
     is_debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-    # WERKZEUG_RUN_MAIN is set by Flask reloader in the main process, not child processes.
-    # Start background threads only in the main process if reloader is active, or if not in debug mode.
     should_start_background_threads = not is_debug_mode or os.environ.get("WERKZEUG_RUN_MAIN") == "true"
 
     if should_start_background_threads:
         app.logger.info("MAIN_APP: Preparing to start background threads (if configured).")
         
-        # Check for essential OneDrive configuration before starting email poller
         if all([ONEDRIVE_CLIENT_ID, ONEDRIVE_CLIENT_SECRET, ONEDRIVE_REFRESH_TOKEN, msal_app]):
             if SENDER_LIST_FOR_POLLING and MAKE_SCENARIO_WEBHOOK_URL:
                 email_poller_service_thread = threading.Thread(target=background_email_poller, name="EmailPollerThread")
-                email_poller_service_thread.daemon = True # Allows main app to exit even if thread is running
+                email_poller_service_thread.daemon = True
                 email_poller_service_thread.start()
                 app.logger.info(f"MAIN_APP: Email polling thread started successfully. Monitoring {len(SENDER_LIST_FOR_POLLING)} senders.")
             else:
@@ -616,13 +747,10 @@ if __name__ == '__main__':
 
     server_port = int(os.environ.get('PORT', 10000))
     
-    # Final security checks before run
     if not EXPECTED_API_TOKEN:
         app.logger.critical("MAIN_APP: SECURITY ALERT - PROCESS_API_TOKEN (EXPECTED_API_TOKEN) IS NOT SET. Endpoints for Make.com are INSECURE.")
     if not REGISTER_LOCAL_URL_TOKEN:
         app.logger.warning("MAIN_APP: SECURITY NOTE - REGISTER_LOCAL_URL_TOKEN IS NOT SET. Endpoint for local worker URL registration is potentially INSECURE if not also disabled on app_new.py.")
 
     app.logger.info(f"MAIN_APP: Starting Flask development server on host 0.0.0.0, port {server_port}. Debug mode: {is_debug_mode}")
-    # use_reloader should be False if WERKZEUG_RUN_MAIN is true and managing threads, to avoid double execution with Flask's own reloader.
-    # However, standard Flask debug mode typically handles this. If using gunicorn etc., it manages workers.
     app.run(host='0.0.0.0', port=server_port, debug=is_debug_mode, use_reloader=(is_debug_mode and os.environ.get("WERKZEUG_RUN_MAIN") != "true"))
