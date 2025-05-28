@@ -5,7 +5,6 @@ from pathlib import Path
 import json
 import logging
 import re
-# import html as html_parser # Décommenter si vous réintroduisez une fonction qui en a besoin
 import requests
 import threading
 from datetime import datetime, timedelta, timezone
@@ -13,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
-    ZoneInfo = None # Python < 3.9
+    ZoneInfo = None 
 
 from msal import ConfidentialClientApplication
 
@@ -28,8 +27,8 @@ logging.basicConfig(level=log_level,
 # --- Configuration du Polling des Emails ---
 POLLING_TIMEZONE_STR = os.environ.get("POLLING_TIMEZONE", "UTC")
 POLLING_ACTIVE_START_HOUR = int(os.environ.get("POLLING_ACTIVE_START_HOUR", 0))
-POLLING_ACTIVE_END_HOUR = int(os.environ.get("POLLING_ACTIVE_END_HOUR", 24)) # Fin exclusive
-POLLING_ACTIVE_DAYS_RAW = os.environ.get("POLLING_ACTIVE_DAYS", "0,1,2,3,4,5,6") # 0=Lundi, 6=Dimanche
+POLLING_ACTIVE_END_HOUR = int(os.environ.get("POLLING_ACTIVE_END_HOUR", 24)) 
+POLLING_ACTIVE_DAYS_RAW = os.environ.get("POLLING_ACTIVE_DAYS", "0,1,2,3,4,5,6") 
 POLLING_ACTIVE_DAYS = []
 if POLLING_ACTIVE_DAYS_RAW:
     try:
@@ -47,33 +46,33 @@ if POLLING_TIMEZONE_STR.upper() != "UTC":
             app.logger.info(f"CFG POLL: Using timezone '{POLLING_TIMEZONE_STR}' for polling schedule.")
         except Exception as e:
             app.logger.warning(f"CFG POLL: Error loading TZ '{POLLING_TIMEZONE_STR}': {e}. Using UTC.")
-            POLLING_TIMEZONE_STR = "UTC" # Revert to UTC string for logs
-    else: # ZoneInfo not available
+            POLLING_TIMEZONE_STR = "UTC"
+    else: 
         app.logger.warning(f"CFG POLL: 'zoneinfo' module not available for Python version. Using UTC. '{POLLING_TIMEZONE_STR}' ignored.")
         POLLING_TIMEZONE_STR = "UTC"
-if TZ_FOR_POLLING is None: # Default or fallback to UTC
+if TZ_FOR_POLLING is None: 
     TZ_FOR_POLLING = timezone.utc
     app.logger.info(f"CFG POLL: Using timezone 'UTC' for polling schedule.")
 
 EMAIL_POLLING_INTERVAL_SECONDS = int(os.environ.get("EMAIL_POLLING_INTERVAL_SECONDS", 60))
-POLLING_INACTIVE_CHECK_INTERVAL_SECONDS = int(os.environ.get("POLLING_INACTIVE_CHECK_INTERVAL_SECONDS", 600)) # Check every 10 mins if inactive
+POLLING_INACTIVE_CHECK_INTERVAL_SECONDS = int(os.environ.get("POLLING_INACTIVE_CHECK_INTERVAL_SECONDS", 600))
 app.logger.info(f"CFG POLL: Active polling interval: {EMAIL_POLLING_INTERVAL_SECONDS}s. Inactive period check interval: {POLLING_INACTIVE_CHECK_INTERVAL_SECONDS}s.")
 app.logger.info(f"CFG POLL: Active schedule ({POLLING_TIMEZONE_STR}): {POLLING_ACTIVE_START_HOUR:02d}:00-{POLLING_ACTIVE_END_HOUR:02d}:00. Days (0=Mon): {POLLING_ACTIVE_DAYS}")
 
 
 # --- Chemins et Fichiers ---
 SIGNAL_DIR = Path(os.environ.get("RENDER_DISC_PATH", "./signal_data_app_render"))
-TRIGGER_SIGNAL_FILE = SIGNAL_DIR / "local_workflow_trigger_signal.json" # Pour trigger_page.html -> app_new.py
-PROCESSED_URLS_ONEDRIVE_FILENAME = "processed_dropbox_urls_workflow.txt" # URLs Dropbox traitées
-PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME = "processed_webhook_triggers.txt" # Email IDs pour lesquels un webhook Make a été envoyé
-LOCALTUNNEL_URL_FILE = SIGNAL_DIR / "current_localtunnel_url.txt" # NOUVEAU: Stocke l'URL de app_new.py
+TRIGGER_SIGNAL_FILE = SIGNAL_DIR / "local_workflow_trigger_signal.json"
+PROCESSED_URLS_ONEDRIVE_FILENAME = "processed_dropbox_urls_workflow.txt"
+PROCESSED_WEBHOOK_TRIGGERS_ONEDRIVE_FILENAME = "processed_webhook_triggers.txt"
+LOCALTUNNEL_URL_FILE = SIGNAL_DIR / "current_localtunnel_url.txt"
 SIGNAL_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- Configuration OneDrive / MSAL ---
 ONEDRIVE_CLIENT_ID = os.environ.get('ONEDRIVE_CLIENT_ID')
 ONEDRIVE_CLIENT_SECRET = os.environ.get('ONEDRIVE_CLIENT_SECRET')
 ONEDRIVE_REFRESH_TOKEN = os.environ.get('ONEDRIVE_REFRESH_TOKEN')
-ONEDRIVE_AUTHORITY = "https://login.microsoftonline.com/consumers" # Ou votre tenant spécifique
+ONEDRIVE_AUTHORITY = "https://login.microsoftonline.com/consumers"
 ONEDRIVE_SCOPES_DELEGATED = ["Files.ReadWrite", "User.Read", "Mail.ReadWrite"]
 ONEDRIVE_TARGET_PARENT_FOLDER_ID = os.environ.get('ONEDRIVE_TARGET_PARENT_FOLDER_ID', 'root')
 ONEDRIVE_TARGET_SUBFOLDER_NAME = os.environ.get('ONEDRIVE_TARGET_SUBFOLDER_NAME', "DropboxDownloadsWorkflow")
@@ -96,26 +95,39 @@ if SENDER_LIST_FOR_POLLING:
 else:
     app.logger.warning("CFG POLL: SENDER_OF_INTEREST_FOR_POLLING not set. Email polling will likely be ineffective.")
 
-EXPECTED_API_TOKEN = os.environ.get("PROCESS_API_TOKEN") # Token pour Make -> app_render (/get_local_downloader_url, /log_processed_url)
+EXPECTED_API_TOKEN = os.environ.get("PROCESS_API_TOKEN") 
 if not EXPECTED_API_TOKEN:
     app.logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
 else:
     app.logger.info(f"CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: '{EXPECTED_API_TOKEN[:5]}...'")
 
-REGISTER_LOCAL_URL_TOKEN = os.environ.get("REGISTER_LOCAL_URL_TOKEN") # NOUVEAU: Token pour app_new.py -> app_render (/register_local_downloader_url)
+REGISTER_LOCAL_URL_TOKEN = os.environ.get("REGISTER_LOCAL_URL_TOKEN")
 if not REGISTER_LOCAL_URL_TOKEN:
     app.logger.warning("CFG TOKEN: REGISTER_LOCAL_URL_TOKEN not set. Endpoint for registering local worker URL will be insecure if not matching on app_new.py.")
 else:
     app.logger.info(f"CFG TOKEN: REGISTER_LOCAL_URL_TOKEN (for local worker registration) configured: '{REGISTER_LOCAL_URL_TOKEN[:5]}...'")
+
+REMOTE_UI_ACCESS_TOKEN_ENV = os.environ.get("REMOTE_UI_ACCESS_TOKEN")
+INTERNAL_WORKER_COMMS_TOKEN_ENV = os.environ.get("INTERNAL_WORKER_COMMS_TOKEN")
+
+if not REMOTE_UI_ACCESS_TOKEN_ENV:
+    app.logger.warning("CFG TOKEN: REMOTE_UI_ACCESS_TOKEN_ENV not set. Endpoint /api/get_local_status will be INSECURE if accessed directly without a token check in a reverse proxy, for example.")
+else:
+    app.logger.info(f"CFG TOKEN: REMOTE_UI_ACCESS_TOKEN_ENV for UI access to /api/get_local_status configured: '{REMOTE_UI_ACCESS_TOKEN_ENV[:5]}...'")
+
+if not INTERNAL_WORKER_COMMS_TOKEN_ENV:
+    app.logger.warning("CFG TOKEN: INTERNAL_WORKER_COMMS_TOKEN_ENV not set. Communication with local worker app_new.py (for /api/get_remote_status_summary) will be INSECURE.")
+else:
+    app.logger.info(f"CFG TOKEN: INTERNAL_WORKER_COMMS_TOKEN_ENV for worker communication configured.")
 
 
 # --- Fonctions Utilitaires OneDrive & MSAL ---
 def sanitize_filename(filename_str, max_length=230):
     if filename_str is None: filename_str = "fichier_nom_absent"
     s = str(filename_str)
-    s = re.sub(r'[<>:"/\\|?*]', '_', s) # Caractères Windows interdits
-    s = re.sub(r'\s+', '_', s)         # Remplacer les espaces par des underscores
-    s = re.sub(r'\.+', '.', s).strip('.') # Éviter les points multiples ou en début/fin
+    s = re.sub(r'[<>:"/\\|?*]', '_', s)
+    s = re.sub(r'\s+', '_', s)        
+    s = re.sub(r'\.+', '.', s).strip('.')
     return s[:max_length] if s else "fichier_sans_nom_valide"
 
 def get_onedrive_access_token():
@@ -130,7 +142,6 @@ def get_onedrive_access_token():
     
     if "access_token" in token_result:
         app.logger.info("MSAL: Access token obtained successfully.")
-        # OneDrive peut parfois émettre un nouveau refresh token. Il est crucial de le sauvegarder.
         if token_result.get("refresh_token") and token_result.get("refresh_token") != ONEDRIVE_REFRESH_TOKEN:
             app.logger.warning("MSAL: A new refresh token was issued by OneDrive. "
                                "IMPORTANT: Update the ONEDRIVE_REFRESH_TOKEN environment variable with this new token: "
@@ -144,13 +155,9 @@ def get_onedrive_access_token():
 def ensure_onedrive_folder(access_token, subfolder_name=None, parent_folder_id=None):
     target_folder_name = subfolder_name or ONEDRIVE_TARGET_SUBFOLDER_NAME
     effective_parent_id = parent_folder_id or ONEDRIVE_TARGET_PARENT_FOLDER_ID
-    
     headers = {'Authorization': f'Bearer {access_token}', 'Content-Type': 'application/json'}
-    
     parent_path_segment = f"items/{effective_parent_id}" if effective_parent_id and effective_parent_id.lower() != 'root' else "root"
-    
     clean_target_folder_name = sanitize_filename(target_folder_name, 100)
-
     check_url = f"https://graph.microsoft.com/v1.0/me/drive/{parent_path_segment}/children?$filter=name eq '{clean_target_folder_name}'"
     try:
         response = requests.get(check_url, headers=headers, timeout=15)
@@ -173,7 +180,6 @@ def ensure_onedrive_folder(access_token, subfolder_name=None, parent_folder_id=N
         created_folder_id = response_create.json()['id']
         app.logger.info(f"OD_UTIL: Folder '{clean_target_folder_name}' created successfully with ID: {created_folder_id} under parent '{effective_parent_id}'.")
         return created_folder_id
-
     except requests.exceptions.RequestException as e:
         app.logger.error(f"OD_UTIL: Graph API error during folder ensure operation for '{clean_target_folder_name}': {e}")
         if hasattr(e, 'response') and e.response is not None:
@@ -184,11 +190,9 @@ def get_processed_items_from_onedrive_file(job_id_prefix, token, folder_id, file
     if not token or not folder_id:
         app.logger.error(f"DEDUP_ITEMS [{job_id_prefix}]: Token or FolderID missing for file '{filename}'.")
         return set()
-        
     download_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{folder_id}:/{sanitize_filename(filename)}:/content"
     headers = {'Authorization': f'Bearer {token}'}
     items = set()
-    
     job_id = f"{job_id_prefix}_{time.time_ns() % 100000}"
     app.logger.debug(f"DEDUP_ITEMS [{job_id}]: Attempting to read '{filename}'.")
     try:
@@ -210,20 +214,15 @@ def add_item_to_onedrive_file(job_id_prefix, token, folder_id, filename, item_to
     if not all([token, folder_id, filename, item_to_add]):
         app.logger.error(f"DEDUP_ITEMS [{job_id_prefix}]: Missing parameters to add item to '{filename}'.")
         return False
-
     job_id = f"{job_id_prefix}_{time.time_ns() % 100000}"
     current_items = get_processed_items_from_onedrive_file(f"GET_{job_id_prefix}", token, folder_id, filename)
-    
     if item_to_add in current_items:
         app.logger.info(f"DEDUP_ITEMS [{job_id}]: Item '{item_to_add}' already in '{filename}'. No update needed.")
         return True
-        
     current_items.add(item_to_add)
     content_to_upload = "\n".join(sorted(list(current_items)))
-    
     upload_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{folder_id}:/{sanitize_filename(filename)}:/content?@microsoft.graph.conflictBehavior=replace"
     headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'text/plain; charset=utf-8'}
-    
     app.logger.debug(f"DEDUP_ITEMS [{job_id}]: Updating '{filename}' with item '{item_to_add}'. Total items: {len(current_items)}.")
     try:
         response = requests.put(upload_url, headers=headers, data=content_to_upload.encode('utf-8'), timeout=60)
@@ -519,7 +518,7 @@ def api_log_processed_url():
 def trigger_local_workflow():
     payload = request.json
     if not payload: payload = {"command": "start_manual_generic", "timestamp_utc": datetime.now(timezone.utc).isoformat()}
-    elif not isinstance(payload, dict): # Ensure payload is a dict for setdefault
+    elif not isinstance(payload, dict): 
         app.logger.warning(f"LOCAL_TRIGGER_API: Payload received is not a dictionary: {payload}. Wrapping it.")
         payload = {"command": "start_manual_generic", "original_payload": payload, "timestamp_utc": datetime.now(timezone.utc).isoformat()}
     else: 
@@ -562,12 +561,11 @@ def api_ping():
 def serve_trigger_page_main():
     app.logger.info("ROOT_UI: Request for '/'. Attempting to serve 'trigger_page.html'.")
     try:
-        # Check if the file exists to provide a more specific log if it doesn't
         if not os.path.exists(os.path.join(app.root_path, 'trigger_page.html')):
             app.logger.error(f"ROOT_UI: CRITICAL - 'trigger_page.html' does NOT exist in application root path ({app.root_path}). Check deployment.")
             return "Error: Main page content not found (file missing).", 404
         return send_from_directory(app.root_path, 'trigger_page.html')
-    except FileNotFoundError: # Should be caught by the check above, but as a fallback
+    except FileNotFoundError:
         app.logger.error(f"ROOT_UI: CRITICAL - 'trigger_page.html' not found in application root path ({app.root_path}).")
         return "Error: Main page content not found.", 404
     except Exception as e:
@@ -576,6 +574,14 @@ def serve_trigger_page_main():
 
 @app.route('/api/get_local_status', methods=['GET'])
 def get_local_status_proxied():
+    global REMOTE_UI_ACCESS_TOKEN_ENV, INTERNAL_WORKER_COMMS_TOKEN_ENV
+
+    received_ui_token = request.args.get('ui_token')
+    if REMOTE_UI_ACCESS_TOKEN_ENV:
+        if not received_ui_token or received_ui_token != REMOTE_UI_ACCESS_TOKEN_ENV:
+            app.logger.warning(f"PROXY_STATUS: Unauthorized access attempt to /api/get_local_status. Missing or invalid ui_token.")
+            return jsonify({"error": "Unauthorized"}), 401
+    
     localtunnel_url = None
     if LOCALTUNNEL_URL_FILE.exists():
         try:
@@ -601,102 +607,96 @@ def get_local_status_proxied():
 
     try:
         target_url = f"{localtunnel_url.rstrip('/')}/api/get_remote_status_summary"
-        # Add authentication header if app_new.py expects one for /api/get_remote_status_summary
-        # headers_proxy = {"X-Your-AppNew-Token": "YOUR_TOKEN_VALUE"}
-        # response_local = requests.get(target_url, timeout=10, headers=headers_proxy)
-        response_local = requests.get(target_url, timeout=10) 
-        response_local.raise_for_status()
+        headers_to_worker = {}
+        if INTERNAL_WORKER_COMMS_TOKEN_ENV:
+            headers_to_worker['X-Worker-Token'] = INTERNAL_WORKER_COMMS_TOKEN_ENV
+        else:
+            app.logger.warning(f"PROXY_STATUS: Communicating with worker {target_url} without X-Worker-Token as INTERNAL_WORKER_COMMS_TOKEN_ENV is not set.")
+            
+        response_local = requests.get(target_url, headers=headers_to_worker, timeout=10)
+        response_local.raise_for_status() # Will raise HTTPError for 4xx/5xx responses
         local_data = response_local.json()
 
-        overall_status_text = "Inconnu"
-        status_text_detail = local_data.get("last_updated_utc", "")
+        overall_status_text_val = "Inconnu"
+        status_text_detail_val = local_data.get("last_updated_utc", "")
 
         status_code_map = {
             "idle": "Inactif / Prêt",
             "auto_mode_active": "Mode Auto Actif - Séquence en cours",
             "sequence_running": "Séquence Manuelle en Cours",
             "step_running": "Étape Individuelle en Cours",
-            # Potentially add "completed_ok" and "completed_error" if app_new sends them
+            "completed_success_recent": "Terminée avec succès (récent)",
+            "completed_error_recent": "Terminée avec erreurs (récent)",
         }
-        overall_status_text = status_code_map.get(local_data.get("overall_status_code"), "Statut Indéterminé")
+        overall_status_text_val = status_code_map.get(local_data.get("overall_status_code"), "Statut Indéterminé")
 
-        # If app_new.py doesn't send "completed_ok/error" but just "idle" after completion,
-        # we might need a way to know the outcome of the *last* sequence.
-        # For now, this logic assumes "idle" is the primary state when nothing is running.
-
-        if local_data.get("current_step_name"):
-            status_text_detail = f"Étape: {local_data['current_step_name']}. (MàJ: {status_text_detail})"
+        current_step_name_val = local_data.get("current_step_name")
+        if current_step_name_val:
+            status_text_detail_val = f"Étape: {current_step_name_val}. (MàJ: {status_text_detail_val})"
         else:
-            status_text_detail = f"(MàJ: {status_text_detail})"
+            status_text_detail_val = f"(MàJ: {status_text_detail_val})"
         
         if local_data.get("last_updated_utc"):
             try:
                 last_update_dt_str = local_data["last_updated_utc"]
-                # Handle potential "Z" for UTC timezone offset
-                if last_update_dt_str.endswith('Z'):
+                if last_update_dt_str.endswith('Z'): # Compatibility with ISO 8601 'Z' for UTC
                     last_update_dt_str = last_update_dt_str[:-1] + '+00:00'
                 last_update_dt = datetime.fromisoformat(last_update_dt_str)
-                
-                # Ensure last_update_dt is offset-aware for comparison with offset-aware datetime.now(timezone.utc)
-                if last_update_dt.tzinfo is None or last_update_dt.tzinfo.utcoffset(last_update_dt) is None:
-                    last_update_dt = last_update_dt.replace(tzinfo=timezone.utc) # Assume UTC if not specified
+                if last_update_dt.tzinfo is None: # Ensure timezone aware for comparison
+                    last_update_dt = last_update_dt.replace(tzinfo=timezone.utc)
 
                 if datetime.now(timezone.utc) - last_update_dt > timedelta(minutes=2):
-                    overall_status_text += " (Statut Ancien?)"
-                    status_text_detail = "Dernier statut du worker local reçu il y a > 2 min. " + status_text_detail
-            except ValueError as e_date:
-                app.logger.warning(f"PROXY_STATUS: Error parsing date '{local_data['last_updated_utc']}': {e_date}")
-
-
-        # Simple mapping for completion for now; app_new needs to send explicit completion states for better accuracy
-        is_completed_or_idle = local_data.get("overall_status_code") == "idle" # Or specific completion states
-        # This part of determining "Terminée avec succès/erreurs" is tricky without explicit state from app_new.py
-        # Placeholder logic:
-        if is_completed_or_idle and not local_data.get("current_step_name"):
-             # This isn't truly "Terminée", just "Inactif". The old logic had better completion status.
-             # To fix, app_new.py needs to report "last_sequence_status": "success" or "error".
-             # For now, we'll rely on "Inactif / Prêt".
-             pass
-
+                    overall_status_text_val += " (Statut Ancien?)"
+                    status_text_detail_val = "Dernier statut du worker local reçu il y a > 2 min. " + status_text_detail_val
+            except ValueError as e_date_parse:
+                app.logger.warning(f"PROXY_STATUS: Error parsing date '{local_data['last_updated_utc']}': {e_date_parse}")
 
         return jsonify({
-            "overall_status_text": overall_status_text,
-            "status_text": status_text_detail,
+            "overall_status_text": overall_status_text_val,
+            "status_text": status_text_detail_val,
             "progress_current": local_data.get("progress_current", 0),
             "progress_total": local_data.get("progress_total", 0),
-            "current_step_name": local_data.get("current_step_name"),
+            "current_step_name": current_step_name_val,
             "recent_downloads": local_data.get("recent_downloads", [])
-            # Add "is_completed_successfully": True/False if app_new can provide it
         }), 200
 
     except requests.exceptions.Timeout:
         app.logger.warning(f"PROXY_STATUS: Timeout connecting to local worker at {target_url}")
         return jsonify({
-            "overall_status_text": "Worker Local (Timeout)",
-            "status_text": "La connexion au worker local a expiré.",
-             "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
+            "overall_status_text": "Worker Local (Timeout)", "status_text": "La connexion au worker local a expiré.",
+            "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
         }), 504 
     except requests.exceptions.ConnectionError:
         app.logger.warning(f"PROXY_STATUS: Connection error to local worker at {target_url}")
         return jsonify({
-            "overall_status_text": "Worker Local (Connexion Refusée)",
-            "status_text": "Impossible de se connecter au worker local.",
-             "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
+            "overall_status_text": "Worker Local (Connexion Refusée)", "status_text": "Impossible de se connecter au worker local.",
+            "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
         }), 502
-    except requests.exceptions.RequestException as e_req:
-        app.logger.error(f"PROXY_STATUS: Error during request to local worker {target_url}: {e_req}")
-        status_code = e_req.response.status_code if e_req.response is not None else 500
+    except requests.exceptions.HTTPError as e_http: # Catch HTTPError separately for 401 from worker
+        app.logger.error(f"PROXY_STATUS: HTTPError from local worker {target_url}: {e_http}")
+        if e_http.response.status_code == 401:
+            app.logger.error(f"PROXY_STATUS: Received 401 Unauthorized from local worker {target_url}. Check INTERNAL_WORKER_COMMS_TOKEN_ENV consistency.")
+            return jsonify({
+                "overall_status_text": "Erreur d'Authentification Interne",
+                "status_text": "Le serveur distant n'a pas pu s'authentifier auprès du worker local.",
+                "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
+            }), 401 # Propagate 401
+        # For other HTTP errors from worker
         return jsonify({
-            "overall_status_text": f"Worker Local (Erreur {status_code})",
-            "status_text": f"Erreur communication avec worker local.",
-             "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
-        }), status_code
+            "overall_status_text": f"Worker Local (Erreur {e_http.response.status_code})", "status_text": f"Erreur communication avec worker local.",
+            "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
+        }), e_http.response.status_code
+    except requests.exceptions.RequestException as e_req: # Other request errors
+        app.logger.error(f"PROXY_STATUS: RequestException to local worker {target_url}: {e_req}")
+        return jsonify({
+            "overall_status_text": "Worker Local (Erreur Réseau)", "status_text": "Erreur de communication réseau avec le worker local.",
+            "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
+        }), 503 # Service Unavailable is a reasonable general code here
     except Exception as e_gen:
         app.logger.error(f"PROXY_STATUS: Generic error proxying status from {target_url}: {e_gen}", exc_info=True)
         return jsonify({
-            "overall_status_text": "Erreur Serveur Distant (Proxy)",
-            "status_text": "Erreur interne récupération statut local.",
-             "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
+            "overall_status_text": "Erreur Serveur Distant (Proxy)", "status_text": "Erreur interne récupération statut local.",
+            "progress_current": 0, "progress_total": 0, "current_step_name": None, "recent_downloads": []
         }), 500
 
 @app.route('/api/check_emails_and_download', methods=['POST'])
@@ -751,6 +751,11 @@ if __name__ == '__main__':
         app.logger.critical("MAIN_APP: SECURITY ALERT - PROCESS_API_TOKEN (EXPECTED_API_TOKEN) IS NOT SET. Endpoints for Make.com are INSECURE.")
     if not REGISTER_LOCAL_URL_TOKEN:
         app.logger.warning("MAIN_APP: SECURITY NOTE - REGISTER_LOCAL_URL_TOKEN IS NOT SET. Endpoint for local worker URL registration is potentially INSECURE if not also disabled on app_new.py.")
+    if not REMOTE_UI_ACCESS_TOKEN_ENV:
+        app.logger.warning("MAIN_APP: SECURITY NOTE - REMOTE_UI_ACCESS_TOKEN_ENV IS NOT SET. /api/get_local_status is accessible without a token.")
+    if not INTERNAL_WORKER_COMMS_TOKEN_ENV:
+        app.logger.warning("MAIN_APP: SECURITY NOTE - INTERNAL_WORKER_COMMS_TOKEN_ENV IS NOT SET. Communication between app_render and app_new is unauthenticated.")
+
 
     app.logger.info(f"MAIN_APP: Starting Flask development server on host 0.0.0.0, port {server_port}. Debug mode: {is_debug_mode}")
     app.run(host='0.0.0.0', port=server_port, debug=is_debug_mode, use_reloader=(is_debug_mode and os.environ.get("WERKZEUG_RUN_MAIN") != "true"))
