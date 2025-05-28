@@ -159,19 +159,33 @@
             border-bottom: none;
         }
          #checkEmailsBtn { 
-            background-color: #28a745; margin-top: 15px; display: block; 
+            background-color: #28a745; /* Vert */
+            margin-top: 15px; display: block; 
             width: 100%; padding: 15px 20px; font-size: 1.1em; 
             font-weight: 600; color: white; border: none; 
             border-radius: 6px; cursor: pointer; margin-bottom: 20px;
+            background-image: linear-gradient(to right, #28a745 0%, #34c759 51%, #28a745 100%);
+            background-size: 200% auto;
+            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.4);
+            transition: background-position 0.5s, transform 0.1s ease;
+        }
+        #checkEmailsBtn:hover {
+            background-position: right center; 
+            transform: translateY(-2px);
         }
         #checkEmailsBtn:disabled {
+            background-image: none;
             background-color: #555e72;
             color: var(--cork-text-secondary);
             cursor: not-allowed;
+            box-shadow: none;
         }
         #emailCheckStatusMsg {
              margin-top: 10px; text-align: center;
+             font-size: 0.9em;
         }
+        #emailCheckStatusMsg.status-success { color: var(--cork-success); }
+        #emailCheckStatusMsg.status-error { color: var(--cork-danger); }
 
     </style>
 </head>
@@ -179,7 +193,7 @@
     <div class="container">
         <h1><span class="emoji">📡</span>Télécommande Workflow</h1>
         <button id="triggerBtn">🚀 Lancer Séquence Locale (Étapes 0-4)</button>
-        <button id="checkEmailsBtn">📧 Vérifier Emails & Transférer vers OneDrive</button>
+        <button id="checkEmailsBtn">📧 Vérifier Emails & Transférer</button>
         <p id="emailCheckStatusMsg"></p>
         
         <div id="statusContainer" style="display:none;">
@@ -191,7 +205,7 @@
             </div>
             <div id="progressTextRemote"></div>
 
-            <div id="downloadsTitle">Derniers Téléchargements Locaux</div>
+            <div id="downloadsTitle" style="display:none;">Derniers Téléchargements Locaux</div>
             <ul id="recentDownloadsList"></ul>
         </div>
     </div>
@@ -207,11 +221,13 @@
         
         const downloadsTitleEl = document.getElementById('downloadsTitle');
         const recentDownloadsListEl = document.getElementById('recentDownloadsList');
+        const checkEmailsButton = document.getElementById('checkEmailsBtn');
+        const emailCheckStatusMsgEl = document.getElementById('emailCheckStatusMsg');
+
         let statusPollingInterval;
 
-        // Replace "YOUR_REMOTE_UI_ACCESS_TOKEN" with the actual token value you set in app_render.py's env vars
-        // For security, this should ideally not be hardcoded if the page is publicly accessible.
-        const uiAccessToken = "un_token_simple_mais_unique_pour_l_ui"; 
+        // Token UI basé sur l'image des variables d'environnement (ou votre valeur actuelle)
+        const uiAccessToken = "0wbgXHiF3e!MqE"; 
 
         triggerButton.addEventListener('click', async () => {
             triggerButton.disabled = true;
@@ -261,41 +277,48 @@
                     if (!response.ok) {
                         console.warn("Avertissement: impossible de récupérer le statut local. Status:", response.status);
                         let errorMsg = `Difficulté à joindre le serveur de statut (${response.status})...`;
-                        if (response.status === 401) {
-                            errorMsg = "Accès non autorisé pour récupérer le statut. Vérifiez le token UI.";
-                            overallStatusTextEl.textContent = 'Erreur Authentification UI';
-                            overallStatusTextEl.className = 'status-error';
-                            if(statusPollingInterval) clearInterval(statusPollingInterval); 
-                            statusPollingInterval = null;
-                        } else {
-                            overallStatusTextEl.textContent = "Erreur Récupération Statut";
-                            overallStatusTextEl.className = 'status-error';
+                        let errorTitle = "Erreur Récupération Statut";
+
+                        if (response.status === 401) { // HTTP Basic Auth a échoué / non loggué
+                            errorMsg = "Authentification requise ou échouée. Veuillez rafraîchir et vous authentifier.";
+                            errorTitle = 'Authentification Échouée';
+                            if(statusPollingInterval) clearInterval(statusPollingInterval); statusPollingInterval = null;
+                        } else if (response.status === 403) { // ui_token incorrect après un login HTTP Basic Auth réussi
+                             errorMsg = "Token UI (interne) invalide. Contactez l'administrateur.";
+                             errorTitle = 'Erreur Token UI';
+                             if(statusPollingInterval) clearInterval(statusPollingInterval); statusPollingInterval = null;
+                        } else { // Autres erreurs serveur ou réseau
+                            const errorData = await response.json().catch(() => null);
+                            errorMsg = errorData?.status_text || errorData?.message || errorMsg;
+                            errorTitle = errorData?.overall_status_text || errorTitle;
                         }
+                        overallStatusTextEl.textContent = errorTitle;
+                        overallStatusTextEl.className = 'status-error';
                         statusTextDetailEl.textContent = errorMsg;
                         progressBarRemoteContainer.style.display = 'none';
                         downloadsTitleEl.style.display = 'none';
                         recentDownloadsListEl.innerHTML = '';
-                        triggerButton.disabled = false; // Allow retrying if polling fails for non-auth reasons
+                        triggerButton.disabled = false; 
                         return;
                     }
                     statusContainer.style.display = 'block'; 
                     const data = await response.json();
 
-                    if (data.error && data.error === "Unauthorized") { // Explicit error from proxy
-                        overallStatusTextEl.textContent = "Erreur Authentification UI";
-                        statusTextDetailEl.textContent = "Token UI invalide ou manquant.";
+                    // Gestion d'erreurs spécifiques venant du proxy ou du worker
+                    if (data.error && data.error === "Invalid UI token") { // ui_token explicite du proxy
+                        overallStatusTextEl.textContent = "Erreur Token UI";
+                        statusTextDetailEl.textContent = "Token UI (interne) invalide ou manquant. Contactez l'administrateur.";
                         overallStatusTextEl.className = 'status-error';
                         if(statusPollingInterval) clearInterval(statusPollingInterval); statusPollingInterval = null;
                         triggerButton.disabled = false;
                         return;
                     }
-                     if (data.overall_status_text === "Erreur d'Authentification Interne") {
+                     if (data.overall_status_text && data.overall_status_text.toLowerCase().includes("erreur authentification interne")) {
                         overallStatusTextEl.textContent = data.overall_status_text;
                         statusTextDetailEl.textContent = data.status_text || "Vérifiez la configuration des tokens entre le serveur distant et le worker local.";
                         overallStatusTextEl.className = 'status-error';
                         progressBarRemoteContainer.style.display = 'none';
-                        downloadsTitleEl.style.display = 'none';
-                        recentDownloadsListEl.innerHTML = '';
+                        downloadsTitleEl.style.display = 'none'; recentDownloadsListEl.innerHTML = '';
                         if(statusPollingInterval) clearInterval(statusPollingInterval); statusPollingInterval = null;
                         triggerButton.disabled = false; 
                         return;
@@ -304,24 +327,24 @@
                     overallStatusTextEl.textContent = data.overall_status_text || "Inconnu";
                     statusTextDetailEl.textContent = data.status_text || "Aucun détail.";
 
-                    const osText = data.overall_status_text || "";
-                    if (osText === "Inactif / Prêt" || osText.includes("Terminé") || osText.includes("Succès")) {
-                        overallStatusTextEl.className = osText.includes("Erreur") ? 'status-error' : 'status-success';
-                        progressBarRemote.style.backgroundColor = osText.includes("Erreur") ? 'var(--cork-danger)' : 'var(--cork-success)';
-                    } else if (osText.includes("Erreur") || osText.includes("Échoué") || osText.includes("Indisponible") || osText.includes("Timeout") || osText.includes("Connexion Refusée")) {
+                    const osText = (data.overall_status_text || "").toLowerCase();
+                    if (osText.includes("inactif") || osText.includes("prêt") || osText.includes("terminé") || osText.includes("succès")) {
+                        overallStatusTextEl.className = osText.includes("erreur") ? 'status-error' : 'status-success';
+                        progressBarRemote.style.backgroundColor = osText.includes("erreur") ? 'var(--cork-danger)' : 'var(--cork-success)';
+                    } else if (osText.includes("erreur") || osText.includes("échoué") || osText.includes("indisponible") || osText.includes("timeout") || osText.includes("connexion refusée")) {
                         overallStatusTextEl.className = 'status-error';
                         progressBarRemote.style.backgroundColor = 'var(--cork-danger)';
-                    } else { 
+                    } else { // En cours, en attente, etc.
                         overallStatusTextEl.className = 'status-progress';
                         progressBarRemote.style.backgroundColor = 'var(--cork-primary-accent)';
                     }
                     
-                    if (data.progress_total > 0 && (osText.includes("Cours") || osText.includes("Actif"))) {
+                    if (data.progress_total > 0 && (osText.includes("cours") || osText.includes("actif"))) {
                         const percentage = Math.round((data.progress_current / data.progress_total) * 100);
                         progressBarRemote.style.width = `${percentage}%`;
                         progressTextRemoteEl.textContent = `${data.current_step_name || ''} ${percentage}% (${data.progress_current}/${data.progress_total})`;
                         progressBarRemoteContainer.style.display = 'block';
-                    } else if (osText.includes("Terminé") || osText.includes("Succès") || osText.includes("Erreur")) {
+                    } else if (osText.includes("terminé") || osText.includes("succès") || (osText.includes("erreur") && data.progress_total > 0)) { // Afficher 100% si terminé/erreur avec progression
                         progressBarRemote.style.width = `100%`;
                         progressTextRemoteEl.textContent = data.current_step_name || "Finalisé"; 
                         progressBarRemoteContainer.style.display = 'block'; 
@@ -337,23 +360,24 @@
                         data.recent_downloads.forEach(dl => {
                             const li = document.createElement('li');
                             let statusColor = 'var(--cork-text-secondary)';
-                            if (dl.status === 'completed') statusColor = 'var(--cork-success)';
-                            else if (dl.status === 'failed') statusColor = 'var(--cork-danger)';
-                            else if (dl.status === 'downloading' || dl.status === 'starting' || dl.status === 'pending') statusColor = 'var(--cork-info)';
+                            const dlStatus = (dl.status || "").toLowerCase();
+                            if (dlStatus === 'completed') statusColor = 'var(--cork-success)';
+                            else if (dlStatus === 'failed') statusColor = 'var(--cork-danger)';
+                            else if (['downloading', 'starting', 'pending'].includes(dlStatus)) statusColor = 'var(--cork-info)';
 
-                            li.innerHTML = `<span style="color: ${statusColor}; font-weight: bold;">[${dl.status.charAt(0).toUpperCase() + dl.status.slice(1)}]</span> ${dl.filename} <em style="color: var(--cork-text-secondary); font-size:0.85em;">(${dl.timestamp})</em>`;
+                            li.innerHTML = `<span style="color: ${statusColor}; font-weight: bold;">[${dl.status ? dl.status.charAt(0).toUpperCase() + dl.status.slice(1) : 'N/A'}]</span> ${dl.filename || 'N/A'} <em style="color: var(--cork-text-secondary); font-size:0.85em;">(${dl.timestamp || 'N/A'})</em>`;
                             recentDownloadsListEl.appendChild(li);
                         });
                     } else {
                         downloadsTitleEl.style.display = 'none';
                     }
 
-                    const isIdleOrCompleted = osText === "Inactif / Prêt" || osText.includes("Terminé") || osText.includes("Succès") || osText.includes("Erreur");
-                    const isWorkerUnavailable = osText.includes("Indisponible") || osText.includes("Timeout") || osText.includes("Connexion Refusée");
+                    const isIdleOrCompleted = osText.includes("inactif") || osText.includes("prêt") || osText.includes("terminé") || osText.includes("succès") || osText.includes("erreur");
+                    const isWorkerUnavailable = osText.includes("indisponible") || osText.includes("timeout") || osText.includes("connexion refusée");
 
                     if (isIdleOrCompleted || isWorkerUnavailable) {
                         triggerButton.disabled = false;
-                    } else { 
+                    } else { // En cours
                         triggerButton.disabled = true;
                     }
 
@@ -373,34 +397,35 @@
             statusPollingInterval = setInterval(poll, 5000); 
         }
 
-        statusContainer.style.display = 'block';
-        startStatusPolling();
-
-        document.getElementById('checkEmailsBtn').addEventListener('click', async () => {
-            const emailStatusEl = document.getElementById('emailCheckStatusMsg');
-            const checkBtn = document.getElementById('checkEmailsBtn');
-            
-            checkBtn.disabled = true;
-            emailStatusEl.textContent = 'Lancement de la vérification des emails...';
-            emailStatusEl.style.color = 'var(--cork-text-primary)';
+        checkEmailsButton.addEventListener('click', async () => {
+            checkEmailsButton.disabled = true;
+            emailCheckStatusMsgEl.textContent = 'Lancement de la vérification des emails...';
+            emailCheckStatusMsgEl.className = ''; // Reset class
 
             try {
                 const response = await fetch('/api/check_emails_and_download', { method: 'POST' });
                 const data = await response.json();
+
                 if (response.status === 202 || response.ok) { 
-                    emailStatusEl.textContent = `Statut : ${data.message || 'Opération démarrée en arrière-plan.'}`;
-                    emailStatusEl.style.color = 'var(--cork-success)';
+                    emailCheckStatusMsgEl.textContent = `Statut : ${data.message || 'Opération démarrée en arrière-plan.'}`;
+                    emailCheckStatusMsgEl.className = 'status-success';
                 } else {
-                    emailStatusEl.textContent = `Erreur : ${data.message || 'Échec de la vérification des emails.'} (Code: ${response.status})`;
-                    emailStatusEl.style.color = 'var(--cork-danger)';
+                    emailCheckStatusMsgEl.textContent = `Erreur : ${data.message || 'Échec de la vérification.'} (Code: ${response.status})`;
+                    emailCheckStatusMsgEl.className = 'status-error';
                 }
             } catch (e) {
                 console.error("Erreur fetch check_emails_and_download:", e);
-                emailStatusEl.textContent = 'Erreur de communication pour la vérification des emails.';
-                emailStatusEl.style.color = 'var(--cork-danger)';
+                emailCheckStatusMsgEl.textContent = 'Erreur de communication pour la vérification des emails.';
+                emailCheckStatusMsgEl.className = 'status-error';
             }
-            checkBtn.disabled = false;
+            // Réactiver le bouton après un délai pour éviter spam et laisser le message visible
+            setTimeout(() => { checkEmailsButton.disabled = false; }, 3000);
         });
+
+        // Initialiser l'état au chargement de la page
+        statusContainer.style.display = 'block'; // Toujours afficher le conteneur de statut
+        startStatusPolling();
+
     </script>
 </body>
 </html>
