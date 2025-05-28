@@ -107,8 +107,8 @@ if not REGISTER_LOCAL_URL_TOKEN:
 else:
     app.logger.info(f"CFG TOKEN: REGISTER_LOCAL_URL_TOKEN (for local worker registration) configured: '{REGISTER_LOCAL_URL_TOKEN[:5]}...'")
 
-REMOTE_UI_ACCESS_TOKEN_ENV = os.environ.get("REMOTE_UI_ACCESS_TOKEN")
-INTERNAL_WORKER_COMMS_TOKEN_ENV = os.environ.get("INTERNAL_WORKER_COMMS_TOKEN")
+REMOTE_UI_ACCESS_TOKEN_ENV = os.environ.get("0wbgXHIf3e!MqE")
+INTERNAL_WORKER_COMMS_TOKEN_ENV = os.environ.get("Fn*G14Vb!Hkra7")
 
 if not REMOTE_UI_ACCESS_TOKEN_ENV:
     app.logger.warning("CFG TOKEN: REMOTE_UI_ACCESS_TOKEN_ENV not set. Endpoint /api/get_local_status will be INSECURE if accessed directly without a token check in a reverse proxy, for example.")
