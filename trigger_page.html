@@ -70,7 +70,7 @@
             color: white;
             border: none;
             border-radius: 6px;
-            margin-bottom: 30px;
+            margin-bottom: 15px; /* Adjusted margin */
             transition: background-position 0.5s, transform 0.1s ease;
             box-shadow: 0 5px 15px rgba(67, 97, 238, 0.4);
         }
@@ -96,13 +96,13 @@
         }
         #statusTitle {
             font-weight: 600;
-            color: var(--cork-secondary-accent); /* Utilisation de l'accent secondaire */
+            color: var(--cork-secondary-accent); 
             margin-bottom: 10px;
             font-size: 1.1em;
             padding-bottom: 8px;
             border-bottom: 1px solid var(--cork-border-color);
         }
-        #overallStatusText, #statusText {
+        #overallStatusText, #statusTextDetail { /* Updated ID */
             margin-bottom: 8px;
             font-size: 0.95em;
             line-height: 1.5;
@@ -114,17 +114,17 @@
 
         .progress-bar-remote-container {
             width: 100%;
-            background-color: var(--cork-border-color); /* Plus sombre pour le conteneur */
+            background-color: var(--cork-border-color); 
             border-radius: 4px;
             margin-top: 10px;
-            padding: 2px; /* Petit padding pour la bordure interne */
-            display: none; /* Caché par défaut */
+            padding: 2px; 
+            display: none; 
             box-sizing: border-box;
         }
         .progress-bar-remote {
             width: 0%;
             height: 12px;
-            background-color: var(--cork-primary-accent); /* Couleur principale pour la progression */
+            background-color: var(--cork-primary-accent); 
             border-radius: 3px;
             transition: width 0.4s ease, background-color 0.4s ease;
         }
@@ -134,26 +134,67 @@
             font-size: 0.8em;
             color: var(--cork-text-secondary);
         }
+
+        #downloadsTitle {
+            font-weight: 600;
+            color: var(--cork-secondary-accent);
+            margin-top: 20px;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--cork-border-color);
+            display: none; /* Caché par défaut */
+        }
+        #recentDownloadsList {
+            list-style-type: none;
+            padding-left: 0;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        #recentDownloadsList li {
+            padding: 4px 0;
+            border-bottom: 1px dashed rgba(136, 142, 168, 0.2); /* --cork-text-secondary with alpha */
+        }
+        #recentDownloadsList li:last-child {
+            border-bottom: none;
+        }
+         #checkEmailsBtn { /* Copied style from prompt example */
+            background-color: #28a745; margin-top: 15px; display: block; 
+            width: 100%; padding: 15px 20px; font-size: 1.1em; 
+            font-weight: 600; color: white; border: none; 
+            border-radius: 6px; cursor: pointer; margin-bottom: 20px;
+        }
+        #checkEmailsBtn:disabled {
+            background-color: #555e72;
+            color: var(--cork-text-secondary);
+            cursor: not-allowed;
+        }
+        #emailCheckStatusMsg {
+             margin-top: 10px; text-align: center;
+        }
+
     </style>
 </head>
 <body>
     <div class="container">
         <h1><span class="emoji">📡</span>Télécommande Workflow</h1>
-        <button id="triggerBtn">🚀 Lancer Séquence (Étapes 0-4)</button>
-        
-        <!-- START: Added button and paragraph for email check -->
-        <button id="checkEmailsBtn" style="background-color: #28a745; margin-top: 15px; display: block; width: 100%; padding: 15px 20px; font-size: 1.1em; font-weight: 600; color: white; border: none; border-radius: 6px; cursor: pointer;">📧 Vérifier Emails & Télécharger Dropbox vers OneDrive</button>
-        <p id="emailCheckStatusMsg" style="margin-top: 10px; text-align: center;"></p>
-        <!-- END: Added button and paragraph for email check -->
+        <button id="triggerBtn">🚀 Lancer Séquence Locale (Étapes 0-4)</button>
+        <button id="checkEmailsBtn">📧 Vérifier Emails & Transférer vers OneDrive</button>
+        <p id="emailCheckStatusMsg"></p>
         
         <div id="statusContainer" style="display:none;">
-            <div id="statusTitle">Statut du Workflow Local</div>
+            <div id="statusTitle">Statut du Worker Local</div>
             <div id="overallStatusText">En attente...</div>
-            <div id="statusText"></div>
+            <div id="statusTextDetail"></div> <!-- Renamed from statusText -->
             <div class="progress-bar-remote-container" id="progress-bar-remote-container">
                 <div class="progress-bar-remote" id="progress-bar-remote"></div>
             </div>
             <div id="progressTextRemote"></div>
+
+            <div id="downloadsTitle">Derniers Téléchargements Locaux</div>
+            <ul id="recentDownloadsList">
+                <!-- Les téléchargements seront injectés ici -->
+            </ul>
         </div>
     </div>
 
@@ -161,124 +202,195 @@
         const triggerButton = document.getElementById('triggerBtn');
         const statusContainer = document.getElementById('statusContainer');
         const overallStatusTextEl = document.getElementById('overallStatusText');
-        const statusTextEl = document.getElementById('statusText');
+        const statusTextDetailEl = document.getElementById('statusTextDetail'); // Updated
         const progressBarRemoteContainer = document.getElementById('progress-bar-remote-container');
         const progressBarRemote = document.getElementById('progress-bar-remote');
         const progressTextRemoteEl = document.getElementById('progressTextRemote');
+        
+        const downloadsTitleEl = document.getElementById('downloadsTitle');
+        const recentDownloadsListEl = document.getElementById('recentDownloadsList');
         let statusPollingInterval;
 
         triggerButton.addEventListener('click', async () => {
             triggerButton.disabled = true;
             overallStatusTextEl.textContent = 'Envoi de la commande...';
             overallStatusTextEl.className = 'status-progress';
-            statusTextEl.textContent = '';
+            statusTextDetailEl.textContent = '';
             statusContainer.style.display = 'block';
             progressBarRemoteContainer.style.display = 'none';
+            downloadsTitleEl.style.display = 'none';
+            recentDownloadsListEl.innerHTML = '';
 
             try {
-                const response = await fetch('/api/trigger_workflow', { method: 'POST' });
+                const response = await fetch('/api/trigger_local_workflow', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    // More descriptive payload for potential future use on server
+                    body: JSON.stringify({ command: "start_manual_0_4_from_remote_ui", source: "trigger_page_html" }) 
+                });
                 const data = await response.json();
                 if (response.ok) {
                     overallStatusTextEl.textContent = 'Commande envoyée !';
-                    statusTextEl.textContent = 'En attente de prise en charge par la machine locale...';
-                    startStatusPolling();
+                    statusTextDetailEl.textContent = 'En attente de prise en charge par la machine locale...';
+                    if (!statusPollingInterval) { // Start polling only if not already started
+                       startStatusPolling();
+                    }
                 } else {
                     overallStatusTextEl.textContent = `Erreur Envoi`;
                     overallStatusTextEl.className = 'status-error';
-                    statusTextEl.textContent = data.message || 'Échec envoi commande.';
+                    statusTextDetailEl.textContent = data.message || 'Échec envoi commande.';
                     triggerButton.disabled = false;
                 }
             } catch (e) {
                 console.error("Erreur fetch trigger_workflow:", e);
                 overallStatusTextEl.textContent = 'Erreur Communication';
                 overallStatusTextEl.className = 'status-error';
-                statusTextEl.textContent = 'Erreur de communication avec le serveur de déclenchement.';
+                statusTextDetailEl.textContent = 'Erreur de communication avec le serveur de déclenchement.';
                 triggerButton.disabled = false;
             }
         });
 
         function startStatusPolling() {
             if (statusPollingInterval) clearInterval(statusPollingInterval);
-            statusPollingInterval = setInterval(async () => {
+            
+            async function poll() {
                 try {
-                    const response = await fetch('/api/get_local_status');
+                    const response = await fetch('/api/get_local_status'); 
                     if (!response.ok) {
-                        console.warn("Avertissement: impossible de récupérer le statut local (réponse serveur non OK).");
-                        statusTextEl.textContent = "Difficulté à joindre le serveur de statut distant...";
+                        console.warn("Avertissement: impossible de récupérer le statut local (réponse serveur non OK). Status:", response.status);
+                        statusTextDetailEl.textContent = `Difficulté à joindre le serveur de statut (${response.status})...`;
+                        overallStatusTextEl.textContent = "Erreur Récupération Statut";
+                        overallStatusTextEl.className = 'status-error';
+                        progressBarRemoteContainer.style.display = 'none';
+                        downloadsTitleEl.style.display = 'none';
+                        recentDownloadsListEl.innerHTML = '';
+                        // Consider re-enabling triggerButton if server persistently fails
+                        // triggerButton.disabled = false; 
                         return;
                     }
+                    statusContainer.style.display = 'block'; // Ensure it's visible on successful poll
                     const data = await response.json();
 
-                    overallStatusTextEl.textContent = data.overall_status || "Inconnu";
-                    statusTextEl.textContent = data.status_text || "Aucun détail.";
+                    overallStatusTextEl.textContent = data.overall_status_text || "Inconnu";
+                    statusTextDetailEl.textContent = data.status_text || "Aucun détail.";
 
-                    // Appliquer des classes pour la couleur du statut global
-                    if (data.overall_status === "Terminée avec succès") {
+                    // Status styling
+                    if (data.overall_status_text === "Inactif / Prêt" || data.overall_status_text.includes("Terminé") || data.overall_status_text.includes("Succès")) {
                         overallStatusTextEl.className = 'status-success';
                         progressBarRemote.style.backgroundColor = 'var(--cork-success)';
-                    } else if (data.overall_status === "Terminée avec erreurs" || data.overall_status === "Échoué") {
+                    } else if (data.overall_status_text.includes("Erreur") || data.overall_status_text.includes("Échoué") || data.overall_status_text.includes("Indisponible") || data.overall_status_text.includes("Timeout") || data.overall_status_text.includes("Connexion Refusée")) {
                         overallStatusTextEl.className = 'status-error';
                         progressBarRemote.style.backgroundColor = 'var(--cork-danger)';
-                    } else { // En cours, Démarrage, etc.
+                    } else { // En cours, Actif, etc.
                         overallStatusTextEl.className = 'status-progress';
                         progressBarRemote.style.backgroundColor = 'var(--cork-primary-accent)';
                     }
-
-
-                    if (data.progress_total > 0 && (data.overall_status === "En cours..." || data.overall_status === "Démarrage" || (data.status_text && data.status_text.toLowerCase().includes("lancement")))) {
+                    
+                    // Progress bar
+                    if (data.progress_total > 0 && (data.overall_status_text.includes("Cours") || data.overall_status_text.includes("Actif"))) {
                         const percentage = Math.round((data.progress_current / data.progress_total) * 100);
                         progressBarRemote.style.width = `${percentage}%`;
-                        // progressBarRemote.textContent = `${percentage}%`; // Optionnel: texte dans la barre elle-même
                         progressTextRemoteEl.textContent = `${data.current_step_name || ''} ${percentage}% (${data.progress_current}/${data.progress_total})`;
                         progressBarRemoteContainer.style.display = 'block';
-                    } else if (data.overall_status === "Terminée avec succès" || data.overall_status === "Terminée avec erreurs" || data.overall_status === "Échoué") {
-                        // Garder la barre à 100% si terminée (même avec erreurs, pour montrer la fin)
+                    } else if (data.overall_status_text.includes("Terminé") || data.overall_status_text.includes("Succès") || data.overall_status_text.includes("Erreur")) {
+                         // Keep bar at 100% if a sequence/step ended, successful or not.
                         progressBarRemote.style.width = `100%`;
-                        progressTextRemoteEl.textContent = ``; // On peut vider, le statut global suffit
-                        progressBarRemoteContainer.style.display = 'block'; // Garder visible
+                        progressTextRemoteEl.textContent = data.current_step_name || "Finalisé"; 
+                        progressBarRemoteContainer.style.display = 'block'; 
                     }
-                     else {
+                    else {
                         progressBarRemoteContainer.style.display = 'none';
+                        progressTextRemoteEl.textContent = '';
                     }
 
-                    if (data.overall_status === "Terminée avec succès" || data.overall_status === "Terminée avec erreurs" || data.overall_status === "Échoué") {
-                        clearInterval(statusPollingInterval);
-                        triggerButton.disabled = false;
+                    // Downloads display
+                    recentDownloadsListEl.innerHTML = ''; // Clear previous entries
+                    if (data.recent_downloads && data.recent_downloads.length > 0) {
+                        downloadsTitleEl.style.display = 'block';
+                        data.recent_downloads.forEach(dl => {
+                            const li = document.createElement('li');
+                            let statusColor = 'var(--cork-text-secondary)';
+                            if (dl.status === 'completed') statusColor = 'var(--cork-success)';
+                            else if (dl.status === 'failed') statusColor = 'var(--cork-danger)';
+                            else if (dl.status === 'downloading' || dl.status === 'starting' || dl.status === 'pending') statusColor = 'var(--cork-info)';
+
+                            li.innerHTML = `<span style="color: ${statusColor}; font-weight: bold;">[${dl.status.charAt(0).toUpperCase() + dl.status.slice(1)}]</span> ${dl.filename} <em style="color: var(--cork-text-secondary); font-size:0.85em;">(${dl.timestamp})</em>`;
+                            recentDownloadsListEl.appendChild(li);
+                        });
+                    } else {
+                        downloadsTitleEl.style.display = 'none';
                     }
+
+                    // Button and polling state management
+                    const isIdleOrCompleted = data.overall_status_text === "Inactif / Prêt" || 
+                                              data.overall_status_text.includes("Terminé") || 
+                                              data.overall_status_text.includes("Succès") ||
+                                              data.overall_status_text.includes("Erreur");
+                    const isWorkerUnavailable = data.overall_status_text.includes("Indisponible") ||
+                                                data.overall_status_text.includes("Timeout") ||
+                                                data.overall_status_text.includes("Connexion Refusée");
+
+                    if (isIdleOrCompleted || isWorkerUnavailable) {
+                        triggerButton.disabled = false;
+                        // Optionally stop polling if truly idle and not just temporarily unavailable.
+                        // if (isIdleOrCompleted && !isWorkerUnavailable) {
+                        //     clearInterval(statusPollingInterval); statusPollingInterval = null;
+                        //     console.log("Polling stopped: Worker is idle/completed.");
+                        // }
+                    } else { // Still running
+                        triggerButton.disabled = true;
+                    }
+
                 } catch (e) {
                     console.error("Erreur polling statut:", e);
-                    statusTextEl.textContent = "Erreur de communication lors de la récupération du statut distant.";
+                    overallStatusTextEl.textContent = "Erreur Communication Polling";
+                    overallStatusTextEl.className = 'status-error';
+                    statusTextDetailEl.textContent = "Erreur de communication lors de la récupération du statut.";
+                    progressBarRemoteContainer.style.display = 'none';
+                    downloadsTitleEl.style.display = 'none';
+                    recentDownloadsListEl.innerHTML = '';
+                    triggerButton.disabled = false; // Allow retry if polling fails
                 }
-            }, 3000); 
+            }
+            
+            poll(); 
+            statusPollingInterval = setInterval(poll, 5000); 
         }
 
-        // START: Added JavaScript for checkEmailsBtn
+        // Initial call to start polling when the page loads, or if a trigger is sent
+        // For a cleaner start, we can call it once after the first successful trigger
+        // or even on page load if we want immediate status.
+        // For now, let's start polling when the page loads to get initial status.
+        statusContainer.style.display = 'block'; // Show status container by default
+        startStatusPolling();
+
+
+        // JavaScript for checkEmailsBtn
         document.getElementById('checkEmailsBtn').addEventListener('click', async () => {
             const emailStatusEl = document.getElementById('emailCheckStatusMsg');
             const checkBtn = document.getElementById('checkEmailsBtn');
             
             checkBtn.disabled = true;
             emailStatusEl.textContent = 'Lancement de la vérification des emails...';
-            emailStatusEl.style.color = 'var(--cork-text-primary)'; // Reset color
+            emailStatusEl.style.color = 'var(--cork-text-primary)';
 
             try {
                 const response = await fetch('/api/check_emails_and_download', { method: 'POST' });
                 const data = await response.json();
-                if (response.ok) {
-                    emailStatusEl.textContent = `Terminé : ${data.message || 'Opération effectuée.'}`;
+                if (response.status === 202 || response.ok) { 
+                    emailStatusEl.textContent = `Statut : ${data.message || 'Opération démarrée en arrière-plan.'}`;
                     emailStatusEl.style.color = 'var(--cork-success)';
                 } else {
-                    emailStatusEl.textContent = `Erreur: ${data.message || 'Échec de la vérification des emails.'}`;
+                    emailStatusEl.textContent = `Erreur : ${data.message || 'Échec de la vérification des emails.'} (Code: ${response.status})`;
                     emailStatusEl.style.color = 'var(--cork-danger)';
                 }
             } catch (e) {
-                console.error("Erreur fetch check_emails:", e);
+                console.error("Erreur fetch check_emails_and_download:", e);
                 emailStatusEl.textContent = 'Erreur de communication pour la vérification des emails.';
                 emailStatusEl.style.color = 'var(--cork-danger)';
             }
             checkBtn.disabled = false;
         });
-        // END: Added JavaScript for checkEmailsBtn
     </script>
 </body>
 </html>
