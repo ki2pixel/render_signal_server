@@ -7,12 +7,12 @@
     <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700" rel="stylesheet">
     <style>
         :root {
-            --cork-dark-bg: #060818; /* Fond très sombre de CORK */
-            --cork-card-bg: #0e1726; /* Fond des cartes/widgets */
-            --cork-text-primary: #e0e6ed; /* Texte principal clair */
-            --cork-text-secondary: #888ea8; /* Texte secondaire gris */
-            --cork-primary-accent: #4361ee; /* Bleu primaire de CORK */
-            --cork-secondary-accent: #1abc9c; /* Vert/Turquoise secondaire */
+            --cork-dark-bg: #060818; 
+            --cork-card-bg: #0e1726; 
+            --cork-text-primary: #e0e6ed; 
+            --cork-text-secondary: #888ea8; 
+            --cork-primary-accent: #4361ee; 
+            --cork-secondary-accent: #1abc9c; 
             --cork-success: #1abc9c; 
             --cork-warning: #e2a03f;
             --cork-danger: #e7515a;
@@ -70,17 +70,17 @@
             color: white;
             border: none;
             border-radius: 6px;
-            margin-bottom: 15px; /* Adjusted margin */
+            margin-bottom: 15px; 
             transition: background-position 0.5s, transform 0.1s ease;
             box-shadow: 0 5px 15px rgba(67, 97, 238, 0.4);
         }
         #triggerBtn:hover {
-            background-position: right center; /* change la direction du dégradé au survol */
+            background-position: right center; 
             transform: translateY(-2px);
         }
         #triggerBtn:disabled {
             background-image: none;
-            background-color: #555e72; /* Couleur désactivée CORK-like */
+            background-color: #555e72; 
             color: var(--cork-text-secondary);
             cursor: not-allowed;
             box-shadow: none;
@@ -91,7 +91,7 @@
             padding: 20px;
             border: 1px solid var(--cork-border-color);
             border-radius: 6px;
-            background-color: rgba(0,0,0,0.1); /* Léger fond plus sombre */
+            background-color: rgba(0,0,0,0.1); 
             text-align: left;
         }
         #statusTitle {
@@ -102,7 +102,7 @@
             padding-bottom: 8px;
             border-bottom: 1px solid var(--cork-border-color);
         }
-        #overallStatusText, #statusTextDetail { /* Updated ID */
+        #overallStatusText, #statusTextDetail { 
             margin-bottom: 8px;
             font-size: 0.95em;
             line-height: 1.5;
@@ -143,7 +143,7 @@
             font-size: 1.1em;
             padding-bottom: 8px;
             border-bottom: 1px solid var(--cork-border-color);
-            display: none; /* Caché par défaut */
+            display: none; 
         }
         #recentDownloadsList {
             list-style-type: none;
@@ -153,12 +153,12 @@
         }
         #recentDownloadsList li {
             padding: 4px 0;
-            border-bottom: 1px dashed rgba(136, 142, 168, 0.2); /* --cork-text-secondary with alpha */
+            border-bottom: 1px dashed rgba(136, 142, 168, 0.2); 
         }
         #recentDownloadsList li:last-child {
             border-bottom: none;
         }
-         #checkEmailsBtn { /* Copied style from prompt example */
+         #checkEmailsBtn { 
             background-color: #28a745; margin-top: 15px; display: block; 
             width: 100%; padding: 15px 20px; font-size: 1.1em; 
             font-weight: 600; color: white; border: none; 
@@ -185,16 +185,14 @@
         <div id="statusContainer" style="display:none;">
             <div id="statusTitle">Statut du Worker Local</div>
             <div id="overallStatusText">En attente...</div>
-            <div id="statusTextDetail"></div> <!-- Renamed from statusText -->
+            <div id="statusTextDetail"></div> 
             <div class="progress-bar-remote-container" id="progress-bar-remote-container">
                 <div class="progress-bar-remote" id="progress-bar-remote"></div>
             </div>
             <div id="progressTextRemote"></div>
 
             <div id="downloadsTitle">Derniers Téléchargements Locaux</div>
-            <ul id="recentDownloadsList">
-                <!-- Les téléchargements seront injectés ici -->
-            </ul>
+            <ul id="recentDownloadsList"></ul>
         </div>
     </div>
 
@@ -202,7 +200,7 @@
         const triggerButton = document.getElementById('triggerBtn');
         const statusContainer = document.getElementById('statusContainer');
         const overallStatusTextEl = document.getElementById('overallStatusText');
-        const statusTextDetailEl = document.getElementById('statusTextDetail'); // Updated
+        const statusTextDetailEl = document.getElementById('statusTextDetail'); 
         const progressBarRemoteContainer = document.getElementById('progress-bar-remote-container');
         const progressBarRemote = document.getElementById('progress-bar-remote');
         const progressTextRemoteEl = document.getElementById('progressTextRemote');
@@ -210,6 +208,10 @@
         const downloadsTitleEl = document.getElementById('downloadsTitle');
         const recentDownloadsListEl = document.getElementById('recentDownloadsList');
         let statusPollingInterval;
+
+        // Replace "YOUR_REMOTE_UI_ACCESS_TOKEN" with the actual token value you set in app_render.py's env vars
+        // For security, this should ideally not be hardcoded if the page is publicly accessible.
+        const uiAccessToken = "un_token_simple_mais_unique_pour_l_ui"; 
 
         triggerButton.addEventListener('click', async () => {
             triggerButton.disabled = true;
@@ -225,14 +227,13 @@
                 const response = await fetch('/api/trigger_local_workflow', { 
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    // More descriptive payload for potential future use on server
                     body: JSON.stringify({ command: "start_manual_0_4_from_remote_ui", source: "trigger_page_html" }) 
                 });
                 const data = await response.json();
                 if (response.ok) {
                     overallStatusTextEl.textContent = 'Commande envoyée !';
                     statusTextDetailEl.textContent = 'En attente de prise en charge par la machine locale...';
-                    if (!statusPollingInterval) { // Start polling only if not already started
+                    if (!statusPollingInterval) { 
                        startStatusPolling();
                     }
                 } else {
@@ -255,45 +256,72 @@
             
             async function poll() {
                 try {
-                    const response = await fetch('/api/get_local_status'); 
+                    const response = await fetch(`/api/get_local_status?ui_token=${encodeURIComponent(uiAccessToken)}`); 
+                    
                     if (!response.ok) {
-                        console.warn("Avertissement: impossible de récupérer le statut local (réponse serveur non OK). Status:", response.status);
-                        statusTextDetailEl.textContent = `Difficulté à joindre le serveur de statut (${response.status})...`;
-                        overallStatusTextEl.textContent = "Erreur Récupération Statut";
+                        console.warn("Avertissement: impossible de récupérer le statut local. Status:", response.status);
+                        let errorMsg = `Difficulté à joindre le serveur de statut (${response.status})...`;
+                        if (response.status === 401) {
+                            errorMsg = "Accès non autorisé pour récupérer le statut. Vérifiez le token UI.";
+                            overallStatusTextEl.textContent = 'Erreur Authentification UI';
+                            overallStatusTextEl.className = 'status-error';
+                            if(statusPollingInterval) clearInterval(statusPollingInterval); 
+                            statusPollingInterval = null;
+                        } else {
+                            overallStatusTextEl.textContent = "Erreur Récupération Statut";
+                            overallStatusTextEl.className = 'status-error';
+                        }
+                        statusTextDetailEl.textContent = errorMsg;
+                        progressBarRemoteContainer.style.display = 'none';
+                        downloadsTitleEl.style.display = 'none';
+                        recentDownloadsListEl.innerHTML = '';
+                        triggerButton.disabled = false; // Allow retrying if polling fails for non-auth reasons
+                        return;
+                    }
+                    statusContainer.style.display = 'block'; 
+                    const data = await response.json();
+
+                    if (data.error && data.error === "Unauthorized") { // Explicit error from proxy
+                        overallStatusTextEl.textContent = "Erreur Authentification UI";
+                        statusTextDetailEl.textContent = "Token UI invalide ou manquant.";
+                        overallStatusTextEl.className = 'status-error';
+                        if(statusPollingInterval) clearInterval(statusPollingInterval); statusPollingInterval = null;
+                        triggerButton.disabled = false;
+                        return;
+                    }
+                     if (data.overall_status_text === "Erreur d'Authentification Interne") {
+                        overallStatusTextEl.textContent = data.overall_status_text;
+                        statusTextDetailEl.textContent = data.status_text || "Vérifiez la configuration des tokens entre le serveur distant et le worker local.";
                         overallStatusTextEl.className = 'status-error';
                         progressBarRemoteContainer.style.display = 'none';
                         downloadsTitleEl.style.display = 'none';
                         recentDownloadsListEl.innerHTML = '';
-                        // Consider re-enabling triggerButton if server persistently fails
-                        // triggerButton.disabled = false; 
+                        if(statusPollingInterval) clearInterval(statusPollingInterval); statusPollingInterval = null;
+                        triggerButton.disabled = false; 
                         return;
                     }
-                    statusContainer.style.display = 'block'; // Ensure it's visible on successful poll
-                    const data = await response.json();
 
                     overallStatusTextEl.textContent = data.overall_status_text || "Inconnu";
                     statusTextDetailEl.textContent = data.status_text || "Aucun détail.";
 
-                    // Status styling
-                    if (data.overall_status_text === "Inactif / Prêt" || data.overall_status_text.includes("Terminé") || data.overall_status_text.includes("Succès")) {
-                        overallStatusTextEl.className = 'status-success';
-                        progressBarRemote.style.backgroundColor = 'var(--cork-success)';
-                    } else if (data.overall_status_text.includes("Erreur") || data.overall_status_text.includes("Échoué") || data.overall_status_text.includes("Indisponible") || data.overall_status_text.includes("Timeout") || data.overall_status_text.includes("Connexion Refusée")) {
+                    const osText = data.overall_status_text || "";
+                    if (osText === "Inactif / Prêt" || osText.includes("Terminé") || osText.includes("Succès")) {
+                        overallStatusTextEl.className = osText.includes("Erreur") ? 'status-error' : 'status-success';
+                        progressBarRemote.style.backgroundColor = osText.includes("Erreur") ? 'var(--cork-danger)' : 'var(--cork-success)';
+                    } else if (osText.includes("Erreur") || osText.includes("Échoué") || osText.includes("Indisponible") || osText.includes("Timeout") || osText.includes("Connexion Refusée")) {
                         overallStatusTextEl.className = 'status-error';
                         progressBarRemote.style.backgroundColor = 'var(--cork-danger)';
-                    } else { // En cours, Actif, etc.
+                    } else { 
                         overallStatusTextEl.className = 'status-progress';
                         progressBarRemote.style.backgroundColor = 'var(--cork-primary-accent)';
                     }
                     
-                    // Progress bar
-                    if (data.progress_total > 0 && (data.overall_status_text.includes("Cours") || data.overall_status_text.includes("Actif"))) {
+                    if (data.progress_total > 0 && (osText.includes("Cours") || osText.includes("Actif"))) {
                         const percentage = Math.round((data.progress_current / data.progress_total) * 100);
                         progressBarRemote.style.width = `${percentage}%`;
                         progressTextRemoteEl.textContent = `${data.current_step_name || ''} ${percentage}% (${data.progress_current}/${data.progress_total})`;
                         progressBarRemoteContainer.style.display = 'block';
-                    } else if (data.overall_status_text.includes("Terminé") || data.overall_status_text.includes("Succès") || data.overall_status_text.includes("Erreur")) {
-                         // Keep bar at 100% if a sequence/step ended, successful or not.
+                    } else if (osText.includes("Terminé") || osText.includes("Succès") || osText.includes("Erreur")) {
                         progressBarRemote.style.width = `100%`;
                         progressTextRemoteEl.textContent = data.current_step_name || "Finalisé"; 
                         progressBarRemoteContainer.style.display = 'block'; 
@@ -303,8 +331,7 @@
                         progressTextRemoteEl.textContent = '';
                     }
 
-                    // Downloads display
-                    recentDownloadsListEl.innerHTML = ''; // Clear previous entries
+                    recentDownloadsListEl.innerHTML = '';
                     if (data.recent_downloads && data.recent_downloads.length > 0) {
                         downloadsTitleEl.style.display = 'block';
                         data.recent_downloads.forEach(dl => {
@@ -321,23 +348,12 @@
                         downloadsTitleEl.style.display = 'none';
                     }
 
-                    // Button and polling state management
-                    const isIdleOrCompleted = data.overall_status_text === "Inactif / Prêt" || 
-                                              data.overall_status_text.includes("Terminé") || 
-                                              data.overall_status_text.includes("Succès") ||
-                                              data.overall_status_text.includes("Erreur");
-                    const isWorkerUnavailable = data.overall_status_text.includes("Indisponible") ||
-                                                data.overall_status_text.includes("Timeout") ||
-                                                data.overall_status_text.includes("Connexion Refusée");
+                    const isIdleOrCompleted = osText === "Inactif / Prêt" || osText.includes("Terminé") || osText.includes("Succès") || osText.includes("Erreur");
+                    const isWorkerUnavailable = osText.includes("Indisponible") || osText.includes("Timeout") || osText.includes("Connexion Refusée");
 
                     if (isIdleOrCompleted || isWorkerUnavailable) {
                         triggerButton.disabled = false;
-                        // Optionally stop polling if truly idle and not just temporarily unavailable.
-                        // if (isIdleOrCompleted && !isWorkerUnavailable) {
-                        //     clearInterval(statusPollingInterval); statusPollingInterval = null;
-                        //     console.log("Polling stopped: Worker is idle/completed.");
-                        // }
-                    } else { // Still running
+                    } else { 
                         triggerButton.disabled = true;
                     }
 
@@ -349,7 +365,7 @@
                     progressBarRemoteContainer.style.display = 'none';
                     downloadsTitleEl.style.display = 'none';
                     recentDownloadsListEl.innerHTML = '';
-                    triggerButton.disabled = false; // Allow retry if polling fails
+                    triggerButton.disabled = false; 
                 }
             }
             
@@ -357,15 +373,9 @@
             statusPollingInterval = setInterval(poll, 5000); 
         }
 
-        // Initial call to start polling when the page loads, or if a trigger is sent
-        // For a cleaner start, we can call it once after the first successful trigger
-        // or even on page load if we want immediate status.
-        // For now, let's start polling when the page loads to get initial status.
-        statusContainer.style.display = 'block'; // Show status container by default
+        statusContainer.style.display = 'block';
         startStatusPolling();
 
-
-        // JavaScript for checkEmailsBtn
         document.getElementById('checkEmailsBtn').addEventListener('click', async () => {
             const emailStatusEl = document.getElementById('emailCheckStatusMsg');
             const checkBtn = document.getElementById('checkEmailsBtn');
