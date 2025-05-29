@@ -234,7 +234,9 @@ def mark_email_id_as_processed_redis(email_id):
         return False
     try:
         result = redis_client.sadd(PROCESSED_EMAIL_IDS_REDIS_KEY, email_id) 
-        app.logger.info(f"REDIS_DEDUP: Email ID '{email_id}' processed in Redis set '{PROCESSED_EMAIL_IDS_REDIS_KEY}'. Result: {result (1 new, 0 exists)}.")
+        # result will be 1 if the element was added, 0 if it was already a member.
+        result_text = "newly added" if result == 1 else "already existed"
+        app.logger.info(f"REDIS_DEDUP: Email ID '{email_id}' processed in Redis set '{PROCESSED_EMAIL_IDS_REDIS_KEY}'. Status: {result_text} (sadd command returned: {result}).")
         return True
     except redis.exceptions.RedisError as e_redis:
         app.logger.error(f"REDIS_DEDUP: Error adding email ID '{email_id}' to set '{PROCESSED_EMAIL_IDS_REDIS_KEY}': {e_redis}")
