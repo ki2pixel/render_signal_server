@@ -6,6 +6,7 @@
     <title>🚀 Déclencheur Workflow Distant 🌌</title>
     <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700" rel="stylesheet">
     <style>
+        /* ... (CSS remains the same, ensure you have styles for new elements if needed) ... */
         :root {
             --cork-dark-bg: #060818; 
             --cork-card-bg: #0e1726; 
@@ -19,173 +20,57 @@
             --cork-info: #2196f3;
             --cork-border-color: #191e3a;
         }
-
-        body {
-            font-family: 'Nunito', sans-serif;
-            margin: 0;
-            background-color: var(--cork-dark-bg);
-            color: var(--cork-text-primary);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            padding: 20px;
-            box-sizing: border-box;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 700px;
-            background-color: var(--cork-card-bg);
-            padding: 30px 40px;
-            border-radius: 8px;
-            box-shadow: 0 4px 25px 0 rgba(0,0,0,0.1);
-            border: 1px solid var(--cork-border-color);
-        }
-
-        h1 {
-            color: var(--cork-text-primary);
-            text-align: center;
-            font-size: 1.8em;
-            font-weight: 600;
-            margin-bottom: 30px;
-            letter-spacing: 0.5px;
-        }
-        h1 .emoji {
-            font-size: 1.5em;
-            margin-right: 10px;
-            vertical-align: middle;
-        }
-
-        #triggerBtn {
-            display: block;
-            width: 100%;
-            padding: 15px 20px;
-            font-size: 1.1em;
-            font-weight: 600;
-            cursor: pointer;
-            background-image: linear-gradient(to right, var(--cork-primary-accent) 0%, #5470f1 51%, var(--cork-primary-accent) 100%);
-            background-size: 200% auto;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            margin-bottom: 15px; 
-            transition: background-position 0.5s, transform 0.1s ease;
-            box-shadow: 0 5px 15px rgba(67, 97, 238, 0.4);
-        }
-        #triggerBtn:hover {
-            background-position: right center; 
-            transform: translateY(-2px);
-        }
-        #triggerBtn:disabled {
-            background-image: none;
-            background-color: #555e72; 
-            color: var(--cork-text-secondary);
-            cursor: not-allowed;
-            box-shadow: none;
-        }
+        body { /* ... existing styles ... */ }
+        .container { /* ... existing styles ... */ }
+        h1 { /* ... existing styles ... */ }
+        #triggerBtn, #checkEmailsBtn { /* ... existing styles ... */ }
+        #triggerBtn:hover, #checkEmailsBtn:hover { /* ... existing styles ... */ }
+        #triggerBtn:disabled, #checkEmailsBtn:disabled { /* ... existing styles ... */ }
 
         #statusContainer {
-            margin-top: 20px;
-            padding: 20px;
-            border: 1px solid var(--cork-border-color);
-            border-radius: 6px;
-            background-color: rgba(0,0,0,0.1); 
-            text-align: left;
+            margin-top: 20px; padding: 20px; border: 1px solid var(--cork-border-color);
+            border-radius: 6px; background-color: rgba(0,0,0,0.1); text-align: left;
         }
         #statusTitle {
-            font-weight: 600;
-            color: var(--cork-secondary-accent); 
-            margin-bottom: 10px;
-            font-size: 1.1em;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--cork-border-color);
+            font-weight: 600; color: var(--cork-secondary-accent); margin-bottom: 10px;
+            font-size: 1.1em; padding-bottom: 8px; border-bottom: 1px solid var(--cork-border-color);
         }
         #overallStatusText, #statusTextDetail { 
-            margin-bottom: 8px;
-            font-size: 0.95em;
-            line-height: 1.5;
+            margin-bottom: 8px; font-size: 0.95em; line-height: 1.5;
         }
+        #overallStatusText.status-idle { color: var(--cork-text-secondary); }
         #overallStatusText.status-success { color: var(--cork-success); font-weight: bold; }
         #overallStatusText.status-error { color: var(--cork-danger); font-weight: bold; }
         #overallStatusText.status-progress { color: var(--cork-info); font-weight: bold; }
+        #overallStatusText.status-warning { color: var(--cork-warning); font-weight: bold; }
 
 
-        .progress-bar-remote-container {
-            width: 100%;
-            background-color: var(--cork-border-color); 
-            border-radius: 4px;
-            margin-top: 10px;
-            padding: 2px; 
-            display: none; 
-            box-sizing: border-box;
-        }
-        .progress-bar-remote {
-            width: 0%;
-            height: 12px;
-            background-color: var(--cork-primary-accent); 
-            border-radius: 3px;
-            transition: width 0.4s ease, background-color 0.4s ease;
-        }
-        #progressTextRemote {
-            text-align: center;
-            margin-top: 6px;
-            font-size: 0.8em;
-            color: var(--cork-text-secondary);
-        }
+        .progress-bar-remote-container { /* ... existing styles ... */ display: none; }
+        .progress-bar-remote { /* ... existing styles ... */ }
+        #progressTextRemote { /* ... existing styles ... */ }
 
-        #downloadsTitle {
-            font-weight: 600;
-            color: var(--cork-secondary-accent);
-            margin-top: 20px;
-            margin-bottom: 10px;
-            font-size: 1.1em;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--cork-border-color);
-            display: none; 
-        }
-        #recentDownloadsList {
-            list-style-type: none;
-            padding-left: 0;
-            font-size: 0.9em;
-            line-height: 1.6;
-        }
-        #recentDownloadsList li {
-            padding: 4px 0;
-            border-bottom: 1px dashed rgba(136, 142, 168, 0.2); 
-        }
-        #recentDownloadsList li:last-child {
-            border-bottom: none;
-        }
-         #checkEmailsBtn { 
-            background-color: #28a745; /* Vert */
-            margin-top: 15px; display: block; 
-            width: 100%; padding: 15px 20px; font-size: 1.1em; 
-            font-weight: 600; color: white; border: none; 
-            border-radius: 6px; cursor: pointer; margin-bottom: 20px;
-            background-image: linear-gradient(to right, #28a745 0%, #34c759 51%, #28a745 100%);
-            background-size: 200% auto;
-            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.4);
-            transition: background-position 0.5s, transform 0.1s ease;
-        }
-        #checkEmailsBtn:hover {
-            background-position: right center; 
-            transform: translateY(-2px);
-        }
-        #checkEmailsBtn:disabled {
-            background-image: none;
-            background-color: #555e72;
-            color: var(--cork-text-secondary);
-            cursor: not-allowed;
-            box-shadow: none;
-        }
-        #emailCheckStatusMsg {
-             margin-top: 10px; text-align: center;
-             font-size: 0.9em;
-        }
+        #downloadsTitle { /* ... existing styles ... */ display: none; }
+        #recentDownloadsList { /* ... existing styles ... */ }
+        #recentDownloadsList li { /* ... existing styles ... */ }
+
+        #emailCheckStatusMsg { /* ... existing styles ... */ }
         #emailCheckStatusMsg.status-success { color: var(--cork-success); }
         #emailCheckStatusMsg.status-error { color: var(--cork-danger); }
+
+        /* New styles for sequence summary */
+        #sequenceSummaryTitleRemote {
+            font-weight: 600; color: var(--cork-secondary-accent); margin-top: 20px;
+            margin-bottom: 5px; font-size: 1.0em; padding-bottom: 8px;
+            border-bottom: 1px solid var(--cork-border-color); display: none;
+        }
+        #sequenceSummaryRemote {
+            white-space: pre-wrap; font-size: 0.9em; margin-top:5px; padding: 10px;
+            border-radius: 4px; background-color: rgba(0,0,0,0.05); display:none;
+            border-left: 3px solid var(--cork-text-secondary);
+            line-height: 1.6;
+        }
+        #sequenceSummaryRemote.status-success { border-left-color: var(--cork-success); color: var(--cork-success);}
+        #sequenceSummaryRemote.status-error { border-left-color: var(--cork-danger); color: var(--cork-danger);}
 
     </style>
 </head>
@@ -204,6 +89,9 @@
                 <div class="progress-bar-remote" id="progress-bar-remote"></div>
             </div>
             <div id="progressTextRemote"></div>
+
+            <div id="sequenceSummaryTitleRemote">Résumé Dernière Séquence</div>
+            <div id="sequenceSummaryRemote"></div>
 
             <div id="downloadsTitle" style="display:none;">Derniers Téléchargements Locaux</div>
             <ul id="recentDownloadsList"></ul>
@@ -224,12 +112,14 @@
         const checkEmailsButton = document.getElementById('checkEmailsBtn');
         const emailCheckStatusMsgEl = document.getElementById('emailCheckStatusMsg');
 
-        let statusPollingInterval;
+        const sequenceSummaryTitleEl = document.getElementById('sequenceSummaryTitleRemote');
+        const sequenceSummaryEl = document.getElementById('sequenceSummaryRemote');
 
-        // Token UI basé sur l'image des variables d'environnement (ou votre valeur actuelle)
-        const uiAccessToken = "0wbgXHIf3e!MqE"; 
+        let statusPollingInterval;
+        const uiAccessToken = "0wbgXHIf3e!MqE"; // Ensure this matches your env var
 
         triggerButton.addEventListener('click', async () => {
+            // ... (existing click handler code is good) ...
             triggerButton.disabled = true;
             overallStatusTextEl.textContent = 'Envoi de la commande...';
             overallStatusTextEl.className = 'status-progress';
@@ -238,6 +128,8 @@
             progressBarRemoteContainer.style.display = 'none';
             downloadsTitleEl.style.display = 'none';
             recentDownloadsListEl.innerHTML = '';
+            sequenceSummaryTitleEl.style.display = 'none';
+            sequenceSummaryEl.style.display = 'none';
 
             try {
                 const response = await fetch('/api/trigger_local_workflow', { 
@@ -248,21 +140,22 @@
                 const data = await response.json();
                 if (response.ok) {
                     overallStatusTextEl.textContent = 'Commande envoyée !';
+                    overallStatusTextEl.className = 'status-progress'; // Keep it as progress
                     statusTextDetailEl.textContent = 'En attente de prise en charge par la machine locale...';
                     if (!statusPollingInterval) { 
                        startStatusPolling();
                     }
                 } else {
-                    overallStatusTextEl.textContent = `Erreur Envoi`;
+                    overallStatusTextEl.textContent = `Erreur Envoi Commande`;
                     overallStatusTextEl.className = 'status-error';
                     statusTextDetailEl.textContent = data.message || 'Échec envoi commande.';
                     triggerButton.disabled = false;
                 }
             } catch (e) {
                 console.error("Erreur fetch trigger_workflow:", e);
-                overallStatusTextEl.textContent = 'Erreur Communication';
-                overallStatusTextEl.className = 'status-error';
-                statusTextDetailEl.textContent = 'Erreur de communication avec le serveur de déclenchement.';
+                overallStatusTextEl.textContent = 'Erreur Communication Serveur';
+                overall_status_text_class('status-error');
+                statusTextDetailEl.textContent = 'Impossible de joindre le serveur pour le déclenchement.';
                 triggerButton.disabled = false;
             }
         });
@@ -273,87 +166,79 @@
             async function poll() {
                 try {
                     const response = await fetch(`/api/get_local_status?ui_token=${encodeURIComponent(uiAccessToken)}`); 
+                    statusContainer.style.display = 'block'; 
                     
                     if (!response.ok) {
+                        // ... (existing error handling for non-OK responses is good) ...
                         console.warn("Avertissement: impossible de récupérer le statut local. Status:", response.status);
                         let errorMsg = `Difficulté à joindre le serveur de statut (${response.status})...`;
                         let errorTitle = "Erreur Récupération Statut";
-
-                        if (response.status === 401) { // HTTP Basic Auth a échoué / non loggué
-                            errorMsg = "Authentification requise ou échouée. Veuillez rafraîchir et vous authentifier.";
-                            errorTitle = 'Authentification Échouée';
-                            if(statusPollingInterval) clearInterval(statusPollingInterval); statusPollingInterval = null;
-                        } else if (response.status === 403) { // ui_token incorrect après un login HTTP Basic Auth réussi
-                             errorMsg = "Token UI (interne) invalide. Contactez l'administrateur.";
-                             errorTitle = 'Erreur Token UI';
-                             if(statusPollingInterval) clearInterval(statusPollingInterval); statusPollingInterval = null;
-                        } else { // Autres erreurs serveur ou réseau
-                            const errorData = await response.json().catch(() => null);
-                            errorMsg = errorData?.status_text || errorData?.message || errorMsg;
-                            errorTitle = errorData?.overall_status_text || errorTitle;
-                        }
-                        overallStatusTextEl.textContent = errorTitle;
                         overallStatusTextEl.className = 'status-error';
-                        statusTextDetailEl.textContent = errorMsg;
                         progressBarRemoteContainer.style.display = 'none';
                         downloadsTitleEl.style.display = 'none';
                         recentDownloadsListEl.innerHTML = '';
+                        sequenceSummaryTitleEl.style.display = 'none';
+                        sequenceSummaryEl.style.display = 'none';
+
+                        if (response.status === 401) { 
+                            errorMsg = "Authentification requise ou échouée. Veuillez rafraîchir et vous authentifier.";
+                            errorTitle = 'Authentification Échouée';
+                            if(statusPollingInterval) clearInterval(statusPollingInterval); statusPollingInterval = null;
+                        } else if (response.status === 403) { 
+                             errorMsg = "Token UI (interne) invalide. Contactez l'administrateur.";
+                             errorTitle = 'Erreur Token UI';
+                             if(statusPollingInterval) clearInterval(statusPollingInterval); statusPollingInterval = null;
+                        } else { 
+                            const errorData = await response.json().catch(() => null);
+                            errorMsg = errorData?.status_text || errorData?.message || errorMsg;
+                            errorTitle = errorData?.overall_status_text || errorData?.overall_status_code_from_worker || errorTitle;
+                        }
+                        overallStatusTextEl.textContent = errorTitle;
+                        statusTextDetailEl.textContent = errorMsg;
                         triggerButton.disabled = false; 
                         return;
-                    }
-                    statusContainer.style.display = 'block'; 
-                    const data = await response.json();
-
-                    // Gestion d'erreurs spécifiques venant du proxy ou du worker
-                    if (data.error && data.error === "Invalid UI token") { // ui_token explicite du proxy
-                        overallStatusTextEl.textContent = "Erreur Token UI";
-                        statusTextDetailEl.textContent = "Token UI (interne) invalide ou manquant. Contactez l'administrateur.";
-                        overallStatusTextEl.className = 'status-error';
-                        if(statusPollingInterval) clearInterval(statusPollingInterval); statusPollingInterval = null;
-                        triggerButton.disabled = false;
-                        return;
-                    }
-                     if (data.overall_status_text && data.overall_status_text.toLowerCase().includes("erreur authentification interne")) {
-                        overallStatusTextEl.textContent = data.overall_status_text;
-                        statusTextDetailEl.textContent = data.status_text || "Vérifiez la configuration des tokens entre le serveur distant et le worker local.";
-                        overallStatusTextEl.className = 'status-error';
-                        progressBarRemoteContainer.style.display = 'none';
-                        downloadsTitleEl.style.display = 'none'; recentDownloadsListEl.innerHTML = '';
-                        if(statusPollingInterval) clearInterval(statusPollingInterval); statusPollingInterval = null;
-                        triggerButton.disabled = false; 
-                        return;
-                    }
-
-                    overallStatusTextEl.textContent = data.overall_status_text || "Inconnu";
-                    statusTextDetailEl.textContent = data.status_text || "Aucun détail.";
-
-                    const osText = (data.overall_status_text || "").toLowerCase();
-                    if (osText.includes("inactif") || osText.includes("prêt") || osText.includes("terminé") || osText.includes("succès")) {
-                        overallStatusTextEl.className = osText.includes("erreur") ? 'status-error' : 'status-success';
-                        progressBarRemote.style.backgroundColor = osText.includes("erreur") ? 'var(--cork-danger)' : 'var(--cork-success)';
-                    } else if (osText.includes("erreur") || osText.includes("échoué") || osText.includes("indisponible") || osText.includes("timeout") || osText.includes("connexion refusée")) {
-                        overallStatusTextEl.className = 'status-error';
-                        progressBarRemote.style.backgroundColor = 'var(--cork-danger)';
-                    } else { // En cours, en attente, etc.
-                        overallStatusTextEl.className = 'status-progress';
-                        progressBarRemote.style.backgroundColor = 'var(--cork-primary-accent)';
                     }
                     
-                    if (data.progress_total > 0 && (osText.includes("cours") || osText.includes("actif"))) {
+                    const data = await response.json();
+
+                    // --- Overall Status Text and Detail ---
+                    // data.overall_status_text from app_render is now app_new's overall_status_text_display
+                    overallStatusTextEl.textContent = data.overall_status_text || "Inconnu"; 
+                    statusTextDetailEl.textContent = data.status_text || "Aucun détail."; // This is last_updated_utc from app_new
+
+                    // --- CSS Class for Overall Status Color ---
+                    const workerStatusCode = (data.overall_status_code_from_worker || "idle").toLowerCase();
+                    overallStatusTextEl.className = ''; // Reset
+                    if (workerStatusCode.includes("success")) overallStatusTextEl.classList.add('status-success');
+                    else if (workerStatusCode.includes("error") || workerStatusCode.includes("failed") || workerStatusCode.includes("indisponible") || workerStatusCode.includes("timeout")) overallStatusTextEl.classList.add('status-error');
+                    else if (workerStatusCode.includes("running") || workerStatusCode.includes("active") || workerStatusCode.includes("starting") || workerStatusCode.includes("pending")) overallStatusTextEl.classList.add('status-progress');
+                    else if (workerStatusCode.includes("warning") || workerStatusCode.includes("parse_error")) overallStatusTextEl.classList.add('status-warning');
+                    else overallStatusTextEl.classList.add('status-idle');
+
+
+                    // --- Progress Bar ---
+                    progressBarRemoteContainer.style.display = 'none';
+                    progressTextRemoteEl.textContent = '';
+                    if (data.progress_total > 0 && (workerStatusCode.includes("running") || workerStatusCode.includes("active") || workerStatusCode.includes("starting"))) {
                         const percentage = Math.round((data.progress_current / data.progress_total) * 100);
                         progressBarRemote.style.width = `${percentage}%`;
-                        progressTextRemoteEl.textContent = `${data.current_step_name || ''} ${percentage}% (${data.progress_current}/${data.progress_total})`;
+                        let progressStepName = data.current_step_name || '';
+                        // Example to simplify: if current_step_name is "Mode Auto - En cours: Etape X", extract "Etape X"
+                        if (progressStepName.includes(":")) progressStepName = progressStepName.split(":")[1]?.trim() || progressStepName;
+                        
+                        progressTextRemoteEl.textContent = `${progressStepName} ${percentage}% (${data.progress_current}/${data.progress_total})`;
                         progressBarRemoteContainer.style.display = 'block';
-                    } else if (osText.includes("terminé") || osText.includes("succès") || (osText.includes("erreur") && data.progress_total > 0)) { // Afficher 100% si terminé/erreur avec progression
+                        progressBarRemote.style.backgroundColor = 'var(--cork-primary-accent)';
+                    } else if (workerStatusCode.includes("completed_success") || workerStatusCode.includes("completed_error")) {
                         progressBarRemote.style.width = `100%`;
-                        progressTextRemoteEl.textContent = data.current_step_name || "Finalisé"; 
-                        progressBarRemoteContainer.style.display = 'block'; 
-                    }
-                    else {
-                        progressBarRemoteContainer.style.display = 'none';
-                        progressTextRemoteEl.textContent = '';
+                        progressBarRemoteContainer.style.display = 'block';
+                        progressBarRemote.style.backgroundColor = workerStatusCode.includes("error") ? 'var(--cork-danger)' : 'var(--cork-success)';
+                        progressTextRemoteEl.textContent = data.current_step_name || (workerStatusCode.includes("error") ? "Finalisé avec erreurs" : "Finalisé avec succès");
                     }
 
+
+                    // --- Recent Downloads ---
+                    // (Your existing recent downloads logic is good and should work with data.recent_downloads)
                     recentDownloadsListEl.innerHTML = '';
                     if (data.recent_downloads && data.recent_downloads.length > 0) {
                         downloadsTitleEl.style.display = 'block';
@@ -372,16 +257,31 @@
                         downloadsTitleEl.style.display = 'none';
                     }
 
-                    const isIdleOrCompleted = osText.includes("inactif") || osText.includes("prêt") || osText.includes("terminé") || osText.includes("succès") || osText.includes("erreur");
-                    const isWorkerUnavailable = osText.includes("indisponible") || osText.includes("timeout") || osText.includes("connexion refusée");
+                    // --- Last Sequence Summary ---
+                    sequenceSummaryTitleEl.style.display = 'none';
+                    sequenceSummaryEl.style.display = 'none';
+                    sequenceSummaryEl.className = ''; // Reset class
+                    if (data.last_sequence_summary && data.last_sequence_summary.message &&
+                        (data.last_sequence_summary.status === 'success' || data.last_sequence_summary.status === 'error')) {
+                        
+                        const summaryTimestamp = new Date(data.last_sequence_summary.timestamp);
+                        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000); // Show if completed in last 5 mins
 
-                    if (isIdleOrCompleted || isWorkerUnavailable) {
-                        triggerButton.disabled = false;
-                    } else { // En cours
-                        triggerButton.disabled = true;
+                        if (summaryTimestamp > fiveMinutesAgo && (workerStatusCode.includes("completed") || workerStatusCode.includes("idle"))) {
+                            sequenceSummaryTitleEl.textContent = `Résumé Séquence '${data.last_sequence_summary.type || 'N/A'}' (Terminée récemment):`;
+                            sequenceSummaryEl.textContent = data.last_sequence_summary.message;
+                            sequenceSummaryEl.classList.add(data.last_sequence_summary.status === 'success' ? 'status-success' : 'status-error');
+                            sequenceSummaryTitleEl.style.display = 'block';
+                            sequenceSummaryEl.style.display = 'block';
+                        }
                     }
+                    
+                    // --- Button State ---
+                    const isSystemBusy = workerStatusCode.includes("running") || workerStatusCode.includes("active") || workerStatusCode.includes("starting");
+                    triggerButton.disabled = isSystemBusy;
 
                 } catch (e) {
+                    // ... (existing catch block for poll errors is good) ...
                     console.error("Erreur polling statut:", e);
                     overallStatusTextEl.textContent = "Erreur Communication Polling";
                     overallStatusTextEl.className = 'status-error';
@@ -389,18 +289,21 @@
                     progressBarRemoteContainer.style.display = 'none';
                     downloadsTitleEl.style.display = 'none';
                     recentDownloadsListEl.innerHTML = '';
+                    sequenceSummaryTitleEl.style.display = 'none';
+                    sequenceSummaryEl.style.display = 'none';
                     triggerButton.disabled = false; 
                 }
             }
             
             poll(); 
-            statusPollingInterval = setInterval(poll, 5000); 
+            statusPollingInterval = setInterval(poll, 3000); // Poll slightly faster for better responsiveness
         }
 
         checkEmailsButton.addEventListener('click', async () => {
+            // ... (existing click handler for checkEmailsButton is good) ...
             checkEmailsButton.disabled = true;
             emailCheckStatusMsgEl.textContent = 'Lancement de la vérification des emails...';
-            emailCheckStatusMsgEl.className = ''; // Reset class
+            emailCheckStatusMsgEl.className = ''; 
 
             try {
                 const response = await fetch('/api/check_emails_and_download', { method: 'POST' });
@@ -418,12 +321,11 @@
                 emailCheckStatusMsgEl.textContent = 'Erreur de communication pour la vérification des emails.';
                 emailCheckStatusMsgEl.className = 'status-error';
             }
-            // Réactiver le bouton après un délai pour éviter spam et laisser le message visible
             setTimeout(() => { checkEmailsButton.disabled = false; }, 3000);
         });
 
         // Initialiser l'état au chargement de la page
-        statusContainer.style.display = 'block'; // Toujours afficher le conteneur de statut
+        statusContainer.style.display = 'block'; 
         startStatusPolling();
 
     </script>
