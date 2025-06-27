@@ -392,12 +392,25 @@ def check_new_emails_and_trigger_make_webhook():
 
         for mail in emails:
             mail_id = mail['id']
+            mail_subject = mail.get('subject', 'N/A_Subject')
+
             if is_email_id_processed_redis(mail_id):
-                app.logger.debug(f"POLLER: Email ID {mail_id} already processed. Skipping.")
-                mark_email_as_read_outlook(token_msal, mail_id)
+                app.logger.debug(
+                    f"POLLER: Email ID {mail_id} (Subj: '{mail_subject[:30]}...') déjà traité (trouvé dans Redis). Marquage comme lu.")
+                if token_msal:
+                    mark_email_as_read_outlook(token_msal, mail_id)
                 continue
 
-            app.logger.info(f"POLLER: New relevant email found: ID={mail_id}. Triggering Make.com.")
+            # --- NOUVEAU BLOC DE VÉRIFICATION ---
+            if not is_local_worker_alive():
+                app.logger.warning(
+                    f"POLLER: Worker local injoignable. L'email ID {mail_id} ne sera PAS traité maintenant. Il restera non lu pour une tentative ultérieure.")
+                # On passe à l'email suivant sans rien faire d'autre.
+                # Le cycle de polling s'arrêtera et recommencera plus tard.
+                continue
+                # --- FIN DU NOUVEAU BLOC ---
+
+            app.logger.info(f"POLLER: Worker local joignable. Traitement de l'email: ID={mail_id}, Subj='{mail_subject[:50]}...'.")
             payload_for_make = {
                 "microsoft_graph_email_id": mail_id, "subject": mail.get('subject', 'N/A'),
                 "receivedDateTime": mail.get("receivedDateTime"),
@@ -409,16 +422,25 @@ def check_new_emails_and_trigger_make_webhook():
                 webhook_response = requests.post(MAKE_SCENARIO_WEBHOOK_URL, json=payload_for_make, timeout=30)
                 if webhook_response.status_code == 200 and "accepted" in webhook_response.text.lower():
                     app.logger.info(f"POLLER: Make.com webhook call successful for email {mail_id}.")
+
+                    # Étape 3 : Marquer comme traité pour ne plus jamais le refaire
                     if mark_email_id_as_processed_redis(mail_id):
                         triggered_webhook_count += 1
+                        # Étape 4 : Marquer comme lu dans Outlook pour nettoyer la boîte
                         mark_email_as_read_outlook(token_msal, mail_id)
+                    else:
+                        app.logger.error(
+                            f"POLLER: CRITICAL - Échec du marquage de l'email {mail_id} dans Redis. Il sera réessayé au prochain cycle, ce qui peut causer des doublons.")
+
                 else:
                     app.logger.error(
                         f"POLLER: Make.com webhook call FAILED for email {mail_id}. Status: {webhook_response.status_code}, Response: {webhook_response.text[:200]}")
+                    # Note: On ne marque PAS l'email comme lu ici, pour qu'il soit réessayé.
             except requests.exceptions.RequestException as e_webhook:
-                app.logger.error(f"POLLER: Exception during Make.com webhook call: {e_webhook}")
+                app.logger.error(f"POLLER: Exception during Make.com webhook call for email {mail_id}: {e_webhook}")
+                # Note: On ne marque PAS l'email comme lu ici, pour qu'il soit réessayé.
 
-        return triggered_webhook_count
+            return triggered_webhook_count
 
     except requests.exceptions.RequestException as e_graph:
         app.logger.error(f"POLLER: Graph API error: {e_graph}")
@@ -467,6 +489,54 @@ def background_email_poller():
             app.logger.info(f"BG_POLLER: Sleeping for {sleep_on_error_duration}s due to error.")
             time.sleep(sleep_on_error_duration)
 
+
+def is_local_worker_alive():
+    """
+    Vérifie si le worker local est joignable en appelant son endpoint de ping.
+    Renvoie True si le worker est joignable, False sinon.
+    """
+    app.logger.info("WORKER_CHECK: Vérification du statut du worker local.")
+    localtunnel_url = None
+
+    # Étape 1 : Récupérer l'URL du worker (depuis Redis ou fichier)
+    try:
+        if redis_client:
+            url_bytes = redis_client.get(LOCALTUNNEL_URL_REDIS_KEY)
+            if url_bytes:
+                localtunnel_url = url_bytes.decode('utf-8')
+        if not localtunnel_url and LOCALTUNNEL_URL_FILE.exists():
+            with open(LOCALTUNNEL_URL_FILE, "r") as f:
+                localtunnel_url = f.read().strip()
+    except Exception as e_url:
+        app.logger.error(f"WORKER_CHECK: Erreur lors de la récupération de l'URL du worker: {e_url}")
+        return False
+
+    if not localtunnel_url:
+        app.logger.warning("WORKER_CHECK: Worker local non enregistré (aucune URL trouvée).")
+        return False
+
+    # Étape 2 : Tenter de "pinger" le worker
+    # On utilise un endpoint léger qui doit exister sur le worker.
+    # Assurez-vous que vos workers (app_new.py/app_ubuntu.py) ont une route /api/ping.
+    try:
+        # On assume que les workers ont un endpoint /api/ping
+        target_url = f"{localtunnel_url.rstrip('/')}/api/ping"
+        headers = {'X-Worker-Token': INTERNAL_WORKER_COMMS_TOKEN_ENV} if INTERNAL_WORKER_COMMS_TOKEN_ENV else {}
+
+        # Timeout très court (5s) car un ping doit être rapide
+        response = requests.get(target_url, headers=headers, timeout=5)
+
+        if response.status_code == 200:
+            app.logger.info(f"WORKER_CHECK: Le worker à l'URL '{localtunnel_url}' est joignable.")
+            return True
+        else:
+            app.logger.warning(
+                f"WORKER_CHECK: Le worker a répondu mais avec un statut d'erreur {response.status_code}.")
+            return False
+
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"WORKER_CHECK: Impossible de contacter le worker à l'URL '{localtunnel_url}'. Erreur: {e}")
+        return False
 
 # --- NOUVELLES ROUTES POUR L'AUTHENTIFICATION ---
 
@@ -594,25 +664,71 @@ def serve_trigger_page_main():
 @login_required
 def get_local_status_proxied():
     app.logger.info(f"PROXY_STATUS: /api/get_local_status par l'utilisateur '{current_user.id}'.")
+
     localtunnel_url = None
-    if redis_client: localtunnel_url = redis_client.get(LOCALTUNNEL_URL_REDIS_KEY)
-    if isinstance(localtunnel_url, bytes): localtunnel_url = localtunnel_url.decode('utf-8')
-    if not localtunnel_url and LOCALTUNNEL_URL_FILE.exists():
-        with open(LOCALTUNNEL_URL_FILE, "r") as f: localtunnel_url = f.read().strip()
+    try:
+        if redis_client:
+            url_bytes = redis_client.get(LOCALTUNNEL_URL_REDIS_KEY)
+            if url_bytes:
+                localtunnel_url = url_bytes.decode('utf-8')
+        if not localtunnel_url and LOCALTUNNEL_URL_FILE.exists():
+            with open(LOCALTUNNEL_URL_FILE, "r") as f:
+                localtunnel_url = f.read().strip()
+    except Exception as e_url:
+        app.logger.error(f"PROXY_STATUS: Erreur lecture URL du worker: {e_url}")
+        # On continue, l'absence d'URL sera gérée plus bas
+        pass
 
     if not localtunnel_url:
-        return jsonify({"overall_status_code_from_worker": "worker_unavailable",
-                        "overall_status_text": "Worker Indisponible"}), 503
+        return jsonify({
+            "overall_status_text": "Worker Indisponible",
+            "status_text": "L'URL du worker local n'est pas enregistrée.",
+            "overall_status_code_from_worker": "worker_unavailable"
+        }), 503
+
     try:
         target_url = f"{localtunnel_url.rstrip('/')}/api/get_remote_status_summary"
         headers_to_worker = {
             'X-Worker-Token': INTERNAL_WORKER_COMMS_TOKEN_ENV} if INTERNAL_WORKER_COMMS_TOKEN_ENV else {}
+
         response_local = requests.get(target_url, headers=headers_to_worker, timeout=10)
         response_local.raise_for_status()
-        return jsonify(response_local.json()), 200
+
+        local_data = response_local.json()
+
+        # --- BLOC DE MAPPAGE CORRIGÉ ---
+        # On traduit ici les clés du worker en clés attendues par le JavaScript.
+        response_for_frontend = {
+            "overall_status_text": local_data.get("overall_status_text_display", "Statut non défini"),
+            "status_text": local_data.get("status_text_detail", "Détails non disponibles"),
+            "overall_status_code_from_worker": local_data.get("overall_status_code"),
+            "current_step_name": local_data.get("current_step_name"),
+            "progress_current": local_data.get("progress_current", 0),
+            "progress_total": local_data.get("progress_total", 0),
+            "recent_downloads": local_data.get("recent_downloads", []),
+            "last_sequence_summary": local_data.get("last_sequence_summary")
+        }
+        return jsonify(response_for_frontend), 200
+        # --- FIN DU BLOC DE MAPPAGE ---
+
+    except requests.exceptions.HTTPError as e:
+        # Gérer les erreurs HTTP comme 401, 404, etc.
+        error_code = e.response.status_code
+        app.logger.error(f"PROXY_STATUS: Erreur HTTP {error_code} du worker: {e}")
+        return jsonify({
+            "overall_status_text": f"Erreur Worker ({error_code})",
+            "status_text": f"Le worker a répondu avec une erreur: {e.response.reason}",
+            "overall_status_code_from_worker": f"worker_http_error_{error_code}"
+        }), 502
+
     except requests.exceptions.RequestException as e:
+        # Gérer les erreurs de connexion, timeout, etc.
         app.logger.error(f"PROXY_STATUS: Erreur de communication avec le worker local: {e}")
-        return jsonify({"overall_status_code_from_worker": "proxy_error", "overall_status_text": "Erreur Proxy"}), 502
+        return jsonify({
+            "overall_status_text": "Erreur Proxy",
+            "status_text": "Impossible de contacter le worker local.",
+            "overall_status_code_from_worker": "proxy_connection_error"
+        }), 502
 
 
 @app.route('/api/trigger_local_workflow', methods=['POST'])
