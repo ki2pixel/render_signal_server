@@ -1,1 +1,16 @@
-def post_fork(server, worker):    """    Hook Gunicorn qui est appelÈ aprËs la crÈation d'un processus worker.    C'est l'endroit idÈal pour dÈmarrer des threads d'arriËre-plan.    """    from app_render import start_background_tasks    start_background_tasks()
+# gunicorn_config.py (Version finale et correcte)
+import threading
+
+def post_fork(server, worker):
+    """
+    Ce hook est appel√© apr√®s la cr√©ation d'un processus worker.
+    C'est l'endroit id√©al et s√ªr pour d√©marrer des threads d'arri√®re-plan.
+    """
+    # On importe les fonctions n√©cessaires depuis notre application
+    from app_render import start_background_tasks
+    
+    # On log dans quel worker on se trouve
+    worker.log.info(f"Worker (PID: {worker.pid}) : Lancement des t√¢ches d'arri√®re-plan.")
+    
+    # On d√©marre le thread
+    start_background_tasks()
