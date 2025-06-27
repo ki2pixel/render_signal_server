@@ -530,8 +530,8 @@ def serve_trigger_page_main():
 def get_local_status_proxied():
     app.logger.info(f"PROXY_STATUS: /api/get_local_status par l'utilisateur '{current_user.id}'.")
     # Le token UI est une sécurité supplémentaire optionnelle, mais la session est la protection principale
-    if REMOTE_UI_ACCESS_TOKEN_ENV and request.args.get('ui_token') != REMOTE_UI_ACCESS_TOKEN_ENV:
-        return jsonify({"error": "Invalid UI token"}), 403
+    # if REMOTE_UI_ACCESS_TOKEN_ENV and request.args.get('ui_token') != REMOTE_UI_ACCESS_TOKEN_ENV:
+        # return jsonify({"error": "Invalid UI token"}), 403
 
     localtunnel_url = None
     if redis_client: localtunnel_url = redis_client.get(LOCALTUNNEL_URL_REDIS_KEY)
