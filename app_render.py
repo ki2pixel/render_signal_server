@@ -41,7 +41,7 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "une-cle-secrete-tres-comple
 REF_TRIGGER_PAGE_USER = "admin"
 REF_TRIGGER_PAGE_PASSWORD = "UDPVA#esKf40r@"
 REF_REMOTE_UI_ACCESS_TOKEN = "0wbgXHiF3e!MqE"
-REF_INTERNAL_WORKER_COMMS_TOKEN = "Fn*G14Vb'!Hkra7"
+REF_INTERNAL_WORKER_COMMS_TOKEN = "Fn*G14Vb!Hkra7"
 REF_PROCESS_API_TOKEN = "rnd_PW5cGYVf4gl3limu9cYkFw27u8dY"
 REF_REGISTER_LOCAL_URL_TOKEN = "WMmWtian6RaUA"
 REF_ONEDRIVE_CLIENT_ID = "6bbc767d-53e8-4b82-bd49-480d4c157a9b"
@@ -583,21 +583,27 @@ def api_check_emails_and_download_authed():
     threading.Thread(target=run_task).start()
     return jsonify({"status": "success", "message": "Vérification en arrière-plan lancée."}), 202
 
-# --- Démarrage de l'Application et des Threads ---
+# --- Démarrage de l'Application et des Threads d'Arrière-Plan (pour Gunicorn) ---
+
+# Cette initialisation et le démarrage du thread s'exécutent maintenant lorsque
+# Gunicorn importe ce fichier pour charger l'objet `app`.
+initialize_refresh_token()
+
+app.logger.info("MAIN_APP: Préparation des threads d'arrière-plan pour le déploiement.")
+if all([msal_app, current_onedrive_refresh_token_in_memory, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
+    threading.Thread(target=background_email_poller, name="EmailPollerThread", daemon=True).start()
+    app.logger.info("MAIN_APP: Thread de polling des emails démarré.")
+else:
+    app.logger.warning("MAIN_APP: Thread de polling non démarré (configuration incomplète). Vérifiez les variables d'environnement MSAL, SENDER et WEBHOOK.")
+
+
+# --- Bloc de Démarrage pour Exécution Locale (non utilisé par Gunicorn) ---
 if __name__ == '__main__':
-    initialize_refresh_token()
-
-    is_debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-    should_start_background_threads = not is_debug_mode or os.environ.get("WERKZEUG_RUN_MAIN") == "true"
-
-    if should_start_background_threads:
-        app.logger.info("MAIN_APP: Préparation des threads d'arrière-plan.")
-        if all([msal_app, current_onedrive_refresh_token_in_memory, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
-            threading.Thread(target=background_email_poller, name="EmailPollerThread", daemon=True).start()
-            app.logger.info("MAIN_APP: Thread de polling des emails démarré.")
-        else:
-            app.logger.warning("MAIN_APP: Thread de polling non démarré (config incomplète).")
-    
+    # Ce bloc est utile pour le débogage local en exécutant `python app_render.py`
+    # Gunicorn n'exécutera PAS ce code.
     server_port = int(os.environ.get('PORT', 10000))
-    app.logger.info(f"MAIN_APP: Serveur Flask démarrant sur 0.0.0.0:{server_port}")
-    app.run(host='0.0.0.0', port=server_port, debug=is_debug_mode, use_reloader=is_debug_mode)
+    # Le mode debug de Flask ne doit pas être utilisé avec gevent, et n'est pas recommandé ici.
+    is_debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+
+    app.logger.info(f"MAIN_APP: (Lancement direct via 'python') Serveur Flask démarrant sur 0.0.0.0:{server_port}")
+    app.run(host='0.0.0.0', port=server_port, debug=is_debug_mode)
