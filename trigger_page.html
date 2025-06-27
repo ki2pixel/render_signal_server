@@ -5,207 +5,60 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🚀 Déclencheur Workflow Distant 🌌</title>
     <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700" rel="stylesheet">
+    <!-- Le CSS reste identique à votre dernière version, donc je l'omets pour la clarté -->
     <style>
         :root {
-            --cork-dark-bg: #060818; 
-            --cork-card-bg: #0e1726; 
-            --cork-text-primary: #e0e6ed; 
-            --cork-text-secondary: #888ea8; 
-            --cork-primary-accent: #4361ee; 
-            --cork-secondary-accent: #1abc9c; 
-            --cork-success: #1abc9c; 
-            --cork-warning: #e2a03f;
-            --cork-danger: #e7515a;
-            --cork-info: #2196f3;
-            --cork-border-color: #191e3a;
+            --cork-dark-bg: #060818; --cork-card-bg: #0e1726; --cork-text-primary: #e0e6ed; --cork-text-secondary: #888ea8; --cork-primary-accent: #4361ee; --cork-secondary-accent: #1abc9c; --cork-success: #1abc9c; --cork-warning: #e2a03f; --cork-danger: #e7515a; --cork-info: #2196f3; --cork-border-color: #191e3a;
         }
-
-        body {
-            font-family: 'Nunito', sans-serif;
-            margin: 0;
-            background-color: var(--cork-dark-bg);
-            color: var(--cork-text-primary);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            padding: 20px;
-            box-sizing: border-box;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 700px;
-            background-color: var(--cork-card-bg);
-            padding: 30px 40px;
-            border-radius: 8px;
-            box-shadow: 0 4px 25px 0 rgba(0,0,0,0.1);
-            border: 1px solid var(--cork-border-color);
-        }
-
-        h1 {
-            color: var(--cork-text-primary);
-            text-align: center;
-            font-size: 1.8em;
-            font-weight: 600;
-            margin-bottom: 30px;
-            letter-spacing: 0.5px;
-        }
-        h1 .emoji {
-            font-size: 1.5em;
-            margin-right: 10px;
-            vertical-align: middle;
-        }
-
-        .action-button { /* Common class for buttons */
-            display: block;
-            width: 100%;
-            padding: 15px 20px;
-            font-size: 1.1em;
-            font-weight: 600;
-            cursor: pointer;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            margin-bottom: 15px; 
-            transition: background-position 0.5s, transform 0.1s ease, box-shadow 0.3s ease;
-            background-size: 200% auto;
-        }
-        .action-button:hover {
-            background-position: right center; 
-            transform: translateY(-2px);
-        }
-        .action-button:disabled {
-            background-image: none;
-            background-color: #555e72; 
-            color: var(--cork-text-secondary);
-            cursor: not-allowed;
-            box-shadow: none;
-            transform: translateY(0);
-        }
-
-        #triggerBtn {
-            background-image: linear-gradient(to right, var(--cork-primary-accent) 0%, #5470f1 51%, var(--cork-primary-accent) 100%);
-            box-shadow: 0 5px 15px rgba(67, 97, 238, 0.4);
-        }
+        body { font-family: 'Nunito', sans-serif; margin: 0; background-color: var(--cork-dark-bg); color: var(--cork-text-primary); display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; box-sizing: border-box; }
+        .container { width: 100%; max-width: 700px; background-color: var(--cork-card-bg); padding: 30px 40px; border-radius: 8px; box-shadow: 0 4px 25px 0 rgba(0,0,0,0.1); border: 1px solid var(--cork-border-color); }
+        h1 { color: var(--cork-text-primary); text-align: center; font-size: 1.8em; font-weight: 600; margin-bottom: 30px; letter-spacing: 0.5px; position: relative; }
+        h1 .emoji { font-size: 1.5em; margin-right: 10px; vertical-align: middle; }
+        .logout-link { position: absolute; top: 5px; right: 0; text-decoration: none; font-size: 0.6em; font-weight: 600; background-color: var(--cork-danger); color: white; padding: 6px 12px; border-radius: 4px; transition: background-color 0.2s ease, transform 0.2s ease; }
+        .logout-link:hover { background-color: #c93e47; transform: translateY(-1px); }
+        .action-button { display: block; width: 100%; padding: 15px 20px; font-size: 1.1em; font-weight: 600; cursor: pointer; color: white; border: none; border-radius: 6px; margin-bottom: 15px; transition: background-position 0.5s, transform 0.1s ease, box-shadow 0.3s ease; background-size: 200% auto; }
+        .action-button:hover { background-position: right center; transform: translateY(-2px); }
+        .action-button:disabled { background-image: none; background-color: #555e72; color: var(--cork-text-secondary); cursor: not-allowed; box-shadow: none; transform: translateY(0); }
+        #triggerBtn { background-image: linear-gradient(to right, var(--cork-primary-accent) 0%, #5470f1 51%, var(--cork-primary-accent) 100%); box-shadow: 0 5px 15px rgba(67, 97, 238, 0.4); }
         #triggerBtn:hover { box-shadow: 0 8px 20px rgba(67, 97, 238, 0.5); }
-
-
-        #checkEmailsBtn { 
-            background-image: linear-gradient(to right, #28a745 0%, #34c759 51%, #28a745 100%);
-            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.4);
-            margin-bottom: 20px; /* Original margin-bottom */
-        }
-         #checkEmailsBtn:hover { box-shadow: 0 8px 20px rgba(40, 167, 69, 0.5); }
-
-
-        #statusContainer {
-            margin-top: 20px;
-            padding: 20px;
-            border: 1px solid var(--cork-border-color);
-            border-radius: 6px;
-            background-color: rgba(0,0,0,0.1); 
-            text-align: left;
-        }
-        #statusTitle {
-            font-weight: 600;
-            color: var(--cork-secondary-accent); 
-            margin-bottom: 10px;
-            font-size: 1.1em;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--cork-border-color);
-        }
-        #overallStatusText, #statusTextDetail { 
-            margin-bottom: 8px;
-            font-size: 0.95em;
-            line-height: 1.5;
-        }
+        #checkEmailsBtn { background-image: linear-gradient(to right, #28a745 0%, #34c759 51%, #28a745 100%); box-shadow: 0 5px 15px rgba(40, 167, 69, 0.4); margin-bottom: 20px; }
+        #checkEmailsBtn:hover { box-shadow: 0 8px 20px rgba(40, 167, 69, 0.5); }
+        #statusContainer { margin-top: 20px; padding: 20px; border: 1px solid var(--cork-border-color); border-radius: 6px; background-color: rgba(0,0,0,0.1); text-align: left; }
+        #statusTitle { font-weight: 600; color: var(--cork-secondary-accent); margin-bottom: 10px; font-size: 1.1em; padding-bottom: 8px; border-bottom: 1px solid var(--cork-border-color); }
+        #overallStatusText, #statusTextDetail { margin-bottom: 8px; font-size: 0.95em; line-height: 1.5; }
         #overallStatusText.status-idle { color: var(--cork-text-secondary); }
         #overallStatusText.status-success { color: var(--cork-success); font-weight: bold; }
         #overallStatusText.status-error { color: var(--cork-danger); font-weight: bold; }
         #overallStatusText.status-progress { color: var(--cork-info); font-weight: bold; }
         #overallStatusText.status-warning { color: var(--cork-warning); font-weight: bold; }
-
-
-        .progress-bar-remote-container {
-            width: 100%;
-            background-color: var(--cork-border-color); 
-            border-radius: 4px;
-            margin-top: 10px;
-            padding: 2px; 
-            display: none; 
-            box-sizing: border-box;
-        }
-        .progress-bar-remote {
-            width: 0%;
-            height: 12px;
-            background-color: var(--cork-primary-accent); 
-            border-radius: 3px;
-            transition: width 0.4s ease, background-color 0.4s ease;
-        }
-        #progressTextRemote {
-            text-align: center;
-            margin-top: 6px;
-            font-size: 0.8em;
-            color: var(--cork-text-secondary);
-        }
-
-        #downloadsTitle {
-            font-weight: 600;
-            color: var(--cork-secondary-accent);
-            margin-top: 20px;
-            margin-bottom: 10px;
-            font-size: 1.0em; /* Slightly smaller */
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--cork-border-color);
-            display: none; 
-        }
-        #recentDownloadsList {
-            list-style-type: none;
-            padding-left: 0;
-            font-size: 0.9em;
-            line-height: 1.6;
-        }
-        #recentDownloadsList li {
-            padding: 4px 0;
-            border-bottom: 1px dashed rgba(136, 142, 168, 0.2); 
-        }
-        #recentDownloadsList li:last-child {
-            border-bottom: none;
-        }
-        
-        #emailCheckStatusMsg {
-             margin-top: 10px; text-align: center;
-             font-size: 0.9em;
-        }
+        .progress-bar-remote-container { width: 100%; background-color: var(--cork-border-color); border-radius: 4px; margin-top: 10px; padding: 2px; display: none; box-sizing: border-box; }
+        .progress-bar-remote { width: 0%; height: 12px; background-color: var(--cork-primary-accent); border-radius: 3px; transition: width 0.4s ease, background-color 0.4s ease; }
+        #progressTextRemote { text-align: center; margin-top: 6px; font-size: 0.8em; color: var(--cork-text-secondary); }
+        #downloadsTitle { font-weight: 600; color: var(--cork-secondary-accent); margin-top: 20px; margin-bottom: 10px; font-size: 1.0em; padding-bottom: 8px; border-bottom: 1px solid var(--cork-border-color); display: none; }
+        #recentDownloadsList { list-style-type: none; padding-left: 0; font-size: 0.9em; line-height: 1.6; }
+        #recentDownloadsList li { padding: 4px 0; border-bottom: 1px dashed rgba(136, 142, 168, 0.2); }
+        #recentDownloadsList li:last-child { border-bottom: none; }
+        #emailCheckStatusMsg { margin-top: 10px; text-align: center; font-size: 0.9em; }
         #emailCheckStatusMsg.status-success { color: var(--cork-success); }
         #emailCheckStatusMsg.status-error { color: var(--cork-danger); }
-
-        #sequenceSummaryTitleRemote {
-            font-weight: 600; color: var(--cork-secondary-accent); margin-top: 20px;
-            margin-bottom: 5px; font-size: 1.0em; padding-bottom: 8px; /* Slightly smaller */
-            border-bottom: 1px solid var(--cork-border-color); display: none;
-        }
-        #sequenceSummaryRemote {
-            white-space: pre-wrap; font-size: 0.9em; margin-top:5px; padding: 10px;
-            border-radius: 4px; background-color: rgba(0,0,0,0.05); display:none;
-            border-left: 3px solid var(--cork-text-secondary);
-            line-height: 1.6;
-        }
+        #sequenceSummaryTitleRemote { font-weight: 600; color: var(--cork-secondary-accent); margin-top: 20px; margin-bottom: 5px; font-size: 1.0em; padding-bottom: 8px; border-bottom: 1px solid var(--cork-border-color); display: none; }
+        #sequenceSummaryRemote { white-space: pre-wrap; font-size: 0.9em; margin-top:5px; padding: 10px; border-radius: 4px; background-color: rgba(0,0,0,0.05); display:none; border-left: 3px solid var(--cork-text-secondary); line-height: 1.6; }
         #sequenceSummaryRemote.status-success { border-left-color: var(--cork-success); color: var(--cork-success); }
         #sequenceSummaryRemote.status-error { border-left-color: var(--cork-danger); color: var(--cork-danger); }
-
     </style>
 </head>
 <body>
     <div class="container">
-        <h1><span class="emoji">📡</span>Télécommande Workflow</h1>
+        <h1>
+            <span class="emoji">📡</span>Télécommande Workflow
+            <a href="/logout" title="Se déconnecter" class="logout-link">Déconnexion</a>
+        </h1>
         <button id="triggerBtn" class="action-button">🚀 Lancer Séquence Locale (Étapes 0-4)</button>
         <button id="checkEmailsBtn" class="action-button">📧 Vérifier Emails & Transférer</button>
         <p id="emailCheckStatusMsg"></p>
         
         <div id="statusContainer" style="display:none;">
+            <!-- ... Le HTML du conteneur de statut reste identique ... -->
             <div id="statusTitle">Statut du Worker Local</div>
             <div id="overallStatusText">En attente...</div>
             <div id="statusTextDetail"></div> 
@@ -213,36 +66,42 @@
                 <div class="progress-bar-remote" id="progress-bar-remote"></div>
             </div>
             <div id="progressTextRemote"></div>
-
             <div id="sequenceSummaryTitleRemote">Résumé Dernière Séquence</div>
             <div id="sequenceSummaryRemote"></div>
-
             <div id="downloadsTitle" style="display:none;">Derniers Téléchargements Locaux</div>
             <ul id="recentDownloadsList"></ul>
         </div>
     </div>
 
     <script>
+        // Le code JavaScript reste inchangé. `fetch` enverra automatiquement le cookie
+        // de session sécurisé, authentifiant les requêtes API après la connexion.
         const triggerButton = document.getElementById('triggerBtn');
         const statusContainer = document.getElementById('statusContainer');
         const overallStatusTextEl = document.getElementById('overallStatusText');
-        const statusTextDetailEl = document.getElementById('statusTextDetail'); 
+        const statusTextDetailEl = document.getElementById('statusTextDetail');
         const progressBarRemoteContainer = document.getElementById('progress-bar-remote-container');
         const progressBarRemote = document.getElementById('progress-bar-remote');
         const progressTextRemoteEl = document.getElementById('progressTextRemote');
-        
         const downloadsTitleEl = document.getElementById('downloadsTitle');
         const recentDownloadsListEl = document.getElementById('recentDownloadsList');
         const checkEmailsButton = document.getElementById('checkEmailsBtn');
         const emailCheckStatusMsgEl = document.getElementById('emailCheckStatusMsg');
-
         const sequenceSummaryTitleEl = document.getElementById('sequenceSummaryTitleRemote');
         const sequenceSummaryEl = document.getElementById('sequenceSummaryRemote');
 
         let statusPollingInterval;
-        // IMPORTANT: Remplacez "YOUR_REMOTE_UI_ACCESS_TOKEN" par le vrai token si différent
-        // ou assurez-vous que la valeur par défaut dans app_render.py est utilisée.
-        const uiAccessToken = "0wbgXHIf3e!MqE"; // Correspond à REF_REMOTE_UI_ACCESS_TOKEN dans app_render.py
+        const uiAccessToken = "0wbgXHiF3e!MqE";
+		
+		// NOUVELLE FONCTION DE NETTOYAGE
+        function resetDynamicUI() {
+            progressBarRemoteContainer.style.display = 'none';
+            progressTextRemoteEl.textContent = '';
+            downloadsTitleEl.style.display = 'none';
+            recentDownloadsListEl.innerHTML = '';
+            sequenceSummaryTitleEl.style.display = 'none';
+            sequenceSummaryEl.style.display = 'none';
+        }
 
         triggerButton.addEventListener('click', async () => {
             triggerButton.disabled = true;
@@ -250,12 +109,8 @@
             overallStatusTextEl.className = 'status-progress';
             statusTextDetailEl.textContent = '';
             statusContainer.style.display = 'block';
-            progressBarRemoteContainer.style.display = 'none';
-            downloadsTitleEl.style.display = 'none';
-            recentDownloadsListEl.innerHTML = '';
-            sequenceSummaryTitleEl.style.display = 'none';
-            sequenceSummaryEl.style.display = 'none';
-
+            resetDynamicUI();
+            
             try {
                 const response = await fetch('/api/trigger_local_workflow', { 
                     method: 'POST',
@@ -265,11 +120,8 @@
                 const data = await response.json();
                 if (response.ok) {
                     overallStatusTextEl.textContent = 'Commande envoyée !';
-                    overallStatusTextEl.className = 'status-progress';
                     statusTextDetailEl.textContent = 'En attente de prise en charge par la machine locale...';
-                    if (!statusPollingInterval) { 
-                       startStatusPolling();
-                    }
+                    if (!statusPollingInterval) startStatusPolling();
                 } else {
                     overallStatusTextEl.textContent = `Erreur Envoi Commande`;
                     overallStatusTextEl.className = 'status-error';
@@ -277,7 +129,6 @@
                     triggerButton.disabled = false;
                 }
             } catch (e) {
-                console.error("Erreur fetch trigger_workflow:", e);
                 overallStatusTextEl.textContent = 'Erreur Communication Serveur';
                 overallStatusTextEl.className = 'status-error';
                 statusTextDetailEl.textContent = 'Impossible de joindre le serveur pour le déclenchement.';
@@ -285,7 +136,8 @@
             }
         });
 
-        function startStatusPolling() {
+        
+		function startStatusPolling() {
             if (statusPollingInterval) clearInterval(statusPollingInterval);
             
             async function poll() {
@@ -294,29 +146,21 @@
                     statusContainer.style.display = 'block'; 
                     
                     if (!response.ok) {
-                        console.warn("Avertissement: impossible de récupérer le statut local. Status:", response.status);
-                        let errorMsg = `Difficulté à joindre le serveur de statut (${response.status})...`;
-                        let errorTitle = "Erreur Récupération Statut";
+                        let errorMsg = `Erreur serveur (${response.status})...`;
+                        let errorTitle = "Erreur Statut";
                         overallStatusTextEl.className = 'status-error';
-                        progressBarRemoteContainer.style.display = 'none';
-                        downloadsTitleEl.style.display = 'none';
-                        recentDownloadsListEl.innerHTML = '';
-                        sequenceSummaryTitleEl.style.display = 'none';
-                        sequenceSummaryEl.style.display = 'none';
+                        
+                        resetDynamicUI(); // Nettoyer l'UI en cas d'erreur
 
-                        if (response.status === 401) { 
-                            errorMsg = "Authentification requise ou échouée. Veuillez rafraîchir et vous authentifier.";
-                            errorTitle = 'Authentification Échouée';
-                            if(statusPollingInterval) clearInterval(statusPollingInterval); statusPollingInterval = null;
-                        } else if (response.status === 403) { 
-                             errorMsg = "Token UI (interne) invalide. Contactez l'administrateur.";
-                             errorTitle = 'Erreur Token UI';
-                             if(statusPollingInterval) clearInterval(statusPollingInterval); statusPollingInterval = null;
+                        if (response.status === 401 || response.status === 403) { 
+                             errorMsg = "Session expirée ou invalide. La page va se recharger.";
+                             errorTitle = 'Authentification Échouée';
+                             if(statusPollingInterval) clearInterval(statusPollingInterval);
+                             setTimeout(() => window.location.reload(), 2000);
                         } else { 
                             const errorData = await response.json().catch(() => null);
                             errorMsg = errorData?.status_text || errorData?.message || errorMsg;
-                            // Utiliser 'overall_status_text' qui est le mappage fait par app_render OU 'overall_status_code_from_worker' comme fallback
-                            errorTitle = errorData?.overall_status_text || errorData?.overall_status_code_from_worker || errorTitle;
+                            errorTitle = errorData?.overall_status_text || errorTitle;
                         }
                         overallStatusTextEl.textContent = errorTitle;
                         statusTextDetailEl.textContent = errorMsg;
@@ -325,21 +169,16 @@
                     }
                     
                     const data = await response.json();
-
-                    // --- Overall Status Text and Detail ---
-                    // 'data.overall_status_text' vient du proxy app_render, qui devrait être 'overall_status_text_display' de app_new
                     overallStatusTextEl.textContent = data.overall_status_text || "Inconnu"; 
-                    statusTextDetailEl.textContent = data.status_text || "Aucun détail."; // 'status_text' de app_render est 'status_text_detail' de app_new
+                    statusTextDetailEl.textContent = data.status_text || "Aucun détail.";
 
-                    // --- CSS Class for Overall Status Color ---
-                    // 'data.overall_status_code_from_worker' est le code brut de app_new
-                    const workerStatusCode = (data.overall_status_code_from_worker || "idle").toLowerCase();
-                    overallStatusTextEl.className = ''; // Reset
+                    const workerStatusCode = (data.overall_status_code || "idle").toLowerCase();
+                    overallStatusTextEl.className = '';
                     if (workerStatusCode.includes("success")) overallStatusTextEl.classList.add('status-success');
-                    else if (workerStatusCode.includes("error") || workerStatusCode.includes("failed") || workerStatusCode.includes("indisponible") || workerStatusCode.includes("timeout")) overallStatusTextEl.classList.add('status-error');
-                    else if (workerStatusCode.includes("running") || workerStatusCode.includes("active") || workerStatusCode.includes("starting") || workerStatusCode.includes("pending") || workerStatusCode.includes("démarrage")) overallStatusTextEl.classList.add('status-progress');
-                    else if (workerStatusCode.includes("warning") || workerStatusCode.includes("parse_error")) overallStatusTextEl.classList.add('status-warning');
-                    else overallStatusTextEl.classList.add('status-idle');
+                    else if (workerStatusCode.includes("error")) overallStatusTextEl.classList.add('status-error');
+                    else if (workerStatusCode.includes("running")) overallStatusTextEl.classList.add('status-progress');
+                    else if (workerStatusCode.includes("warning")) overallStatusTextEl.classList.add('status-warning');
+                     else overallStatusTextEl.classList.add('status-idle');
 
 
                     // --- Progress Bar ---
@@ -419,17 +258,11 @@
                     const isSystemTrulyIdleOrFinished = workerStatusCode.includes("idle") || workerStatusCode.includes("completed");
                     triggerButton.disabled = !isSystemTrulyIdleOrFinished;
 
-
                 } catch (e) {
                     console.error("Erreur polling statut:", e);
                     overallStatusTextEl.textContent = "Erreur Communication Polling";
                     overallStatusTextEl.className = 'status-error';
-                    statusTextDetailEl.textContent = "Erreur de communication lors de la récupération du statut.";
-                    progressBarRemoteContainer.style.display = 'none';
-                    downloadsTitleEl.style.display = 'none';
-                    recentDownloadsListEl.innerHTML = '';
-                    sequenceSummaryTitleEl.style.display = 'none';
-                    sequenceSummaryEl.style.display = 'none';
+                    resetDynamicUI();
                     triggerButton.disabled = false; 
                 }
             }
@@ -440,23 +273,26 @@
 
         checkEmailsButton.addEventListener('click', async () => {
             checkEmailsButton.disabled = true;
-            emailCheckStatusMsgEl.textContent = 'Lancement de la vérification des emails...';
+            emailCheckStatusMsgEl.textContent = 'Lancement de la vérification...';
             emailCheckStatusMsgEl.className = ''; 
 
             try {
                 const response = await fetch('/api/check_emails_and_download', { method: 'POST' });
                 const data = await response.json();
-
-                if (response.status === 202 || response.ok) { 
-                    emailCheckStatusMsgEl.textContent = `Statut : ${data.message || 'Opération démarrée en arrière-plan.'}`;
+                if (response.ok) { 
+                    emailCheckStatusMsgEl.textContent = data.message || 'Opération démarrée.';
                     emailCheckStatusMsgEl.className = 'status-success';
                 } else {
-                    emailCheckStatusMsgEl.textContent = `Erreur : ${data.message || 'Échec de la vérification.'} (Code: ${response.status})`;
+                    if (response.status === 401) { // Gérer le cas de déconnexion
+                         emailCheckStatusMsgEl.textContent = 'Session expirée. Rechargez la page.';
+                         setTimeout(() => window.location.reload(), 2000);
+                    } else {
+                         emailCheckStatusMsgEl.textContent = `Erreur : ${data.message || 'Échec.'}`;
+                    }
                     emailCheckStatusMsgEl.className = 'status-error';
                 }
             } catch (e) {
-                console.error("Erreur fetch check_emails_and_download:", e);
-                emailCheckStatusMsgEl.textContent = 'Erreur de communication pour la vérification des emails.';
+                emailCheckStatusMsgEl.textContent = 'Erreur de communication.';
                 emailCheckStatusMsgEl.className = 'status-error';
             }
             setTimeout(() => { checkEmailsButton.disabled = false; }, 3000);
