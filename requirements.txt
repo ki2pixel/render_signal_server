@@ -6,3 +6,4 @@ google-auth-httplib2
 google-auth-oauthlib
 msal
 redis>=4.0  # Ou la version que vous souhaitez
+Flask-Login
