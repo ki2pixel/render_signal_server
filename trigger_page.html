@@ -142,7 +142,7 @@
             
             async function poll() {
                 try {
-                    const response = await fetch(`/api/get_local_status?ui_token=${encodeURIComponent(uiAccessToken)}`); 
+                    const response = await fetch(`/api/get_local_status`);
                     statusContainer.style.display = 'block'; 
                     
                     if (!response.ok) {
