@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion - Déclencheur Workflow</title>
+    <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700" rel="stylesheet">
+    <style>
+        :root {
+            --cork-dark-bg: #060818; 
+            --cork-card-bg: #0e1726; 
+            --cork-text-primary: #e0e6ed; 
+            --cork-text-secondary: #888ea8; 
+            --cork-primary-accent: #4361ee; 
+            --cork-danger: #e7515a;
+            --cork-border-color: #191e3a;
+        }
+        body {
+            font-family: 'Nunito', sans-serif;
+            margin: 0;
+            background-color: var(--cork-dark-bg);
+            color: var(--cork-text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .login-container {
+            width: 100%;
+            max-width: 400px;
+            background-color: var(--cork-card-bg);
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 25px 0 rgba(0,0,0,0.1);
+            border: 1px solid var(--cork-border-color);
+        }
+        h1 {
+            color: var(--cork-text-primary);
+            text-align: center;
+            font-size: 1.8em;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--cork-text-secondary);
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--cork-dark-bg);
+            border: 1px solid var(--cork-border-color);
+            border-radius: 6px;
+            color: var(--cork-text-primary);
+            font-size: 1em;
+            box-sizing: border-box;
+        }
+        input:focus {
+            outline: none;
+            border-color: var(--cork-primary-accent);
+        }
+        .login-button {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            background-color: var(--cork-primary-accent);
+            transition: background-color 0.3s;
+        }
+        .login-button:hover {
+            background-color: #3a53c6;
+        }
+        .error-message {
+            color: var(--cork-danger);
+            background-color: rgba(231, 81, 90, 0.1);
+            border: 1px solid var(--cork-danger);
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h1>Connexion</h1>
+        {% if error %}
+            <div class="error-message">{{ error }}</div>
+        {% endif %}
+        <form method="POST" action="{{ url_for('login') }}">
+            <div class="form-group">
+                <label for="username">Nom d'utilisateur</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Mot de passe</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit" class="login-button">Se connecter</button>
+        </form>
+    </div>
+</body>
+</html>
