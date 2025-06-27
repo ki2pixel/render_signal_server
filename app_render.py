@@ -647,41 +647,31 @@ def api_check_emails_and_download_authed():
     return jsonify({"status": "success", "message": "Vérification en arrière-plan lancée."}), 202
 
 
-# --- MODIFICATION: Démarrage des Tâches d'Arrière-Plan (méthode robuste) ---
-# Cette section s'exécute lorsque Gunicorn importe le module, dans le processus maître.
-# C'est l'endroit idéal pour lancer des tâches de fond persistantes comme le polling.
+# La fonction de démarrage des tâches reste ici, mais elle ne sera appelée que par Gunicorn ou par le __main__
 def start_background_tasks():
-    """
-    Initialise et démarre les threads d'arrière-plan nécessaires.
-    Cette fonction est appelée une seule fois au chargement de l'application.
-    """
-    app.logger.info("MAIN_APP_INIT: Initialisation des tâches d'arrière-plan...")
-
-    # Étape 1: S'assurer que le token est chargé en mémoire.
+    app.logger.info("BACKGROUND_TASKS: Initialisation des tâches...")
     initialize_refresh_token()
 
-    # Étape 2: Vérifier si toutes les conditions sont remplies pour lancer le poller.
     if all([msal_app, current_onedrive_refresh_token_in_memory, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
         email_poller_thread = threading.Thread(target=background_email_poller, name="EmailPollerThread", daemon=True)
         email_poller_thread.start()
-        app.logger.info("MAIN_APP_INIT: Thread de polling des emails démarré avec succès.")
+        app.logger.info("BACKGROUND_TASKS: Thread de polling des emails démarré.")
     else:
-        # Log détaillé si le thread ne peut pas démarrer, pour faciliter le débogage.
+        # Log détaillé si le thread ne peut pas démarrer
         missing_configs = []
         if not msal_app: missing_configs.append("MSAL app non initialisée")
         if not current_onedrive_refresh_token_in_memory: missing_configs.append("Refresh Token manquant")
         if not SENDER_LIST_FOR_POLLING: missing_configs.append("Liste des expéditeurs vide")
         if not MAKE_SCENARIO_WEBHOOK_URL: missing_configs.append("URL du webhook manquante")
         app.logger.warning(
-            f"MAIN_APP_INIT: Le thread de polling ne sera PAS démarré. Configuration incomplète : {', '.join(missing_configs)}.")
+            f"BACKGROUND_TASKS: Thread de polling non démarré. Configuration incomplète : {', '.join(missing_configs)}")
 
 
-# Appel de la fonction de démarrage directement au chargement du module.
-start_background_tasks()
+# L'APPEL GLOBAL A ÉTÉ SUPPRIMÉ D'ICI.
 
-# --- Bloc de Démarrage (uniquement pour exécution locale via `python app_render.py`) ---
-# Ce bloc n'est PAS exécuté par Gunicorn.
+# Ce bloc ne sera utilisé QUE si vous lancez le fichier localement pour le débogage
 if __name__ == '__main__':
-    app.logger.info("MAIN_APP_INIT: Lancement direct du serveur Flask pour débogage local.")
-    # Note: start_background_tasks() a déjà été appelé ci-dessus.
+    app.logger.info("MAIN_APP: (Lancement direct pour débogage local)")
+    # On appelle la fonction ici pour que le polling fonctionne en local
+    start_background_tasks()
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
