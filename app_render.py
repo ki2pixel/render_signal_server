@@ -1,10 +1,3 @@
-# --- GEVENT MONKEY-PATCHING ---
-# IMPORTANT: Ce bloc doit être le tout premier code exécuté
-# pour éviter les conflits et les RecursionError.
-from gevent import monkey
-
-monkey.patch_all()
-# -----------------------------
 from flask import Flask, jsonify, request, send_from_directory, render_template, redirect, url_for
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 import os
