@@ -649,9 +649,13 @@ def api_check_emails_and_download_authed():
 
 # La fonction de démarrage des tâches reste ici, mais elle ne sera appelée que par Gunicorn ou par le __main__
 def start_background_tasks():
+    """
+    Fonction qui initialise et démarre les threads d'arrière-plan.
+    """
     app.logger.info("BACKGROUND_TASKS: Initialisation des tâches...")
     initialize_refresh_token()
 
+    # On vérifie si toutes les conditions sont remplies pour lancer le thread.
     if all([msal_app, current_onedrive_refresh_token_in_memory, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
         email_poller_thread = threading.Thread(target=background_email_poller, name="EmailPollerThread", daemon=True)
         email_poller_thread.start()
@@ -667,11 +671,11 @@ def start_background_tasks():
             f"BACKGROUND_TASKS: Thread de polling non démarré. Configuration incomplète : {', '.join(missing_configs)}")
 
 
-# L'APPEL GLOBAL A ÉTÉ SUPPRIMÉ D'ICI.
+# Le code ici est exécuté UNE SEULE FOIS par Gunicorn dans le processus maître
+# avant la création des workers. C'est l'endroit parfait pour lancer notre tâche unique.
+start_background_tasks()
 
-# Ce bloc ne sera utilisé QUE si vous lancez le fichier localement pour le débogage
+# Ce bloc ne sera JAMAIS exécuté par Gunicorn, mais il est utile pour le débogage local
 if __name__ == '__main__':
-    app.logger.info("MAIN_APP: (Lancement direct pour débogage local)")
-    # On appelle la fonction ici pour que le polling fonctionne en local
-    start_background_tasks()
+    app.logger.info(f"MAIN_APP: (Lancement direct pour débogage local)")
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
