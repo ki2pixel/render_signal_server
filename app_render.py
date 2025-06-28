@@ -26,7 +26,7 @@ except ImportError:
 
 from msal import ConfidentialClientApplication
 
-app = Flask(__name__, template_folder='.')
+app = Flask(__name__, template_folder='.', static_folder='static')
 # NOUVEAU: Une clé secrète est OBLIGATOIRE pour les sessions.
 # Pour la production, utilisez une valeur complexe stockée dans les variables d'environnement.
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "une-cle-secrete-tres-complexe-pour-le-developpement-a-changer")
@@ -361,6 +361,11 @@ def mark_email_as_read_outlook(token_msal, msg_id):
 
 
 def check_new_emails_and_trigger_make_webhook():
+    """
+    Vérifie les nouveaux emails, s'assure que le worker local est joignable,
+    puis déclenche le webhook Make.com pour chaque email valide.
+    VERSION OPTIMISÉE.
+    """
     app.logger.info("POLLER: Email polling cycle started.")
     if not all([SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL, msal_app]):
         app.logger.error("POLLER: Incomplete config for polling. Aborting cycle.")
@@ -373,6 +378,7 @@ def check_new_emails_and_trigger_make_webhook():
 
     triggered_webhook_count = 0
     try:
+        # Étape 1 : Construire la requête et récupérer les emails non lus
         since_date_str = (datetime.now(timezone.utc) - timedelta(days=2)).strftime('%Y-%m-%dT%H:%M:%SZ')
         sender_filter_parts = [f"from/emailAddress/address eq '{sender}'" for sender in SENDER_LIST_FOR_POLLING]
         sender_filter_string = " or ".join(sender_filter_parts)
@@ -381,7 +387,7 @@ def check_new_emails_and_trigger_make_webhook():
                      f"$filter={filter_query}&$select=id,subject,from,receivedDateTime,bodyPreview&"
                      f"$top=25&$orderby=receivedDateTime asc")
 
-        app.logger.info(f"POLLER: Querying Graph API. Filter: '{filter_query}'")
+        app.logger.info(f"POLLER: Querying Graph API with filter: '{filter_query}'")
         headers_mail = {'Authorization': f'Bearer {token_msal}', 'Prefer': 'outlook.body-content-type="text"'}
 
         response = requests.get(graph_url, headers=headers_mail, timeout=45)
@@ -390,29 +396,37 @@ def check_new_emails_and_trigger_make_webhook():
 
         app.logger.info(f"POLLER: Found {len(emails)} unread email(s) matching criteria.")
 
+        # S'il n'y a rien à faire, on sort tôt.
+        if not emails:
+            return 0
+
+        # --- NOUVELLE LOGIQUE OPTIMISÉE ---
+        # Étape 2 : Vérifier la santé du worker UNE SEULE FOIS si des emails sont trouvés.
+        if not is_local_worker_alive():
+            app.logger.warning(
+                f"POLLER: Worker local injoignable. Le traitement du lot de {len(emails)} email(s) est reporté. Ils resteront non lus."
+            )
+            # On arrête tout de suite, sans boucler, pour réessayer l'ensemble du lot plus tard.
+            return 0
+
+        app.logger.info("POLLER: Worker local is alive. Proceeding with email batch processing.")
+        # --- FIN DE LA NOUVELLE LOGIQUE ---
+
+        # Étape 3 : Traiter chaque email du lot
         for mail in emails:
             mail_id = mail['id']
             mail_subject = mail.get('subject', 'N/A_Subject')
 
             if is_email_id_processed_redis(mail_id):
                 app.logger.debug(
-                    f"POLLER: Email ID {mail_id} (Subj: '{mail_subject[:30]}...') déjà traité (trouvé dans Redis). Marquage comme lu.")
-                if token_msal:
-                    mark_email_as_read_outlook(token_msal, mail_id)
+                    f"POLLER: Email ID {mail_id} (Subj: '{mail_subject[:30]}...') is already processed. Marking as read to clean up inbox.")
+                mark_email_as_read_outlook(token_msal, mail_id)
                 continue
 
-            # --- NOUVEAU BLOC DE VÉRIFICATION ---
-            if not is_local_worker_alive():
-                app.logger.warning(
-                    f"POLLER: Worker local injoignable. L'email ID {mail_id} ne sera PAS traité maintenant. Il restera non lu pour une tentative ultérieure.")
-                # On passe à l'email suivant sans rien faire d'autre.
-                # Le cycle de polling s'arrêtera et recommencera plus tard.
-                continue
-                # --- FIN DU NOUVEAU BLOC ---
-
-            app.logger.info(f"POLLER: Worker local joignable. Traitement de l'email: ID={mail_id}, Subj='{mail_subject[:50]}...'.")
+            # La vérification de la santé du worker a déjà été faite, on peut donc traiter l'email.
             payload_for_make = {
-                "microsoft_graph_email_id": mail_id, "subject": mail.get('subject', 'N/A'),
+                "microsoft_graph_email_id": mail_id,
+                "subject": mail_subject,
                 "receivedDateTime": mail.get("receivedDateTime"),
                 "sender_address": mail.get('from', {}).get('emailAddress', {}).get('address', 'N/A'),
                 "bodyPreview": mail.get('bodyPreview', '')
@@ -421,32 +435,34 @@ def check_new_emails_and_trigger_make_webhook():
             try:
                 webhook_response = requests.post(MAKE_SCENARIO_WEBHOOK_URL, json=payload_for_make, timeout=30)
                 if webhook_response.status_code == 200 and "accepted" in webhook_response.text.lower():
-                    app.logger.info(f"POLLER: Make.com webhook call successful for email {mail_id}.")
+                    app.logger.info(f"POLLER: Make.com webhook triggered successfully for email {mail_id}.")
 
-                    # Étape 3 : Marquer comme traité pour ne plus jamais le refaire
                     if mark_email_id_as_processed_redis(mail_id):
                         triggered_webhook_count += 1
-                        # Étape 4 : Marquer comme lu dans Outlook pour nettoyer la boîte
                         mark_email_as_read_outlook(token_msal, mail_id)
                     else:
                         app.logger.error(
-                            f"POLLER: CRITICAL - Échec du marquage de l'email {mail_id} dans Redis. Il sera réessayé au prochain cycle, ce qui peut causer des doublons.")
-
+                            f"POLLER: CRITICAL - Failed to mark email {mail_id} as processed in Redis. It will be re-processed in the next cycle, causing potential duplicates.")
+                        # On ne le marque pas comme lu pour attirer l'attention sur ce problème.
                 else:
                     app.logger.error(
                         f"POLLER: Make.com webhook call FAILED for email {mail_id}. Status: {webhook_response.status_code}, Response: {webhook_response.text[:200]}")
-                    # Note: On ne marque PAS l'email comme lu ici, pour qu'il soit réessayé.
+                    # On ne marque pas comme traité/lu, pour que l'échec soit ré-essayé plus tard.
+
             except requests.exceptions.RequestException as e_webhook:
                 app.logger.error(f"POLLER: Exception during Make.com webhook call for email {mail_id}: {e_webhook}")
-                # Note: On ne marque PAS l'email comme lu ici, pour qu'il soit réessayé.
+                # En cas d'erreur de communication avec Make, on ne fait rien de plus. L'email restera non lu
+                # et sera ré-essayé au prochain cycle. On passe simplement à l'email suivant du lot.
+                continue
 
-            return triggered_webhook_count
+        return triggered_webhook_count
 
     except requests.exceptions.RequestException as e_graph:
-        app.logger.error(f"POLLER: Graph API error: {e_graph}")
+        app.logger.error(f"POLLER: Graph API request failed: {e_graph}")
     except Exception as e_general:
         app.logger.error(f"POLLER: Unexpected error in polling cycle: {e_general}", exc_info=True)
-    return 0
+
+    return triggered_webhook_count
 
 
 def background_email_poller():
