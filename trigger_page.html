@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🚀 Déclencheur Workflow Distant 🌌</title>
     <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700" rel="stylesheet">
-    <!-- Le CSS reste identique à votre dernière version, donc je l'omets pour la clarté -->
+    <!-- Le CSS reste le même, donc il n'est pas montré ici -->
     <style>
         :root {
             --cork-dark-bg: #060818; --cork-card-bg: #0e1726; --cork-text-primary: #e0e6ed; --cork-text-secondary: #888ea8; --cork-primary-accent: #4361ee; --cork-secondary-accent: #1abc9c; --cork-success: #1abc9c; --cork-warning: #e2a03f; --cork-danger: #e7515a; --cork-info: #2196f3; --cork-border-color: #191e3a;
@@ -53,15 +53,14 @@
             <span class="emoji">📡</span>Télécommande Workflow
             <a href="/logout" title="Se déconnecter" class="logout-link">Déconnexion</a>
         </h1>
-        <button id="triggerBtn" class="action-button">🚀 Lancer Séquence Locale (Étapes 0-4)</button>
+        <button id="triggerBtn" class="action-button">🚀 Lancer Séquence Locale</button>
         <button id="checkEmailsBtn" class="action-button">📧 Vérifier Emails & Transférer</button>
         <p id="emailCheckStatusMsg"></p>
-        
+
         <div id="statusContainer" style="display:none;">
-            <!-- ... Le HTML du conteneur de statut reste identique ... -->
             <div id="statusTitle">Statut du Worker Local</div>
             <div id="overallStatusText">En attente...</div>
-            <div id="statusTextDetail"></div> 
+            <div id="statusTextDetail"></div>
             <div class="progress-bar-remote-container" id="progress-bar-remote-container">
                 <div class="progress-bar-remote" id="progress-bar-remote"></div>
             </div>
@@ -73,235 +72,8 @@
         </div>
     </div>
 
-    <script>
-        // Le code JavaScript reste inchangé. `fetch` enverra automatiquement le cookie
-        // de session sécurisé, authentifiant les requêtes API après la connexion.
-        const triggerButton = document.getElementById('triggerBtn');
-        const statusContainer = document.getElementById('statusContainer');
-        const overallStatusTextEl = document.getElementById('overallStatusText');
-        const statusTextDetailEl = document.getElementById('statusTextDetail');
-        const progressBarRemoteContainer = document.getElementById('progress-bar-remote-container');
-        const progressBarRemote = document.getElementById('progress-bar-remote');
-        const progressTextRemoteEl = document.getElementById('progressTextRemote');
-        const downloadsTitleEl = document.getElementById('downloadsTitle');
-        const recentDownloadsListEl = document.getElementById('recentDownloadsList');
-        const checkEmailsButton = document.getElementById('checkEmailsBtn');
-        const emailCheckStatusMsgEl = document.getElementById('emailCheckStatusMsg');
-        const sequenceSummaryTitleEl = document.getElementById('sequenceSummaryTitleRemote');
-        const sequenceSummaryEl = document.getElementById('sequenceSummaryRemote');
+    <!-- NOUVELLE FAÇON D'APPELER LE SCRIPT -->
+    <script src="/static/remote/main.js" type="module"></script>
 
-        let statusPollingInterval;
-        const uiAccessToken = "0wbgXHiF3e!MqE";
-		
-		// NOUVELLE FONCTION DE NETTOYAGE
-        function resetDynamicUI() {
-            progressBarRemoteContainer.style.display = 'none';
-            progressTextRemoteEl.textContent = '';
-            downloadsTitleEl.style.display = 'none';
-            recentDownloadsListEl.innerHTML = '';
-            sequenceSummaryTitleEl.style.display = 'none';
-            sequenceSummaryEl.style.display = 'none';
-        }
-
-        triggerButton.addEventListener('click', async () => {
-            triggerButton.disabled = true;
-            overallStatusTextEl.textContent = 'Envoi de la commande...';
-            overallStatusTextEl.className = 'status-progress';
-            statusTextDetailEl.textContent = '';
-            statusContainer.style.display = 'block';
-            resetDynamicUI();
-            
-            try {
-                const response = await fetch('/api/trigger_local_workflow', { 
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ command: "start_manual_0_4_from_remote_ui", source: "trigger_page_html" }) 
-                });
-                const data = await response.json();
-                if (response.ok) {
-                    overallStatusTextEl.textContent = 'Commande envoyée !';
-                    statusTextDetailEl.textContent = 'En attente de prise en charge par la machine locale...';
-                    if (!statusPollingInterval) startStatusPolling();
-                } else {
-                    overallStatusTextEl.textContent = `Erreur Envoi Commande`;
-                    overallStatusTextEl.className = 'status-error';
-                    statusTextDetailEl.textContent = data.message || 'Échec envoi commande.';
-                    triggerButton.disabled = false;
-                }
-            } catch (e) {
-                overallStatusTextEl.textContent = 'Erreur Communication Serveur';
-                overallStatusTextEl.className = 'status-error';
-                statusTextDetailEl.textContent = 'Impossible de joindre le serveur pour le déclenchement.';
-                triggerButton.disabled = false;
-            }
-        });
-
-        
-		function startStatusPolling() {
-            if (statusPollingInterval) clearInterval(statusPollingInterval);
-            
-            async function poll() {
-                try {
-                    const response = await fetch(`/api/get_local_status`);
-                    statusContainer.style.display = 'block'; 
-                    
-                    if (!response.ok) {
-                        let errorMsg = `Erreur serveur (${response.status})...`;
-                        let errorTitle = "Erreur Statut";
-                        overallStatusTextEl.className = 'status-error';
-                        
-                        resetDynamicUI(); // Nettoyer l'UI en cas d'erreur
-
-                        if (response.status === 401 || response.status === 403) { 
-                             errorMsg = "Session expirée ou invalide. La page va se recharger.";
-                             errorTitle = 'Authentification Échouée';
-                             if(statusPollingInterval) clearInterval(statusPollingInterval);
-                             setTimeout(() => window.location.reload(), 2000);
-                        } else { 
-                            const errorData = await response.json().catch(() => null);
-                            errorMsg = errorData?.status_text || errorData?.message || errorMsg;
-                            errorTitle = errorData?.overall_status_text || errorTitle;
-                        }
-                        overallStatusTextEl.textContent = errorTitle;
-                        statusTextDetailEl.textContent = errorMsg;
-                        triggerButton.disabled = false; 
-                        return;
-                    }
-                    
-                    const data = await response.json();
-                    overallStatusTextEl.textContent = data.overall_status_text || "Inconnu"; 
-                    statusTextDetailEl.textContent = data.status_text || "Aucun détail.";
-
-                    const workerStatusCode = (data.overall_status_code || "idle").toLowerCase();
-                    overallStatusTextEl.className = '';
-                    if (workerStatusCode.includes("success")) overallStatusTextEl.classList.add('status-success');
-                    else if (workerStatusCode.includes("error")) overallStatusTextEl.classList.add('status-error');
-                    else if (workerStatusCode.includes("running")) overallStatusTextEl.classList.add('status-progress');
-                    else if (workerStatusCode.includes("warning")) overallStatusTextEl.classList.add('status-warning');
-                     else overallStatusTextEl.classList.add('status-idle');
-
-
-                    // --- Progress Bar ---
-                    progressBarRemoteContainer.style.display = 'none';
-                    progressTextRemoteEl.textContent = '';
-                    if (data.progress_total > 0 && (workerStatusCode.includes("running") || workerStatusCode.includes("active") || workerStatusCode.includes("starting"))) {
-                        const percentage = Math.round((data.progress_current / data.progress_total) * 100);
-                        progressBarRemote.style.width = `${percentage}%`;
-                        
-                        let progressStepName = data.current_step_name || ''; // current_step_name from app_new
-                        if (progressStepName.includes(":")) { // Si c'est "Séquence Type - En cours: Nom Etape"
-                            progressStepName = progressStepName.split(":")[1]?.trim() || progressStepName;
-                        }
-                        
-                        progressTextRemoteEl.textContent = `${progressStepName} ${percentage}% (${data.progress_current}/${data.progress_total})`;
-                        progressBarRemoteContainer.style.display = 'block';
-                        progressBarRemote.style.backgroundColor = 'var(--cork-primary-accent)';
-                    } else if (workerStatusCode.includes("completed_success") || workerStatusCode.includes("completed_error")) {
-                        progressBarRemote.style.width = `100%`;
-                        progressBarRemoteContainer.style.display = 'block';
-                        progressBarRemote.style.backgroundColor = workerStatusCode.includes("error") ? 'var(--cork-danger)' : 'var(--cork-success)';
-                        // data.current_step_name contient déjà le résumé pour les états "completed"
-                        progressTextRemoteEl.textContent = data.current_step_name || (workerStatusCode.includes("error") ? "Finalisé avec erreurs" : "Finalisé avec succès");
-                    }
-
-
-                    // --- Recent Downloads ---
-                    recentDownloadsListEl.innerHTML = '';
-                    if (data.recent_downloads && data.recent_downloads.length > 0) {
-                        downloadsTitleEl.style.display = 'block';
-                        data.recent_downloads.forEach(dl => {
-                            const li = document.createElement('li');
-                            let statusColor = 'var(--cork-text-secondary)';
-                            const dlStatus = (dl.status || "").toLowerCase();
-                            if (dlStatus === 'completed') statusColor = 'var(--cork-success)';
-                            else if (dlStatus === 'failed') statusColor = 'var(--cork-danger)';
-                            else if (['downloading', 'starting', 'pending'].includes(dlStatus)) statusColor = 'var(--cork-info)';
-
-                            li.innerHTML = `<span style="color: ${statusColor}; font-weight: bold;">[${dl.status ? dl.status.charAt(0).toUpperCase() + dl.status.slice(1) : 'N/A'}]</span> ${dl.filename || 'N/A'} <em style="color: var(--cork-text-secondary); font-size:0.85em;">(${dl.timestamp || 'N/A'})</em>`;
-                            recentDownloadsListEl.appendChild(li);
-                        });
-                    } else {
-                        downloadsTitleEl.style.display = 'none';
-                    }
-
-                    // --- Last Sequence Summary ---
-                    sequenceSummaryTitleEl.style.display = 'none';
-                    sequenceSummaryEl.style.display = 'none';
-                    sequenceSummaryEl.className = ''; // Reset class
-                    if (data.last_sequence_summary && data.last_sequence_summary.message &&
-                        (data.last_sequence_summary.status === 'success' || data.last_sequence_summary.status === 'error')) {
-                        
-                        const summaryTimestampStr = data.last_sequence_summary.timestamp;
-                        let summaryIsRecent = false;
-                        if (summaryTimestampStr) {
-                            try {
-                                const summaryTimestamp = new Date(summaryTimestampStr);
-                                const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000); 
-                                if (summaryTimestamp > fiveMinutesAgo) {
-                                    summaryIsRecent = true;
-                                }
-                            } catch(e) { console.warn("Could not parse summary timestamp:", summaryTimestampStr, e); }
-                        }
-                        
-                        // Afficher le résumé si l'état actuel est "idle" ou "completed" ET que le résumé est récent
-                        if (summaryIsRecent && (workerStatusCode.includes("completed") || workerStatusCode.includes("idle"))) {
-                            sequenceSummaryTitleEl.textContent = `Résumé Séquence '${data.last_sequence_summary.type || 'N/A'}' (Terminée récemment):`;
-                            sequenceSummaryEl.textContent = data.last_sequence_summary.message;
-                            sequenceSummaryEl.classList.add(data.last_sequence_summary.status === 'success' ? 'status-success' : 'status-error');
-                            sequenceSummaryTitleEl.style.display = 'block';
-                            sequenceSummaryEl.style.display = 'block';
-                        }
-                    }
-                    
-                    // --- Button State ---
-                    // Activer le bouton seulement si le système est réellement idle ou a terminé une tâche
-                    const isSystemTrulyIdleOrFinished = workerStatusCode.includes("idle") || workerStatusCode.includes("completed");
-                    triggerButton.disabled = !isSystemTrulyIdleOrFinished;
-
-                } catch (e) {
-                    console.error("Erreur polling statut:", e);
-                    overallStatusTextEl.textContent = "Erreur Communication Polling";
-                    overallStatusTextEl.className = 'status-error';
-                    resetDynamicUI();
-                    triggerButton.disabled = false; 
-                }
-            }
-            
-            poll(); 
-            statusPollingInterval = setInterval(poll, 3000); 
-        }
-
-        checkEmailsButton.addEventListener('click', async () => {
-            checkEmailsButton.disabled = true;
-            emailCheckStatusMsgEl.textContent = 'Lancement de la vérification...';
-            emailCheckStatusMsgEl.className = ''; 
-
-            try {
-                const response = await fetch('/api/check_emails_and_download', { method: 'POST' });
-                const data = await response.json();
-                if (response.ok) { 
-                    emailCheckStatusMsgEl.textContent = data.message || 'Opération démarrée.';
-                    emailCheckStatusMsgEl.className = 'status-success';
-                } else {
-                    if (response.status === 401) { // Gérer le cas de déconnexion
-                         emailCheckStatusMsgEl.textContent = 'Session expirée. Rechargez la page.';
-                         setTimeout(() => window.location.reload(), 2000);
-                    } else {
-                         emailCheckStatusMsgEl.textContent = `Erreur : ${data.message || 'Échec.'}`;
-                    }
-                    emailCheckStatusMsgEl.className = 'status-error';
-                }
-            } catch (e) {
-                emailCheckStatusMsgEl.textContent = 'Erreur de communication.';
-                emailCheckStatusMsgEl.className = 'status-error';
-            }
-            setTimeout(() => { checkEmailsButton.disabled = false; }, 3000);
-        });
-
-        // Initialiser l'état au chargement de la page
-        statusContainer.style.display = 'block'; 
-        startStatusPolling();
-
-    </script>
 </body>
 </html>
