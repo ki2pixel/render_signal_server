@@ -673,7 +673,7 @@ def api_ping():
 @login_required
 def serve_trigger_page_main():
     app.logger.info(f"ROOT_UI: Requête pour '/' par l'utilisateur '{current_user.id}'. Service de 'trigger_page.html'.")
-    return send_from_directory(app.root_path, 'trigger_page.html')
+    return render_template('trigger_page.html')
 
 
 @app.route('/api/get_local_status', methods=['GET'])
