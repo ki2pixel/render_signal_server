@@ -34,10 +34,7 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "une-cle-secrete-tres-comple
 # --- Tokens et Config de référence (basés sur l'image/description fournie) ---
 REF_TRIGGER_PAGE_USER = "admin"
 REF_TRIGGER_PAGE_PASSWORD = "UDPVA#esKf40r@"
-REF_REMOTE_UI_ACCESS_TOKEN = "0wbgXHiF3e!MqE"
-REF_INTERNAL_WORKER_COMMS_TOKEN = "Fn*G14VbHkra7"
 REF_PROCESS_API_TOKEN = "rnd_PW5cGYVf4gl3limu9cYkFw27u8dY"
-REF_REGISTER_LOCAL_URL_TOKEN = "WMmWtian6RaUA"
 REF_ONEDRIVE_CLIENT_ID = "6bbc767d-53e8-4b82-bd49-480d4c157a9b"
 REF_ONEDRIVE_CLIENT_SECRET = "SECRET_PLACEHOLDER_DO_NOT_COMMIT"  # Placeholder
 REF_ONEDRIVE_TENANT_ID = "60fb2b89-e5bf-4232-98f6-f1ecb90660c5"
@@ -137,16 +134,13 @@ app.logger.info(
 # --- Chemins et Fichiers ---
 SIGNAL_DIR = Path(os.environ.get("RENDER_DISC_PATH", "./signal_data_app_render"))
 TRIGGER_SIGNAL_FILE = SIGNAL_DIR / "local_workflow_trigger_signal.json"
-LOCALTUNNEL_URL_FILE = SIGNAL_DIR / "current_localtunnel_url.txt"
 SIGNAL_DIR.mkdir(parents=True, exist_ok=True)
 app.logger.info(f"CFG PATH: Signal directory for ephemeral files: {SIGNAL_DIR.resolve()}")
 
 # --- Configuration Redis ---
 REDIS_URL = os.environ.get('REDIS_URL')
 redis_client = None
-LOCALTUNNEL_URL_REDIS_KEY = "current_localtunnel_url_v1"
 PROCESSED_EMAIL_IDS_REDIS_KEY = "processed_email_ids_set_v1"
-PROCESSED_DROPBOX_URLS_REDIS_KEY = "processed_dropbox_urls_set_v1"
 ONEDRIVE_REFRESH_TOKEN_REDIS_KEY = "onedrive_current_refresh_token_v1"
 
 current_onedrive_refresh_token_in_memory = None
@@ -206,15 +200,7 @@ EXPECTED_API_TOKEN = os.environ.get("PROCESS_API_TOKEN", REF_PROCESS_API_TOKEN)
 if not EXPECTED_API_TOKEN:
     app.logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
 else:
-    app.logger.info(f"CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: '{EXPECTED_API_TOKEN[:5]}...'")
-REGISTER_LOCAL_URL_TOKEN = os.environ.get("REGISTER_LOCAL_URL_TOKEN", REF_REGISTER_LOCAL_URL_TOKEN)
-if not REGISTER_LOCAL_URL_TOKEN:
-    app.logger.warning("CFG TOKEN: REGISTER_LOCAL_URL_TOKEN not set. Local worker registration insecure.")
-else:
-    app.logger.info(
-        f"CFG TOKEN: REGISTER_LOCAL_URL_TOKEN (for local worker registration) configured: '{REGISTER_LOCAL_URL_TOKEN[:5]}...'")
-REMOTE_UI_ACCESS_TOKEN_ENV = os.environ.get("REMOTE_UI_ACCESS_TOKEN", REF_REMOTE_UI_ACCESS_TOKEN)
-INTERNAL_WORKER_COMMS_TOKEN_ENV = os.environ.get("INTERNAL_WORKER_COMMS_TOKEN", REF_INTERNAL_WORKER_COMMS_TOKEN)
+    app.logger.info(f"CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: '{EXPECTED_API_TOKEN[:5]}...')")
 
 
 # --- Fonctions Utilitaires MSAL & Refresh Token Management ---
@@ -362,9 +348,8 @@ def mark_email_as_read_outlook(token_msal, msg_id):
 
 def check_new_emails_and_trigger_make_webhook():
     """
-    Vérifie les nouveaux emails, s'assure que le worker local est joignable,
-    puis déclenche le webhook Make.com pour chaque email valide.
-    VERSION OPTIMISÉE.
+    Vérifie les nouveaux emails et déclenche le webhook Make.com pour chaque email valide.
+    VERSION SIMPLIFIÉE - sans dépendance aux workers locaux.
     """
     app.logger.info("POLLER: Email polling cycle started.")
     if not all([SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL, msal_app]):
@@ -400,19 +385,9 @@ def check_new_emails_and_trigger_make_webhook():
         if not emails:
             return 0
 
-        # --- NOUVELLE LOGIQUE OPTIMISÉE ---
-        # Étape 2 : Vérifier la santé du worker UNE SEULE FOIS si des emails sont trouvés.
-        if not is_local_worker_alive():
-            app.logger.warning(
-                f"POLLER: Worker local injoignable. Le traitement du lot de {len(emails)} email(s) est reporté. Ils resteront non lus."
-            )
-            # On arrête tout de suite, sans boucler, pour réessayer l'ensemble du lot plus tard.
-            return 0
+        app.logger.info("POLLER: Proceeding with email batch processing.")
 
-        app.logger.info("POLLER: Worker local is alive. Proceeding with email batch processing.")
-        # --- FIN DE LA NOUVELLE LOGIQUE ---
-
-        # Étape 3 : Traiter chaque email du lot
+        # Étape 2 : Traiter chaque email du lot
         for mail in emails:
             mail_id = mail['id']
             mail_subject = mail.get('subject', 'N/A_Subject')
@@ -423,7 +398,7 @@ def check_new_emails_and_trigger_make_webhook():
                 mark_email_as_read_outlook(token_msal, mail_id)
                 continue
 
-            # La vérification de la santé du worker a déjà été faite, on peut donc traiter l'email.
+            # Traiter l'email directement sans vérification de worker
             payload_for_make = {
                 "microsoft_graph_email_id": mail_id,
                 "subject": mail_subject,
@@ -478,8 +453,7 @@ def background_email_poller():
 
             if is_active_day and is_active_time:
                 app.logger.info(f"BG_POLLER: In active period. Starting poll cycle.")
-                if not all(
-                        [current_onedrive_refresh_token_in_memory, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
+                if not all([current_onedrive_refresh_token_in_memory, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
                     app.logger.warning(f"BG_POLLER: Essential config for polling is incomplete. Waiting 60s.")
                     time.sleep(60)
                     continue
@@ -506,53 +480,7 @@ def background_email_poller():
             time.sleep(sleep_on_error_duration)
 
 
-def is_local_worker_alive():
-    """
-    Vérifie si le worker local est joignable en appelant son endpoint de ping.
-    Renvoie True si le worker est joignable, False sinon.
-    """
-    app.logger.info("WORKER_CHECK: Vérification du statut du worker local.")
-    localtunnel_url = None
 
-    # Étape 1 : Récupérer l'URL du worker (depuis Redis ou fichier)
-    try:
-        if redis_client:
-            url_bytes = redis_client.get(LOCALTUNNEL_URL_REDIS_KEY)
-            if url_bytes:
-                localtunnel_url = url_bytes.decode('utf-8')
-        if not localtunnel_url and LOCALTUNNEL_URL_FILE.exists():
-            with open(LOCALTUNNEL_URL_FILE, "r") as f:
-                localtunnel_url = f.read().strip()
-    except Exception as e_url:
-        app.logger.error(f"WORKER_CHECK: Erreur lors de la récupération de l'URL du worker: {e_url}")
-        return False
-
-    if not localtunnel_url:
-        app.logger.warning("WORKER_CHECK: Worker local non enregistré (aucune URL trouvée).")
-        return False
-
-    # Étape 2 : Tenter de "pinger" le worker
-    # On utilise un endpoint léger qui doit exister sur le worker.
-    # Assurez-vous que vos workers (app_new.py/app_ubuntu.py) ont une route /api/ping.
-    try:
-        # On assume que les workers ont un endpoint /api/ping
-        target_url = f"{localtunnel_url.rstrip('/')}/api/ping"
-        headers = {'X-Worker-Token': INTERNAL_WORKER_COMMS_TOKEN_ENV} if INTERNAL_WORKER_COMMS_TOKEN_ENV else {}
-
-        # Timeout très court (5s) car un ping doit être rapide
-        response = requests.get(target_url, headers=headers, timeout=5)
-
-        if response.status_code == 200:
-            app.logger.info(f"WORKER_CHECK: Le worker à l'URL '{localtunnel_url}' est joignable.")
-            return True
-        else:
-            app.logger.warning(
-                f"WORKER_CHECK: Le worker a répondu mais avec un statut d'erreur {response.status_code}.")
-            return False
-
-    except requests.exceptions.RequestException as e:
-        app.logger.error(f"WORKER_CHECK: Impossible de contacter le worker à l'URL '{localtunnel_url}'. Erreur: {e}")
-        return False
 
 # --- NOUVELLES ROUTES POUR L'AUTHENTIFICATION ---
 
@@ -588,69 +516,6 @@ def logout():
 
 
 # --- Endpoints API (Non-UI, protégés par token) ---
-@app.route('/api/register_local_downloader_url', methods=['POST'])
-def register_local_downloader_url():
-    received_token = request.headers.get('X-Register-Token')
-    if REGISTER_LOCAL_URL_TOKEN and received_token != REGISTER_LOCAL_URL_TOKEN:
-        return jsonify({"status": "error", "message": "Unauthorized"}), 401
-    data = request.get_json(silent=True)
-    if not data: return jsonify({"status": "error", "message": "Invalid JSON"}), 400
-    new_lt_url = data.get('localtunnel_url')
-
-    try:
-        storage_method = "Redis" if redis_client else "fallback file"
-        if redis_client:
-            if new_lt_url:
-                redis_client.set(LOCALTUNNEL_URL_REDIS_KEY, new_lt_url)
-            else:
-                redis_client.delete(LOCALTUNNEL_URL_REDIS_KEY)
-        else:
-            if new_lt_url:
-                with open(LOCALTUNNEL_URL_FILE, "w") as f:
-                    f.write(new_lt_url)
-            elif LOCALTUNNEL_URL_FILE.exists():
-                LOCALTUNNEL_URL_FILE.unlink()
-        msg_action = "registered" if new_lt_url else "cleared"
-        app.logger.info(f"API_REG_LT_URL: Localtunnel URL {msg_action} via {storage_method}.")
-        return jsonify({"status": "success", "message": f"URL {msg_action}."}), 200
-    except Exception as e:
-        app.logger.error(f"API_REG_LT_URL: Server error: {e}", exc_info=True)
-        return jsonify({"status": "error", "message": "Server error."}), 500
-
-
-@app.route('/api/get_local_downloader_url', methods=['GET'])
-def get_local_downloader_url_for_make():
-    received_token = request.headers.get('X-API-Token')
-    if EXPECTED_API_TOKEN and received_token != EXPECTED_API_TOKEN:
-        return jsonify({"status": "error", "message": "Unauthorized"}), 401
-    lt_url = None
-    try:
-        if redis_client:
-            url_bytes = redis_client.get(LOCALTUNNEL_URL_REDIS_KEY)
-            if url_bytes: lt_url = url_bytes.decode('utf-8')
-        if not lt_url and LOCALTUNNEL_URL_FILE.exists():
-            with open(LOCALTUNNEL_URL_FILE, "r") as f: lt_url = f.read().strip()
-
-        if lt_url:
-            return jsonify({"status": "success", "localtunnel_url": lt_url}), 200
-        else:
-            return jsonify({"status": "error", "message": "Local worker URL not registered."}), 404
-    except Exception as e:
-        app.logger.error(f"API_GET_LT_URL: Error: {e}", exc_info=True)
-        return jsonify({"status": "error", "message": "Server error."}), 500
-
-
-@app.route('/api/log_processed_url', methods=['POST'])
-def api_log_processed_url():
-    if request.headers.get('X-API-Token') != EXPECTED_API_TOKEN:
-        return jsonify({"status": "error", "message": "Unauthorized."}), 401
-    data = request.get_json(silent=True)
-    if not data or 'dropbox_url' not in data: return jsonify(
-        {"status": "error", "message": "'dropbox_url' required."}), 400
-    if not redis_client:
-        return jsonify({"status": "error", "message": "Redis service unavailable."}), 503
-    redis_client.sadd(PROCESSED_DROPBOX_URLS_REDIS_KEY, data['dropbox_url'])
-    return jsonify({"status": "success"}), 200
 
 
 @app.route('/api/check_trigger', methods=['GET'])
@@ -676,91 +541,7 @@ def serve_trigger_page_main():
     return render_template('trigger_page.html')
 
 
-@app.route('/api/get_local_status', methods=['GET'])
-@login_required
-def get_local_status_proxied():
-    app.logger.info(f"PROXY_STATUS: /api/get_local_status par l'utilisateur '{current_user.id}'.")
 
-    localtunnel_url = None
-    try:
-        if redis_client:
-            url_bytes = redis_client.get(LOCALTUNNEL_URL_REDIS_KEY)
-            if url_bytes:
-                localtunnel_url = url_bytes.decode('utf-8')
-        if not localtunnel_url and LOCALTUNNEL_URL_FILE.exists():
-            with open(LOCALTUNNEL_URL_FILE, "r") as f:
-                localtunnel_url = f.read().strip()
-    except Exception as e_url:
-        app.logger.error(f"PROXY_STATUS: Erreur lecture URL du worker: {e_url}")
-        # On continue, l'absence d'URL sera gérée plus bas
-        pass
-
-    if not localtunnel_url:
-        return jsonify({
-            "overall_status_text": "Worker Indisponible",
-            "status_text": "L'URL du worker local n'est pas enregistrée.",
-            "overall_status_code_from_worker": "worker_unavailable"
-        }), 503
-
-    try:
-        target_url = f"{localtunnel_url.rstrip('/')}/api/get_remote_status_summary"
-        headers_to_worker = {
-            'X-Worker-Token': INTERNAL_WORKER_COMMS_TOKEN_ENV} if INTERNAL_WORKER_COMMS_TOKEN_ENV else {}
-
-        response_local = requests.get(target_url, headers=headers_to_worker, timeout=10)
-        response_local.raise_for_status()
-
-        local_data = response_local.json()
-
-        # --- BLOC DE MAPPAGE CORRIGÉ ---
-        # On traduit ici les clés du worker en clés attendues par le JavaScript.
-        response_for_frontend = {
-            "overall_status_text": local_data.get("overall_status_text_display", "Statut non défini"),
-            "status_text": local_data.get("status_text_detail", "Détails non disponibles"),
-            "overall_status_code_from_worker": local_data.get("overall_status_code"),
-            "current_step_name": local_data.get("current_step_name"),
-            "progress_current": local_data.get("progress_current", 0),
-            "progress_total": local_data.get("progress_total", 0),
-            "recent_downloads": local_data.get("recent_downloads", []),
-            "last_sequence_summary": local_data.get("last_sequence_summary")
-        }
-        return jsonify(response_for_frontend), 200
-        # --- FIN DU BLOC DE MAPPAGE ---
-
-    except requests.exceptions.HTTPError as e:
-        # Gérer les erreurs HTTP comme 401, 404, etc.
-        error_code = e.response.status_code
-        app.logger.error(f"PROXY_STATUS: Erreur HTTP {error_code} du worker: {e}")
-        return jsonify({
-            "overall_status_text": f"Erreur Worker ({error_code})",
-            "status_text": f"Le worker a répondu avec une erreur: {e.response.reason}",
-            "overall_status_code_from_worker": f"worker_http_error_{error_code}"
-        }), 502
-
-    except requests.exceptions.RequestException as e:
-        # Gérer les erreurs de connexion, timeout, etc.
-        app.logger.error(f"PROXY_STATUS: Erreur de communication avec le worker local: {e}")
-        return jsonify({
-            "overall_status_text": "Erreur Proxy",
-            "status_text": "Impossible de contacter le worker local.",
-            "overall_status_code_from_worker": "proxy_connection_error"
-        }), 502
-
-
-@app.route('/api/trigger_local_workflow', methods=['POST'])
-@login_required
-def trigger_local_workflow_authed():
-    app.logger.info(f"LOCAL_TRIGGER_API: Appelé par l'utilisateur '{current_user.id}'.")
-    payload = request.json or {"command": "start_manual_generic_from_ui"}
-    payload.setdefault("triggered_by_user", current_user.id)
-    payload.setdefault("timestamp_utc", datetime.now(timezone.utc).isoformat())
-    try:
-        with open(TRIGGER_SIGNAL_FILE, "w") as f:
-            json.dump(payload, f)
-        return jsonify({"status": "ok", "message": "Signal envoyé."}), 200
-    except Exception as e:
-        app.logger.error(f"LOCAL_TRIGGER_API: Erreur écriture signal: {e}", exc_info=True)
-        return jsonify({"status": "error", "message": "Erreur serveur."}), 500
 
 
 @app.route('/api/check_emails_and_download', methods=['POST'])
@@ -772,8 +553,7 @@ def api_check_emails_and_download_authed():
         with app.app_context():
             check_new_emails_and_trigger_make_webhook()
 
-    if not all(
-            [msal_app, current_onedrive_refresh_token_in_memory, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
+    if not all([msal_app, current_onedrive_refresh_token_in_memory, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
         return jsonify({"status": "error", "message": "Config serveur email incomplète."}), 503
     threading.Thread(target=run_task).start()
     return jsonify({"status": "success", "message": "Vérification en arrière-plan lancée."}), 202
