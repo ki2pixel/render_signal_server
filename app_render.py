@@ -9,6 +9,11 @@ import re
 import requests
 import threading
 from datetime import datetime, timedelta, timezone
+import imaplib
+import email
+from email.header import decode_header
+import ssl
+import hashlib
 
 try:
     from zoneinfo import ZoneInfo
@@ -24,8 +29,6 @@ except ImportError:
     # Logging at module level might not use app's logger config yet.
     # Standard logging can be used if needed here, or rely on app.logger later.
 
-from msal import ConfidentialClientApplication
-
 app = Flask(__name__, template_folder='.', static_folder='static')
 # NOUVEAU: Une clé secrète est OBLIGATOIRE pour les sessions.
 # Pour la production, utilisez une valeur complexe stockée dans les variables d'environnement.
@@ -35,9 +38,11 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "une-cle-secrete-tres-comple
 REF_TRIGGER_PAGE_USER = "admin"
 REF_TRIGGER_PAGE_PASSWORD = "UDPVA#esKf40r@"
 REF_PROCESS_API_TOKEN = "rnd_PW5cGYVf4gl3limu9cYkFw27u8dY"
-REF_ONEDRIVE_CLIENT_ID = "6bbc767d-53e8-4b82-bd49-480d4c157a9b"
-REF_ONEDRIVE_CLIENT_SECRET = "SECRET_PLACEHOLDER_DO_NOT_COMMIT"  # Placeholder
-REF_ONEDRIVE_TENANT_ID = "60fb2b89-e5bf-4232-98f6-f1ecb90660c5"
+REF_EMAIL_ADDRESS = "kidpixel@inbox.lt"
+REF_EMAIL_PASSWORD = "Ntfu1S6S6F"  # IMAP-specific password for inbox.lt
+REF_IMAP_SERVER = "mail.inbox.lt"
+REF_IMAP_PORT = 993
+REF_IMAP_USE_SSL = True
 REF_MAKE_SCENARIO_WEBHOOK_URL = "https://hook.eu2.make.com/wjcp43km1bgginyr1xu1pwui95ekr7gi"
 REF_SENDER_OF_INTEREST_FOR_POLLING = "achats@media-solution.fr,camille.moine.pro@gmail.com,a.peault@media-solution.fr,v.lorent@media-solution.fr,technique@media-solution.fr,t.deslus@media-solution.fr"
 REF_POLLING_TIMEZONE = "Europe/Paris"
@@ -141,9 +146,6 @@ app.logger.info(f"CFG PATH: Signal directory for ephemeral files: {SIGNAL_DIR.re
 REDIS_URL = os.environ.get('REDIS_URL')
 redis_client = None
 PROCESSED_EMAIL_IDS_REDIS_KEY = "processed_email_ids_set_v1"
-ONEDRIVE_REFRESH_TOKEN_REDIS_KEY = "onedrive_current_refresh_token_v1"
-
-current_onedrive_refresh_token_in_memory = None
 
 if REDIS_AVAILABLE and REDIS_URL:
     try:
@@ -167,22 +169,23 @@ else:
     app.logger.warning("CFG REDIS: 'redis' Python library not installed. Redis will not be used; fallbacks may apply.")
     redis_client = None
 
-# --- Configuration OneDrive / MSAL ---
-ONEDRIVE_CLIENT_ID = os.environ.get('ONEDRIVE_CLIENT_ID', REF_ONEDRIVE_CLIENT_ID)
-ONEDRIVE_CLIENT_SECRET = os.environ.get('ONEDRIVE_CLIENT_SECRET', REF_ONEDRIVE_CLIENT_SECRET)
-ONEDRIVE_TENANT_ID = os.environ.get('ONEDRIVE_TENANT_ID', REF_ONEDRIVE_TENANT_ID)
-ONEDRIVE_AUTHORITY = f"https://login.microsoftonline.com/{ONEDRIVE_TENANT_ID}" if ONEDRIVE_TENANT_ID != "consumers" else "https://login.microsoftonline.com/consumers"
-ONEDRIVE_SCOPES_DELEGATED = ["Mail.ReadWrite", "User.Read"]
+# --- Configuration IMAP Email ---
+EMAIL_ADDRESS = os.environ.get('EMAIL_ADDRESS', REF_EMAIL_ADDRESS)
+EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD', REF_EMAIL_PASSWORD)
+IMAP_SERVER = os.environ.get('IMAP_SERVER', REF_IMAP_SERVER)
+IMAP_PORT = int(os.environ.get('IMAP_PORT', REF_IMAP_PORT))
+IMAP_USE_SSL = os.environ.get('IMAP_USE_SSL', str(REF_IMAP_USE_SSL)).lower() in ('true', '1', 'yes')
 
-msal_app = None
-if ONEDRIVE_CLIENT_ID and ONEDRIVE_CLIENT_SECRET:
-    app.logger.info(
-        f"CFG MSAL: Initializing MSAL ConfidentialClientApplication. ClientID: '{ONEDRIVE_CLIENT_ID[:5]}...', Authority: {ONEDRIVE_AUTHORITY}")
-    msal_app = ConfidentialClientApplication(ONEDRIVE_CLIENT_ID, authority=ONEDRIVE_AUTHORITY,
-                                             client_credential=ONEDRIVE_CLIENT_SECRET)
+# Validation de la configuration email
+email_config_valid = True
+if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+    app.logger.warning("CFG EMAIL: Email address or password missing. Email polling features will be disabled.")
+    email_config_valid = False
+elif not IMAP_SERVER:
+    app.logger.warning("CFG EMAIL: IMAP server not configured. Email polling features will be disabled.")
+    email_config_valid = False
 else:
-    app.logger.warning(
-        "CFG MSAL: OneDrive Client ID or Client Secret missing. Email Polling features will be disabled.")
+    app.logger.info(f"CFG EMAIL: Email polling configured for {EMAIL_ADDRESS} via {IMAP_SERVER}:{IMAP_PORT} (SSL: {IMAP_USE_SSL})")
 
 # --- Configuration des Webhooks et Tokens ---
 MAKE_SCENARIO_WEBHOOK_URL = os.environ.get("MAKE_SCENARIO_WEBHOOK_URL", REF_MAKE_SCENARIO_WEBHOOK_URL)
@@ -203,111 +206,84 @@ else:
     app.logger.info(f"CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: '{EXPECTED_API_TOKEN[:5]}...')")
 
 
-# --- Fonctions Utilitaires MSAL & Refresh Token Management ---
-def initialize_refresh_token():
-    """Loads the OneDrive refresh token from Redis or ENV at startup."""
-    global current_onedrive_refresh_token_in_memory
-    loaded_from_source = "nothing (will rely on fresh auth or failure)"
-
-    if redis_client:
-        try:
-            token_bytes = redis_client.get(ONEDRIVE_REFRESH_TOKEN_REDIS_KEY)
-            if token_bytes:
-                current_onedrive_refresh_token_in_memory = token_bytes.decode('utf-8')
-                loaded_from_source = "Redis"
-                app.logger.info(
-                    f"MSAL_INIT: OneDrive refresh token loaded from Redis: '...{current_onedrive_refresh_token_in_memory[-20:] if current_onedrive_refresh_token_in_memory else 'EMPTY!'}'.")
-        except redis.exceptions.RedisError as e_redis_get:
-            app.logger.error(
-                f"MSAL_INIT: Error reading refresh token from Redis key '{ONEDRIVE_REFRESH_TOKEN_REDIS_KEY}': {e_redis_get}. Will try ENV.")
-
-    if not current_onedrive_refresh_token_in_memory:
-        env_refresh_token = os.environ.get('ONEDRIVE_REFRESH_TOKEN')  # This is the ENV var
-        if env_refresh_token:
-            current_onedrive_refresh_token_in_memory = env_refresh_token
-            loaded_from_source = "environment variable"
-            app.logger.info(
-                f"MSAL_INIT: OneDrive refresh token loaded from ENV var 'ONEDRIVE_REFRESH_TOKEN': '...{current_onedrive_refresh_token_in_memory[-20:]}'.")
-            if redis_client:
-                try:
-                    redis_client.set(ONEDRIVE_REFRESH_TOKEN_REDIS_KEY, current_onedrive_refresh_token_in_memory)
-                    app.logger.info(
-                        f"MSAL_INIT: Wrote refresh token from ENV to Redis key '{ONEDRIVE_REFRESH_TOKEN_REDIS_KEY}'.")
-                except redis.exceptions.RedisError as e_redis_set:
-                    app.logger.error(
-                        f"MSAL_INIT: Error writing refresh token from ENV to Redis key '{ONEDRIVE_REFRESH_TOKEN_REDIS_KEY}': {e_redis_set}")
+# --- Fonctions Utilitaires IMAP ---
+def create_imap_connection():
+    """Crée une connexion IMAP sécurisée au serveur email."""
+    try:
+        if IMAP_USE_SSL:
+            # Connexion SSL/TLS
+            mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT)
         else:
-            app.logger.error(
-                "MSAL_INIT: CRITICAL - ONEDRIVE_REFRESH_TOKEN not found in Redis or environment variable. OneDrive/MSAL features requiring authentication will likely fail.")
+            # Connexion non-sécurisée (non recommandée)
+            mail = imaplib.IMAP4(IMAP_SERVER, IMAP_PORT)
 
-    app.logger.info(f"MSAL_INIT: OneDrive refresh token ready for use (loaded from: {loaded_from_source}).")
-
-
-def get_mcal_graph_api_token():
-    global current_onedrive_refresh_token_in_memory
-    if not msal_app:
-        app.logger.error("MSAL: MSAL app (ConfidentialClientApplication) not configured. Cannot get Graph API token.")
+        # Authentification
+        mail.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+        app.logger.debug(f"IMAP: Successfully connected to {IMAP_SERVER}:{IMAP_PORT}")
+        return mail
+    except imaplib.IMAP4.error as e:
+        app.logger.error(f"IMAP: Authentication failed: {e}")
+        return None
+    except Exception as e:
+        app.logger.error(f"IMAP: Connection error: {e}")
         return None
 
-    if not current_onedrive_refresh_token_in_memory:
-        app.logger.error(
-            "MSAL_TOKEN_ACQ: Current OneDrive refresh token is not available in memory. Attempting re-initialization...")
-        initialize_refresh_token()
-        if not current_onedrive_refresh_token_in_memory:
-            app.logger.error(
-                "MSAL_TOKEN_ACQ: Re-initialization failed. No refresh token available. Cannot acquire access token.")
-            return None
 
-    app.logger.debug(
-        f"MSAL_TOKEN_ACQ: Attempting to acquire token using refresh token from memory: '...{current_onedrive_refresh_token_in_memory[-20:]}'")
-    token_result = msal_app.acquire_token_by_refresh_token(
-        current_onedrive_refresh_token_in_memory,
-        scopes=ONEDRIVE_SCOPES_DELEGATED
-    )
+def close_imap_connection(mail):
+    """Ferme proprement une connexion IMAP."""
+    try:
+        if mail:
+            mail.close()
+            mail.logout()
+            app.logger.debug("IMAP: Connection closed successfully")
+    except Exception as e:
+        app.logger.warning(f"IMAP: Error closing connection: {e}")
 
-    if "access_token" in token_result:
-        app.logger.info("MSAL_TOKEN_ACQ: Graph API access token obtained successfully.")
 
-        newly_issued_refresh_token = token_result.get("refresh_token")
-        if newly_issued_refresh_token and newly_issued_refresh_token != current_onedrive_refresh_token_in_memory:
-            app.logger.warning(
-                "MSAL_TOKEN_ACQ: A new refresh token was issued by Microsoft Graph. UPDATING in memory and Redis.")
-            app.logger.warning(
-                f"MSAL_TOKEN_ACQ: New token: '{newly_issued_refresh_token}' (For manual ENV update if needed as a backup)")
-            current_onedrive_refresh_token_in_memory = newly_issued_refresh_token
-            if redis_client:
+def generate_email_id(msg_data):
+    """Génère un ID unique pour un email basé sur son contenu."""
+    # Utilise un hash du Message-ID, sujet et date pour créer un ID unique
+    msg_id = msg_data.get('Message-ID', '')
+    subject = msg_data.get('Subject', '')
+    date = msg_data.get('Date', '')
+
+    # Combine les éléments et crée un hash
+    unique_string = f"{msg_id}|{subject}|{date}"
+    return hashlib.md5(unique_string.encode('utf-8')).hexdigest()
+
+
+def decode_email_header(header_value):
+    """Décode les en-têtes d'email qui peuvent être encodés."""
+    if not header_value:
+        return ""
+
+    decoded_parts = decode_header(header_value)
+    decoded_string = ""
+
+    for part, encoding in decoded_parts:
+        if isinstance(part, bytes):
+            if encoding:
                 try:
-                    redis_client.set(ONEDRIVE_REFRESH_TOKEN_REDIS_KEY, current_onedrive_refresh_token_in_memory)
-                    app.logger.info(
-                        f"MSAL_TOKEN_ACQ: Successfully stored new refresh token in Redis key '{ONEDRIVE_REFRESH_TOKEN_REDIS_KEY}': '...{current_onedrive_refresh_token_in_memory[-20:]}'")
-                except redis.exceptions.RedisError as e_redis_set_new:
-                    app.logger.error(
-                        f"MSAL_TOKEN_ACQ: CRITICAL - Failed to store new refresh token in Redis: {e_redis_set_new}.")
+                    decoded_string += part.decode(encoding)
+                except (UnicodeDecodeError, LookupError):
+                    decoded_string += part.decode('utf-8', errors='ignore')
             else:
-                app.logger.warning(
-                    "MSAL_TOKEN_ACQ: Redis client not available. Cannot store new refresh token persistently.")
+                decoded_string += part.decode('utf-8', errors='ignore')
+        else:
+            decoded_string += str(part)
 
-        return token_result['access_token']
-    else:
-        error_code = token_result.get("error")
-        error_description = token_result.get("error_description")
-        app.logger.error(
-            f"MSAL_TOKEN_ACQ: Failed to obtain access token. Error: {error_code}, Description: {error_description}. Full response: {token_result}")
+    return decoded_string
 
-        if error_code in ["invalid_grant", "interaction_required", "unauthorized_client"] or \
-                (error_description and (
-                        "AADSTS70008" in error_description or "token is expired" in error_description.lower())):
-            app.logger.error(
-                "MSAL_TOKEN_ACQ: The current refresh token is invalid. Manual re-authentication is required.")
-            current_onedrive_refresh_token_in_memory = None
-            if redis_client:
-                try:
-                    redis_client.delete(ONEDRIVE_REFRESH_TOKEN_REDIS_KEY)
-                    app.logger.info(
-                        f"MSAL_TOKEN_ACQ: Invalid refresh token deleted from Redis key '{ONEDRIVE_REFRESH_TOKEN_REDIS_KEY}'.")
-                except redis.exceptions.RedisError as e_redis_del:
-                    app.logger.error(f"MSAL_TOKEN_ACQ: Error deleting invalid refresh token from Redis: {e_redis_del}")
-        return None
+
+def mark_email_as_read_imap(mail, email_num):
+    """Marque un email comme lu via IMAP."""
+    try:
+        mail.store(email_num, '+FLAGS', '\\Seen')
+        app.logger.debug(f"IMAP: Email {email_num} marked as read")
+        return True
+    except Exception as e:
+        app.logger.error(f"IMAP: Error marking email {email_num} as read: {e}")
+        return False
 
 
 # --- Fonctions de Déduplication avec Redis ---
@@ -330,114 +306,149 @@ def mark_email_id_as_processed_redis(email_id):
         return False
 
 
-# --- Fonctions de Polling des Emails ---
-def mark_email_as_read_outlook(token_msal, msg_id):
-    if not token_msal or not msg_id: return False
-    url = f"https://graph.microsoft.com/v1.0/me/messages/{msg_id}"
-    headers = {'Authorization': f'Bearer {token_msal}', 'Content-Type': 'application/json'}
-    payload = {"isRead": True}
-    try:
-        response = requests.patch(url, headers=headers, json=payload, timeout=15)
-        response.raise_for_status()
-        app.logger.info(f"MARK_READ_OUTLOOK: Email {msg_id} marked as read.")
-        return True
-    except requests.exceptions.RequestException as e:
-        app.logger.error(f"MARK_READ_OUTLOOK: API error marking email {msg_id} as read: {e}")
-        return False
+# --- Fonctions de Polling des Emails IMAP ---
 
 
 def check_new_emails_and_trigger_make_webhook():
     """
-    Vérifie les nouveaux emails et déclenche le webhook Make.com pour chaque email valide.
-    VERSION SIMPLIFIÉE - sans dépendance aux workers locaux.
+    Vérifie les nouveaux emails via IMAP et déclenche le webhook Make.com pour chaque email valide.
+    VERSION IMAP - remplace l'ancienne version Microsoft Graph API.
     """
-    app.logger.info("POLLER: Email polling cycle started.")
-    if not all([SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL, msal_app]):
+    app.logger.info("POLLER: Email polling cycle started (IMAP).")
+    if not all([SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL, email_config_valid]):
         app.logger.error("POLLER: Incomplete config for polling. Aborting cycle.")
         return 0
 
-    token_msal = get_mcal_graph_api_token()
-    if not token_msal:
-        app.logger.error("POLLER: Failed to get MSAL Graph access token. Aborting cycle.")
+    # Créer une connexion IMAP
+    mail = create_imap_connection()
+    if not mail:
+        app.logger.error("POLLER: Failed to create IMAP connection. Aborting cycle.")
         return 0
 
     triggered_webhook_count = 0
     try:
-        # Étape 1 : Construire la requête et récupérer les emails non lus
-        since_date_str = (datetime.now(timezone.utc) - timedelta(days=2)).strftime('%Y-%m-%dT%H:%M:%SZ')
-        sender_filter_parts = [f"from/emailAddress/address eq '{sender}'" for sender in SENDER_LIST_FOR_POLLING]
-        sender_filter_string = " or ".join(sender_filter_parts)
-        filter_query = f"isRead eq false and receivedDateTime ge {since_date_str} and ({sender_filter_string})"
-        graph_url = (f"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?"
-                     f"$filter={filter_query}&$select=id,subject,from,receivedDateTime,bodyPreview&"
-                     f"$top=25&$orderby=receivedDateTime asc")
+        # Sélectionner la boîte de réception
+        mail.select('INBOX')
 
-        app.logger.info(f"POLLER: Querying Graph API with filter: '{filter_query}'")
-        headers_mail = {'Authorization': f'Bearer {token_msal}', 'Prefer': 'outlook.body-content-type="text"'}
+        # Rechercher les emails non lus des derniers 2 jours
+        since_date = (datetime.now() - timedelta(days=2)).strftime('%d-%b-%Y')
+        search_criteria = f'(UNSEEN SINCE {since_date})'
 
-        response = requests.get(graph_url, headers=headers_mail, timeout=45)
-        response.raise_for_status()
-        emails = response.json().get('value', [])
+        app.logger.info(f"POLLER: Searching for emails with criteria: {search_criteria}")
 
-        app.logger.info(f"POLLER: Found {len(emails)} unread email(s) matching criteria.")
+        # Rechercher les emails
+        status, email_ids = mail.search(None, search_criteria)
+        if status != 'OK':
+            app.logger.error(f"POLLER: IMAP search failed: {status}")
+            return 0
 
-        # S'il n'y a rien à faire, on sort tôt.
-        if not emails:
+        email_list = email_ids[0].split()
+        app.logger.info(f"POLLER: Found {len(email_list)} unread email(s).")
+
+        if not email_list:
             return 0
 
         app.logger.info("POLLER: Proceeding with email batch processing.")
 
-        # Étape 2 : Traiter chaque email du lot
-        for mail in emails:
-            mail_id = mail['id']
-            mail_subject = mail.get('subject', 'N/A_Subject')
-
-            if is_email_id_processed_redis(mail_id):
-                app.logger.debug(
-                    f"POLLER: Email ID {mail_id} (Subj: '{mail_subject[:30]}...') is already processed. Marking as read to clean up inbox.")
-                mark_email_as_read_outlook(token_msal, mail_id)
-                continue
-
-            # Traiter l'email directement sans vérification de worker
-            payload_for_make = {
-                "microsoft_graph_email_id": mail_id,
-                "subject": mail_subject,
-                "receivedDateTime": mail.get("receivedDateTime"),
-                "sender_address": mail.get('from', {}).get('emailAddress', {}).get('address', 'N/A'),
-                "bodyPreview": mail.get('bodyPreview', '')
-            }
-
+        # Traiter chaque email
+        for email_num in email_list:
             try:
-                webhook_response = requests.post(MAKE_SCENARIO_WEBHOOK_URL, json=payload_for_make, timeout=30)
-                if webhook_response.status_code == 200 and "accepted" in webhook_response.text.lower():
-                    app.logger.info(f"POLLER: Make.com webhook triggered successfully for email {mail_id}.")
+                # Récupérer l'email
+                status, email_data = mail.fetch(email_num, '(RFC822)')
+                if status != 'OK':
+                    app.logger.warning(f"POLLER: Failed to fetch email {email_num}")
+                    continue
 
-                    if mark_email_id_as_processed_redis(mail_id):
-                        triggered_webhook_count += 1
-                        mark_email_as_read_outlook(token_msal, mail_id)
-                    else:
-                        app.logger.error(
-                            f"POLLER: CRITICAL - Failed to mark email {mail_id} as processed in Redis. It will be re-processed in the next cycle, causing potential duplicates.")
-                        # On ne le marque pas comme lu pour attirer l'attention sur ce problème.
+                # Parser l'email
+                raw_email = email_data[0][1]
+                email_message = email.message_from_bytes(raw_email)
+
+                # Extraire les informations de l'email
+                subject = decode_email_header(email_message.get('Subject', ''))
+                sender = email_message.get('From', '')
+                date_received = email_message.get('Date', '')
+                message_id = email_message.get('Message-ID', '')
+
+                # Générer un ID unique pour l'email
+                email_id = generate_email_id({
+                    'Message-ID': message_id,
+                    'Subject': subject,
+                    'Date': date_received
+                })
+
+                app.logger.debug(f"POLLER: Processing email {email_num} - Subject: '{subject[:50]}...', From: {sender}")
+
+                # Vérifier si l'expéditeur est dans la liste des expéditeurs d'intérêt
+                sender_email = sender.lower()
+                is_from_monitored_sender = any(monitored_sender in sender_email for monitored_sender in SENDER_LIST_FOR_POLLING)
+
+                if not is_from_monitored_sender:
+                    app.logger.debug(f"POLLER: Email {email_num} from {sender} is not from a monitored sender. Skipping.")
+                    continue
+
+                # Vérifier si l'email a déjà été traité
+                if is_email_id_processed_redis(email_id):
+                    app.logger.debug(f"POLLER: Email ID {email_id} already processed. Marking as read.")
+                    mark_email_as_read_imap(mail, email_num)
+                    continue
+
+                # Extraire le contenu de l'email
+                body_preview = ""
+                if email_message.is_multipart():
+                    for part in email_message.walk():
+                        if part.get_content_type() == "text/plain":
+                            try:
+                                body_preview = part.get_payload(decode=True).decode('utf-8', errors='ignore')[:500]
+                                break
+                            except:
+                                pass
                 else:
-                    app.logger.error(
-                        f"POLLER: Make.com webhook call FAILED for email {mail_id}. Status: {webhook_response.status_code}, Response: {webhook_response.text[:200]}")
-                    # On ne marque pas comme traité/lu, pour que l'échec soit ré-essayé plus tard.
+                    try:
+                        body_preview = email_message.get_payload(decode=True).decode('utf-8', errors='ignore')[:500]
+                    except:
+                        pass
 
-            except requests.exceptions.RequestException as e_webhook:
-                app.logger.error(f"POLLER: Exception during Make.com webhook call for email {mail_id}: {e_webhook}")
-                # En cas d'erreur de communication avec Make, on ne fait rien de plus. L'email restera non lu
-                # et sera ré-essayé au prochain cycle. On passe simplement à l'email suivant du lot.
+                # Préparer le payload pour Make.com (maintenir la compatibilité)
+                payload_for_make = {
+                    "email_id": email_id,  # Nouvel ID basé sur IMAP
+                    "subject": subject,
+                    "receivedDateTime": date_received,
+                    "sender_address": sender,
+                    "bodyPreview": body_preview,
+                    "message_id": message_id,
+                    "imap_email_number": str(email_num)  # Pour référence IMAP
+                }
+
+                # Déclencher le webhook Make.com
+                try:
+                    webhook_response = requests.post(MAKE_SCENARIO_WEBHOOK_URL, json=payload_for_make, timeout=30)
+                    if webhook_response.status_code == 200 and "accepted" in webhook_response.text.lower():
+                        app.logger.info(f"POLLER: Make.com webhook triggered successfully for email {email_id}.")
+
+                        # Marquer comme traité dans Redis
+                        if mark_email_id_as_processed_redis(email_id):
+                            triggered_webhook_count += 1
+                            mark_email_as_read_imap(mail, email_num)
+                        else:
+                            app.logger.error(f"POLLER: CRITICAL - Failed to mark email {email_id} as processed in Redis.")
+                    else:
+                        app.logger.error(f"POLLER: Make.com webhook call FAILED for email {email_id}. Status: {webhook_response.status_code}")
+
+                except requests.exceptions.RequestException as e_webhook:
+                    app.logger.error(f"POLLER: Exception during Make.com webhook call for email {email_id}: {e_webhook}")
+                    continue
+
+            except Exception as e_email:
+                app.logger.error(f"POLLER: Error processing email {email_num}: {e_email}")
                 continue
 
         return triggered_webhook_count
 
-    except requests.exceptions.RequestException as e_graph:
-        app.logger.error(f"POLLER: Graph API request failed: {e_graph}")
     except Exception as e_general:
-        app.logger.error(f"POLLER: Unexpected error in polling cycle: {e_general}", exc_info=True)
-
-    return triggered_webhook_count
+        app.logger.error(f"POLLER: Unexpected error in IMAP polling cycle: {e_general}", exc_info=True)
+        return triggered_webhook_count
+    finally:
+        close_imap_connection(mail)
 
 
 def background_email_poller():
@@ -453,7 +464,7 @@ def background_email_poller():
 
             if is_active_day and is_active_time:
                 app.logger.info(f"BG_POLLER: In active period. Starting poll cycle.")
-                if not all([current_onedrive_refresh_token_in_memory, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
+                if not all([email_config_valid, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
                     app.logger.warning(f"BG_POLLER: Essential config for polling is incomplete. Waiting 60s.")
                     time.sleep(60)
                     continue
@@ -553,7 +564,7 @@ def api_check_emails_and_download_authed():
         with app.app_context():
             check_new_emails_and_trigger_make_webhook()
 
-    if not all([msal_app, current_onedrive_refresh_token_in_memory, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
+    if not all([email_config_valid, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
         return jsonify({"status": "error", "message": "Config serveur email incomplète."}), 503
     threading.Thread(target=run_task).start()
     return jsonify({"status": "success", "message": "Vérification en arrière-plan lancée."}), 202
@@ -565,18 +576,16 @@ def start_background_tasks():
     Fonction qui initialise et démarre les threads d'arrière-plan.
     """
     app.logger.info("BACKGROUND_TASKS: Initialisation des tâches...")
-    initialize_refresh_token()
 
     # On vérifie si toutes les conditions sont remplies pour lancer le thread.
-    if all([msal_app, current_onedrive_refresh_token_in_memory, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
+    if all([email_config_valid, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
         email_poller_thread = threading.Thread(target=background_email_poller, name="EmailPollerThread", daemon=True)
         email_poller_thread.start()
         app.logger.info("BACKGROUND_TASKS: Thread de polling des emails démarré.")
     else:
         # Log détaillé si le thread ne peut pas démarrer
         missing_configs = []
-        if not msal_app: missing_configs.append("MSAL app non initialisée")
-        if not current_onedrive_refresh_token_in_memory: missing_configs.append("Refresh Token manquant")
+        if not email_config_valid: missing_configs.append("Configuration email invalide")
         if not SENDER_LIST_FOR_POLLING: missing_configs.append("Liste des expéditeurs vide")
         if not MAKE_SCENARIO_WEBHOOK_URL: missing_configs.append("URL du webhook manquante")
         app.logger.warning(
