@@ -1,6 +1,6 @@
 Flask>=2.0
 gunicorn
 Flask-Login
-msal
 requests
 redis>=4.0
+email-validator
