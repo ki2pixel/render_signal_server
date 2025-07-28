@@ -14,6 +14,7 @@ import email
 from email.header import decode_header
 import ssl
 import hashlib
+import urllib3
 
 try:
     from zoneinfo import ZoneInfo
@@ -204,6 +205,10 @@ else:
 # --- Configuration des Webhooks et Tokens ---
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL", REF_WEBHOOK_URL)
 app.logger.info(f"CFG WEBHOOK: Custom webhook URL configured to: {WEBHOOK_URL}")
+
+# Suppress SSL warnings for webhook calls (due to certificate hostname mismatch)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+app.logger.warning("CFG WEBHOOK: SSL verification disabled for webhook calls due to certificate hostname mismatch")
 SENDER_OF_INTEREST_FOR_POLLING_RAW = os.environ.get("SENDER_OF_INTEREST_FOR_POLLING",
                                                     REF_SENDER_OF_INTEREST_FOR_POLLING)
 SENDER_LIST_FOR_POLLING = [e.strip().lower() for e in SENDER_OF_INTEREST_FOR_POLLING_RAW.split(',') if
@@ -448,7 +453,8 @@ def check_new_emails_and_trigger_webhook():
                         WEBHOOK_URL,
                         json=payload_for_webhook,
                         headers={'Content-Type': 'application/json'},
-                        timeout=30
+                        timeout=30,
+                        verify=False  # Disable SSL verification for hostname mismatch issues
                     )
 
                     # Vérifier la réponse du webhook
