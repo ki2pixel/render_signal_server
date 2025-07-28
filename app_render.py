@@ -40,7 +40,7 @@ REF_TRIGGER_PAGE_USER = "admin"
 REF_TRIGGER_PAGE_PASSWORD = "UDPVA#esKf40r@"
 REF_PROCESS_API_TOKEN = "rnd_PW5cGYVf4gl3limu9cYkFw27u8dY"
 REF_EMAIL_ADDRESS = "kidpixel@inbox.lt"
-REF_EMAIL_PASSWORD = "Ntfu1S6S6F"  # IMAP-specific password for inbox.lt
+REF_EMAIL_PASSWORD = "YvP3Zw66Xx"  # Special IMAP/SMTP password for inbox.lt
 REF_IMAP_SERVER = "mail.inbox.lt"
 REF_IMAP_PORT = 993
 REF_IMAP_USE_SSL = True
@@ -422,29 +422,38 @@ def check_new_emails_and_trigger_webhook():
                     mark_email_as_read_imap(mail, email_num)
                     continue
 
-                # Extraire le contenu de l'email
+                # Extraire le contenu complet de l'email
                 body_preview = ""
+                full_email_content = ""
+
                 if email_message.is_multipart():
                     for part in email_message.walk():
                         if part.get_content_type() == "text/plain":
                             try:
-                                body_preview = part.get_payload(decode=True).decode('utf-8', errors='ignore')[:500]
+                                content = part.get_payload(decode=True).decode('utf-8', errors='ignore')
+                                if not body_preview:
+                                    body_preview = content[:500]
+                                if not full_email_content:
+                                    full_email_content = content
                                 break
                             except:
                                 pass
                 else:
                     try:
-                        body_preview = email_message.get_payload(decode=True).decode('utf-8', errors='ignore')[:500]
+                        content = email_message.get_payload(decode=True).decode('utf-8', errors='ignore')
+                        body_preview = content[:500]
+                        full_email_content = content
                     except:
                         pass
 
-                # Préparer le payload pour le webhook personnalisé (format requis)
+                # Préparer le payload pour le webhook personnalisé (format requis + contenu complet)
                 payload_for_webhook = {
                     "microsoft_graph_email_id": email_id,  # Maintenir le nom pour compatibilité
                     "subject": subject,
                     "receivedDateTime": date_received,
                     "sender_address": sender,
-                    "bodyPreview": body_preview
+                    "bodyPreview": body_preview,
+                    "email_content": full_email_content  # Contenu complet pour éviter la recherche IMAP
                 }
 
                 # Déclencher le webhook personnalisé
