@@ -43,7 +43,7 @@ REF_EMAIL_PASSWORD = "Ntfu1S6S6F"  # IMAP-specific password for inbox.lt
 REF_IMAP_SERVER = "mail.inbox.lt"
 REF_IMAP_PORT = 993
 REF_IMAP_USE_SSL = True
-REF_MAKE_SCENARIO_WEBHOOK_URL = "https://hook.eu2.make.com/wjcp43km1bgginyr1xu1pwui95ekr7gi"
+REF_WEBHOOK_URL = "https://webhook.kidpixel.fr/index.php"
 REF_SENDER_OF_INTEREST_FOR_POLLING = "achats@media-solution.fr,camille.moine.pro@gmail.com,a.peault@media-solution.fr,v.lorent@media-solution.fr,technique@media-solution.fr,t.deslus@media-solution.fr"
 REF_POLLING_TIMEZONE = "Europe/Paris"
 REF_POLLING_ACTIVE_START_HOUR = 9
@@ -176,6 +176,20 @@ IMAP_SERVER = os.environ.get('IMAP_SERVER', REF_IMAP_SERVER)
 IMAP_PORT = int(os.environ.get('IMAP_PORT', REF_IMAP_PORT))
 IMAP_USE_SSL = os.environ.get('IMAP_USE_SSL', str(REF_IMAP_USE_SSL)).lower() in ('true', '1', 'yes')
 
+# Log configuration sources for debugging
+app.logger.info("CFG EMAIL_DEBUG: Configuration sources:")
+app.logger.info(f"CFG EMAIL_DEBUG: - EMAIL_ADDRESS: {'ENV' if 'EMAIL_ADDRESS' in os.environ else 'DEFAULT'} = {EMAIL_ADDRESS}")
+app.logger.info(f"CFG EMAIL_DEBUG: - EMAIL_PASSWORD: {'ENV' if 'EMAIL_PASSWORD' in os.environ else 'DEFAULT'} = {'*' * len(EMAIL_PASSWORD) if EMAIL_PASSWORD else 'NOT_SET'}")
+app.logger.info(f"CFG EMAIL_DEBUG: - IMAP_SERVER: {'ENV' if 'IMAP_SERVER' in os.environ else 'DEFAULT'} = {IMAP_SERVER}")
+app.logger.info(f"CFG EMAIL_DEBUG: - IMAP_PORT: {'ENV' if 'IMAP_PORT' in os.environ else 'DEFAULT'} = {IMAP_PORT}")
+app.logger.info(f"CFG EMAIL_DEBUG: - IMAP_USE_SSL: {'ENV' if 'IMAP_USE_SSL' in os.environ else 'DEFAULT'} = {IMAP_USE_SSL}")
+
+# Log reference values for comparison
+app.logger.info("CFG EMAIL_DEBUG: Reference values:")
+app.logger.info(f"CFG EMAIL_DEBUG: - REF_EMAIL_ADDRESS = {REF_EMAIL_ADDRESS}")
+app.logger.info(f"CFG EMAIL_DEBUG: - REF_IMAP_SERVER = {REF_IMAP_SERVER}")
+app.logger.info(f"CFG EMAIL_DEBUG: - REF_IMAP_PORT = {REF_IMAP_PORT}")
+
 # Validation de la configuration email
 email_config_valid = True
 if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
@@ -188,8 +202,8 @@ else:
     app.logger.info(f"CFG EMAIL: Email polling configured for {EMAIL_ADDRESS} via {IMAP_SERVER}:{IMAP_PORT} (SSL: {IMAP_USE_SSL})")
 
 # --- Configuration des Webhooks et Tokens ---
-MAKE_SCENARIO_WEBHOOK_URL = os.environ.get("MAKE_SCENARIO_WEBHOOK_URL", REF_MAKE_SCENARIO_WEBHOOK_URL)
-app.logger.info(f"CFG WEBHOOK: Make.com webhook URL configured to: {MAKE_SCENARIO_WEBHOOK_URL}")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", REF_WEBHOOK_URL)
+app.logger.info(f"CFG WEBHOOK: Custom webhook URL configured to: {WEBHOOK_URL}")
 SENDER_OF_INTEREST_FOR_POLLING_RAW = os.environ.get("SENDER_OF_INTEREST_FOR_POLLING",
                                                     REF_SENDER_OF_INTEREST_FOR_POLLING)
 SENDER_LIST_FOR_POLLING = [e.strip().lower() for e in SENDER_OF_INTEREST_FOR_POLLING_RAW.split(',') if
@@ -209,23 +223,34 @@ else:
 # --- Fonctions Utilitaires IMAP ---
 def create_imap_connection():
     """Crée une connexion IMAP sécurisée au serveur email."""
+    # Log detailed configuration for debugging
+    app.logger.info(f"IMAP_DEBUG: Attempting connection with:")
+    app.logger.info(f"IMAP_DEBUG: - Server: {IMAP_SERVER}")
+    app.logger.info(f"IMAP_DEBUG: - Port: {IMAP_PORT}")
+    app.logger.info(f"IMAP_DEBUG: - SSL: {IMAP_USE_SSL}")
+    app.logger.info(f"IMAP_DEBUG: - Email: {EMAIL_ADDRESS}")
+    app.logger.info(f"IMAP_DEBUG: - Password: {'*' * len(EMAIL_PASSWORD) if EMAIL_PASSWORD else 'NOT_SET'}")
+
     try:
         if IMAP_USE_SSL:
             # Connexion SSL/TLS
+            app.logger.info(f"IMAP_DEBUG: Creating SSL connection to {IMAP_SERVER}:{IMAP_PORT}")
             mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT)
         else:
             # Connexion non-sécurisée (non recommandée)
+            app.logger.info(f"IMAP_DEBUG: Creating non-SSL connection to {IMAP_SERVER}:{IMAP_PORT}")
             mail = imaplib.IMAP4(IMAP_SERVER, IMAP_PORT)
 
+        app.logger.info(f"IMAP_DEBUG: Connection established, attempting authentication...")
         # Authentification
         mail.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-        app.logger.debug(f"IMAP: Successfully connected to {IMAP_SERVER}:{IMAP_PORT}")
+        app.logger.info(f"IMAP: Successfully connected to {IMAP_SERVER}:{IMAP_PORT}")
         return mail
     except imaplib.IMAP4.error as e:
-        app.logger.error(f"IMAP: Authentication failed: {e}")
+        app.logger.error(f"IMAP: Authentication failed for {EMAIL_ADDRESS} on {IMAP_SERVER}:{IMAP_PORT} - {e}")
         return None
     except Exception as e:
-        app.logger.error(f"IMAP: Connection error: {e}")
+        app.logger.error(f"IMAP: Connection error to {IMAP_SERVER}:{IMAP_PORT} - {e}")
         return None
 
 
@@ -309,13 +334,13 @@ def mark_email_id_as_processed_redis(email_id):
 # --- Fonctions de Polling des Emails IMAP ---
 
 
-def check_new_emails_and_trigger_make_webhook():
+def check_new_emails_and_trigger_webhook():
     """
-    Vérifie les nouveaux emails via IMAP et déclenche le webhook Make.com pour chaque email valide.
+    Vérifie les nouveaux emails via IMAP et déclenche le webhook personnalisé pour chaque email valide.
     VERSION IMAP - remplace l'ancienne version Microsoft Graph API.
     """
     app.logger.info("POLLER: Email polling cycle started (IMAP).")
-    if not all([SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL, email_config_valid]):
+    if not all([SENDER_LIST_FOR_POLLING, WEBHOOK_URL, email_config_valid]):
         app.logger.error("POLLER: Incomplete config for polling. Aborting cycle.")
         return 0
 
@@ -408,34 +433,43 @@ def check_new_emails_and_trigger_make_webhook():
                     except:
                         pass
 
-                # Préparer le payload pour Make.com (maintenir la compatibilité)
-                payload_for_make = {
-                    "email_id": email_id,  # Nouvel ID basé sur IMAP
+                # Préparer le payload pour le webhook personnalisé (format requis)
+                payload_for_webhook = {
+                    "microsoft_graph_email_id": email_id,  # Maintenir le nom pour compatibilité
                     "subject": subject,
                     "receivedDateTime": date_received,
                     "sender_address": sender,
-                    "bodyPreview": body_preview,
-                    "message_id": message_id,
-                    "imap_email_number": str(email_num)  # Pour référence IMAP
+                    "bodyPreview": body_preview
                 }
 
-                # Déclencher le webhook Make.com
+                # Déclencher le webhook personnalisé
                 try:
-                    webhook_response = requests.post(MAKE_SCENARIO_WEBHOOK_URL, json=payload_for_make, timeout=30)
-                    if webhook_response.status_code == 200 and "accepted" in webhook_response.text.lower():
-                        app.logger.info(f"POLLER: Make.com webhook triggered successfully for email {email_id}.")
+                    webhook_response = requests.post(
+                        WEBHOOK_URL,
+                        json=payload_for_webhook,
+                        headers={'Content-Type': 'application/json'},
+                        timeout=30
+                    )
 
-                        # Marquer comme traité dans Redis
-                        if mark_email_id_as_processed_redis(email_id):
-                            triggered_webhook_count += 1
-                            mark_email_as_read_imap(mail, email_num)
+                    # Vérifier la réponse du webhook
+                    if webhook_response.status_code == 200:
+                        response_data = webhook_response.json() if webhook_response.content else {}
+                        if response_data.get('success', False):
+                            app.logger.info(f"POLLER: Webhook triggered successfully for email {email_id}.")
+
+                            # Marquer comme traité dans Redis
+                            if mark_email_id_as_processed_redis(email_id):
+                                triggered_webhook_count += 1
+                                mark_email_as_read_imap(mail, email_num)
+                            else:
+                                app.logger.error(f"POLLER: CRITICAL - Failed to mark email {email_id} as processed in Redis.")
                         else:
-                            app.logger.error(f"POLLER: CRITICAL - Failed to mark email {email_id} as processed in Redis.")
+                            app.logger.error(f"POLLER: Webhook processing failed for email {email_id}. Response: {response_data.get('message', 'Unknown error')}")
                     else:
-                        app.logger.error(f"POLLER: Make.com webhook call FAILED for email {email_id}. Status: {webhook_response.status_code}")
+                        app.logger.error(f"POLLER: Webhook call FAILED for email {email_id}. Status: {webhook_response.status_code}, Response: {webhook_response.text[:200]}")
 
                 except requests.exceptions.RequestException as e_webhook:
-                    app.logger.error(f"POLLER: Exception during Make.com webhook call for email {email_id}: {e_webhook}")
+                    app.logger.error(f"POLLER: Exception during webhook call for email {email_id}: {e_webhook}")
                     continue
 
             except Exception as e_email:
@@ -464,12 +498,12 @@ def background_email_poller():
 
             if is_active_day and is_active_time:
                 app.logger.info(f"BG_POLLER: In active period. Starting poll cycle.")
-                if not all([email_config_valid, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
+                if not all([email_config_valid, SENDER_LIST_FOR_POLLING, WEBHOOK_URL]):
                     app.logger.warning(f"BG_POLLER: Essential config for polling is incomplete. Waiting 60s.")
                     time.sleep(60)
                     continue
 
-                webhooks_triggered = check_new_emails_and_trigger_make_webhook()
+                webhooks_triggered = check_new_emails_and_trigger_webhook()
                 app.logger.info(f"BG_POLLER: Active poll cycle finished. {webhooks_triggered} webhook(s) triggered.")
                 consecutive_error_count = 0
                 sleep_duration = EMAIL_POLLING_INTERVAL_SECONDS
@@ -562,9 +596,9 @@ def api_check_emails_and_download_authed():
 
     def run_task():
         with app.app_context():
-            check_new_emails_and_trigger_make_webhook()
+            check_new_emails_and_trigger_webhook()
 
-    if not all([email_config_valid, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
+    if not all([email_config_valid, SENDER_LIST_FOR_POLLING, WEBHOOK_URL]):
         return jsonify({"status": "error", "message": "Config serveur email incomplète."}), 503
     threading.Thread(target=run_task).start()
     return jsonify({"status": "success", "message": "Vérification en arrière-plan lancée."}), 202
@@ -578,16 +612,16 @@ def start_background_tasks():
     app.logger.info("BACKGROUND_TASKS: Initialisation des tâches...")
 
     # On vérifie si toutes les conditions sont remplies pour lancer le thread.
-    if all([email_config_valid, SENDER_LIST_FOR_POLLING, MAKE_SCENARIO_WEBHOOK_URL]):
+    if all([email_config_valid, SENDER_LIST_FOR_POLLING, WEBHOOK_URL]):
         email_poller_thread = threading.Thread(target=background_email_poller, name="EmailPollerThread", daemon=True)
         email_poller_thread.start()
         app.logger.info("BACKGROUND_TASKS: Thread de polling des emails démarré.")
     else:
-        # Log détaillé si le thread ne peut pas démarrer
+        # Log détaillé si le thread ne peut pas démarré
         missing_configs = []
         if not email_config_valid: missing_configs.append("Configuration email invalide")
         if not SENDER_LIST_FOR_POLLING: missing_configs.append("Liste des expéditeurs vide")
-        if not MAKE_SCENARIO_WEBHOOK_URL: missing_configs.append("URL du webhook manquante")
+        if not WEBHOOK_URL: missing_configs.append("URL du webhook manquante")
         app.logger.warning(
             f"BACKGROUND_TASKS: Thread de polling non démarré. Configuration incomplète : {', '.join(missing_configs)}")
 
