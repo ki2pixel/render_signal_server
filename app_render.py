@@ -15,6 +15,7 @@ from email.header import decode_header
 import ssl
 import hashlib
 import urllib3
+import re
 
 try:
     from zoneinfo import ZoneInfo
@@ -45,6 +46,8 @@ REF_IMAP_SERVER = "mail.inbox.lt"
 REF_IMAP_PORT = 993
 REF_IMAP_USE_SSL = True
 REF_WEBHOOK_URL = "https://webhook.kidpixel.fr/index.php"
+REF_MAKECOM_WEBHOOK_URL = "https://hook.eu2.make.com/s98s0s735h23qakb9pp0id8c8hbhfqph"
+REF_MAKECOM_API_KEY = "12e8b61d-a78e-47f5-9f87-359af19f46cb"
 REF_SENDER_OF_INTEREST_FOR_POLLING = "achats@media-solution.fr,camille.moine.pro@gmail.com,a.peault@media-solution.fr,v.lorent@media-solution.fr,technique@media-solution.fr,t.deslus@media-solution.fr"
 REF_POLLING_TIMEZONE = "Europe/Paris"
 REF_POLLING_ACTIVE_START_HOUR = 9
@@ -204,7 +207,11 @@ else:
 
 # --- Configuration des Webhooks et Tokens ---
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL", REF_WEBHOOK_URL)
+MAKECOM_WEBHOOK_URL = os.environ.get("MAKECOM_WEBHOOK_URL", REF_MAKECOM_WEBHOOK_URL)
+MAKECOM_API_KEY = os.environ.get("MAKECOM_API_KEY", REF_MAKECOM_API_KEY)
+
 app.logger.info(f"CFG WEBHOOK: Custom webhook URL configured to: {WEBHOOK_URL}")
+app.logger.info(f"CFG MAKECOM: Make.com webhook URL configured to: {MAKECOM_WEBHOOK_URL}")
 
 # Suppress SSL warnings for webhook calls (due to certificate hostname mismatch)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -282,6 +289,34 @@ def generate_email_id(msg_data):
     return hashlib.md5(unique_string.encode('utf-8')).hexdigest()
 
 
+def extract_sender_email(from_header):
+    """
+    Extrait l'adresse email du header 'From'.
+
+    Gère les formats:
+    - "Name <email@domain.com>" → "email@domain.com"
+    - "email@domain.com" → "email@domain.com"
+
+    Args:
+        from_header (str): Contenu du header 'From'
+
+    Returns:
+        str: Adresse email extraite ou chaîne vide si non trouvée
+    """
+    if not from_header:
+        return ""
+
+    # Pattern regex pour extraire l'email entre < > ou directement
+    email_pattern = r'<([^>]+)>|([^\s<>]+@[^\s<>]+)'
+    match = re.search(email_pattern, from_header)
+
+    if match:
+        # Si trouvé entre < >, utiliser le premier groupe, sinon le second
+        return match.group(1) if match.group(1) else match.group(2)
+
+    return ""
+
+
 def decode_email_header(header_value):
     """Décode les en-têtes d'email qui peuvent être encodés."""
     if not header_value:
@@ -313,6 +348,92 @@ def mark_email_as_read_imap(mail, email_num):
         return True
     except Exception as e:
         app.logger.error(f"IMAP: Error marking email {email_num} as read: {e}")
+        return False
+
+
+def check_media_solution_pattern(subject, email_content):
+    """
+    Vérifie si l'email correspond au pattern Média Solution spécifique.
+
+    Conditions requises:
+    1. Contenu contient: "https://www.dropbox.com/scl/fo"
+    2. Sujet contient: "Média Solution - Missions Recadrage - Lot"
+    3. Contenu contient: "à faire pour"
+
+    Returns: dict avec 'matches' (bool) et 'delivery_time' (str ou None)
+    """
+    result = {'matches': False, 'delivery_time': None}
+
+    if not subject or not email_content:
+        return result
+
+    # Vérifier les 3 conditions
+    condition1 = "https://www.dropbox.com/scl/fo" in email_content
+    condition2 = "Média Solution - Missions Recadrage - Lot" in subject
+    condition3 = "à faire pour" in email_content
+
+    app.logger.debug(f"PATTERN_CHECK: Dropbox URL: {condition1}, Subject pattern: {condition2}, Delivery phrase: {condition3}")
+
+    if condition1 and condition2 and condition3:
+        # Extraire l'heure de livraison avec regex
+        # Pattern: "à faire pour" suivi d'espaces et de l'heure (format comme "11h38")
+        delivery_pattern = r'à faire pour\s+(\d{1,2}h\d{2})'
+        match = re.search(delivery_pattern, email_content, re.IGNORECASE)
+
+        if match:
+            result['delivery_time'] = match.group(1)
+            result['matches'] = True
+            app.logger.info(f"PATTERN_MATCH: Email matches Média Solution pattern. Delivery time: {result['delivery_time']}")
+        else:
+            app.logger.warning("PATTERN_CHECK: All conditions met but couldn't extract delivery time")
+
+    return result
+
+
+def send_makecom_webhook(subject, delivery_time, sender_email, email_id):
+    """
+    Envoie les données à Make.com webhook pour les emails Média Solution.
+
+    Args:
+        subject (str): Sujet complet de l'email
+        delivery_time (str): Heure de livraison extraite (ex: "11h38")
+        sender_email (str): Adresse email de l'expéditeur
+        email_id (str): ID unique de l'email pour les logs
+
+    Returns:
+        bool: True si succès, False sinon
+    """
+    payload = {
+        "subject": subject,
+        "delivery_time": delivery_time,
+        "sender_email": sender_email
+    }
+
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {MAKECOM_API_KEY}'
+    }
+
+    try:
+        app.logger.info(f"MAKECOM: Sending webhook for email {email_id} - Subject: '{subject}', Delivery: {delivery_time}, Sender: {sender_email}")
+
+        response = requests.post(
+            MAKECOM_WEBHOOK_URL,
+            json=payload,
+            headers=headers,
+            timeout=30,
+            verify=True  # Make.com should have valid SSL certificates
+        )
+
+        if response.status_code == 200:
+            app.logger.info(f"MAKECOM: Webhook sent successfully for email {email_id}")
+            return True
+        else:
+            app.logger.error(f"MAKECOM: Webhook failed for email {email_id}. Status: {response.status_code}, Response: {response.text[:200]}")
+            return False
+
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"MAKECOM: Exception during webhook call for email {email_id}: {e}")
         return False
 
 
@@ -486,6 +607,35 @@ def check_new_emails_and_trigger_webhook():
                 except requests.exceptions.RequestException as e_webhook:
                     app.logger.error(f"POLLER: Exception during webhook call for email {email_id}: {e_webhook}")
                     continue
+
+                # Vérifier le pattern Média Solution et envoyer à Make.com si nécessaire
+                try:
+                    pattern_result = check_media_solution_pattern(subject, full_email_content)
+
+                    if pattern_result['matches']:
+                        app.logger.info(f"POLLER: Email {email_id} matches Média Solution pattern")
+
+                        # Extraire l'adresse email de l'expéditeur
+                        sender_email = extract_sender_email(sender)
+
+                        # Envoyer à Make.com webhook
+                        makecom_success = send_makecom_webhook(
+                            subject=subject,
+                            delivery_time=pattern_result['delivery_time'],
+                            sender_email=sender_email,
+                            email_id=email_id
+                        )
+
+                        if makecom_success:
+                            app.logger.info(f"POLLER: Make.com webhook sent successfully for email {email_id}")
+                        else:
+                            app.logger.error(f"POLLER: Make.com webhook failed for email {email_id}")
+                    else:
+                        app.logger.debug(f"POLLER: Email {email_id} does not match Média Solution pattern")
+
+                except Exception as e_makecom:
+                    app.logger.error(f"POLLER: Exception during Média Solution pattern check for email {email_id}: {e_makecom}")
+                    # Continue processing other emails even if this fails
 
             except Exception as e_email:
                 app.logger.error(f"POLLER: Error processing email {email_num}: {e_email}")
