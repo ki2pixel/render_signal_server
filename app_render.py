@@ -353,12 +353,20 @@ def mark_email_as_read_imap(mail, email_num):
 
 def check_media_solution_pattern(subject, email_content):
     """
-    Vérifie si l'email correspond au pattern Média Solution spécifique.
+    Vérifie si l'email correspond au pattern Média Solution spécifique et extrait la fenêtre de livraison.
 
-    Conditions requises:
+    Conditions minimales:
     1. Contenu contient: "https://www.dropbox.com/scl/fo"
     2. Sujet contient: "Média Solution - Missions Recadrage - Lot"
-    3. Contenu contient: "à faire pour"
+
+    Détails d'extraction pour delivery_time:
+    - Pattern A (heure seule): "à faire pour" suivi d'une heure (variantes supportées):
+      * 11h51, 9h, 09h, 9:00, 09:5, 9h5 -> normalisé en "HHhMM"
+    - Pattern B (date + heure): "à faire pour le D/M/YYYY à HhMM?" ou "à faire pour le D/M/YYYY à H:MM"
+      * exemples: "le 03/09/2025 à 09h00", "le 3/9/2025 à 9h", "le 3/9/2025 à 9:05"
+      * normalisé en "le dd/mm/YYYY à HHhMM"
+    - Cas URGENCE: si le sujet contient "URGENCE", on ignore tout horaire présent dans le corps
+      et on met l'heure locale actuelle + 1h au format "HHhMM" (ex: "13h35").
 
     Returns: dict avec 'matches' (bool) et 'delivery_time' (str ou None)
     """
@@ -367,25 +375,101 @@ def check_media_solution_pattern(subject, email_content):
     if not subject or not email_content:
         return result
 
-    # Vérifier les 3 conditions
+    # Conditions principales
     condition1 = "https://www.dropbox.com/scl/fo" in email_content
     condition2 = "Média Solution - Missions Recadrage - Lot" in subject
-    condition3 = "à faire pour" in email_content
 
-    app.logger.debug(f"PATTERN_CHECK: Dropbox URL: {condition1}, Subject pattern: {condition2}, Delivery phrase: {condition3}")
+    # Si conditions principales non remplies, on sort
+    if not (condition1 and condition2):
+        app.logger.debug(f"PATTERN_CHECK: Dropbox URL: {condition1}, Subject pattern: {condition2}")
+        return result
 
-    if condition1 and condition2 and condition3:
-        # Extraire l'heure de livraison avec regex
-        # Pattern: "à faire pour" suivi d'espaces et de l'heure (format comme "11h38")
-        delivery_pattern = r'à faire pour\s+(\d{1,2}h\d{2})'
-        match = re.search(delivery_pattern, email_content, re.IGNORECASE)
-
-        if match:
-            result['delivery_time'] = match.group(1)
-            result['matches'] = True
-            app.logger.info(f"PATTERN_MATCH: Email matches Média Solution pattern. Delivery time: {result['delivery_time']}")
+    # --- Helpers de normalisation ---
+    def normalize_hhmm(hh_str: str, mm_str: str | None) -> str:
+        """Normalise heures/minutes en "HHhMM". Minutes par défaut à 00."""
+        try:
+            hh = int(hh_str)
+        except Exception:
+            hh = 0
+        if not mm_str:
+            mm = 0
         else:
-            app.logger.warning("PATTERN_CHECK: All conditions met but couldn't extract delivery time")
+            try:
+                mm = int(mm_str)
+            except Exception:
+                mm = 0
+        return f"{hh:02d}h{mm:02d}"
+
+    def normalize_date(d_str: str, m_str: str, y_str: str) -> str:
+        """Normalise D/M/YYYY en dd/mm/YYYY (zero-pad jour/mois)."""
+        try:
+            d = int(d_str)
+            m = int(m_str)
+            y = int(y_str)
+        except Exception:
+            return f"{d_str}/{m_str}/{y_str}"
+        return f"{d:02d}/{m:02d}/{y:04d}"
+
+    # --- Extraction de delivery_time ---
+    delivery_time_str = None
+
+    # 1) URGENCE: si le sujet contient "URGENCE", on ignore tout horaire présent dans le corps
+    if re.search(r"\bURGENCE\b", subject or "", re.IGNORECASE):
+        try:
+            now_local = datetime.now(TZ_FOR_POLLING)
+            one_hour_later = now_local + timedelta(hours=1)
+            delivery_time_str = f"{one_hour_later.hour:02d}h{one_hour_later.minute:02d}"
+            app.logger.info(f"PATTERN_MATCH: URGENCE detected, overriding delivery_time with now+1h: {delivery_time_str}")
+        except Exception as e_time:
+            app.logger.error(f"PATTERN_CHECK: Failed to compute URGENCE override time: {e_time}")
+    else:
+        # 2) Pattern B: Date + Heure (variantes)
+        #    Variante "h" -> minutes optionnelles
+        pattern_date_time_h = r"à faire pour\s+le\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+à\s+(?:à\s+)?(\d{1,2})h(\d{0,2})"
+        m_dth = re.search(pattern_date_time_h, email_content, re.IGNORECASE)
+        if m_dth:
+            d, m, y, hh, mm = m_dth.group(1), m_dth.group(2), m_dth.group(3), m_dth.group(4), m_dth.group(5)
+            date_norm = normalize_date(d, m, y)
+            time_norm = normalize_hhmm(hh, mm if mm else None)
+            delivery_time_str = f"le {date_norm} à {time_norm}"
+            app.logger.info(f"PATTERN_MATCH: Found date+time (h) delivery window: {delivery_time_str}")
+        else:
+            #    Variante ":" -> minutes obligatoires
+            pattern_date_time_colon = r"à faire pour\s+le\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+à\s+(?:à\s+)?(\d{1,2}):(\d{2})"
+            m_dtc = re.search(pattern_date_time_colon, email_content, re.IGNORECASE)
+            if m_dtc:
+                d, m, y, hh, mm = m_dtc.group(1), m_dtc.group(2), m_dtc.group(3), m_dtc.group(4), m_dtc.group(5)
+                date_norm = normalize_date(d, m, y)
+                time_norm = normalize_hhmm(hh, mm)
+                delivery_time_str = f"le {date_norm} à {time_norm}"
+                app.logger.info(f"PATTERN_MATCH: Found date+time (colon) delivery window: {delivery_time_str}")
+
+        # 3) Pattern A: Heure seule (variantes)
+        if not delivery_time_str:
+            # Variante "h" (minutes optionnelles), avec éventuel "à" superflu
+            pattern_time_h = r"à faire pour\s+(?:à\s+)?(\d{1,2})h(\d{0,2})"
+            m_th = re.search(pattern_time_h, email_content, re.IGNORECASE)
+            if m_th:
+                hh, mm = m_th.group(1), m_th.group(2)
+                delivery_time_str = normalize_hhmm(hh, mm if mm else None)
+                app.logger.info(f"PATTERN_MATCH: Found time-only (h) delivery window: {delivery_time_str}")
+            else:
+                # Variante ":" (minutes obligatoires)
+                pattern_time_colon = r"à faire pour\s+(?:à\s+)?(\d{1,2}):(\d{2})"
+                m_tc = re.search(pattern_time_colon, email_content, re.IGNORECASE)
+                if m_tc:
+                    hh, mm = m_tc.group(1), m_tc.group(2)
+                    delivery_time_str = normalize_hhmm(hh, mm)
+                    app.logger.info(f"PATTERN_MATCH: Found time-only (colon) delivery window: {delivery_time_str}")
+
+    if delivery_time_str:
+        result['delivery_time'] = delivery_time_str
+        result['matches'] = True
+        app.logger.info(
+            f"PATTERN_MATCH: Email matches Média Solution pattern. Delivery time: {result['delivery_time']}"
+        )
+    else:
+        app.logger.debug("PATTERN_CHECK: Base conditions met but no delivery_time pattern matched")
 
     return result
 
