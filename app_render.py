@@ -16,6 +16,31 @@ import ssl
 import hashlib
 import urllib3
 import re
+import unicodedata
+from bs4 import BeautifulSoup  # HTML parsing for resolving direct download links
+from urllib.parse import urlparse, urljoin
+try:
+    # Playwright is optional, enabled via env var ENABLE_HEADLESS_RESOLUTION=true
+    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError  # type: ignore
+    PLAYWRIGHT_AVAILABLE = True
+except Exception:
+    PLAYWRIGHT_AVAILABLE = False
+import threading as _threading
+
+# --- URL Providers Pattern ---
+# Détecte les liens de livraison pris en charge dans le corps de l'email
+# - Dropbox folder links
+# - FromSmash share links
+# - SwissTransfer download links
+# Utilise un regex compilé (insensible à la casse) pour robustesse et maintenabilité.
+URL_PROVIDERS_PATTERN = re.compile(
+    r"(https?://(?:www\.)?(?:"
+    r"dropbox\.com/scl/fo"            # Dropbox folder
+    r"|fromsmash\.com/[A-Za-z0-9_-]+" # FromSmash share id
+    r"|swisstransfer\.com/d/[A-Za-z0-9-]+" # SwissTransfer download id
+    r"))",
+    re.IGNORECASE,
+)
 
 try:
     from zoneinfo import ZoneInfo
@@ -30,6 +55,573 @@ except ImportError:
     REDIS_AVAILABLE = False
     # Logging at module level might not use app's logger config yet.
     # Standard logging can be used if needed here, or rely on app.logger later.
+
+
+# --- Helpers: Provider link extraction and resolution (FromSmash, SwissTransfer) ---
+def _detect_provider(url: str) -> str | None:
+    """Retourne le fournisseur à partir de l'URL ("dropbox"|"fromsmash"|"swisstransfer")."""
+    if not url:
+        return None
+    u = url.lower()
+    if "dropbox.com" in u:
+        return "dropbox"
+    if "fromsmash.com" in u:
+        return "fromsmash"
+    if "swisstransfer.com" in u:
+        return "swisstransfer"
+    return None
+
+
+def extract_provider_links_from_text(text: str) -> list[dict]:
+    """
+    Extrait toutes les URLs supportées présentes dans un texte via URL_PROVIDERS_PATTERN.
+
+    Retourne une liste de dicts: [{"provider": str, "raw_url": str}]
+    """
+    results = []
+    if not text:
+        return results
+    for m in URL_PROVIDERS_PATTERN.finditer(text):
+        raw = m.group(1)
+        provider = _detect_provider(raw)
+        if provider:
+            results.append({"provider": provider, "raw_url": raw})
+    return results
+
+
+def _http_get(url: str, timeout: int = 15) -> tuple[int | None, str]:
+    """Effectue une requête GET simple et retourne (status_code, text)."""
+    try:
+        headers = {
+            "User-Agent": "render-signal-server/1.0 (+https://example.local)"
+        }
+        resp = requests.get(url, headers=headers, timeout=timeout)
+        return resp.status_code, resp.text
+    except Exception as e:
+        logging.warning(f"RESOLVER: GET failed for {url}: {e}")
+        return None, ""
+
+
+def resolve_fromsmash_direct_url(landing_url: str) -> str | None:
+    """
+    Tente de déduire un lien de téléchargement direct à partir d'une landing page FromSmash.
+    Heuristique: parser le HTML et chercher une URL contenant "fromsmash.co/transfer/<id>/zip".
+    Retourne None si non trouvé.
+    """
+    status, html = _http_get(landing_url)
+    if not status or status >= 400 or not html:
+        return None
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        # Chercher des liens explicites
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if "fromsmash.co/transfer/" in href and "/zip/" in href:
+                # S'assurer que l'URL est absolue
+                return href if href.startswith("http") else urljoin(landing_url, href)
+        # Chercher dans les scripts/texte brut (certains sites injectent via JS)
+        text = soup.get_text("\n")
+        m = re.search(r'https?://[^\s\'\"]*fromsmash\.co/transfer/[^\s\'\"]*/zip/[^\s\'\"]*', text)
+        if m:
+            return m.group(0)
+    except Exception as e:
+        logging.warning(f"RESOLVER: FromSmash parse failed for {landing_url}: {e}")
+    return None
+
+
+def resolve_swisstransfer_direct_url(landing_url: str) -> str | None:
+    """
+    Tente de déduire un lien direct SwissTransfer en parsant la landing page
+    et en recherchant un href vers "/api/download/<uuid>". Conserve les paramètres si présents.
+    Retourne None si non trouvé.
+    """
+    status, html = _http_get(landing_url)
+    if not status or status >= 400 or not html:
+        return None
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        # 1) Lien direct explicite sous forme d'ancre
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if "/api/download/" in href:
+                return href if href.startswith("http") else urljoin(landing_url, href)
+        # 2) Parfois présent dans des scripts inline
+        for script in soup.find_all("script"):
+            content = script.string or ""
+            if not content:
+                continue
+            m = re.search(r"https?://[^\s\'\"]*swisstransfer\.com/api/download/[^\s\'\"]+", content)
+            if m:
+                return m.group(0)
+        # 3) Recherche texte globale
+        text = soup.get_text("\n")
+        m2 = re.search(r"https?://[^\s\'\"]*swisstransfer\.com/api/download/[^\s\'\"]+", text)
+        if m2:
+            return m2.group(0)
+    except Exception as e:
+        logging.warning(f"RESOLVER: SwissTransfer parse failed for {landing_url}: {e}")
+    return None
+
+
+def resolve_direct_download_url(provider: str, raw_url: str) -> str | None:
+    """Route la résolution selon le fournisseur. Retourne l'URL directe si trouvée, sinon None."""
+    try:
+        if provider == "fromsmash":
+            direct = resolve_fromsmash_direct_url(raw_url)
+            if direct:
+                return direct
+        if provider == "swisstransfer":
+            direct = resolve_swisstransfer_direct_url(raw_url)
+            if direct:
+                return direct
+        # Dropbox: un dossier n'a pas de lien direct unique (nécessite API / auth)
+        # Fallback headless si activé et pertinent
+        enable_headless = os.environ.get("ENABLE_HEADLESS_RESOLUTION", "false").lower() == "true"
+        if enable_headless and provider in {"fromsmash", "swisstransfer"}:
+            return resolve_with_headless_browser(provider, raw_url)
+        return None
+    except Exception as e:
+        logging.warning(f"RESOLVER: Failed to resolve direct URL for {provider} / {raw_url}: {e}")
+        return None
+
+
+# --- Headless resolution with Playwright (optional) ---
+_HEADLESS_LOCK = _threading.Lock()
+
+def _with_playwright(fn):
+    """Utility wrapper to start/stop playwright in a safe manner."""
+    if not PLAYWRIGHT_AVAILABLE:
+        return None
+    with _HEADLESS_LOCK:
+        try:
+            with sync_playwright() as p:
+                return fn(p)
+        except Exception as e:
+            logging.warning(f"HEADLESS: Playwright error: {e}")
+            return None
+
+
+def resolve_with_headless_browser(provider: str, raw_url: str) -> str | None:
+    """
+    Utilise un navigateur headless (Playwright) pour simuler le clic de téléchargement et
+    intercepter l'URL de téléchargement directe. Nécessite ENABLE_HEADLESS_RESOLUTION=true et Playwright installé.
+
+    Sécurité/Perf:
+    - Timeout global ~30s
+    - Un seul navigateur à la fois (lock)
+    - Aucun stockage de session
+    """
+    if not PLAYWRIGHT_AVAILABLE:
+        logging.info("HEADLESS: Playwright not available. Skipping headless resolution.")
+        return None
+
+    # Filtre d'URL basique pour éviter des domaines arbitraires
+    prov = _detect_provider(raw_url)
+    if prov not in {"fromsmash", "swisstransfer"}:
+        return None
+
+    # Charger la configuration depuis les variables d'environnement
+    try:
+        max_attempts = int(os.environ.get("HEADLESS_MAX_ATTEMPTS", "3"))
+    except Exception:
+        max_attempts = 3
+    try:
+        click_timeout_ms = int(os.environ.get("HEADLESS_CLICK_TIMEOUT_MS", "5000"))
+    except Exception:
+        click_timeout_ms = 5000
+    try:
+        total_timeout_ms = int(os.environ.get("HEADLESS_TOTAL_TIMEOUT_MS", "45000"))
+    except Exception:
+        total_timeout_ms = 45000
+    try:
+        scrolls_per_attempt = int(os.environ.get("HEADLESS_SCROLLS_PER_ATTEMPT", "1"))
+    except Exception:
+        scrolls_per_attempt = 1
+    trace_enabled = os.environ.get("HEADLESS_TRACE", "false").lower() == "true"
+
+    def run(p):
+        # Permet de "dés-automatiser" un peu l'empreinte navigateur
+        launch_args = [
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+        ]
+        headless_mode = os.environ.get("HEADLESS_MODE", "true").lower() != "false"
+        browser = p.chromium.launch(headless=headless_mode, args=launch_args)
+        try:
+            # UA réaliste pour limiter les 403 (bot-protection)
+            ua = os.environ.get("HEADLESS_USER_AGENT", (
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ))
+            context = browser.new_context(
+                user_agent=ua,
+                locale="fr-FR",
+                timezone_id=os.environ.get("HEADLESS_TZ", "Europe/Paris"),
+                color_scheme="light",
+                java_script_enabled=True,
+                extra_http_headers={
+                    "Accept-Language": os.environ.get("HEADLESS_ACCEPT_LANGUAGE", "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7"),
+                }
+            )
+            page = context.new_page()
+
+            # Collecte des requêtes réseau susceptibles d'être le téléchargement
+            captured_url = {"value": None}
+            candidates: list[str] = []
+            seen_urls = []  # pour le mode trace
+
+            # Fonction utilitaire: heuristique stricte pour n'accepter que des fichiers
+            FILE_CT_WHITELIST = (
+                "application/zip",
+                "application/octet-stream",
+                "application/x-zip-compressed",
+                "application/x-7z-compressed",
+                "application/x-tar",
+                "application/gzip",
+            )
+            URL_BLACKLIST_SUBSTR = (
+                "/customization/",
+                "/customization/logo/",
+                "/managedThemes/",
+                "/preview/",
+                "/thumbnail",
+                "/assets/",
+                "/fonts/",
+                ".svg",
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".webp",
+                ".ttf",
+                "theme.fromsmash.co",
+                "/processed/Managed/",
+                "promotional.storage.infomaniak.com",
+            )
+
+            def is_likely_file_download(url: str, resp) -> bool:
+                if any(part in url for part in URL_BLACKLIST_SUBSTR):
+                    return False
+                try:
+                    headers = resp.headers or {}
+                except Exception:
+                    headers = {}
+                ct = (headers.get("content-type", "") or "").lower()
+                cd = (headers.get("content-disposition", "") or "").lower()
+                # Exclure explicitement les images même si 'attachment'
+                if ct.startswith("image/"):
+                    return False
+                if "attachment" in cd:
+                    return True
+                if any(ct.startswith(w) for w in FILE_CT_WHITELIST):
+                    return True
+                # Whitelist d'URL indicative côté FromSmash (et éviter les domaines de thème)
+                if provider == "fromsmash" and ("/transfer/" in url) and ("/zip" in url or "/download" in url or "/archive" in url):
+                    return True
+                # SwissTransfer API pattern
+                if provider == "swisstransfer" and "/api/download/" in url:
+                    return True
+                return False
+
+            # Variante sans accès aux headers de réponse
+            def accept_url(url: str) -> bool:
+                if any(part in url for part in URL_BLACKLIST_SUBSTR):
+                    return False
+                lower = url.lower()
+                if any(lower.endswith(ext) for ext in (".svg", ".png", ".jpg", ".jpeg", ".webp", ".ttf")):
+                    return False
+                if provider == "fromsmash":
+                    return ("/transfer/" in url) and ("/zip" in url or "/download" in url or "/archive" in url or "/file/")
+                if provider == "swisstransfer":
+                    return "/api/download/" in url
+                return False
+
+            # Classement des URLs candidates par pertinence
+            def rank_url(url: str) -> int:
+                u = url.lower()
+                if provider == "fromsmash":
+                    if "/zip/" in u or u.endswith(".zip"):
+                        return 100
+                    if "/download" in u or "/archive" in u:
+                        return 90
+                    if "/file/" in u:
+                        return 50
+                    return 10
+                if provider == "swisstransfer":
+                    if "/api/download/" in u:
+                        return 100
+                    return 0
+                return 0
+
+            # Intercepter les réponses réseau (redirections, Content-Disposition)
+            def on_response(resp):
+                try:
+                    url = resp.url
+                    if trace_enabled:
+                        seen_urls.append(f"RESP {resp.status}: {url}")
+                    # Appliquer un filtrage strict fichier uniquement
+                    if is_likely_file_download(url, resp):
+                        if url not in candidates and accept_url(url):
+                            candidates.append(url)
+
+                    # Analyse des payloads JSON pour extraire un lien
+                    ctype = (resp.headers.get("content-type", "") or "").lower()
+                    if "application/json" in ctype and not captured_url["value"]:
+                        try:
+                            data = resp.json()
+                        except Exception:
+                            data = None
+                        
+                        def scan_json(obj):
+                            if not obj:
+                                return None
+                            if isinstance(obj, dict):
+                                for k, v in obj.items():
+                                    # Inspecter les champs texte susceptibles de contenir une URL
+                                    if isinstance(v, str):
+                                        s = v
+                                        if provider == "fromsmash" and ("fromsmash.co/transfer/" in s or "/transfer/" in s) and ("/zip" in s or "/download" in s or "/archive" in s):
+                                            return s
+                                        if provider == "swisstransfer" and ("swisstransfer.com" in s and "/api/download" in s):
+                                            return s
+                                    else:
+                                        found = scan_json(v)
+                                        if found:
+                                            return found
+                            elif isinstance(obj, list):
+                                for it in obj:
+                                    found = scan_json(it)
+                                    if found:
+                                        return found
+                            return None
+
+                        found_url = scan_json(data)
+                        if found_url and accept_url(found_url):
+                            if found_url not in candidates:
+                                candidates.append(found_url)
+                except Exception:
+                    pass
+
+            def on_request(req):
+                url = req.url
+                if trace_enabled:
+                    seen_urls.append(f"REQ: {url}")
+                # Ne capture pas au stade request; attend la réponse filtrée
+
+            page.on("request", on_request)
+            page.on("response", on_response)
+
+            # Navigation
+            # Timeouts
+            page.set_default_timeout(min(15000, total_timeout_ms))
+            page.goto(raw_url)
+            # Attendre l'idle réseau initial
+            try:
+                page.wait_for_load_state("networkidle", timeout=min(15000, total_timeout_ms))
+            except PlaywrightTimeoutError:
+                pass
+
+            # Tentative d'accepter les consentements au plus tôt (utile pour SwissTransfer)
+            if provider == "swisstransfer":
+                try:
+                    time.sleep(1.0)
+                    for consent_sel in [
+                        "text=J'accepte",
+                        "text=Tout accepter",
+                        "text=Accepter",
+                        "text=Accept all",
+                        "text=I agree",
+                    ]:
+                        elc = page.query_selector(consent_sel)
+                        if elc:
+                            elc.click()
+                            try:
+                                page.wait_for_load_state("networkidle", timeout=min(5000, total_timeout_ms))
+                            except PlaywrightTimeoutError:
+                                pass
+                            break
+                except Exception:
+                    pass
+
+            # Heuristiques de clics possibles
+            selectors = [
+                "text=Download",
+                "text=Télécharger",
+                "text=download",
+                "text=télécharger",
+                "button:has-text('Download')",
+                "button:has-text('Télécharger')",
+                "a:has-text('Download')",
+                "a:has-text('Télécharger')",
+                # ZIP direct anchors when present
+                "a[href*='/zip/']",
+                # Quelques sélecteurs spécifiques probables
+                "text=Télécharger tout",
+                "text=Download all",
+                "button:has-text('Télécharger tout')",
+                "button:has-text('Download all')",
+                # Variantes possibles
+                "role=button[name='Télécharger']",
+                "role=button[name='Download']",
+                # Consentements fréquents
+                "text=J'accepte",
+                "text=Tout accepter",
+                "text=Accepter",
+                "text=Accept all",
+                "text=I agree",
+            ]
+            # Faire plusieurs passes avec scrolls, en respectant une deadline globale
+            start_ts = time.monotonic()
+            def remaining_ms():
+                return max(0, int(total_timeout_ms - (time.monotonic() - start_ts) * 1000))
+
+            for attempt in range(max_attempts):
+                for sel in selectors:
+                    try:
+                        el = page.query_selector(sel)
+                        if el:
+                            # Essayer d'attendre un éventuel download
+                            try:
+                                with page.expect_download(timeout=max(1, min(click_timeout_ms, remaining_ms()))) as dl_info:
+                                    el.click()
+                                download = dl_info.value
+                                # Certaines versions n'exposent pas directement l'URL; tenter resp.url
+                                d_url = download.url or captured_url["value"]
+                                if d_url and accept_url(d_url):
+                                    if d_url not in candidates:
+                                        candidates.append(d_url)
+                            except PlaywrightTimeoutError:
+                                # Pas de download event; fallback simple
+                                el.click()
+                            # attendre réseau après clic
+                            try:
+                                page.wait_for_load_state("networkidle", timeout=max(1, min(10000, remaining_ms())))
+                            except PlaywrightTimeoutError:
+                                pass
+                            # Attendre une réponse correspondant aux patterns connus
+                            if not captured_url["value"]:
+                                try:
+                                    pattern = "/api/download/" if provider == "swisstransfer" else "/transfer/"
+                                    page.wait_for_response(lambda r: pattern in r.url, timeout=max(1, min(5000, remaining_ms())))
+                                except PlaywrightTimeoutError:
+                                    pass
+                    except Exception:
+                        continue
+
+                    if captured_url["value"]:
+                        break
+                if captured_url["value"]:
+                    break
+                # Scroll pour révéler d'autres éléments éventuels
+                for _ in range(max(0, scrolls_per_attempt)):
+                    try:
+                        page.mouse.wheel(0, 1200)
+                    except Exception:
+                        pass
+                # Tentative: cliquer tous les boutons/ancres visibles contenant des mots clés
+                try:
+                    if remaining_ms() > 0 and not captured_url["value"]:
+                        texts = ["télécharger", "download", "accepter", "accept"]
+                        # Boutons
+                        for b in page.query_selector_all("button"):
+                            try:
+                                label = (b.inner_text() or "").lower()
+                                if any(t in label for t in texts):
+                                    try:
+                                        with page.expect_download(timeout=max(1, min(click_timeout_ms, remaining_ms()))) as dl_info:
+                                            b.click()
+                                        d = dl_info.value
+                                        d_url = d.url or captured_url["value"]
+                                        if d_url:
+                                            captured_url["value"] = d_url
+                                    except PlaywrightTimeoutError:
+                                        b.click()
+                                    try:
+                                        page.wait_for_load_state("networkidle", timeout=max(1, min(5000, remaining_ms())))
+                                    except PlaywrightTimeoutError:
+                                        pass
+                                    if captured_url["value"]:
+                                        break
+                            except Exception:
+                                pass
+                        # Liens
+                        if not captured_url["value"]:
+                            for a in page.query_selector_all("a[href]"):
+                                try:
+                                    al = (a.inner_text() or "").lower()
+                                    if any(t in al for t in texts):
+                                        try:
+                                            with page.expect_download(timeout=max(1, min(click_timeout_ms, remaining_ms()))) as dl_info:
+                                                a.click()
+                                            d = dl_info.value
+                                            d_url = d.url or captured_url["value"]
+                                            if d_url:
+                                                captured_url["value"] = d_url
+                                        except PlaywrightTimeoutError:
+                                            a.click()
+                                        try:
+                                            page.wait_for_load_state("networkidle", timeout=max(1, min(5000, remaining_ms())))
+                                        except PlaywrightTimeoutError:
+                                            pass
+                                        if captured_url["value"]:
+                                            break
+                                except Exception:
+                                    pass
+                    
+                except Exception:
+                    pass
+                # Si deadline dépassée, on sort
+                if remaining_ms() <= 0:
+                    break
+
+            # Si pas capturé via clic, inspecter les <a> visibles
+            if not captured_url["value"]:
+                anchors = page.query_selector_all("a[href]")
+                for a in anchors:
+                    try:
+                        href = a.get_attribute("href") or ""
+                        if provider == "fromsmash" and ("/transfer/" in href and "/zip/" in href):
+                            # Essayer de cliquer pour obtenir l'URL signée finale via expect_download
+                            try:
+                                with page.expect_download(timeout=max(1, min(5000, total_timeout_ms))) as dl_info:
+                                    a.click()
+                                d = dl_info.value
+                                d_url = d.url or href
+                                if d_url and accept_url(d_url):
+                                    if d_url not in candidates:
+                                        candidates.append(d_url)
+                                    captured_url["value"] = d_url
+                                    break
+                            except PlaywrightTimeoutError:
+                                # Si pas d'event, utiliser l'href tel quel (s'il est déjà signé)
+                                if accept_url(href):
+                                    if href not in candidates:
+                                        candidates.append(href)
+                                    captured_url["value"] = href
+                                    break
+                        if provider == "swisstransfer" and "/api/download/" in href:
+                            captured_url["value"] = href
+                            break
+                    except Exception:
+                        continue
+
+            # Sélection finale: choisir la meilleure URL candidate selon le provider
+            direct = None
+            if candidates:
+                direct = sorted(candidates, key=rank_url, reverse=True)[0]
+            else:
+                direct = captured_url["value"]
+            if trace_enabled and not direct:
+                logging.info("HEADLESS_TRACE: no direct url captured; seen URLs:\n" + "\n".join(seen_urls[:200]))
+            return direct
+        finally:
+            try:
+                browser.close()
+            except Exception:
+                pass
+
+    return _with_playwright(run)
+
 
 app = Flask(__name__, template_folder='.', static_folder='static')
 # NOUVEAU: Une clé secrète est OBLIGATOIRE pour les sessions.
@@ -375,13 +967,37 @@ def check_media_solution_pattern(subject, email_content):
     if not subject or not email_content:
         return result
 
+    # Helpers de normalisation de texte (sans accents, en minuscule) pour des regex robustes
+    def normalize_text(s: str) -> str:
+        if not s:
+            return ""
+        # Supprime les accents et met en minuscule pour une comparaison robuste
+        nfkd = unicodedata.normalize('NFD', s)
+        no_accents = ''.join(ch for ch in nfkd if not unicodedata.combining(ch))
+        return no_accents.lower()
+
+    norm_subject = normalize_text(subject)
+
     # Conditions principales
-    condition1 = "https://www.dropbox.com/scl/fo" in email_content
-    condition2 = "Média Solution - Missions Recadrage - Lot" in subject
+    # 1) Présence d'au moins un lien de fournisseur supporté (Dropbox, FromSmash, SwissTransfer)
+    body_text = email_content or ""
+    condition1 = bool(URL_PROVIDERS_PATTERN.search(body_text)) or (
+        ("dropbox.com/scl/fo" in body_text)
+        or ("fromsmash.com/" in body_text.lower())
+        or ("swisstransfer.com/d/" in body_text.lower())
+    )
+    # 2) Sujet conforme
+    #    Tolérant: on accepte la chaîne exacte (avec accents) OU la présence des mots-clés dans le sujet normalisé
+    keywords_ok = all(token in norm_subject for token in [
+        "media solution", "missions recadrage", "lot"
+    ])
+    condition2 = ("Média Solution - Missions Recadrage - Lot" in (subject or "")) or keywords_ok
 
     # Si conditions principales non remplies, on sort
     if not (condition1 and condition2):
-        app.logger.debug(f"PATTERN_CHECK: Dropbox URL: {condition1}, Subject pattern: {condition2}")
+        app.logger.debug(
+            f"PATTERN_CHECK: Delivery URL present (dropbox/fromsmash/swisstransfer): {condition1}, Subject pattern: {condition2}"
+        )
         return result
 
     # --- Helpers de normalisation ---
@@ -414,7 +1030,7 @@ def check_media_solution_pattern(subject, email_content):
     delivery_time_str = None
 
     # 1) URGENCE: si le sujet contient "URGENCE", on ignore tout horaire présent dans le corps
-    if re.search(r"\bURGENCE\b", subject or "", re.IGNORECASE):
+    if re.search(r"\burgence\b", norm_subject or ""):
         try:
             now_local = datetime.now(TZ_FOR_POLLING)
             one_hour_later = now_local + timedelta(hours=1)
@@ -425,8 +1041,8 @@ def check_media_solution_pattern(subject, email_content):
     else:
         # 2) Pattern B: Date + Heure (variantes)
         #    Variante "h" -> minutes optionnelles
-        pattern_date_time_h = r"à faire pour\s+le\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+à\s+(?:à\s+)?(\d{1,2})h(\d{0,2})"
-        m_dth = re.search(pattern_date_time_h, email_content, re.IGNORECASE)
+        pattern_date_time_h = r"(?:à|a)\s+faire\s+pour\s+le\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+(?:à|a)\s+(?:(?:à|a)\s+)?(\d{1,2})h(\d{0,2})"
+        m_dth = re.search(pattern_date_time_h, email_content or "", re.IGNORECASE)
         if m_dth:
             d, m, y, hh, mm = m_dth.group(1), m_dth.group(2), m_dth.group(3), m_dth.group(4), m_dth.group(5)
             date_norm = normalize_date(d, m, y)
@@ -435,8 +1051,8 @@ def check_media_solution_pattern(subject, email_content):
             app.logger.info(f"PATTERN_MATCH: Found date+time (h) delivery window: {delivery_time_str}")
         else:
             #    Variante ":" -> minutes obligatoires
-            pattern_date_time_colon = r"à faire pour\s+le\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+à\s+(?:à\s+)?(\d{1,2}):(\d{2})"
-            m_dtc = re.search(pattern_date_time_colon, email_content, re.IGNORECASE)
+            pattern_date_time_colon = r"(?:à|a)\s+faire\s+pour\s+le\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+(?:à|a)\s+(?:(?:à|a)\s+)?(\d{1,2}):(\d{2})"
+            m_dtc = re.search(pattern_date_time_colon, email_content or "", re.IGNORECASE)
             if m_dtc:
                 d, m, y, hh, mm = m_dtc.group(1), m_dtc.group(2), m_dtc.group(3), m_dtc.group(4), m_dtc.group(5)
                 date_norm = normalize_date(d, m, y)
@@ -447,20 +1063,34 @@ def check_media_solution_pattern(subject, email_content):
         # 3) Pattern A: Heure seule (variantes)
         if not delivery_time_str:
             # Variante "h" (minutes optionnelles), avec éventuel "à" superflu
-            pattern_time_h = r"à faire pour\s+(?:à\s+)?(\d{1,2})h(\d{0,2})"
-            m_th = re.search(pattern_time_h, email_content, re.IGNORECASE)
+            pattern_time_h = r"(?:à|a)\s+faire\s+pour\s+(?:(?:à|a)\s+)?(\d{1,2})h(\d{0,2})"
+            m_th = re.search(pattern_time_h, email_content or "", re.IGNORECASE)
             if m_th:
                 hh, mm = m_th.group(1), m_th.group(2)
                 delivery_time_str = normalize_hhmm(hh, mm if mm else None)
                 app.logger.info(f"PATTERN_MATCH: Found time-only (h) delivery window: {delivery_time_str}")
             else:
                 # Variante ":" (minutes obligatoires)
-                pattern_time_colon = r"à faire pour\s+(?:à\s+)?(\d{1,2}):(\d{2})"
-                m_tc = re.search(pattern_time_colon, email_content, re.IGNORECASE)
+                pattern_time_colon = r"(?:à|a)\s+faire\s+pour\s+(?:(?:à|a)\s+)?(\d{1,2}):(\d{2})"
+                m_tc = re.search(pattern_time_colon, email_content or "", re.IGNORECASE)
                 if m_tc:
                     hh, mm = m_tc.group(1), m_tc.group(2)
                     delivery_time_str = normalize_hhmm(hh, mm)
                     app.logger.info(f"PATTERN_MATCH: Found time-only (colon) delivery window: {delivery_time_str}")
+
+        # 4) Fallback permissif: si toujours rien trouvé, tenter une heure isolée (sécurité: restreint aux formats attendus)
+        if not delivery_time_str:
+            m_fallback_h = re.search(r"\b(\d{1,2})h(\d{0,2})\b", email_content or "", re.IGNORECASE)
+            if m_fallback_h:
+                hh, mm = m_fallback_h.group(1), m_fallback_h.group(2)
+                delivery_time_str = normalize_hhmm(hh, mm if mm else None)
+                app.logger.info(f"PATTERN_MATCH: Fallback time (h) detected: {delivery_time_str}")
+            else:
+                m_fallback_colon = re.search(r"\b(\d{1,2}):(\d{2})\b", email_content or "")
+                if m_fallback_colon:
+                    hh, mm = m_fallback_colon.group(1), m_fallback_colon.group(2)
+                    delivery_time_str = normalize_hhmm(hh, mm)
+                    app.logger.info(f"PATTERN_MATCH: Fallback time (colon) detected: {delivery_time_str}")
 
     if delivery_time_str:
         result['delivery_time'] = delivery_time_str
@@ -651,6 +1281,24 @@ def check_new_emails_and_trigger_webhook():
                     except:
                         pass
 
+                # Extraire et résoudre les liens de livraison (Dropbox/FromSmash/SwissTransfer)
+                # Note: le scraping des pages publiques sert uniquement à découvrir un lien direct si visible dans le HTML.
+                # Si aucun lien direct n'est exposé côté public, "direct_url" restera None.
+                provider_links = extract_provider_links_from_text(full_email_content)
+                delivery_links = []
+                first_direct_url = None
+                for link in provider_links:
+                    provider = link["provider"]
+                    raw_url = link["raw_url"]
+                    direct_url = resolve_direct_download_url(provider, raw_url)
+                    delivery_links.append({
+                        "provider": provider,
+                        "raw_url": raw_url,
+                        "direct_url": direct_url
+                    })
+                    if not first_direct_url and direct_url:
+                        first_direct_url = direct_url
+
                 # Préparer le payload pour le webhook personnalisé (format requis + contenu complet)
                 payload_for_webhook = {
                     "microsoft_graph_email_id": email_id,  # Maintenir le nom pour compatibilité
@@ -658,7 +1306,10 @@ def check_new_emails_and_trigger_webhook():
                     "receivedDateTime": date_received,
                     "sender_address": sender,
                     "bodyPreview": body_preview,
-                    "email_content": full_email_content  # Contenu complet pour éviter la recherche IMAP
+                    "email_content": full_email_content,  # Contenu complet pour éviter la recherche IMAP
+                    # Nouveau: informations sur les liens de livraison détectés et résolus
+                    "delivery_links": delivery_links,
+                    "first_direct_download_url": first_direct_url,
                 }
 
                 # Déclencher le webhook personnalisé
@@ -877,7 +1528,12 @@ def start_background_tasks():
 
 # Le code ici est exécuté UNE SEULE FOIS par Gunicorn dans le processus maître
 # avant la création des workers. C'est l'endroit parfait pour lancer notre tâche unique.
-start_background_tasks()
+#
+# IMPORTANT pour les tests: ne démarre pas les threads si les tests sont en cours
+# (détecte 'PYTEST_CURRENT_TEST') ou si DISABLE_BACKGROUND_TASKS=1.
+if os.environ.get("DISABLE_BACKGROUND_TASKS") not in ("1", "true", "True") and \
+   os.environ.get("PYTEST_CURRENT_TEST") is None:
+    start_background_tasks()
 
 # Ce bloc ne sera JAMAIS exécuté par Gunicorn, mais il est utile pour le débogage local
 if __name__ == '__main__':
