@@ -4,3 +4,6 @@ Flask-Login
 requests
 redis>=4.0
 email-validator
+pytest>=7.0
+beautifulsoup4>=4.12
+playwright>=1.44.0
