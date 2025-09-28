@@ -844,13 +844,15 @@ else:
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL", REF_WEBHOOK_URL)
 MAKECOM_WEBHOOK_URL = os.environ.get("MAKECOM_WEBHOOK_URL", REF_MAKECOM_WEBHOOK_URL)
 MAKECOM_API_KEY = os.environ.get("MAKECOM_API_KEY", REF_MAKECOM_API_KEY)
+WEBHOOK_SSL_VERIFY = os.environ.get("WEBHOOK_SSL_VERIFY", "true").strip().lower() in ("1", "true", "yes", "on")
 
 app.logger.info(f"CFG WEBHOOK: Custom webhook URL configured to: {WEBHOOK_URL}")
 app.logger.info(f"CFG MAKECOM: Make.com webhook URL configured to: {MAKECOM_WEBHOOK_URL}")
-
-# Suppress SSL warnings for webhook calls (due to certificate hostname mismatch)
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-app.logger.warning("CFG WEBHOOK: SSL verification disabled for webhook calls due to certificate hostname mismatch")
+app.logger.info(f"CFG WEBHOOK: SSL verification = {WEBHOOK_SSL_VERIFY}")
+if not WEBHOOK_SSL_VERIFY:
+    # Suppress SSL warnings only if verification is explicitly disabled
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    app.logger.warning("CFG WEBHOOK: SSL verification DISABLED for webhook calls (development/legacy). Use valid certificates in production.")
 SENDER_OF_INTEREST_FOR_POLLING_RAW = os.environ.get("SENDER_OF_INTEREST_FOR_POLLING",
                                                     REF_SENDER_OF_INTEREST_FOR_POLLING)
 SENDER_LIST_FOR_POLLING = [e.strip().lower() for e in SENDER_OF_INTEREST_FOR_POLLING_RAW.split(',') if
@@ -1420,7 +1422,7 @@ def check_new_emails_and_trigger_webhook():
                         json=payload_for_webhook,
                         headers={'Content-Type': 'application/json'},
                         timeout=30,
-                        verify=False  # Disable SSL verification for hostname mismatch issues
+                        verify=WEBHOOK_SSL_VERIFY
                     )
 
                     # Vérifier la réponse du webhook
