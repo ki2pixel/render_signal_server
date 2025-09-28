@@ -657,6 +657,49 @@ if not REDIS_AVAILABLE:
     logging.warning(
         "CFG REDIS (module level): 'redis' Python library not installed. Redis-based features will be disabled or use fallbacks.")
 
+# --- Configuration des Webhooks Make.com et présence ---
+# Valeurs d'environnement attendues:
+# - MAKECOM_WEBHOOK_URL (URL par défaut existante)
+# - MAKECOM_API_KEY (clé API existante)
+# - PRESENCE (bool string: true/false)
+# - PRESENCE_TRUE_MAKE_WEBHOOK_URL (URL Make pour présence True) 
+# - PRESENCE_FALSE_MAKE_WEBHOOK_URL (URL Make pour présence False)
+#   Ces deux dernières peuvent être fournies sous forme:
+#   * URL complète: "https://hook.eu2.make.com/<token>"
+#   * OU alias de type "<token>@hook.eu2.make.com" (nous le normaliserons en URL HTTPS)
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    return str(val).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+def _normalize_make_webhook_url(value: str | None) -> str | None:
+    """
+    Accepte une valeur:
+    - URL complète Make: https://hook.eu2.make.com/<token>
+    - Forme email/alias: <token>@hook.eu2.make.com
+    Retourne toujours une URL HTTPS normalisée ou None si invalide.
+    """
+    if not value:
+        return None
+    v = value.strip()
+    if v.startswith("http://") or v.startswith("https://"):
+        return v
+    # forme alias token@hook.eu2.make.com
+    if "@hook.eu2.make.com" in v:
+        token = v.split("@", 1)[0].strip()
+        if token:
+            return f"https://hook.eu2.make.com/{token}"
+    # si seulement le token est fourni
+    if "/" not in v and " " not in v and "@" not in v:
+        return f"https://hook.eu2.make.com/{v}"
+    return None
+
+PRESENCE_FLAG = _env_bool("PRESENCE", False)
+PRESENCE_TRUE_MAKE_WEBHOOK_URL = _normalize_make_webhook_url(os.environ.get("PRESENCE_TRUE_MAKE_WEBHOOK_URL"))
+PRESENCE_FALSE_MAKE_WEBHOOK_URL = _normalize_make_webhook_url(os.environ.get("PRESENCE_FALSE_MAKE_WEBHOOK_URL"))
+
 # --- Configuration des Identifiants pour la page de connexion ---
 TRIGGER_PAGE_USER_ENV = os.environ.get("TRIGGER_PAGE_USER", REF_TRIGGER_PAGE_USER)
 TRIGGER_PAGE_PASSWORD_ENV = os.environ.get("TRIGGER_PAGE_PASSWORD", REF_TRIGGER_PAGE_PASSWORD)
@@ -1104,7 +1147,7 @@ def check_media_solution_pattern(subject, email_content):
     return result
 
 
-def send_makecom_webhook(subject, delivery_time, sender_email, email_id):
+def send_makecom_webhook(subject, delivery_time, sender_email, email_id, override_webhook_url: str | None = None, extra_payload: dict | None = None):
     """
     Envoie les données à Make.com webhook pour les emails Média Solution.
 
@@ -1122,6 +1165,11 @@ def send_makecom_webhook(subject, delivery_time, sender_email, email_id):
         "delivery_time": delivery_time,
         "sender_email": sender_email
     }
+    if extra_payload:
+        # merge sans écraser les clés principales si en conflit
+        for k, v in extra_payload.items():
+            if k not in payload:
+                payload[k] = v
 
     headers = {
         'Content-Type': 'application/json',
@@ -1131,8 +1179,13 @@ def send_makecom_webhook(subject, delivery_time, sender_email, email_id):
     try:
         app.logger.info(f"MAKECOM: Sending webhook for email {email_id} - Subject: '{subject}', Delivery: {delivery_time}, Sender: {sender_email}")
 
+        target_url = override_webhook_url or MAKECOM_WEBHOOK_URL
+        if not target_url:
+            app.logger.error("MAKECOM: No webhook URL configured (target_url is empty). Aborting send.")
+            return False
+
         response = requests.post(
-            MAKECOM_WEBHOOK_URL,
+            target_url,
             json=payload,
             headers=headers,
             timeout=30,
@@ -1281,6 +1334,54 @@ def check_new_emails_and_trigger_webhook():
                     except:
                         pass
 
+                # Indicateur d'exclusivité pour la logique "présence samedi"
+                presence_routed = False
+
+                # --- Détection spéciale "samedi" (sujet ET corps) pour webhook Make basé sur PRESENCE ---
+                try:
+                    def _normalize_no_accents_lower(s: str) -> str:
+                        if not s:
+                            return ""
+                        nfkd = unicodedata.normalize('NFD', s)
+                        no_accents = ''.join(ch for ch in nfkd if not unicodedata.combining(ch))
+                        return no_accents.lower()
+
+                    norm_subject = _normalize_no_accents_lower(subject)
+                    norm_body = _normalize_no_accents_lower(full_email_content)
+                    contains_samedi = ("samedi" in norm_subject) and ("samedi" in norm_body)
+
+                    if contains_samedi:
+                        # Choisir l'URL Make cible selon PRESENCE
+                        presence_url = PRESENCE_TRUE_MAKE_WEBHOOK_URL if PRESENCE_FLAG else PRESENCE_FALSE_MAKE_WEBHOOK_URL
+                        if presence_url:
+                            app.logger.info(
+                                f"PRESENCE: 'samedi' detected in subject and body for email {email_id}. PRESENCE={PRESENCE_FLAG}. Sending to dedicated Make webhook."
+                            )
+                            presence_sender_email = extract_sender_email(sender)
+                            send_ok = send_makecom_webhook(
+                                subject=subject,
+                                delivery_time=None,
+                                sender_email=presence_sender_email,
+                                email_id=email_id,
+                                override_webhook_url=presence_url,
+                                extra_payload={
+                                    "presence": PRESENCE_FLAG,
+                                    "detector": "samedi_presence",
+                                }
+                            )
+                            # Exclusivité: si une URL presence est configurée et appelée, on marque pour ne PAS exécuter le flux Make "Média Solution" classique.
+                            presence_routed = True
+                            if send_ok:
+                                app.logger.info(f"PRESENCE: Make.com webhook (presence) sent successfully for email {email_id}")
+                            else:
+                                app.logger.error(f"PRESENCE: Make.com webhook (presence) failed for email {email_id}")
+                        else:
+                            app.logger.warning(
+                                "PRESENCE: 'samedi' detected but PRESENCE_*_MAKE_WEBHOOK_URL not configured. Skipping presence webhook."
+                            )
+                except Exception as e_presence:
+                    app.logger.error(f"PRESENCE: Exception during samedi presence handling for email {email_id}: {e_presence}")
+
                 # Extraire et résoudre les liens de livraison (Dropbox/FromSmash/SwissTransfer)
                 # Note: le scraping des pages publiques sert uniquement à découvrir un lien direct si visible dans le HTML.
                 # Si aucun lien direct n'est exposé côté public, "direct_url" restera None.
@@ -1338,12 +1439,6 @@ def check_new_emails_and_trigger_webhook():
                             app.logger.error(f"POLLER: Webhook processing failed for email {email_id}. Response: {response_data.get('message', 'Unknown error')}")
                     else:
                         app.logger.error(f"POLLER: Webhook call FAILED for email {email_id}. Status: {webhook_response.status_code}, Response: {webhook_response.text[:200]}")
-
-                except requests.exceptions.RequestException as e_webhook:
-                    app.logger.error(f"POLLER: Exception during webhook call for email {email_id}: {e_webhook}")
-                    continue
-
-                # Vérifier le pattern Média Solution et envoyer à Make.com si nécessaire
                 try:
                     pattern_result = check_media_solution_pattern(subject, full_email_content)
 
@@ -1372,11 +1467,11 @@ def check_new_emails_and_trigger_webhook():
                     app.logger.error(f"POLLER: Exception during Média Solution pattern check for email {email_id}: {e_makecom}")
                     # Continue processing other emails even if this fails
 
-            except Exception as e_email:
-                app.logger.error(f"POLLER: Error processing email {email_num}: {e_email}")
-                continue
+        except Exception as e_email:
+            app.logger.error(f"POLLER: Error processing email {email_num}: {e_email}")
+            continue
 
-        return triggered_webhook_count
+    return triggered_webhook_count
 
     except Exception as e_general:
         app.logger.error(f"POLLER: Unexpected error in IMAP polling cycle: {e_general}", exc_info=True)
