@@ -1439,47 +1439,51 @@ def check_new_emails_and_trigger_webhook():
                             app.logger.error(f"POLLER: Webhook processing failed for email {email_id}. Response: {response_data.get('message', 'Unknown error')}")
                     else:
                         app.logger.error(f"POLLER: Webhook call FAILED for email {email_id}. Status: {webhook_response.status_code}, Response: {webhook_response.text[:200]}")
-                    if not presence_routed:
-                        try:
-                            pattern_result = check_media_solution_pattern(subject, full_email_content)
-
-                            if pattern_result['matches']:
-                                app.logger.info(f"POLLER: Email {email_id} matches Média Solution pattern")
-
-                                # Extraire l'adresse email de l'expéditeur
-                                sender_email = extract_sender_email(sender)
-
-                                # Envoyer à Make.com webhook
-                                makecom_success = send_makecom_webhook(
-                                    subject=subject,
-                                    delivery_time=pattern_result['delivery_time'],
-                                    sender_email=sender_email,
-                                    email_id=email_id
-                                )
-
-                                if makecom_success:
-                                    app.logger.info(f"POLLER: Make.com webhook sent successfully for email {email_id}")
-                                else:
-                                    app.logger.error(f"POLLER: Make.com webhook failed for email {email_id}")
-                            else:
-                                app.logger.debug(f"POLLER: Email {email_id} does not match Média Solution pattern")
-
-                        except Exception as e_makecom:
-                            app.logger.error(f"POLLER: Exception during Média Solution pattern check for email {email_id}: {e_makecom}")
-                            # Continue processing other emails even if this fails
-
-                except Exception as e_email:
-                    app.logger.error(f"POLLER: Error processing email {email_num}: {e_email}")
+                except requests.exceptions.RequestException as e_webhook:
+                    app.logger.error(f"POLLER: Exception during webhook call for email {email_id}: {e_webhook}")
                     continue
 
-            return triggered_webhook_count
-        except Exception as e_general:
-            app.logger.error(f"POLLER: Unexpected error in IMAP polling cycle: {e_general}", exc_info=True)
-            return triggered_webhook_count
-        finally:
-            close_imap_connection(mail)
+                # Flux Make « Média Solution » seulement si présence non routée
+                if not presence_routed:
+                    try:
+                        pattern_result = check_media_solution_pattern(subject, full_email_content)
 
-# ... rest of the code remains the same ...
+                        if pattern_result['matches']:
+                            app.logger.info(f"POLLER: Email {email_id} matches Média Solution pattern")
+
+                            # Extraire l'adresse email de l'expéditeur
+                            sender_email = extract_sender_email(sender)
+
+                            # Envoyer à Make.com webhook (URL par défaut)
+                            makecom_success = send_makecom_webhook(
+                                subject=subject,
+                                delivery_time=pattern_result['delivery_time'],
+                                sender_email=sender_email,
+                                email_id=email_id
+                            )
+
+                            if makecom_success:
+                                app.logger.info(f"POLLER: Make.com webhook sent successfully for email {email_id}")
+                            else:
+                                app.logger.error(f"POLLER: Make.com webhook failed for email {email_id}")
+                        else:
+                            app.logger.debug(f"POLLER: Email {email_id} does not match Média Solution pattern")
+
+                    except Exception as e_makecom:
+                        app.logger.error(f"POLLER: Exception during Média Solution pattern check for email {email_id}: {e_makecom}")
+                        # Continue processing other emails even if this fails
+
+            except Exception as e_email:
+                app.logger.error(f"POLLER: Error processing email {email_num}: {e_email}")
+                continue
+
+        # Fin de la boucle des emails
+        return triggered_webhook_count
+    except Exception as e_general:
+        app.logger.error(f"POLLER: Unexpected error in IMAP polling cycle: {e_general}", exc_info=True)
+        return triggered_webhook_count
+    finally:
+        close_imap_connection(mail)
 
 def background_email_poller():
     app.logger.info(f"BG_POLLER: Email polling thread started. TZ for schedule: {POLLING_TIMEZONE_STR}.")
