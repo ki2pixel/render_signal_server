@@ -1581,6 +1581,74 @@ def api_ping():
 
 # --- ROUTES UI PROTÉGÉES MISES À JOUR ---
 
+# --- Endpoint de test manuel des webhooks de présence (Make.com) ---
+@app.route('/api/test_presence_webhook', methods=['POST'])
+@login_required
+def api_test_presence_webhook():
+    """
+    Déclenche manuellement le webhook Make de présence.
+
+    Corps accepté (JSON ou form):
+    - presence: "true" | "false"
+
+    Réponses:
+    - 200: { success: true, presence: bool, used_url: str }
+    - 400: { success: false, message }
+    - 500: { success: false, message }
+    """
+    try:
+        # Support JSON ou form-urlencoded
+        presence_raw = None
+        if request.is_json:
+            body = request.get_json(silent=True) or {}
+            presence_raw = body.get('presence')
+        if presence_raw is None:
+            presence_raw = request.form.get('presence') or request.args.get('presence')
+
+        if presence_raw is None:
+            return jsonify({"success": False, "message": "Paramètre 'presence' requis (true|false)."}), 400
+
+        presence_str = str(presence_raw).strip().lower()
+        if presence_str not in ("true", "false", "1", "0", "yes", "no", "on", "off"):
+            return jsonify({"success": False, "message": "Valeur 'presence' invalide. Utilisez true|false."}), 400
+
+        presence_bool = presence_str in ("true", "1", "yes", "on")
+        target_url = PRESENCE_TRUE_MAKE_WEBHOOK_URL if presence_bool else PRESENCE_FALSE_MAKE_WEBHOOK_URL
+
+        if not target_url:
+            return jsonify({
+                "success": False,
+                "message": "URL de webhook de présence non configurée (PRESENCE_TRUE_MAKE_WEBHOOK_URL / PRESENCE_FALSE_MAKE_WEBHOOK_URL)"
+            }), 400
+
+        # Construire des valeurs de test sûres
+        test_subject = "[TEST] Présence Samedi - Déclenchement manuel"
+        test_sender_email = "test@render-signal-server.local"
+        test_email_id = f"manual-{int(time.time())}"
+
+        ok = send_makecom_webhook(
+            subject=test_subject,
+            delivery_time=None,
+            sender_email=test_sender_email,
+            email_id=test_email_id,
+            override_webhook_url=target_url,
+            extra_payload={
+                "presence": presence_bool,
+                "detector": "manual_test",
+            }
+        )
+
+        if ok:
+            app.logger.info(f"API_TEST_PRESENCE: Webhook envoyé avec succès (presence={presence_bool}) vers {target_url}")
+            return jsonify({"success": True, "presence": presence_bool, "used_url": target_url}), 200
+        else:
+            app.logger.error(f"API_TEST_PRESENCE: Échec d'envoi du webhook (presence={presence_bool}) vers {target_url}")
+            return jsonify({"success": False, "message": "Échec d'envoi du webhook vers Make."}), 500
+
+    except Exception as e:
+        app.logger.error(f"API_TEST_PRESENCE: Exception: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
 @app.route('/')
 @login_required
 def serve_trigger_page_main():
