@@ -1,3 +1,35 @@
+# --- Singleton lock to avoid multiple pollers across Gunicorn workers ---
+BG_LOCK_FH = None  # Keep a global reference so the lock is held for the process lifetime
+
+def acquire_singleton_lock(lock_path: str) -> bool:
+    """
+    Try to acquire an exclusive, non-blocking lock on a lock file.
+    Returns True if the lock is acquired, False otherwise.
+    """
+    global BG_LOCK_FH
+    try:
+        # Open file handle and try to lock it exclusively
+        BG_LOCK_FH = open(lock_path, "a+")
+        fcntl.flock(BG_LOCK_FH.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        BG_LOCK_FH.write(f"pid={os.getpid()}\n")
+        BG_LOCK_FH.flush()
+        return True
+    except BlockingIOError:
+        # Another process holds the lock
+        try:
+            if BG_LOCK_FH:
+                BG_LOCK_FH.close()
+        finally:
+            BG_LOCK_FH = None
+        return False
+    except Exception:
+        # On any unexpected error, do not start multiple pollers
+        try:
+            if BG_LOCK_FH:
+                BG_LOCK_FH.close()
+        finally:
+            BG_LOCK_FH = None
+        return False
 from flask import Flask, jsonify, request, send_from_directory, render_template, redirect, url_for
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 import os
@@ -19,6 +51,7 @@ import re
 import unicodedata
 from bs4 import BeautifulSoup  # HTML parsing for resolving direct download links
 from urllib.parse import urlparse, urljoin
+import fcntl  # File locking to ensure singleton background poller across processes
 try:
     # Playwright is optional, enabled via env var ENABLE_HEADLESS_RESOLUTION=true
     from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError  # type: ignore
@@ -1691,19 +1724,46 @@ def start_background_tasks():
     """
     app.logger.info("BACKGROUND_TASKS: Initialisation des tâches...")
 
+    # Ne jamais démarrer par défaut dans des environnements multi-workers.
+    # Exiger une intention explicite via ENABLE_BACKGROUND_TASKS.
+    enable_bg = os.environ.get("ENABLE_BACKGROUND_TASKS", "0").lower() in ("1", "true", "yes")
+    if not enable_bg:
+        app.logger.warning(
+            "BACKGROUND_TASKS: Désactivé (ENABLE_BACKGROUND_TASKS not set to 1/true). "
+            "Recommandation: ne pas exécuter le poller IMAP dans plusieurs workers Gunicorn (risque OOM/timeouts)."
+        )
+        return
+
+    # Assurer unicité inter-processus via un verrou fichier
+    lock_path = os.environ.get("BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock")
+    if not acquire_singleton_lock(lock_path):
+        app.logger.warning(
+            "BACKGROUND_TASKS: Un autre processus détient déjà le verrou du poller. "
+            "Ce processus n'initialisera PAS le thread de polling (prévention multi-instances)."
+        )
+        return
+
     # On vérifie si toutes les conditions sont remplies pour lancer le thread.
     if all([email_config_valid, SENDER_LIST_FOR_POLLING, WEBHOOK_URL]):
         email_poller_thread = threading.Thread(target=background_email_poller, name="EmailPollerThread", daemon=True)
         email_poller_thread.start()
-        app.logger.info("BACKGROUND_TASKS: Thread de polling des emails démarré.")
+        app.logger.info("BACKGROUND_TASKS: Thread de polling des emails démarré (singleton lock acquis).")
     else:
-        # Log détaillé si le thread ne peut pas démarré
+        # Log détaillé si le thread ne peut pas démarrer
         missing_configs = []
         if not email_config_valid: missing_configs.append("Configuration email invalide")
         if not SENDER_LIST_FOR_POLLING: missing_configs.append("Liste des expéditeurs vide")
         if not WEBHOOK_URL: missing_configs.append("URL du webhook manquante")
         app.logger.warning(
             f"BACKGROUND_TASKS: Thread de polling non démarré. Configuration incomplète : {', '.join(missing_configs)}")
+        # Libérer le verrou si on n'utilise pas le thread
+        global BG_LOCK_FH
+        try:
+            if BG_LOCK_FH:
+                fcntl.flock(BG_LOCK_FH.fileno(), fcntl.LOCK_UN)
+                BG_LOCK_FH.close()
+        finally:
+            BG_LOCK_FH = None
 
 
 # Le code ici est exécuté UNE SEULE FOIS par Gunicorn dans le processus maître
@@ -1713,6 +1773,9 @@ def start_background_tasks():
 # (détecte 'PYTEST_CURRENT_TEST') ou si DISABLE_BACKGROUND_TASKS=1.
 if os.environ.get("DISABLE_BACKGROUND_TASKS") not in ("1", "true", "True") and \
    os.environ.get("PYTEST_CURRENT_TEST") is None:
+    # Note: start_background_tasks() est désormais sécurisé par un verrou fichier et un flag explicite.
+    # En environnement Gunicorn multi-workers, configurez une seule instance avec ENABLE_BACKGROUND_TASKS=1
+    # OU utilisez un service séparé (recommandé) pour le poller.
     start_background_tasks()
 
 # Ce bloc ne sera JAMAIS exécuté par Gunicorn, mais il est utile pour le débogage local
