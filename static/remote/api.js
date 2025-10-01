@@ -16,6 +16,38 @@ export async function fetchStatus() {
             // Renvoie un objet d'erreur structuré pour que l'UI puisse l'afficher.
             return { error: true, data: errorData };
         }
+
+/**
+ * Récupère la fenêtre horaire actuelle des webhooks.
+ */
+export async function getWebhookTimeWindow() {
+    try {
+        const res = await fetch('/api/get_webhook_time_window');
+        const data = await res.json();
+        return { success: res.ok, data };
+    } catch (e) {
+        return { success: false, data: { message: 'Erreur de communication.' } };
+    }
+}
+
+/**
+ * Met à jour la fenêtre horaire des webhooks.
+ * @param {string} start ex: "11h30" ou "11:30"
+ * @param {string} end ex: "17h30" ou "17:30"
+ */
+export async function setWebhookTimeWindow(start, end) {
+    try {
+        const res = await fetch('/api/set_webhook_time_window', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ start, end })
+        });
+        const data = await res.json();
+        return { success: res.ok, data };
+    } catch (e) {
+        return { success: false, data: { message: 'Erreur de communication.' } };
+    }
+}
         // Renvoie les données en cas de succès.
         return { error: false, data: await response.json() };
     } catch (e) {
