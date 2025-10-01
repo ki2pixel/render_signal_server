@@ -733,6 +733,9 @@ PRESENCE_FLAG = _env_bool("PRESENCE", False)
 PRESENCE_TRUE_MAKE_WEBHOOK_URL = _normalize_make_webhook_url(os.environ.get("PRESENCE_TRUE_MAKE_WEBHOOK_URL"))
 PRESENCE_FALSE_MAKE_WEBHOOK_URL = _normalize_make_webhook_url(os.environ.get("PRESENCE_FALSE_MAKE_WEBHOOK_URL"))
 
+# Feature flag: allow disabling subject-group deduplication temporarily for testing
+ENABLE_SUBJECT_GROUP_DEDUP = _env_bool("ENABLE_SUBJECT_GROUP_DEDUP", True)
+
 # --- Configuration des Identifiants pour la page de connexion ---
 TRIGGER_PAGE_USER_ENV = os.environ.get("TRIGGER_PAGE_USER", REF_TRIGGER_PAGE_USER)
 TRIGGER_PAGE_PASSWORD_ENV = os.environ.get("TRIGGER_PAGE_PASSWORD", REF_TRIGGER_PAGE_PASSWORD)
@@ -1466,7 +1469,7 @@ def check_new_emails_and_trigger_webhook():
                     subject_group_id = ""
                     app.logger.error(f"DEDUP_GROUP: Failed to compute subject group for email {email_id}: {e_group}")
 
-                if subject_group_id and is_subject_group_processed(subject_group_id):
+                if ENABLE_SUBJECT_GROUP_DEDUP and subject_group_id and is_subject_group_processed(subject_group_id):
                     app.logger.info(
                         f"DEDUP_GROUP: Subject-group '{subject_group_id}' already processed. Skipping webhooks for email {email_id}.")
                     # Optionally mark as read to avoid reprocessing in next cycles
@@ -1709,7 +1712,7 @@ def check_new_emails_and_trigger_webhook():
                                 mark_email_as_read_imap(mail, email_num)
                             # Marquer le groupe de sujet comme traité (premier webhook de la série)
                             try:
-                                if subject_group_id:
+                                if ENABLE_SUBJECT_GROUP_DEDUP and subject_group_id:
                                     mark_subject_group_processed(subject_group_id)
                             except Exception:
                                 pass
@@ -1754,7 +1757,7 @@ def check_new_emails_and_trigger_webhook():
                                 app.logger.info(f"POLLER: Make.com webhook sent successfully for email {email_id}")
                                 # Marquer le groupe de sujet comme traité même si le webhook custom a échoué
                                 try:
-                                    if subject_group_id:
+                                    if ENABLE_SUBJECT_GROUP_DEDUP and subject_group_id:
                                         mark_subject_group_processed(subject_group_id)
                                 except Exception:
                                     pass
