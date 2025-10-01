@@ -769,10 +769,35 @@ def _parse_time_hhmm(s: str):
 WEBHOOKS_TIME_START = _parse_time_hhmm(WEBHOOKS_TIME_START_STR)
 WEBHOOKS_TIME_END = _parse_time_hhmm(WEBHOOKS_TIME_END_STR)
 
+# Fichier d'override persistant pour la fenêtre horaire (au sein de l'instance)
+TIME_WINDOW_OVERRIDE_FILE = BASE_DIR / 'debug' / 'webhook_time_window.json'
+
+def _reload_time_window_from_disk() -> None:
+    """Recharge les valeurs de fenêtre horaire depuis un fichier JSON si présent."""
+    global WEBHOOKS_TIME_START_STR, WEBHOOKS_TIME_END_STR, WEBHOOKS_TIME_START, WEBHOOKS_TIME_END
+    try:
+        if TIME_WINDOW_OVERRIDE_FILE.exists():
+            with open(TIME_WINDOW_OVERRIDE_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            s = (data.get('start') or '').strip()
+            e = (data.get('end') or '').strip()
+            if s or e:
+                ps = _parse_time_hhmm(s) if s else None
+                pe = _parse_time_hhmm(e) if e else None
+                if (ps is None and s) or (pe is None and e):
+                    # invalid content on disk; ignore
+                    return
+                WEBHOOKS_TIME_START_STR = s
+                WEBHOOKS_TIME_END_STR = e
+                WEBHOOKS_TIME_START = ps
+                WEBHOOKS_TIME_END = pe
+    except Exception as _:
+        # lecture échouée: ne pas bloquer la logique
+        pass
+
 def _is_within_time_window_local(now_dt: datetime) -> bool:
-    """Return True if now_dt (localized) falls within [start, end) when both are defined.
-    Supports wrap-around windows (e.g., 22:00 -> 06:00). If start/end invalid or absent, returns True (no constraint).
-    """
+    # Toujours tenter de recharger depuis disque pour prendre en compte un override récent
+    _reload_time_window_from_disk()
     if not (WEBHOOKS_TIME_START and WEBHOOKS_TIME_END):
         return True
     now_t = now_dt.time()
@@ -794,6 +819,13 @@ def _update_time_window(str_start: str | None, str_end: str | None) -> tuple[boo
         WEBHOOKS_TIME_END_STR = ""
         WEBHOOKS_TIME_START = None
         WEBHOOKS_TIME_END = None
+        try:
+            # Écrire un override vide pour signaler la désactivation
+            TIME_WINDOW_OVERRIDE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(TIME_WINDOW_OVERRIDE_FILE, 'w', encoding='utf-8') as f:
+                json.dump({"start": "", "end": ""}, f)
+        except Exception:
+            pass
         return True, "Time window cleared (no constraints)."
     # Both must be provided for enforcement
     if not s or not e:
@@ -806,6 +838,13 @@ def _update_time_window(str_start: str | None, str_end: str | None) -> tuple[boo
     WEBHOOKS_TIME_END_STR = e
     WEBHOOKS_TIME_START = ps
     WEBHOOKS_TIME_END = pe
+    # Persister l'override pour redémarrages/rechargements
+    try:
+        TIME_WINDOW_OVERRIDE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(TIME_WINDOW_OVERRIDE_FILE, 'w', encoding='utf-8') as f:
+            json.dump({"start": s, "end": e}, f)
+    except Exception:
+        pass
     return True, "Time window updated."
 
 # --- Configuration des Identifiants pour la page de connexion ---
@@ -1654,6 +1693,8 @@ def check_new_emails_and_trigger_webhook():
                                         extra_payload={
                                             "presence": PRESENCE_FLAG,
                                             "detector": "samedi_presence",
+                                            "webhooks_time_start": WEBHOOKS_TIME_START_STR or None,
+                                            "webhooks_time_end": WEBHOOKS_TIME_END_STR or None,
                                         }
                                     )
                                     # Exclusivité uniquement si un envoi a été tenté ce vendredi
