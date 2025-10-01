@@ -736,6 +736,12 @@ PRESENCE_FALSE_MAKE_WEBHOOK_URL = _normalize_make_webhook_url(os.environ.get("PR
 # Feature flag: allow disabling subject-group deduplication temporarily for testing
 ENABLE_SUBJECT_GROUP_DEDUP = _env_bool("ENABLE_SUBJECT_GROUP_DEDUP", True)
 
+# Webhook Make (désabonnement/journée/tarifs) configurable
+# Default to the latest provided URL so it works out-of-the-box; can be overridden in Render env
+DESABO_MAKE_WEBHOOK_URL = _normalize_make_webhook_url(
+    os.environ.get("DESABO_MAKE_WEBHOOK_URL") or "https://hook.eu2.make.com/2g65argnpyzgk3lz9t0xzt8tpuylcc8x"
+)
+
 # --- Configuration des Identifiants pour la page de connexion ---
 TRIGGER_PAGE_USER_ENV = os.environ.get("TRIGGER_PAGE_USER", REF_TRIGGER_PAGE_USER)
 TRIGGER_PAGE_PASSWORD_ENV = os.environ.get("TRIGGER_PAGE_PASSWORD", REF_TRIGGER_PAGE_PASSWORD)
@@ -1621,19 +1627,7 @@ def check_new_emails_and_trigger_webhook():
                     has_dropbox_request = "https://www.dropbox.com/request/" in (full_email_content or "").lower()
 
                     if has_required and not has_forbidden and has_dropbox_request:
-                        # Normaliser l'alias Make <token>@hook.eu2.make.com en URL https
-                        def _normalize_make_alias_url(u: str) -> str:
-                            if not u:
-                                return u
-                            if "://" in u:
-                                return u
-                            u = u.strip()
-                            if u.endswith("@hook.eu2.make.com"):
-                                token = u.split("@", 1)[0]
-                                return f"https://hook.eu2.make.com/{token}"
-                            return u
-
-                        target_make_url = _normalize_make_alias_url("8o4bz434qegu4lwyxc6ykry2s4j08sjh@hook.eu2.make.com")
+                        target_make_url = DESABO_MAKE_WEBHOOK_URL
                         sender_email_clean = extract_sender_email(sender)
 
                         app.logger.info(
