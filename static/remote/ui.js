@@ -1,5 +1,8 @@
 // static/remote/ui.js
 
+// Espace de noms global pour les helpers UI
+window.ui = window.ui || {};
+
 // Références aux éléments du DOM pour un accès facile
 const dom = {
     triggerButton: document.getElementById('triggerBtn'),
@@ -18,7 +21,7 @@ const dom = {
 };
 
 /** Met à jour l'ensemble de l'interface de statut avec les données reçues. */
-export function updateStatusUI(data) {
+window.ui.updateStatusUI = function (data) {
     if (!data) return;
 
     dom.statusContainer.style.display = 'block';
@@ -97,13 +100,13 @@ function updateLastSequenceSummary(data, workerStatusCode) {
 
 
 /** Affiche un message sous le bouton de vérification des emails. */
-export function displayEmailCheckMessage(message, isError = false) {
+window.ui.displayEmailCheckMessage = function (message, isError = false) {
     dom.emailStatusMsg.textContent = message;
     dom.emailStatusMsg.className = isError ? 'status-error' : 'status-success';
 }
 
 /** Gère l'état (activé/désactivé) des boutons d'action. */
-export function setButtonsDisabled(disabled) {
+window.ui.setButtonsDisabled = function (disabled) {
     dom.triggerButton.disabled = disabled;
     dom.checkEmailsButton.disabled = disabled;
 }
