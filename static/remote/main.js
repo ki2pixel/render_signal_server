@@ -1,7 +1,6 @@
 // static/remote/main.js
 
-import * as api from './api.js';
-import * as ui from './ui.js';
+// Les APIs sont disponibles via window.appAPI (défini dans api.js)
 
 const POLLING_INTERVAL = 3000; // 3 secondes
 let pollingIntervalId = null;
@@ -11,7 +10,7 @@ function startPolling() {
     if (pollingIntervalId) clearInterval(pollingIntervalId);
 
     const poll = async () => {
-        const result = await api.fetchStatus();
+        const result = await window.appAPI.fetchStatus();
 
         if(result.error && result.data.overall_status_text.includes("Authentification")) {
             ui.updateStatusUI(result.data);
@@ -44,7 +43,7 @@ async function handleTriggerClick() {
         overall_status_code_from_worker: 'progress'
     });
 
-    const result = await api.triggerWorkflow();
+    const result = await window.appAPI.triggerWorkflow();
 
     if (result.success) {
         ui.updateStatusUI({
@@ -68,7 +67,7 @@ async function handleEmailCheckClick() {
     ui.setButtonsDisabled(true);
     ui.displayEmailCheckMessage("Lancement de la vérification...", false);
 
-    const result = await api.checkEmails();
+    const result = await window.appAPI.checkEmails();
 
     if (result.success) {
         ui.displayEmailCheckMessage(result.data.message || 'Opération démarrée avec succès.', false);
@@ -101,7 +100,7 @@ function initialize() {
     const msgEl = document.getElementById('timeWindowMsg');
     if (startInput && endInput && saveBtn && msgEl) {
         // Load current values
-        api.getWebhookTimeWindow().then(res => {
+        window.appAPI.getWebhookTimeWindow().then(res => {
             if (res.success && res.data && res.data.success) {
                 if (res.data.webhooks_time_start) startInput.value = res.data.webhooks_time_start;
                 if (res.data.webhooks_time_end) endInput.value = res.data.webhooks_time_end;
@@ -114,7 +113,7 @@ function initialize() {
         saveBtn.addEventListener('click', async () => {
             const s = startInput.value.trim();
             const e = endInput.value.trim();
-            const res = await api.setWebhookTimeWindow(s, e);
+            const res = await window.appAPI.setWebhookTimeWindow(s, e);
             if (res.success && res.data && res.data.success) {
                 msgEl.textContent = `Sauvegardé. Fenêtre: ${res.data.webhooks_time_start || '—'} → ${res.data.webhooks_time_end || '—'}`;
                 msgEl.className = 'status-success';
