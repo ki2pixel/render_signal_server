@@ -64,9 +64,15 @@
             <div class="progress-bar-remote-container" id="progress-bar-remote-container">
                 <div class="progress-bar-remote" id="progress-bar-remote"></div>
             </div>
+            <div id="progressTextRemote"></div>
+            <div id="sequenceSummaryTitleRemote">Résumé Dernière Séquence</div>
+            <div id="sequenceSummaryRemote"></div>
+            <div id="downloadsTitle" style="display:none;">Derniers Téléchargements Locaux</div>
+            <ul id="recentDownloadsList"></ul>
+        </div>
 
         <!-- Réglages Webhooks - Fenêtre horaire -->
-        <div id="timeWindowContainer" style="margin-top:24px; padding:16px; border: 1px solid var(--cork-border-color); border-radius: 6px;">
+        <div id="timeWindowContainer" style="margin-top:24px; padding:16px; border: 1px solid var(--cork-border-color); border-radius: 6px; background-color: rgba(0,0,0,0.1);">
             <div style="font-weight:600; color: var(--cork-secondary-accent); margin-bottom:8px;">Fenêtre horaire des webhooks Make</div>
             <div style="display:flex; gap:12px; align-items:center; flex-wrap: wrap;">
                 <label for="webhooksTimeStart">Début</label>
@@ -77,12 +83,6 @@
             </div>
             <div id="timeWindowMsg" style="margin-top:8px; font-size:0.9em;"></div>
             <div style="margin-top:6px; color: var(--cork-text-secondary); font-size:0.85em;">Laissez les deux champs vides pour désactiver la contrainte.</div>
-        </div>
-            <div id="progressTextRemote"></div>
-            <div id="sequenceSummaryTitleRemote">Résumé Dernière Séquence</div>
-            <div id="sequenceSummaryRemote"></div>
-            <div id="downloadsTitle" style="display:none;">Derniers Téléchargements Locaux</div>
-            <ul id="recentDownloadsList"></ul>
         </div>
     </div>
 
