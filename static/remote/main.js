@@ -93,6 +93,37 @@ function initialize() {
 
     console.log("🚀 Télécommande initialisée.");
     startPolling();
+
+    // Time window UI wiring (if present)
+    const startInput = document.getElementById('webhooksTimeStart');
+    const endInput = document.getElementById('webhooksTimeEnd');
+    const saveBtn = document.getElementById('saveTimeWindowBtn');
+    const msgEl = document.getElementById('timeWindowMsg');
+    if (startInput && endInput && saveBtn && msgEl) {
+        // Load current values
+        api.getWebhookTimeWindow().then(res => {
+            if (res.success && res.data && res.data.success) {
+                if (res.data.webhooks_time_start) startInput.value = res.data.webhooks_time_start;
+                if (res.data.webhooks_time_end) endInput.value = res.data.webhooks_time_end;
+                msgEl.textContent = `Fenêtre actuelle: ${res.data.webhooks_time_start || '—'} → ${res.data.webhooks_time_end || '—'} (${res.data.timezone || ''})`;
+            } else {
+                msgEl.textContent = 'Impossible de charger la fenêtre horaire.';
+            }
+        });
+
+        saveBtn.addEventListener('click', async () => {
+            const s = startInput.value.trim();
+            const e = endInput.value.trim();
+            const res = await api.setWebhookTimeWindow(s, e);
+            if (res.success && res.data && res.data.success) {
+                msgEl.textContent = `Sauvegardé. Fenêtre: ${res.data.webhooks_time_start || '—'} → ${res.data.webhooks_time_end || '—'}`;
+                msgEl.className = 'status-success';
+            } else {
+                msgEl.textContent = res.data && res.data.message ? res.data.message : 'Erreur de sauvegarde.';
+                msgEl.className = 'status-error';
+            }
+        });
+    }
 }
 
 // Lance l'initialisation quand le DOM est prêt.
