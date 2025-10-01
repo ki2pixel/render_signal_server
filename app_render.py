@@ -770,7 +770,7 @@ WEBHOOKS_TIME_START = _parse_time_hhmm(WEBHOOKS_TIME_START_STR)
 WEBHOOKS_TIME_END = _parse_time_hhmm(WEBHOOKS_TIME_END_STR)
 
 # Fichier d'override persistant pour la fenêtre horaire (au sein de l'instance)
-TIME_WINDOW_OVERRIDE_FILE = BASE_DIR / 'debug' / 'webhook_time_window.json'
+TIME_WINDOW_OVERRIDE_FILE = Path(__file__).resolve().parent / 'debug' / 'webhook_time_window.json'
 
 def _reload_time_window_from_disk() -> None:
     """Recharge les valeurs de fenêtre horaire depuis un fichier JSON si présent."""
