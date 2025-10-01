@@ -64,6 +64,20 @@
             <div class="progress-bar-remote-container" id="progress-bar-remote-container">
                 <div class="progress-bar-remote" id="progress-bar-remote"></div>
             </div>
+
+        <!-- Réglages Webhooks - Fenêtre horaire -->
+        <div id="timeWindowContainer" style="margin-top:24px; padding:16px; border: 1px solid var(--cork-border-color); border-radius: 6px;">
+            <div style="font-weight:600; color: var(--cork-secondary-accent); margin-bottom:8px;">Fenêtre horaire des webhooks Make</div>
+            <div style="display:flex; gap:12px; align-items:center; flex-wrap: wrap;">
+                <label for="webhooksTimeStart">Début</label>
+                <input id="webhooksTimeStart" type="text" placeholder="ex: 11h30 ou 11:30" style="padding:8px; border-radius:4px; border:1px solid var(--cork-border-color); background: transparent; color: var(--cork-text-primary);"/>
+                <label for="webhooksTimeEnd">Fin</label>
+                <input id="webhooksTimeEnd" type="text" placeholder="ex: 17h30 ou 17:30" style="padding:8px; border-radius:4px; border:1px solid var(--cork-border-color); background: transparent; color: var(--cork-text-primary);"/>
+                <button id="saveTimeWindowBtn" class="action-button" style="width:auto; padding:10px 16px;">💾 Enregistrer</button>
+            </div>
+            <div id="timeWindowMsg" style="margin-top:8px; font-size:0.9em;"></div>
+            <div style="margin-top:6px; color: var(--cork-text-secondary); font-size:0.85em;">Laissez les deux champs vides pour désactiver la contrainte.</div>
+        </div>
             <div id="progressTextRemote"></div>
             <div id="sequenceSummaryTitleRemote">Résumé Dernière Séquence</div>
             <div id="sequenceSummaryRemote"></div>
