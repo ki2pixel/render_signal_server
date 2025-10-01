@@ -1347,46 +1347,60 @@ def is_subject_group_processed(group_id: str) -> bool:
     """Check subject-group deduplication using Redis when available, else in-memory."""
     if not group_id:
         return False
+    # Scope by current month (YYYY-MM) so dedup resets each month
+    def _monthly_scope_group_id(gid: str) -> str:
+        try:
+            now_local = datetime.now(TZ_FOR_POLLING)
+        except Exception:
+            now_local = datetime.now()
+        month_prefix = now_local.strftime('%Y-%m')
+        return f"{month_prefix}:{gid}"
+
+    scoped_id = _monthly_scope_group_id(group_id) if ENABLE_SUBJECT_GROUP_DEDUP else group_id
     if redis_client:
         try:
             # Prefer TTL-based key if configured
             if SUBJECT_GROUP_TTL_SECONDS > 0:
-                ttl_key = SUBJECT_GROUP_REDIS_PREFIX + group_id
+                ttl_key = SUBJECT_GROUP_REDIS_PREFIX + scoped_id
                 val = redis_client.get(ttl_key)
                 if val is not None:
                     return True
             # Fallback/back-compat: set membership
-            return bool(redis_client.sismember(PROCESSED_SUBJECT_GROUPS_REDIS_KEY, group_id))
+            return bool(redis_client.sismember(PROCESSED_SUBJECT_GROUPS_REDIS_KEY, scoped_id))
         except Exception as e_redis:
             app.logger.error(f"REDIS_DEDUP: Error checking subject group '{group_id}': {e_redis}. Assuming NOT processed.")
             return False
     # Fallback in-memory (process-local only)
-    return group_id in SUBJECT_GROUPS_MEMORY
+    return scoped_id in SUBJECT_GROUPS_MEMORY
 
 
 def mark_subject_group_processed(group_id: str) -> bool:
     """Mark subject-group as processed in Redis when available, else in-memory."""
     if not group_id:
         return False
+    # Scope by current month (YYYY-MM) so dedup resets each month
+    def _monthly_scope_group_id(gid: str) -> str:
+        try:
+            now_local = datetime.now(TZ_FOR_POLLING)
+        except Exception:
+            now_local = datetime.now()
+        month_prefix = now_local.strftime('%Y-%m')
+        return f"{month_prefix}:{gid}"
+
+    scoped_id = _monthly_scope_group_id(group_id) if ENABLE_SUBJECT_GROUP_DEDUP else group_id
     if redis_client:
         try:
-            # Always add to legacy set for visibility/back-compat
-            redis_client.sadd(PROCESSED_SUBJECT_GROUPS_REDIS_KEY, group_id)
-            # If TTL configured, set an expiring key so the group can reset after TTL
             if SUBJECT_GROUP_TTL_SECONDS > 0:
-                ttl_key = SUBJECT_GROUP_REDIS_PREFIX + group_id
-                # set value '1' and expiry; use setex or set with ex
-                try:
-                    redis_client.set(ttl_key, "1", ex=SUBJECT_GROUP_TTL_SECONDS, nx=True)
-                except Exception:
-                    # Fallback: set+expire two-step
-                    redis_client.set(ttl_key, "1")
-                    redis_client.expire(ttl_key, SUBJECT_GROUP_TTL_SECONDS)
+                ttl_key = SUBJECT_GROUP_REDIS_PREFIX + scoped_id
+                # value content is irrelevant; only presence matters; set PX expiry
+                redis_client.set(ttl_key, 1, ex=SUBJECT_GROUP_TTL_SECONDS)
+            # Back-compat set membership for observability
+            redis_client.sadd(PROCESSED_SUBJECT_GROUPS_REDIS_KEY, scoped_id)
             return True
         except Exception as e_redis:
-            app.logger.error(f"REDIS_DEDUP: Error adding subject group '{group_id}': {e_redis}")
+            app.logger.error(f"REDIS_DEDUP: Error marking subject group '{group_id}': {e_redis}")
             return False
-    SUBJECT_GROUPS_MEMORY.add(group_id)
+    SUBJECT_GROUPS_MEMORY.add(scoped_id)
     return True
 
 
@@ -1636,6 +1650,10 @@ def check_new_emails_and_trigger_webhook():
                                 "detector": "desabonnement_journee_tarifs",
                                 # Inclure le corps texte complet, comme demandé
                                 "email_content": full_email_content,
+                                # Aliases façon Mailhook pour simplifier le mapping côté Make
+                                "Text": full_email_content,
+                                "Subject": subject,
+                                "Sender": {"email": sender_email_clean},
                             },
                         )
 
