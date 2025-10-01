@@ -18,6 +18,13 @@ function waitFor(predicateFn, { timeoutMs = 8000, intervalMs = 100 } = {}) {
                     clearInterval(timer);
                     resolve(false);
                 }
+            } catch (e) {
+                clearInterval(timer);
+                reject(e);
+            }
+        }, intervalMs);
+    });
+}
 
 function loadScriptOnce(src) {
     return new Promise((resolve, reject) => {
@@ -36,13 +43,6 @@ function loadScriptOnce(src) {
         s.onload = () => { s.dataset.loaded = 'true'; resolve(true); };
         s.onerror = () => resolve(false);
         document.head.appendChild(s);
-    });
-}
-            } catch (e) {
-                clearInterval(timer);
-                reject(e);
-            }
-        }, intervalMs);
     });
 }
 
