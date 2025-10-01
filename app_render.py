@@ -1971,6 +1971,24 @@ def api_ping():
 
 # --- ROUTES UI PROTÉGÉES MISES À JOUR ---
 
+@app.route('/api/get_local_status', methods=['GET'])
+@login_required
+def api_get_local_status():
+    """
+    Retourne un snapshot minimal de statut pour l'UI distante.
+    Si aucun worker local n'est branché, on renvoie un état 'idle'.
+    """
+    payload = {
+        "overall_status_text": "En attente...",
+        "status_text": "Système prêt.",
+        "overall_status_code_from_worker": "idle",
+        "progress_current": 0,
+        "progress_total": 0,
+        "current_step_name": "",
+        "recent_downloads": [],
+    }
+    return jsonify(payload), 200
+
 # --- Webhook Time Window API ---
 @app.route('/api/get_webhook_time_window', methods=['GET'])
 @login_required
