@@ -818,6 +818,20 @@ app.logger.info(f"CFG PATH: Signal directory for ephemeral files: {SIGNAL_DIR.re
 REDIS_URL = os.environ.get('REDIS_URL')
 redis_client = None
 PROCESSED_EMAIL_IDS_REDIS_KEY = "processed_email_ids_set_v1"
+PROCESSED_SUBJECT_GROUPS_REDIS_KEY = "processed_subject_groups_set_v1"
+
+# In-memory fallback for subject-group dedup when Redis is unavailable
+SUBJECT_GROUPS_MEMORY: set[str] = set()
+
+# TTL for subject-group deduplication (in days). If > 0 and Redis is available, we set
+# a per-group key with an expiration so a new series can re-trigger after TTL.
+try:
+    SUBJECT_GROUP_TTL_DAYS = int(os.environ.get("SUBJECT_GROUP_TTL_DAYS", "0").strip() or "0")
+except Exception:
+    SUBJECT_GROUP_TTL_DAYS = 0
+SUBJECT_GROUP_TTL_SECONDS = max(0, SUBJECT_GROUP_TTL_DAYS * 24 * 60 * 60)
+# Per-group Redis key prefix (we use string keys with TTL instead of a set).
+SUBJECT_GROUP_REDIS_PREFIX = "subject_group_processed_v1:"
 
 if REDIS_AVAILABLE and REDIS_URL:
     try:
@@ -840,6 +854,8 @@ elif REDIS_AVAILABLE and not REDIS_URL:
 else:
     app.logger.warning("CFG REDIS: 'redis' Python library not installed. Redis will not be used; fallbacks may apply.")
     redis_client = None
+
+app.logger.info(f"CFG DEDUP: SUBJECT_GROUP_TTL_DAYS={SUBJECT_GROUP_TTL_DAYS} (seconds={SUBJECT_GROUP_TTL_SECONDS}) — applies only when Redis is available.")
 
 # --- Configuration IMAP Email ---
 EMAIL_ADDRESS = os.environ.get('EMAIL_ADDRESS', REF_EMAIL_ADDRESS)
@@ -1259,6 +1275,118 @@ def mark_email_id_as_processed_redis(email_id):
         return False
 
 
+def _normalize_no_accents_lower_trim(s: str) -> str:
+    """
+    Remove accents, lowercase, collapse whitespace, and strip.
+    """
+    if not s:
+        return ""
+    nfkd = unicodedata.normalize('NFD', s)
+    no_accents = ''.join(ch for ch in nfkd if not unicodedata.combining(ch))
+    lowered = no_accents.lower()
+    # Collapse spaces and common unicode spaces
+    lowered = re.sub(r"\s+", " ", lowered).strip()
+    return lowered
+
+
+def _strip_leading_reply_prefixes(subject_norm: str) -> str:
+    """
+    Remove leading reply/forward prefixes like 're:', 'fw:', 'fwd:', 'ré:', possibly repeated,
+    and optional 'confirmation :' tokens that sometimes appear before the actual subject.
+    The input must already be normalized (lower, no accents).
+    """
+    s = subject_norm
+    # remove multiple prefixes
+    while True:
+        new_s = re.sub(r"^(re|fw|fwd|rv|tr)\s*:\s*", "", s)
+        # also commonly seen token 'confirmation :'
+        new_s = re.sub(r"^confirmation\s*:\s*", "", new_s)
+        if new_s == s:
+            break
+        s = new_s
+    return s.strip()
+
+
+def generate_subject_group_id(subject: str) -> str:
+    """
+    Generate a stable subject-group identifier so that emails that belong to the same
+    conversation/thread (same business intent) only trigger webhooks once.
+
+    Heuristic:
+    - Normalize subject (remove accents, lowercase, collapse spaces)
+    - Strip leading reply/forward prefixes (re:, fwd:, ...), and 'confirmation :'
+    - If it looks like a Média Solution subject with a 'lot <num>' number, use a canonical key
+      'media_solution_missions_recadrage_lot_<num>'
+    - Else, if any 'lot <num>' is present, use 'lot_<num>' as group
+    - Else, fallback to a hash of the normalized subject
+    """
+    norm = _normalize_no_accents_lower_trim(subject)
+    core = _strip_leading_reply_prefixes(norm)
+
+    # Try to extract lot number
+    m_lot = re.search(r"\blot\s+(\d+)\b", core)
+    lot_part = m_lot.group(1) if m_lot else None
+
+    # Detect Média Solution Missions Recadrage keywords
+    is_media_solution = all(tok in core for tok in ["media solution", "missions recadrage", "lot"]) if core else False
+
+    if is_media_solution and lot_part:
+        return f"media_solution_missions_recadrage_lot_{lot_part}"
+    if lot_part:
+        return f"lot_{lot_part}"
+
+    # Fallback: hash the core subject
+    subject_hash = hashlib.md5(core.encode("utf-8")).hexdigest()
+    return f"subject_hash_{subject_hash}"
+
+
+def is_subject_group_processed(group_id: str) -> bool:
+    """Check subject-group deduplication using Redis when available, else in-memory."""
+    if not group_id:
+        return False
+    if redis_client:
+        try:
+            # Prefer TTL-based key if configured
+            if SUBJECT_GROUP_TTL_SECONDS > 0:
+                ttl_key = SUBJECT_GROUP_REDIS_PREFIX + group_id
+                val = redis_client.get(ttl_key)
+                if val is not None:
+                    return True
+            # Fallback/back-compat: set membership
+            return bool(redis_client.sismember(PROCESSED_SUBJECT_GROUPS_REDIS_KEY, group_id))
+        except Exception as e_redis:
+            app.logger.error(f"REDIS_DEDUP: Error checking subject group '{group_id}': {e_redis}. Assuming NOT processed.")
+            return False
+    # Fallback in-memory (process-local only)
+    return group_id in SUBJECT_GROUPS_MEMORY
+
+
+def mark_subject_group_processed(group_id: str) -> bool:
+    """Mark subject-group as processed in Redis when available, else in-memory."""
+    if not group_id:
+        return False
+    if redis_client:
+        try:
+            # Always add to legacy set for visibility/back-compat
+            redis_client.sadd(PROCESSED_SUBJECT_GROUPS_REDIS_KEY, group_id)
+            # If TTL configured, set an expiring key so the group can reset after TTL
+            if SUBJECT_GROUP_TTL_SECONDS > 0:
+                ttl_key = SUBJECT_GROUP_REDIS_PREFIX + group_id
+                # set value '1' and expiry; use setex or set with ex
+                try:
+                    redis_client.set(ttl_key, "1", ex=SUBJECT_GROUP_TTL_SECONDS, nx=True)
+                except Exception:
+                    # Fallback: set+expire two-step
+                    redis_client.set(ttl_key, "1")
+                    redis_client.expire(ttl_key, SUBJECT_GROUP_TTL_SECONDS)
+            return True
+        except Exception as e_redis:
+            app.logger.error(f"REDIS_DEDUP: Error adding subject group '{group_id}': {e_redis}")
+            return False
+    SUBJECT_GROUPS_MEMORY.add(group_id)
+    return True
+
+
 # --- Fonctions de Polling des Emails IMAP ---
 
 
@@ -1331,6 +1459,22 @@ def check_new_emails_and_trigger_webhook():
 
                 app.logger.debug(f"POLLER: Processing email {email_num} - Subject: '{subject[:50]}...', From: {sender}")
 
+                # --- Subject-group deduplication: prevent multiple webhooks for similar threads ---
+                try:
+                    subject_group_id = generate_subject_group_id(subject)
+                except Exception as e_group:
+                    subject_group_id = ""
+                    app.logger.error(f"DEDUP_GROUP: Failed to compute subject group for email {email_id}: {e_group}")
+
+                if subject_group_id and is_subject_group_processed(subject_group_id):
+                    app.logger.info(
+                        f"DEDUP_GROUP: Subject-group '{subject_group_id}' already processed. Skipping webhooks for email {email_id}.")
+                    # Optionally mark as read to avoid reprocessing in next cycles
+                    mark_email_as_read_imap(mail, email_num)
+                    # Also mark the individual email (redis) to prevent loops if present
+                    mark_email_id_as_processed_redis(email_id)
+                    continue
+
                 # Vérifier si l'expéditeur est dans la liste des expéditeurs d'intérêt
                 sender_email = sender.lower()
                 is_from_monitored_sender = any(monitored_sender in sender_email for monitored_sender in SENDER_LIST_FOR_POLLING)
@@ -1371,6 +1515,8 @@ def check_new_emails_and_trigger_webhook():
 
                 # Indicateur d'exclusivité pour la logique "présence samedi"
                 presence_routed = False
+                # Indicateur d'exclusivité pour le nouveau webhook "désabonnement/journée/tarifs habituels"
+                desabo_routed = False
 
                 # --- Détection spéciale "samedi" (sujet ET corps) pour webhook Make basé sur PRESENCE ---
                 try:
@@ -1386,36 +1532,129 @@ def check_new_emails_and_trigger_webhook():
                     contains_samedi = ("samedi" in norm_subject) and ("samedi" in norm_body)
 
                     if contains_samedi:
-                        # Choisir l'URL Make cible selon PRESENCE
-                        presence_url = PRESENCE_TRUE_MAKE_WEBHOOK_URL if PRESENCE_FLAG else PRESENCE_FALSE_MAKE_WEBHOOK_URL
-                        if presence_url:
+                        # Restriction: n'envoyer les webhooks présence/absence que le VENDREDI (weekday=4)
+                        now_local = datetime.now(TZ_FOR_POLLING)
+                        is_friday = now_local.weekday() == 4  # 0=Mon … 4=Fri
+                        if not is_friday:
                             app.logger.info(
-                                f"PRESENCE: 'samedi' detected in subject and body for email {email_id}. PRESENCE={PRESENCE_FLAG}. Sending to dedicated Make webhook."
+                                f"PRESENCE: 'samedi' detected for email {email_id} but today is not Friday (weekday={now_local.weekday()}). "
+                                "Presence webhooks are restricted to Fridays. Skipping."
                             )
-                            presence_sender_email = extract_sender_email(sender)
-                            send_ok = send_makecom_webhook(
-                                subject=subject,
-                                delivery_time=None,
-                                sender_email=presence_sender_email,
-                                email_id=email_id,
-                                override_webhook_url=presence_url,
-                                extra_payload={
-                                    "presence": PRESENCE_FLAG,
-                                    "detector": "samedi_presence",
-                                }
-                            )
-                            # Exclusivité: si une URL presence est configurée et appelée, on marque pour ne PAS exécuter le flux Make "Média Solution" classique.
-                            presence_routed = True
-                            if send_ok:
-                                app.logger.info(f"PRESENCE: Make.com webhook (presence) sent successfully for email {email_id}")
-                            else:
-                                app.logger.error(f"PRESENCE: Make.com webhook (presence) failed for email {email_id}")
                         else:
-                            app.logger.warning(
-                                "PRESENCE: 'samedi' detected but PRESENCE_*_MAKE_WEBHOOK_URL not configured. Skipping presence webhook."
-                            )
+                            # Choisir l'URL Make cible selon PRESENCE
+                            presence_url = PRESENCE_TRUE_MAKE_WEBHOOK_URL if PRESENCE_FLAG else PRESENCE_FALSE_MAKE_WEBHOOK_URL
+                            if presence_url:
+                                app.logger.info(
+                                    f"PRESENCE: 'samedi' detected on Friday for email {email_id}. PRESENCE={PRESENCE_FLAG}. "
+                                    "Sending to dedicated Make webhook (Friday restriction satisfied)."
+                                )
+                                presence_sender_email = extract_sender_email(sender)
+                                send_ok = send_makecom_webhook(
+                                    subject=subject,
+                                    delivery_time=None,
+                                    sender_email=presence_sender_email,
+                                    email_id=email_id,
+                                    override_webhook_url=presence_url,
+                                    extra_payload={
+                                        "presence": PRESENCE_FLAG,
+                                        "detector": "samedi_presence",
+                                    }
+                                )
+                                # Exclusivité uniquement si un envoi a été tenté ce vendredi
+                                presence_routed = True
+                                if send_ok:
+                                    app.logger.info(f"PRESENCE: Make.com webhook (presence) sent successfully for email {email_id}")
+                                else:
+                                    app.logger.error(f"PRESENCE: Make.com webhook (presence) failed for email {email_id}")
+                            else:
+                                app.logger.warning(
+                                    "PRESENCE: 'samedi' detected on Friday but PRESENCE_*_MAKE_WEBHOOK_URL not configured. Skipping presence webhook."
+                                )
                 except Exception as e_presence:
                     app.logger.error(f"PRESENCE: Exception during samedi presence handling for email {email_id}: {e_presence}")
+
+                # --- Nouveau déclencheur: corps contient "Se désabonner", "journée", "tarifs habituels";
+                #     n'inclut PAS certains mots; et contient une URL Dropbox de type /request/ ---
+                try:
+                    def _normalize_no_accents_lower_v2(s: str) -> str:
+                        if not s:
+                            return ""
+                        nfkd = unicodedata.normalize('NFD', s)
+                        no_accents = ''.join(ch for ch in nfkd if not unicodedata.combining(ch))
+                        return no_accents.lower()
+
+                    norm_body2 = _normalize_no_accents_lower_v2(full_email_content)
+
+                    required_terms = [
+                        "se desabonner",  # "Se désabonner" sans accents
+                        "journee",        # "journée"
+                        "tarifs habituels",
+                    ]
+                    forbidden_terms = [
+                        "annulation",
+                        "facturation",
+                        "facture",
+                        "moment",
+                        "reference client",
+                        "total ht",
+                    ]
+
+                    has_required = all(term in norm_body2 for term in required_terms)
+                    has_forbidden = any(term in norm_body2 for term in forbidden_terms)
+                    has_dropbox_request = "https://www.dropbox.com/request/" in (full_email_content or "").lower()
+
+                    if has_required and not has_forbidden and has_dropbox_request:
+                        # Normaliser l'alias Make <token>@hook.eu2.make.com en URL https
+                        def _normalize_make_alias_url(u: str) -> str:
+                            if not u:
+                                return u
+                            if "://" in u:
+                                return u
+                            u = u.strip()
+                            if u.endswith("@hook.eu2.make.com"):
+                                token = u.split("@", 1)[0]
+                                return f"https://hook.eu2.make.com/{token}"
+                            return u
+
+                        target_make_url = _normalize_make_alias_url("8o4bz434qegu4lwyxc6ykry2s4j08sjh@hook.eu2.make.com")
+                        sender_email_clean = extract_sender_email(sender)
+
+                        app.logger.info(
+                            f"DESABO: Conditions matched for email {email_id}. Sending Make webhook to {target_make_url}"
+                        )
+
+                        send_ok = send_makecom_webhook(
+                            subject=subject,
+                            delivery_time=None,
+                            sender_email=sender_email_clean,
+                            email_id=email_id,
+                            override_webhook_url=target_make_url,
+                            extra_payload={
+                                "detector": "desabonnement_journee_tarifs",
+                                # Inclure le corps texte complet, comme demandé
+                                "email_content": full_email_content,
+                            },
+                        )
+
+                        # Activer l'exclusivité vis-à-vis du flux Média Solution si tentative d'envoi
+                        desabo_routed = True
+                        if send_ok:
+                            app.logger.info(
+                                f"DESABO: Make.com webhook sent successfully for email {email_id}"
+                            )
+                            try:
+                                if subject_group_id:
+                                    mark_subject_group_processed(subject_group_id)
+                            except Exception:
+                                pass
+                        else:
+                            app.logger.error(
+                                f"DESABO: Make.com webhook failed for email {email_id}"
+                            )
+                except Exception as e_desabo:
+                    app.logger.error(
+                        f"DESABO: Exception during unsubscribe/journee/tarifs handling for email {email_id}: {e_desabo}"
+                    )
 
                 # Extraire et résoudre les liens de livraison (Dropbox/FromSmash/SwissTransfer)
                 # Note: le scraping des pages publiques sert uniquement à découvrir un lien direct si visible dans le HTML.
@@ -1468,8 +1707,12 @@ def check_new_emails_and_trigger_webhook():
                             if mark_email_id_as_processed_redis(email_id):
                                 triggered_webhook_count += 1
                                 mark_email_as_read_imap(mail, email_num)
-                            else:
-                                app.logger.error(f"POLLER: CRITICAL - Failed to mark email {email_id} as processed in Redis.")
+                            # Marquer le groupe de sujet comme traité (premier webhook de la série)
+                            try:
+                                if subject_group_id:
+                                    mark_subject_group_processed(subject_group_id)
+                            except Exception:
+                                pass
                         else:
                             app.logger.error(f"POLLER: Webhook processing failed for email {email_id}. Response: {response_data.get('message', 'Unknown error')}")
                     else:
@@ -1488,8 +1731,8 @@ def check_new_emails_and_trigger_webhook():
                     app.logger.error(f"POLLER: Exception during webhook call for email {email_id}: {e_webhook}")
                     continue
 
-                # Flux Make « Média Solution » seulement si présence non routée
-                if not presence_routed:
+                # Flux Make « Média Solution » seulement si aucun routage exclusif n'a eu lieu
+                if not (presence_routed or desabo_routed):
                     try:
                         pattern_result = check_media_solution_pattern(subject, full_email_content)
 
@@ -1509,6 +1752,12 @@ def check_new_emails_and_trigger_webhook():
 
                             if makecom_success:
                                 app.logger.info(f"POLLER: Make.com webhook sent successfully for email {email_id}")
+                                # Marquer le groupe de sujet comme traité même si le webhook custom a échoué
+                                try:
+                                    if subject_group_id:
+                                        mark_subject_group_processed(subject_group_id)
+                                except Exception:
+                                    pass
                             else:
                                 app.logger.error(f"POLLER: Make.com webhook failed for email {email_id}")
                         else:
