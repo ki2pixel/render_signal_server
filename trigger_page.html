@@ -86,9 +86,9 @@
         </div>
     </div>
 
-    <!-- NOUVELLE FAÇON D'APPELER LES SCRIPTS -->
-    <!-- Flask va maintenant chercher ces fichiers dans le dossier 'static' -->
-    <script src="{{ url_for('static', filename='remote/main.js') }}" type="module"></script>
+    <!-- Chargement des scripts JavaScript -->
+    <script src="{{ url_for('static', filename='remote/api.js') }}"></script>
+    <script src="{{ url_for('static', filename='remote/main.js') }}"></script>
 
 </body>
 </html>
