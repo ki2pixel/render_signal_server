@@ -5,6 +5,47 @@
 const POLLING_INTERVAL = 3000; // 3 secondes
 let pollingIntervalId = null;
 
+// Attends jusqu'à ce qu'une condition soit vraie (ou timeout)
+function waitFor(predicateFn, { timeoutMs = 8000, intervalMs = 100 } = {}) {
+    return new Promise((resolve, reject) => {
+        const start = Date.now();
+        const timer = setInterval(() => {
+            try {
+                if (predicateFn()) {
+                    clearInterval(timer);
+                    resolve(true);
+                } else if (Date.now() - start > timeoutMs) {
+                    clearInterval(timer);
+                    resolve(false);
+                }
+
+function loadScriptOnce(src) {
+    return new Promise((resolve, reject) => {
+        // Already loaded?
+        const existing = Array.from(document.scripts).find(s => s.src && s.src.includes(src));
+        if (existing) {
+            if (existing.dataset.loaded === 'true') return resolve(true);
+            existing.addEventListener('load', () => resolve(true));
+            existing.addEventListener('error', () => resolve(false));
+            return;
+        }
+        const s = document.createElement('script');
+        s.src = src;
+        s.async = false; // preserve order
+        s.dataset.loaded = 'false';
+        s.onload = () => { s.dataset.loaded = 'true'; resolve(true); };
+        s.onerror = () => resolve(false);
+        document.head.appendChild(s);
+    });
+}
+            } catch (e) {
+                clearInterval(timer);
+                reject(e);
+            }
+        }, intervalMs);
+    });
+}
+
 /** Démarre le polling périodique du statut. */
 function startPolling() {
     if (pollingIntervalId) clearInterval(pollingIntervalId);
@@ -99,9 +140,24 @@ function initialize() {
     const saveBtn = document.getElementById('saveTimeWindowBtn');
     const msgEl = document.getElementById('timeWindowMsg');
     if (startInput && endInput && saveBtn && msgEl) {
-        // Load current values
-        if (window.appAPI && typeof window.appAPI.getWebhookTimeWindow === 'function') {
-            window.appAPI.getWebhookTimeWindow().then(res => {
+        (async () => {
+            let ready = (window.appAPI && typeof window.appAPI.getWebhookTimeWindow === 'function');
+            if (!ready) {
+                // Essaie de charger api.js dynamiquement si indisponible
+                await loadScriptOnce('/static/remote/api.js');
+                ready = (window.appAPI && typeof window.appAPI.getWebhookTimeWindow === 'function');
+                if (!ready) {
+                    // Patiente un peu plus si nécessaire
+                    ready = await waitFor(() => (window.appAPI && typeof window.appAPI.getWebhookTimeWindow === 'function'), { timeoutMs: 5000 });
+                }
+            }
+            try {
+                if (!ready) {
+                    console.warn('appAPI.getWebhookTimeWindow indisponible (timeout)');
+                    msgEl.textContent = 'API non prête. Rechargez la page (Ctrl+Shift+R).';
+                    return;
+                }
+                const res = await window.appAPI.getWebhookTimeWindow();
                 if (res.success && res.data && res.data.success) {
                     if (res.data.webhooks_time_start) startInput.value = res.data.webhooks_time_start;
                     if (res.data.webhooks_time_end) endInput.value = res.data.webhooks_time_end;
@@ -109,11 +165,11 @@ function initialize() {
                 } else {
                     msgEl.textContent = 'Impossible de charger la fenêtre horaire.';
                 }
-            });
-        } else {
-            console.warn('appAPI.getWebhookTimeWindow indisponible');
-            msgEl.textContent = 'API non prête. Rechargez la page (Ctrl+Shift+R).';
-        }
+            } catch (e) {
+                console.error('Erreur chargement fenêtre horaire:', e);
+                msgEl.textContent = 'Erreur de chargement de la fenêtre horaire.';
+            }
+        })();
 
         saveBtn.addEventListener('click', async () => {
             const s = startInput.value.trim();
