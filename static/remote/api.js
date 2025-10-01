@@ -1,10 +1,13 @@
 // static/remote/api.js
 
+// Création d'un espace de noms pour nos fonctions API
+window.appAPI = window.appAPI || {};
+
 /**
  * Interroge le backend pour obtenir le statut du worker local.
  * @returns {Promise<object|null>} Les données de statut ou null en cas d'erreur.
  */
-export async function fetchStatus() {
+window.appAPI.fetchStatus = async function() {
     try {
         const response = await fetch(`/api/get_local_status`);
         if (!response.ok) {
@@ -20,7 +23,7 @@ export async function fetchStatus() {
 /**
  * Récupère la fenêtre horaire actuelle des webhooks.
  */
-export async function getWebhookTimeWindow() {
+window.appAPI.getWebhookTimeWindow = async function() {
     try {
         const res = await fetch('/api/get_webhook_time_window');
         const data = await res.json();
@@ -35,7 +38,7 @@ export async function getWebhookTimeWindow() {
  * @param {string} start ex: "11h30" ou "11:30"
  * @param {string} end ex: "17h30" ou "17:30"
  */
-export async function setWebhookTimeWindow(start, end) {
+window.appAPI.setWebhookTimeWindow = async function(start, end) {
     try {
         const res = await fetch('/api/set_webhook_time_window', {
             method: 'POST',
@@ -67,7 +70,7 @@ export async function setWebhookTimeWindow(start, end) {
  * Envoie la commande pour déclencher le workflow sur le worker local.
  * @returns {Promise<object>} Un objet indiquant le succès ou l'échec de l'envoi.
  */
-export async function triggerWorkflow() {
+window.appAPI.triggerWorkflow = async function() {
     try {
         const response = await fetch('/api/trigger_local_workflow', {
             method: 'POST',
@@ -89,7 +92,7 @@ export async function triggerWorkflow() {
  * Demande au backend de lancer la vérification des emails.
  * @returns {Promise<object>} Un objet indiquant le succès ou l'échec de la demande.
  */
-export async function checkEmails() {
+window.appAPI.checkEmails = async function() {
     try {
         const response = await fetch('/api/check_emails_and_download', { method: 'POST' });
         const data = await response.json();
