@@ -1637,10 +1637,10 @@ def check_new_emails_and_trigger_webhook():
                                         app.logger.info(f"PRESENCE: Make.com webhook (presence) sent successfully for email {email_id}")
                                     else:
                                         app.logger.error(f"PRESENCE: Make.com webhook (presence) failed for email {email_id}")
-                            else:
-                                app.logger.warning(
-                                    "PRESENCE: 'samedi' detected on Friday but PRESENCE_*_MAKE_WEBHOOK_URL not configured. Skipping presence webhook."
-                                )
+                                else:
+                                    app.logger.warning(
+                                        "PRESENCE: 'samedi' detected on Friday but PRESENCE_*_MAKE_WEBHOOK_URL not configured. Skipping presence webhook."
+                                    )
                 except Exception as e_presence:
                     app.logger.error(f"PRESENCE: Exception during samedi presence handling for email {email_id}: {e_presence}")
 
