@@ -742,6 +742,47 @@ DESABO_MAKE_WEBHOOK_URL = _normalize_make_webhook_url(
     os.environ.get("DESABO_MAKE_WEBHOOK_URL") or "https://hook.eu2.make.com/2g65argnpyzgk3lz9t0xzt8tpuylcc8x"
 )
 
+# --- Global time window for Make webhooks (DESABO + PRESENCE) ---
+# Two ENV variables expected (optional). When both are set, we enforce the time window [start, end) in local timezone.
+# Format examples: "11h30", "08h00", "17:45" (both separators supported). If invalid, the constraint is ignored.
+WEBHOOKS_TIME_START_STR = os.environ.get("WEBHOOKS_TIME_START", "").strip()
+WEBHOOKS_TIME_END_STR = os.environ.get("WEBHOOKS_TIME_END", "").strip()
+
+def _parse_time_hhmm(s: str):
+    """Parse 'HHhMM' or 'HH:MM' string into a datetime.time. Returns None if invalid."""
+    if not s:
+        return None
+    try:
+        s = s.strip().lower().replace("h", ":")
+        m = re.match(r"^(\d{1,2}):(\d{2})$", s)
+        if not m:
+            return None
+        hh = int(m.group(1))
+        mm = int(m.group(2))
+        if not (0 <= hh <= 23 and 0 <= mm <= 59):
+            return None
+        from datetime import time as _time
+        return _time(hh, mm)
+    except Exception:
+        return None
+
+WEBHOOKS_TIME_START = _parse_time_hhmm(WEBHOOKS_TIME_START_STR)
+WEBHOOKS_TIME_END = _parse_time_hhmm(WEBHOOKS_TIME_END_STR)
+
+def _is_within_time_window_local(now_dt: datetime) -> bool:
+    """Return True if now_dt (localized) falls within [start, end) when both are defined.
+    Supports wrap-around windows (e.g., 22:00 -> 06:00). If start/end invalid or absent, returns True (no constraint).
+    """
+    if not (WEBHOOKS_TIME_START and WEBHOOKS_TIME_END):
+        return True
+    now_t = now_dt.time()
+    start = WEBHOOKS_TIME_START
+    end = WEBHOOKS_TIME_END
+    if start <= end:
+        return start <= now_t < end
+    # Wrap-around across midnight
+    return (now_t >= start) or (now_t < end)
+
 # --- Configuration des Identifiants pour la page de connexion ---
 TRIGGER_PAGE_USER_ENV = os.environ.get("TRIGGER_PAGE_USER", REF_TRIGGER_PAGE_USER)
 TRIGGER_PAGE_PASSWORD_ENV = os.environ.get("TRIGGER_PAGE_PASSWORD", REF_TRIGGER_PAGE_PASSWORD)
@@ -1564,31 +1605,38 @@ def check_new_emails_and_trigger_webhook():
                                 "Presence webhooks are restricted to Fridays. Skipping."
                             )
                         else:
-                            # Choisir l'URL Make cible selon PRESENCE
-                            presence_url = PRESENCE_TRUE_MAKE_WEBHOOK_URL if PRESENCE_FLAG else PRESENCE_FALSE_MAKE_WEBHOOK_URL
-                            if presence_url:
+                            # Vérifier contrainte horaire globale avant tout envoi Make
+                            now_local = datetime.now(TZ_FOR_POLLING)
+                            if not _is_within_time_window_local(now_local):
                                 app.logger.info(
-                                    f"PRESENCE: 'samedi' detected on Friday for email {email_id}. PRESENCE={PRESENCE_FLAG}. "
-                                    "Sending to dedicated Make webhook (Friday restriction satisfied)."
+                                    f"PRESENCE: Time window not satisfied for email {email_id} (now={now_local.strftime('%H:%M')}, window={WEBHOOKS_TIME_START_STR or 'unset'}-{WEBHOOKS_TIME_END_STR or 'unset'}). Skipping."
                                 )
-                                presence_sender_email = extract_sender_email(sender)
-                                send_ok = send_makecom_webhook(
-                                    subject=subject,
-                                    delivery_time=None,
-                                    sender_email=presence_sender_email,
-                                    email_id=email_id,
-                                    override_webhook_url=presence_url,
-                                    extra_payload={
-                                        "presence": PRESENCE_FLAG,
-                                        "detector": "samedi_presence",
-                                    }
-                                )
-                                # Exclusivité uniquement si un envoi a été tenté ce vendredi
-                                presence_routed = True
-                                if send_ok:
-                                    app.logger.info(f"PRESENCE: Make.com webhook (presence) sent successfully for email {email_id}")
-                                else:
-                                    app.logger.error(f"PRESENCE: Make.com webhook (presence) failed for email {email_id}")
+                            else:
+                                # Choisir l'URL Make cible selon PRESENCE
+                                presence_url = PRESENCE_TRUE_MAKE_WEBHOOK_URL if PRESENCE_FLAG else PRESENCE_FALSE_MAKE_WEBHOOK_URL
+                                if presence_url:
+                                    app.logger.info(
+                                        f"PRESENCE: 'samedi' detected on Friday for email {email_id}. PRESENCE={PRESENCE_FLAG}. "
+                                        "Sending to dedicated Make webhook (Friday restriction satisfied)."
+                                    )
+                                    presence_sender_email = extract_sender_email(sender)
+                                    send_ok = send_makecom_webhook(
+                                        subject=subject,
+                                        delivery_time=None,
+                                        sender_email=presence_sender_email,
+                                        email_id=email_id,
+                                        override_webhook_url=presence_url,
+                                        extra_payload={
+                                            "presence": PRESENCE_FLAG,
+                                            "detector": "samedi_presence",
+                                        }
+                                    )
+                                    # Exclusivité uniquement si un envoi a été tenté ce vendredi
+                                    presence_routed = True
+                                    if send_ok:
+                                        app.logger.info(f"PRESENCE: Make.com webhook (presence) sent successfully for email {email_id}")
+                                    else:
+                                        app.logger.error(f"PRESENCE: Make.com webhook (presence) failed for email {email_id}")
                             else:
                                 app.logger.warning(
                                     "PRESENCE: 'samedi' detected on Friday but PRESENCE_*_MAKE_WEBHOOK_URL not configured. Skipping presence webhook."
@@ -1627,6 +1675,13 @@ def check_new_emails_and_trigger_webhook():
                     has_dropbox_request = "https://www.dropbox.com/request/" in (full_email_content or "").lower()
 
                     if has_required and not has_forbidden and has_dropbox_request:
+                        # Vérifier contrainte horaire globale avant envoi Make
+                        now_local = datetime.now(TZ_FOR_POLLING)
+                        if not _is_within_time_window_local(now_local):
+                            app.logger.info(
+                                f"DESABO: Time window not satisfied for email {email_id} (now={now_local.strftime('%H:%M')}, window={WEBHOOKS_TIME_START_STR or 'unset'}-{WEBHOOKS_TIME_END_STR or 'unset'}). Skipping."
+                            )
+                            raise Exception("DESABO_TIME_WINDOW_NOT_SATISFIED")
                         target_make_url = DESABO_MAKE_WEBHOOK_URL
                         sender_email_clean = extract_sender_email(sender)
 
@@ -1648,6 +1703,9 @@ def check_new_emails_and_trigger_webhook():
                                 "Text": full_email_content,
                                 "Subject": subject,
                                 "Sender": {"email": sender_email_clean},
+                                # Exposer la fenêtre horaire globale pour mapping côté Make
+                                "webhooks_time_start": WEBHOOKS_TIME_START_STR or None,
+                                "webhooks_time_end": WEBHOOKS_TIME_END_STR or None,
                             },
                         )
 
