@@ -783,6 +783,31 @@ def _is_within_time_window_local(now_dt: datetime) -> bool:
     # Wrap-around across midnight
     return (now_t >= start) or (now_t < end)
 
+def _update_time_window(str_start: str | None, str_end: str | None) -> tuple[bool, str]:
+    """Update the in-memory webhook time window from raw strings. Returns (ok, message)."""
+    global WEBHOOKS_TIME_START_STR, WEBHOOKS_TIME_END_STR, WEBHOOKS_TIME_START, WEBHOOKS_TIME_END
+    s = (str_start or "").strip()
+    e = (str_end or "").strip()
+    # Allow clearing by sending empty values
+    if not s and not e:
+        WEBHOOKS_TIME_START_STR = ""
+        WEBHOOKS_TIME_END_STR = ""
+        WEBHOOKS_TIME_START = None
+        WEBHOOKS_TIME_END = None
+        return True, "Time window cleared (no constraints)."
+    # Both must be provided for enforcement
+    if not s or not e:
+        return False, "Both WEBHOOKS_TIME_START and WEBHOOKS_TIME_END must be provided (or both empty to clear)."
+    ps = _parse_time_hhmm(s)
+    pe = _parse_time_hhmm(e)
+    if ps is None or pe is None:
+        return False, "Invalid time format. Use HHhMM or HH:MM (e.g., 11h30, 17:45)."
+    WEBHOOKS_TIME_START_STR = s
+    WEBHOOKS_TIME_END_STR = e
+    WEBHOOKS_TIME_START = ps
+    WEBHOOKS_TIME_END = pe
+    return True, "Time window updated."
+
 # --- Configuration des Identifiants pour la page de connexion ---
 TRIGGER_PAGE_USER_ENV = os.environ.get("TRIGGER_PAGE_USER", REF_TRIGGER_PAGE_USER)
 TRIGGER_PAGE_PASSWORD_ENV = os.environ.get("TRIGGER_PAGE_PASSWORD", REF_TRIGGER_PAGE_PASSWORD)
@@ -1945,6 +1970,36 @@ def api_ping():
 
 
 # --- ROUTES UI PROTÉGÉES MISES À JOUR ---
+
+# --- Webhook Time Window API ---
+@app.route('/api/get_webhook_time_window', methods=['GET'])
+@login_required
+def api_get_webhook_time_window():
+    return jsonify({
+        "success": True,
+        "webhooks_time_start": WEBHOOKS_TIME_START_STR or None,
+        "webhooks_time_end": WEBHOOKS_TIME_END_STR or None,
+        "timezone": str(TZ_FOR_POLLING.key if hasattr(TZ_FOR_POLLING, 'key') else TZ_FOR_POLLING)
+    }), 200
+
+@app.route('/api/set_webhook_time_window', methods=['POST'])
+@login_required
+def api_set_webhook_time_window():
+    try:
+        payload = request.get_json(silent=True) or {}
+        start = payload.get('start', '')
+        end = payload.get('end', '')
+        ok, msg = _update_time_window(start, end)
+        status = 200 if ok else 400
+        return jsonify({
+            "success": ok,
+            "message": msg,
+            "webhooks_time_start": WEBHOOKS_TIME_START_STR or None,
+            "webhooks_time_end": WEBHOOKS_TIME_END_STR or None,
+        }), status
+    except Exception as e:
+        app.logger.error(f"API_SET_TIME_WINDOW: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Internal error while updating time window."}), 500
 
 # --- Endpoint de test manuel des webhooks de présence (Make.com) ---
 @app.route('/api/test_presence_webhook', methods=['POST'])
