@@ -1677,12 +1677,15 @@ def check_new_emails_and_trigger_webhook():
                                     f"PRESENCE: Time window not satisfied for email {email_id} (now={now_local.strftime('%H:%M')}, window={WEBHOOKS_TIME_START_STR or 'unset'}-{WEBHOOKS_TIME_END_STR or 'unset'}). Skipping."
                                 )
                             else:
+                                # Exclusivité stricte dès que les conditions (jour + fenêtre horaire) sont satisfaites
+                                # On engage l'exclusivité même si l'URL Make n'est pas configurée.
+                                presence_routed = True
                                 # Choisir l'URL Make cible selon PRESENCE
                                 presence_url = PRESENCE_TRUE_MAKE_WEBHOOK_URL if PRESENCE_FLAG else PRESENCE_FALSE_MAKE_WEBHOOK_URL
                                 if presence_url:
                                     app.logger.info(
-                                        f"PRESENCE: 'samedi' detected on Friday for email {email_id}. PRESENCE={PRESENCE_FLAG}. "
-                                        "Sending to dedicated Make webhook (Friday restriction satisfied)."
+                                        f"PRESENCE: 'samedi' detected with valid day/time window for email {email_id}. PRESENCE={PRESENCE_FLAG}. "
+                                        "Sending to dedicated Make webhook."
                                     )
                                     presence_sender_email = extract_sender_email(sender)
                                     send_ok = send_makecom_webhook(
@@ -1698,18 +1701,39 @@ def check_new_emails_and_trigger_webhook():
                                             "webhooks_time_end": WEBHOOKS_TIME_END_STR or None,
                                         }
                                     )
-                                    # Exclusivité uniquement si un envoi a été tenté ce vendredi
-                                    presence_routed = True
                                     if send_ok:
                                         app.logger.info(f"PRESENCE: Make.com webhook (presence) sent successfully for email {email_id}")
                                     else:
                                         app.logger.error(f"PRESENCE: Make.com webhook (presence) failed for email {email_id}")
                                 else:
                                     app.logger.warning(
-                                        "PRESENCE: 'samedi' detected on Friday but PRESENCE_*_MAKE_WEBHOOK_URL not configured. Skipping presence webhook."
+                                        "PRESENCE: 'samedi' detected with valid day/time window but PRESENCE_*_MAKE_WEBHOOK_URL not configured. Exclusivity applied; skipping presence webhook call and custom webhook."
                                     )
                 except Exception as e_presence:
                     app.logger.error(f"PRESENCE: Exception during samedi presence handling for email {email_id}: {e_presence}")
+
+                # Si le routage "présence" a été activé, appliquer l'exclusivité complète
+                # et éviter tout envoi de webhook personnalisé ou Média Solution pour cet email.
+                if presence_routed:
+                    try:
+                        if ENABLE_SUBJECT_GROUP_DEDUP and subject_group_id:
+                            mark_subject_group_processed(subject_group_id)
+                    except Exception:
+                        pass
+                    # Marquer l'email comme traité côté Redis et comme lu côté IMAP pour éviter la repro.
+                    try:
+                        mark_email_id_as_processed_redis(email_id)
+                    except Exception:
+                        pass
+                    try:
+                        mark_email_as_read_imap(mail, email_num)
+                    except Exception:
+                        pass
+                    app.logger.info(
+                        f"PRESENCE: Exclusive routing engaged; skipping custom webhook and Média Solution for email {email_id}"
+                    )
+                    # Passer à l'email suivant
+                    continue
 
                 # --- Nouveau déclencheur: corps contient "Se désabonner", "journée", "tarifs habituels";
                 #     n'inclut PAS certains mots; et contient une URL Dropbox de type /request/ ---
@@ -1827,7 +1851,8 @@ def check_new_emails_and_trigger_webhook():
                     "first_direct_download_url": first_direct_url,
                 }
 
-                # Déclencher le webhook personnalisé
+                # Déclencher le webhook personnalisé UNIQUEMENT si aucun routage exclusif "présence" n'a été effectué
+                # Cela évite d'appeler WEBHOOK_URL pour les emails de disponibilité (qui n'ont pas d'URL Dropbox)
                 if not presence_routed:
                     try:
                         webhook_response = requests.post(
