@@ -1660,13 +1660,14 @@ def check_new_emails_and_trigger_webhook():
                     contains_samedi = ("samedi" in norm_subject) and ("samedi" in norm_body)
 
                     if contains_samedi:
-                        # Restriction: n'envoyer les webhooks présence/absence que le VENDREDI (weekday=4)
+                        # Restriction: n'envoyer les webhooks présence/absence que le JEUDI (weekday=3) ou VENDREDI (weekday=4)
                         now_local = datetime.now(TZ_FOR_POLLING)
-                        is_friday = now_local.weekday() == 4  # 0=Mon … 4=Fri
-                        if not is_friday:
+                        is_friday = now_local.weekday() == 4
+                        is_thursday = now_local.weekday() == 3
+                        if not (is_friday or is_thursday):
                             app.logger.info(
-                                f"PRESENCE: 'samedi' detected for email {email_id} but today is not Friday (weekday={now_local.weekday()}). "
-                                "Presence webhooks are restricted to Fridays. Skipping."
+                                f"PRESENCE: 'samedi' detected for email {email_id} but today is not Thursday or Friday (weekday={now_local.weekday()}). "
+                                "Presence webhooks are restricted to Thursdays and Fridays. Skipping."
                             )
                         else:
                             # Vérifier contrainte horaire globale avant tout envoi Make
