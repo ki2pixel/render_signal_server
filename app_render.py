@@ -1828,48 +1828,49 @@ def check_new_emails_and_trigger_webhook():
                 }
 
                 # Déclencher le webhook personnalisé
-                try:
-                    webhook_response = requests.post(
-                        WEBHOOK_URL,
-                        json=payload_for_webhook,
-                        headers={'Content-Type': 'application/json'},
-                        timeout=30,
-                        verify=WEBHOOK_SSL_VERIFY
-                    )
+                if not presence_routed:
+                    try:
+                        webhook_response = requests.post(
+                            WEBHOOK_URL,
+                            json=payload_for_webhook,
+                            headers={'Content-Type': 'application/json'},
+                            timeout=30,
+                            verify=WEBHOOK_SSL_VERIFY
+                        )
 
-                    # Vérifier la réponse du webhook
-                    if webhook_response.status_code == 200:
-                        response_data = webhook_response.json() if webhook_response.content else {}
-                        if response_data.get('success', False):
-                            app.logger.info(f"POLLER: Webhook triggered successfully for email {email_id}.")
+                        # Vérifier la réponse du webhook
+                        if webhook_response.status_code == 200:
+                            response_data = webhook_response.json() if webhook_response.content else {}
+                            if response_data.get('success', False):
+                                app.logger.info(f"POLLER: Webhook triggered successfully for email {email_id}.")
 
-                            # Marquer comme traité dans Redis
-                            if mark_email_id_as_processed_redis(email_id):
-                                triggered_webhook_count += 1
-                                mark_email_as_read_imap(mail, email_num)
-                            # Marquer le groupe de sujet comme traité (premier webhook de la série)
-                            try:
-                                if ENABLE_SUBJECT_GROUP_DEDUP and subject_group_id:
-                                    mark_subject_group_processed(subject_group_id)
-                            except Exception:
-                                pass
+                                # Marquer comme traité dans Redis
+                                if mark_email_id_as_processed_redis(email_id):
+                                    triggered_webhook_count += 1
+                                    mark_email_as_read_imap(mail, email_num)
+                                # Marquer le groupe de sujet comme traité (premier webhook de la série)
+                                try:
+                                    if ENABLE_SUBJECT_GROUP_DEDUP and subject_group_id:
+                                        mark_subject_group_processed(subject_group_id)
+                                except Exception:
+                                    pass
+                            else:
+                                app.logger.error(f"POLLER: Webhook processing failed for email {email_id}. Response: {response_data.get('message', 'Unknown error')}")
                         else:
-                            app.logger.error(f"POLLER: Webhook processing failed for email {email_id}. Response: {response_data.get('message', 'Unknown error')}")
-                    else:
-                        app.logger.error(f"POLLER: Webhook call FAILED for email {email_id}. Status: {webhook_response.status_code}, Response: {webhook_response.text[:200]}")
-                except requests.exceptions.SSLError as ssl_err:
-                    # SSL errors are often due to hostname mismatch or invalid certificate. Provide clear guidance.
-                    app.logger.error(
-                        "POLLER: SSL error during webhook call for email %s: %s. "
-                        "Likely causes: hostname mismatch or invalid certificate for '%s'. "
-                        "Verify that the certificate's CN/SAN includes the exact host or adjust WEBHOOK_URL. "
-                        "For temporary debugging only, WEBHOOK_SSL_VERIFY=false can bypass verification (not recommended in prod).",
-                        email_id, ssl_err, urlparse(WEBHOOK_URL).hostname
-                    )
-                    continue
-                except requests.exceptions.RequestException as e_webhook:
-                    app.logger.error(f"POLLER: Exception during webhook call for email {email_id}: {e_webhook}")
-                    continue
+                            app.logger.error(f"POLLER: Webhook call FAILED for email {email_id}. Status: {webhook_response.status_code}, Response: {webhook_response.text[:200]}")
+                    except requests.exceptions.SSLError as ssl_err:
+                        # SSL errors are often due to hostname mismatch or invalid certificate. Provide clear guidance.
+                        app.logger.error(
+                            "POLLER: SSL error during webhook call for email %s: %s. "
+                            "Likely causes: hostname mismatch or invalid certificate for '%s'. "
+                            "Verify that the certificate's CN/SAN includes the exact host or adjust WEBHOOK_URL. "
+                            "For temporary debugging only, WEBHOOK_SSL_VERIFY=false can bypass verification (not recommended in prod).",
+                            email_id, ssl_err, urlparse(WEBHOOK_URL).hostname
+                        )
+                        continue
+                    except requests.exceptions.RequestException as e_webhook:
+                        app.logger.error(f"POLLER: Exception during webhook call for email {email_id}: {e_webhook}")
+                        continue
 
                 # Flux Make « Média Solution » seulement si aucun routage exclusif n'a eu lieu
                 if not (presence_routed or desabo_routed):
