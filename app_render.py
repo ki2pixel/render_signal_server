@@ -1850,6 +1850,30 @@ def check_new_emails_and_trigger_webhook():
                     "delivery_links": delivery_links,
                     "first_direct_download_url": first_direct_url,
                 }
+                # Rétro-compatibilité: certains récepteurs attendent un champ `dropbox_urls`
+                # Exposer la liste des URLs Dropbox détectées (liens bruts). Toujours inclure la clé (liste vide si aucune)
+                try:
+                    dropbox_urls_legacy = [
+                        item.get("raw_url")
+                        for item in delivery_links
+                        if item and item.get("provider") == "dropbox" and item.get("raw_url")
+                    ]
+                except Exception:
+                    dropbox_urls_legacy = []
+                payload_for_webhook["dropbox_urls"] = dropbox_urls_legacy
+                # Commodité: première URL Dropbox brute si disponible
+                payload_for_webhook["dropbox_first_url"] = dropbox_urls_legacy[0] if dropbox_urls_legacy else None
+
+                # Log de diagnostic concis avant l'envoi
+                try:
+                    app.logger.info(
+                        "POLLER: Prepared webhook payload for %s (delivery_links=%d, dropbox_urls=%d)",
+                        email_id,
+                        len(delivery_links),
+                        len(dropbox_urls_legacy),
+                    )
+                except Exception:
+                    pass
 
                 # Déclencher le webhook personnalisé UNIQUEMENT si aucun routage exclusif "présence" n'a été effectué
                 # Cela évite d'appeler WEBHOOK_URL pour les emails de disponibilité (qui n'ont pas d'URL Dropbox)
