@@ -661,6 +661,40 @@ app = Flask(__name__, template_folder='.', static_folder='static')
 # Pour la production, utilisez une valeur complexe stockée dans les variables d'environnement.
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "une-cle-secrete-tres-complexe-pour-le-developpement-a-changer")
 
+# --- Authentification: Initialisation Flask-Login ---
+# Le décorateur @login_required est utilisé sur plusieurs routes (ex: '/').
+# Il est donc essentiel d'initialiser LoginManager et de fournir un user_loader.
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'  # Redirige vers la page de connexion si non authentifié
+
+
+class User(UserMixin):
+    """Représente un utilisateur simple, identifié par son username."""
+
+    def __init__(self, username: str):
+        self.id = username
+
+
+# Store d'utilisateurs en mémoire.
+# Par défaut, utilise les références connues; surcharge possible via ENV TRIGGER_PAGE_USER/TRIGGER_PAGE_PASSWORD.
+_default_user = os.environ.get("TRIGGER_PAGE_USER", "admin")
+_default_password = os.environ.get("TRIGGER_PAGE_PASSWORD", "UDPVA#esKf40r@")
+users = {
+    _default_user: _default_password,
+}
+
+
+@login_manager.user_loader
+def load_user(user_id: str):
+    """Charge l'utilisateur à partir de son identifiant de session.
+
+    Retourne une instance de User si l'ID est reconnu, sinon None.
+    """
+    if user_id in users:
+        return User(user_id)
+    return None
+
 # --- Tokens et Config de référence (basés sur l'image/description fournie) ---
 REF_TRIGGER_PAGE_USER = "admin"
 REF_TRIGGER_PAGE_PASSWORD = "UDPVA#esKf40r@"
