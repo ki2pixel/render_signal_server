@@ -27,6 +27,21 @@ function formatTimestamp(isoString) {
     }
 }
 
+// Affichage convivial de la dernière fenêtre horaire enregistrée
+function renderTimeWindowDisplay(start, end) {
+    const displayEl = document.getElementById('timeWindowDisplay');
+    if (!displayEl) return;
+    const hasStart = Boolean(start && String(start).trim());
+    const hasEnd = Boolean(end && String(end).trim());
+    if (!hasStart && !hasEnd) {
+        displayEl.textContent = 'Dernière fenêtre enregistrée: aucune contrainte horaire active';
+        return;
+    }
+    const startText = hasStart ? String(start) : '—';
+    const endText = hasEnd ? String(end) : '—';
+    displayEl.textContent = `Dernière fenêtre enregistrée: ${startText} → ${endText}`;
+}
+
 // Section 1: Fenêtre horaire
 async function loadTimeWindow() {
     try {
@@ -40,6 +55,8 @@ async function loadTimeWindow() {
             if (data.webhooks_time_end) {
                 document.getElementById('webhooksTimeEnd').value = data.webhooks_time_end;
             }
+            // Mettre à jour l'affichage sous le bouton
+            renderTimeWindowDisplay(data.webhooks_time_start || '', data.webhooks_time_end || '');
         }
     } catch (e) {
         console.error('Erreur chargement fenêtre horaire:', e);
@@ -60,6 +77,15 @@ async function saveTimeWindow() {
         
         if (data.success) {
             showMessage('timeWindowMsg', 'Fenêtre horaire enregistrée avec succès !', 'success');
+            // Mettre à jour les inputs selon la normalisation renvoyée par le backend
+            if (Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
+                document.getElementById('webhooksTimeStart').value = data.webhooks_time_start || '';
+            }
+            if (Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
+                document.getElementById('webhooksTimeEnd').value = data.webhooks_time_end || '';
+            }
+            // Mettre à jour l'affichage sous le bouton
+            renderTimeWindowDisplay(data.webhooks_time_start || start, data.webhooks_time_end || end);
         } else {
             showMessage('timeWindowMsg', data.message || 'Erreur lors de la sauvegarde.', 'error');
         }
