@@ -120,10 +120,10 @@ async function loadWebhookConfig() {
             
             // Afficher les valeurs (masquées partiellement pour sécurité)
             document.getElementById('webhookUrl').placeholder = config.webhook_url || 'Non configuré';
-            document.getElementById('makecomUrl').placeholder = config.makecom_webhook_url || 'Non configuré';
+            document.getElementById('recadrageUrl').placeholder = config.recadrage_webhook_url || 'Non configuré';
             document.getElementById('presenceTrueUrl').placeholder = config.presence_true_url || 'Non configuré';
             document.getElementById('presenceFalseUrl').placeholder = config.presence_false_url || 'Non configuré';
-            document.getElementById('desaboUrl').placeholder = config.desabo_url || 'Non configuré';
+            document.getElementById('autorepondeurUrl').placeholder = config.autorepondeur_webhook_url || 'Non configuré';
             
             document.getElementById('presenceFlag').value = config.presence_flag ? 'true' : 'false';
             document.getElementById('sslVerifyToggle').checked = config.webhook_ssl_verify;
@@ -140,8 +140,8 @@ async function saveWebhookConfig() {
     const webhookUrl = document.getElementById('webhookUrl').value.trim();
     if (webhookUrl) payload.webhook_url = webhookUrl;
     
-    const makecomUrl = document.getElementById('makecomUrl').value.trim();
-    if (makecomUrl) payload.makecom_webhook_url = makecomUrl;
+    const recadrageUrl = document.getElementById('recadrageUrl').value.trim();
+    if (recadrageUrl) payload.recadrage_webhook_url = recadrageUrl;
     
     const presenceTrueUrl = document.getElementById('presenceTrueUrl').value.trim();
     if (presenceTrueUrl) payload.presence_true_url = presenceTrueUrl;
@@ -149,8 +149,8 @@ async function saveWebhookConfig() {
     const presenceFalseUrl = document.getElementById('presenceFalseUrl').value.trim();
     if (presenceFalseUrl) payload.presence_false_url = presenceFalseUrl;
     
-    const desaboUrl = document.getElementById('desaboUrl').value.trim();
-    if (desaboUrl) payload.desabo_url = desaboUrl;
+    const autorepondeurUrl = document.getElementById('autorepondeurUrl').value.trim();
+    if (autorepondeurUrl) payload.autorepondeur_webhook_url = autorepondeurUrl;
     
     payload.presence_flag = document.getElementById('presenceFlag').value === 'true';
     payload.webhook_ssl_verify = document.getElementById('sslVerifyToggle').checked;
@@ -169,10 +169,10 @@ async function saveWebhookConfig() {
             setTimeout(() => {
                 // Vider les champs pour montrer les placeholders masqués
                 document.getElementById('webhookUrl').value = '';
-                document.getElementById('makecomUrl').value = '';
+                document.getElementById('recadrageUrl').value = '';
                 document.getElementById('presenceTrueUrl').value = '';
                 document.getElementById('presenceFalseUrl').value = '';
-                document.getElementById('desaboUrl').value = '';
+                document.getElementById('autorepondeurUrl').value = '';
                 loadWebhookConfig();
             }, 1000);
         } else {
