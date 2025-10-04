@@ -1359,13 +1359,44 @@ def send_makecom_webhook(subject, delivery_time, sender_email, email_id, overrid
 
         if response.status_code == 200:
             app.logger.info(f"MAKECOM: Webhook sent successfully for email {email_id}")
+            # Log pour le dashboard
+            _append_webhook_log({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "type": "makecom",
+                "email_id": email_id,
+                "status": "success",
+                "status_code": response.status_code,
+                "target_url": target_url[:50] + "..." if len(target_url) > 50 else target_url,
+                "subject": subject[:100] if subject else None,
+            })
             return True
         else:
             app.logger.error(f"MAKECOM: Webhook failed for email {email_id}. Status: {response.status_code}, Response: {response.text[:200]}")
+            # Log pour le dashboard
+            _append_webhook_log({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "type": "makecom",
+                "email_id": email_id,
+                "status": "error",
+                "status_code": response.status_code,
+                "error": response.text[:200] if response.text else "Unknown error",
+                "target_url": target_url[:50] + "..." if len(target_url) > 50 else target_url,
+                "subject": subject[:100] if subject else None,
+            })
             return False
 
     except requests.exceptions.RequestException as e:
         app.logger.error(f"MAKECOM: Exception during webhook call for email {email_id}: {e}")
+        # Log pour le dashboard
+        _append_webhook_log({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "type": "makecom",
+            "email_id": email_id,
+            "status": "error",
+            "error": str(e)[:200],
+            "target_url": target_url[:50] + "..." if len(target_url) > 50 else target_url,
+            "subject": subject[:100] if subject else None,
+        })
         return False
 
 
@@ -1892,6 +1923,17 @@ def check_new_emails_and_trigger_webhook():
                             response_data = webhook_response.json() if webhook_response.content else {}
                             if response_data.get('success', False):
                                 app.logger.info(f"POLLER: Webhook triggered successfully for email {email_id}.")
+                                
+                                # Log pour le dashboard
+                                _append_webhook_log({
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "type": "custom",
+                                    "email_id": email_id,
+                                    "status": "success",
+                                    "status_code": webhook_response.status_code,
+                                    "target_url": WEBHOOK_URL[:50] + "..." if len(WEBHOOK_URL) > 50 else WEBHOOK_URL,
+                                    "subject": subject[:100] if subject else None,
+                                })
 
                                 # Marquer comme traité dans Redis
                                 if mark_email_id_as_processed_redis(email_id):
@@ -1905,8 +1947,30 @@ def check_new_emails_and_trigger_webhook():
                                     pass
                             else:
                                 app.logger.error(f"POLLER: Webhook processing failed for email {email_id}. Response: {response_data.get('message', 'Unknown error')}")
+                                # Log pour le dashboard
+                                _append_webhook_log({
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "type": "custom",
+                                    "email_id": email_id,
+                                    "status": "error",
+                                    "status_code": webhook_response.status_code,
+                                    "error": response_data.get('message', 'Unknown error')[:200],
+                                    "target_url": WEBHOOK_URL[:50] + "..." if len(WEBHOOK_URL) > 50 else WEBHOOK_URL,
+                                    "subject": subject[:100] if subject else None,
+                                })
                         else:
                             app.logger.error(f"POLLER: Webhook call FAILED for email {email_id}. Status: {webhook_response.status_code}, Response: {webhook_response.text[:200]}")
+                            # Log pour le dashboard
+                            _append_webhook_log({
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "type": "custom",
+                                "email_id": email_id,
+                                "status": "error",
+                                "status_code": webhook_response.status_code,
+                                "error": webhook_response.text[:200] if webhook_response.text else "Unknown error",
+                                "target_url": WEBHOOK_URL[:50] + "..." if len(WEBHOOK_URL) > 50 else WEBHOOK_URL,
+                                "subject": subject[:100] if subject else None,
+                            })
                     except requests.exceptions.SSLError as ssl_err:
                         # SSL errors are often due to hostname mismatch or invalid certificate. Provide clear guidance.
                         app.logger.error(
@@ -1916,9 +1980,29 @@ def check_new_emails_and_trigger_webhook():
                             "For temporary debugging only, WEBHOOK_SSL_VERIFY=false can bypass verification (not recommended in prod).",
                             email_id, ssl_err, urlparse(WEBHOOK_URL).hostname
                         )
+                        # Log pour le dashboard
+                        _append_webhook_log({
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "type": "custom",
+                            "email_id": email_id,
+                            "status": "error",
+                            "error": f"SSL Error: {str(ssl_err)[:200]}",
+                            "target_url": WEBHOOK_URL[:50] + "..." if len(WEBHOOK_URL) > 50 else WEBHOOK_URL,
+                            "subject": subject[:100] if subject else None,
+                        })
                         continue
                     except requests.exceptions.RequestException as e_webhook:
                         app.logger.error(f"POLLER: Exception during webhook call for email {email_id}: {e_webhook}")
+                        # Log pour le dashboard
+                        _append_webhook_log({
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "type": "custom",
+                            "email_id": email_id,
+                            "status": "error",
+                            "error": str(e_webhook)[:200],
+                            "target_url": WEBHOOK_URL[:50] + "..." if len(WEBHOOK_URL) > 50 else WEBHOOK_URL,
+                            "subject": subject[:100] if subject else None,
+                        })
                         continue
 
                 # Flux Make « Média Solution » seulement si aucun routage exclusif n'a eu lieu
@@ -2202,6 +2286,246 @@ def api_check_emails_and_download_authed():
         return jsonify({"status": "error", "message": "Config serveur email incomplète."}), 503
     threading.Thread(target=run_task).start()
     return jsonify({"status": "success", "message": "Vérification en arrière-plan lancée."}), 202
+
+
+# --- Dashboard Webhooks: Configuration Management ---
+WEBHOOK_CONFIG_FILE = Path(__file__).resolve().parent / "debug" / "webhook_config.json"
+
+def _load_webhook_config():
+    """Charge la configuration des webhooks depuis le fichier JSON."""
+    if not WEBHOOK_CONFIG_FILE.exists():
+        return {}
+    try:
+        with open(WEBHOOK_CONFIG_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        app.logger.error(f"WEBHOOK_CONFIG: Erreur de lecture du fichier de config: {e}")
+        return {}
+
+def _save_webhook_config(config: dict):
+    """Sauvegarde la configuration des webhooks dans le fichier JSON."""
+    try:
+        WEBHOOK_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(WEBHOOK_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        app.logger.error(f"WEBHOOK_CONFIG: Erreur d'écriture du fichier de config: {e}")
+        return False
+
+@app.route('/api/get_webhook_config', methods=['GET'])
+@login_required
+def api_get_webhook_config():
+    """
+    Retourne la configuration actuelle des webhooks.
+    Masque les valeurs sensibles (URLs complètes affichées partiellement).
+    """
+    try:
+        # Charger la config persistée
+        persisted_config = _load_webhook_config()
+        
+        # Fonction pour masquer partiellement une URL
+        def mask_url(url):
+            if not url:
+                return None
+            if url.startswith("http"):
+                parts = url.split("/")
+                if len(parts) > 3:
+                    # Garde le domaine, masque le reste
+                    return f"{parts[0]}//{parts[2]}/***"
+                return url[:30] + "***"
+            return url[:10] + "***"
+        
+        config = {
+            "webhook_url": persisted_config.get("webhook_url") or mask_url(WEBHOOK_URL),
+            "makecom_webhook_url": persisted_config.get("makecom_webhook_url") or mask_url(MAKECOM_WEBHOOK_URL),
+            "presence_flag": persisted_config.get("presence_flag", PRESENCE_FLAG),
+            "presence_true_url": persisted_config.get("presence_true_url") or mask_url(PRESENCE_TRUE_MAKE_WEBHOOK_URL),
+            "presence_false_url": persisted_config.get("presence_false_url") or mask_url(PRESENCE_FALSE_MAKE_WEBHOOK_URL),
+            "desabo_url": persisted_config.get("desabo_url") or mask_url(DESABO_MAKE_WEBHOOK_URL),
+            "webhook_ssl_verify": persisted_config.get("webhook_ssl_verify", WEBHOOK_SSL_VERIFY),
+            "polling_enabled": persisted_config.get("polling_enabled", os.environ.get("ENABLE_BACKGROUND_TASKS", "0").lower() in ("1", "true", "yes")),
+        }
+        
+        return jsonify({"success": True, "config": config}), 200
+    except Exception as e:
+        app.logger.error(f"API_GET_WEBHOOK_CONFIG: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration."}), 500
+
+@app.route('/api/update_webhook_config', methods=['POST'])
+@login_required
+def api_update_webhook_config():
+    """
+    Met à jour la configuration des webhooks de manière dynamique.
+    Valide et sauvegarde les changements dans le fichier JSON.
+    """
+    try:
+        payload = request.get_json(silent=True) or {}
+        
+        # Charger la config existante
+        config = _load_webhook_config()
+        
+        # Mettre à jour uniquement les champs fournis
+        if "webhook_url" in payload:
+            val = payload["webhook_url"].strip() if payload["webhook_url"] else None
+            if val and not val.startswith("http"):
+                return jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}), 400
+            config["webhook_url"] = val
+        
+        if "makecom_webhook_url" in payload:
+            val = payload["makecom_webhook_url"].strip() if payload["makecom_webhook_url"] else None
+            if val and not val.startswith("http"):
+                return jsonify({"success": False, "message": "makecom_webhook_url doit être une URL HTTPS valide."}), 400
+            config["makecom_webhook_url"] = val
+        
+        if "presence_flag" in payload:
+            config["presence_flag"] = bool(payload["presence_flag"])
+        
+        if "presence_true_url" in payload:
+            val = payload["presence_true_url"].strip() if payload["presence_true_url"] else None
+            if val:
+                val = _normalize_make_webhook_url(val)
+            config["presence_true_url"] = val
+        
+        if "presence_false_url" in payload:
+            val = payload["presence_false_url"].strip() if payload["presence_false_url"] else None
+            if val:
+                val = _normalize_make_webhook_url(val)
+            config["presence_false_url"] = val
+        
+        if "desabo_url" in payload:
+            val = payload["desabo_url"].strip() if payload["desabo_url"] else None
+            if val:
+                val = _normalize_make_webhook_url(val)
+            config["desabo_url"] = val
+        
+        if "webhook_ssl_verify" in payload:
+            config["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
+        
+        # Sauvegarder la config
+        if not _save_webhook_config(config):
+            return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration."}), 500
+        
+        app.logger.info(f"API_UPDATE_WEBHOOK_CONFIG: Configuration mise à jour par '{current_user.id}'.")
+        return jsonify({"success": True, "message": "Configuration mise à jour avec succès."}), 200
+    
+    except Exception as e:
+        app.logger.error(f"API_UPDATE_WEBHOOK_CONFIG: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}), 500
+
+
+# --- Dashboard Webhooks: Polling Control ---
+@app.route('/api/toggle_polling', methods=['POST'])
+@login_required
+def api_toggle_polling():
+    """
+    Active ou désactive le polling dynamiquement.
+    Note: Cette fonctionnalité nécessite un redémarrage du serveur pour prendre effet réellement,
+    mais l'état est sauvegardé pour la prochaine fois.
+    """
+    try:
+        payload = request.get_json(silent=True) or {}
+        enable = payload.get("enable", False)
+        
+        # Charger et mettre à jour la config
+        config = _load_webhook_config()
+        config["polling_enabled"] = bool(enable)
+        
+        if not _save_webhook_config(config):
+            return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de l'état du polling."}), 500
+        
+        app.logger.info(f"API_TOGGLE_POLLING: Polling {'activé' if enable else 'désactivé'} par '{current_user.id}'. Nécessite un redémarrage pour effet complet.")
+        
+        return jsonify({
+            "success": True,
+            "message": f"Polling {'activé' if enable else 'désactivé'}. Redémarrez le serveur pour que le changement prenne effet.",
+            "polling_enabled": enable
+        }), 200
+    
+    except Exception as e:
+        app.logger.error(f"API_TOGGLE_POLLING: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur interne."}), 500
+
+
+# --- Dashboard Webhooks: Logs ---
+WEBHOOK_LOGS_FILE = Path(__file__).resolve().parent / "debug" / "webhook_logs.json"
+
+def _append_webhook_log(log_entry: dict):
+    """Ajoute une entrée de log webhook au fichier JSON."""
+    try:
+        WEBHOOK_LOGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Charger les logs existants
+        logs = []
+        if WEBHOOK_LOGS_FILE.exists():
+            try:
+                with open(WEBHOOK_LOGS_FILE, 'r', encoding='utf-8') as f:
+                    logs = json.load(f)
+            except:
+                logs = []
+        
+        # Ajouter la nouvelle entrée
+        logs.append(log_entry)
+        
+        # Limiter à 500 entrées max (garder les plus récentes)
+        if len(logs) > 500:
+            logs = logs[-500:]
+        
+        # Sauvegarder
+        with open(WEBHOOK_LOGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(logs, f, indent=2, ensure_ascii=False)
+    
+    except Exception as e:
+        app.logger.error(f"WEBHOOK_LOG: Erreur d'écriture du log: {e}")
+
+@app.route('/api/webhook_logs', methods=['GET'])
+@login_required
+def api_webhook_logs():
+    """
+    Retourne l'historique des webhooks envoyés (max 50 dernières entrées).
+    Filtre optionnel par jours via query param ?days=7
+    """
+    try:
+        days = int(request.args.get('days', 7))
+        if days < 1:
+            days = 7
+        if days > 30:
+            days = 30
+        
+        # Charger les logs
+        if not WEBHOOK_LOGS_FILE.exists():
+            return jsonify({"success": True, "logs": [], "count": 0}), 200
+        
+        with open(WEBHOOK_LOGS_FILE, 'r', encoding='utf-8') as f:
+            all_logs = json.load(f)
+        
+        # Filtrer par date
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        filtered_logs = []
+        
+        for log in all_logs:
+            try:
+                log_time = datetime.fromisoformat(log.get("timestamp", ""))
+                if log_time >= cutoff:
+                    filtered_logs.append(log)
+            except:
+                # Si le timestamp est invalide, on l'inclut quand même
+                filtered_logs.append(log)
+        
+        # Limiter à 50 entrées les plus récentes
+        filtered_logs = filtered_logs[-50:]
+        filtered_logs.reverse()  # Plus récent en premier
+        
+        return jsonify({
+            "success": True,
+            "logs": filtered_logs,
+            "count": len(filtered_logs),
+            "days_filter": days
+        }), 200
+    
+    except Exception as e:
+        app.logger.error(f"API_WEBHOOK_LOGS: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur lors de la récupération des logs."}), 500
 
 
 # La fonction de démarrage des tâches reste ici, mais elle ne sera appelée que par Gunicorn ou par le __main__
