@@ -404,7 +404,7 @@ def resolve_with_headless_browser(provider: str, raw_url: str) -> str | None:
                             data = resp.json()
                         except Exception:
                             data = None
-                        
+
                         def scan_json(obj):
                             if not obj:
                                 return None
@@ -600,7 +600,7 @@ def resolve_with_headless_browser(provider: str, raw_url: str) -> str | None:
                                             break
                                 except Exception:
                                     pass
-                    
+
                 except Exception:
                     pass
                 # Si deadline dépassée, on sort
@@ -671,7 +671,8 @@ REF_IMAP_SERVER = "mail.inbox.lt"
 REF_IMAP_PORT = 993
 REF_IMAP_USE_SSL = True
 REF_WEBHOOK_URL = "https://webhook.kidpixel.fr/index.php"
-REF_MAKECOM_WEBHOOK_URL = "https://hook.eu2.make.com/s98s0s735h23qakb9pp0id8c8hbhfqph"
+REF_RECADRAGE_MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/s98s0s735h23qakb9pp0id8c8hbhfqph"
+REF_AUTOREPONDEUR_MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/2g65argnpyzgk3lz9t0xzt8tpuylcc8x"
 REF_MAKECOM_API_KEY = "12e8b61d-a78e-47f5-9f87-359af19f46cb"
 REF_SENDER_OF_INTEREST_FOR_POLLING = "achats@media-solution.fr,camille.moine.pro@gmail.com,a.peault@media-solution.fr,v.lorent@media-solution.fr,technique@media-solution.fr,t.deslus@media-solution.fr"
 REF_POLLING_TIMEZONE = "Europe/Paris"
@@ -692,12 +693,15 @@ if not REDIS_AVAILABLE:
 
 # --- Configuration des Webhooks Make.com et présence ---
 # Valeurs d'environnement attendues:
-# - MAKECOM_WEBHOOK_URL (URL par défaut existante)
+# - RECADRAGE_MAKE_WEBHOOK_URL (webhook Make.com pour emails Média Solution - Missions Recadrage)
+#   Rétrocompatibilité: MAKECOM_WEBHOOK_URL (ancien nom, toujours supporté)
+# - AUTOREPONDEUR_MAKE_WEBHOOK_URL (webhook Make.com pour emails désabonnement/journée/tarifs)
+#   Rétrocompatibilité: DESABO_MAKE_WEBHOOK_URL (ancien nom, toujours supporté)
 # - MAKECOM_API_KEY (clé API existante)
 # - PRESENCE (bool string: true/false)
-# - PRESENCE_TRUE_MAKE_WEBHOOK_URL (URL Make pour présence True) 
+# - PRESENCE_TRUE_MAKE_WEBHOOK_URL (URL Make pour présence True)
 # - PRESENCE_FALSE_MAKE_WEBHOOK_URL (URL Make pour présence False)
-#   Ces deux dernières peuvent être fournies sous forme:
+#   Ces URLs peuvent être fournies sous forme:
 #   * URL complète: "https://hook.eu2.make.com/<token>"
 #   * OU alias de type "<token>@hook.eu2.make.com" (nous le normaliserons en URL HTTPS)
 
@@ -738,8 +742,8 @@ ENABLE_SUBJECT_GROUP_DEDUP = _env_bool("ENABLE_SUBJECT_GROUP_DEDUP", True)
 
 # Webhook Make (désabonnement/journée/tarifs) configurable
 # Default to the latest provided URL so it works out-of-the-box; can be overridden in Render env
-DESABO_MAKE_WEBHOOK_URL = _normalize_make_webhook_url(
-    os.environ.get("DESABO_MAKE_WEBHOOK_URL") or "https://hook.eu2.make.com/2g65argnpyzgk3lz9t0xzt8tpuylcc8x"
+AUTOREPONDEUR_MAKE_WEBHOOK_URL = _normalize_make_webhook_url(
+    os.environ.get("AUTOREPONDEUR_MAKE_WEBHOOK_URL") or os.environ.get("DESABO_MAKE_WEBHOOK_URL") or "https://hook.eu2.make.com/2g65argnpyzgk3lz9t0xzt8tpuylcc8x"
 )
 
 # --- Global time window for Make webhooks (DESABO + PRESENCE) ---
@@ -846,43 +850,6 @@ def _update_time_window(str_start: str | None, str_end: str | None) -> tuple[boo
     except Exception:
         pass
     return True, "Time window updated."
-
-# --- Configuration des Identifiants pour la page de connexion ---
-TRIGGER_PAGE_USER_ENV = os.environ.get("TRIGGER_PAGE_USER", REF_TRIGGER_PAGE_USER)
-TRIGGER_PAGE_PASSWORD_ENV = os.environ.get("TRIGGER_PAGE_PASSWORD", REF_TRIGGER_PAGE_PASSWORD)
-users = {}
-if TRIGGER_PAGE_USER_ENV and TRIGGER_PAGE_PASSWORD_ENV:
-    users[TRIGGER_PAGE_USER_ENV] = TRIGGER_PAGE_PASSWORD_ENV
-    app.logger.info(f"CFG AUTH: Utilisateur '{TRIGGER_PAGE_USER_ENV}' configuré pour la connexion.")
-else:
-    app.logger.warning(
-        "CFG AUTH: TRIGGER_PAGE_USER ou TRIGGER_PAGE_PASSWORD non défini. La connexion à l'interface sera impossible.")
-
-# --- NOUVELLE CONFIGURATION : FLASK-LOGIN ---
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'  # Redirige les utilisateurs non connectés vers la route /login
-login_manager.login_message = "Veuillez vous connecter pour accéder à cette page."
-login_manager.login_message_category = "info"
-
-
-# NOUVEAU: Classe utilisateur requise par Flask-Login
-class User(UserMixin):
-    def __init__(self, id):
-        self.id = id
-
-    @staticmethod
-    def get(user_id):
-        if user_id in users:
-            return User(user_id)
-        return None
-
-
-# NOUVEAU: Fonction pour charger un utilisateur depuis la session
-@login_manager.user_loader
-def load_user(user_id):
-    return User.get(user_id)
-
 
 # --- Configuration du Polling des Emails ---
 POLLING_TIMEZONE_STR = os.environ.get("POLLING_TIMEZONE", REF_POLLING_TIMEZONE)
@@ -1005,12 +972,13 @@ else:
 
 # --- Configuration des Webhooks et Tokens ---
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL", REF_WEBHOOK_URL)
-MAKECOM_WEBHOOK_URL = os.environ.get("MAKECOM_WEBHOOK_URL", REF_MAKECOM_WEBHOOK_URL)
+RECADRAGE_MAKE_WEBHOOK_URL = os.environ.get("RECADRAGE_MAKE_WEBHOOK_URL", REF_RECADRAGE_MAKE_WEBHOOK_URL)
+AUTOREPONDEUR_MAKE_WEBHOOK_URL = os.environ.get("AUTOREPONDEUR_MAKE_WEBHOOK_URL", REF_AUTOREPONDEUR_MAKE_WEBHOOK_URL)
 MAKECOM_API_KEY = os.environ.get("MAKECOM_API_KEY", REF_MAKECOM_API_KEY)
 WEBHOOK_SSL_VERIFY = os.environ.get("WEBHOOK_SSL_VERIFY", "true").strip().lower() in ("1", "true", "yes", "on")
 
 app.logger.info(f"CFG WEBHOOK: Custom webhook URL configured to: {WEBHOOK_URL}")
-app.logger.info(f"CFG MAKECOM: Make.com webhook URL configured to: {MAKECOM_WEBHOOK_URL}")
+app.logger.info(f"CFG MAKECOM: Make.com webhook URL configured to: {RECADRAGE_MAKE_WEBHOOK_URL}")
 app.logger.info(f"CFG WEBHOOK: SSL verification = {WEBHOOK_SSL_VERIFY}")
 if not WEBHOOK_SSL_VERIFY:
     # Suppress SSL warnings only if verification is explicitly disabled
@@ -1344,7 +1312,7 @@ def send_makecom_webhook(subject, delivery_time, sender_email, email_id, overrid
     try:
         app.logger.info(f"MAKECOM: Sending webhook for email {email_id} - Subject: '{subject}', Delivery: {delivery_time}, Sender: {sender_email}")
 
-        target_url = override_webhook_url or MAKECOM_WEBHOOK_URL
+        target_url = override_webhook_url or RECADRAGE_MAKE_WEBHOOK_URL
         if not target_url:
             app.logger.error("MAKECOM: No webhook URL configured (target_url is empty). Aborting send.")
             return False
@@ -1804,7 +1772,7 @@ def check_new_emails_and_trigger_webhook():
                                 f"DESABO: Time window not satisfied for email {email_id} (now={now_local.strftime('%H:%M')}, window={WEBHOOKS_TIME_START_STR or 'unset'}-{WEBHOOKS_TIME_END_STR or 'unset'}). Skipping."
                             )
                             raise Exception("DESABO_TIME_WINDOW_NOT_SATISFIED")
-                        target_make_url = DESABO_MAKE_WEBHOOK_URL
+                        target_make_url = AUTOREPONDEUR_MAKE_WEBHOOK_URL
                         sender_email_clean = extract_sender_email(sender)
 
                         app.logger.info(
@@ -1923,7 +1891,7 @@ def check_new_emails_and_trigger_webhook():
                             response_data = webhook_response.json() if webhook_response.content else {}
                             if response_data.get('success', False):
                                 app.logger.info(f"POLLER: Webhook triggered successfully for email {email_id}.")
-                                
+
                                 # Log pour le dashboard
                                 _append_webhook_log({
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -2323,7 +2291,7 @@ def api_get_webhook_config():
     try:
         # Charger la config persistée
         persisted_config = _load_webhook_config()
-        
+
         # Fonction pour masquer partiellement une URL
         def mask_url(url):
             if not url:
@@ -2334,19 +2302,18 @@ def api_get_webhook_config():
                     # Garde le domaine, masque le reste
                     return f"{parts[0]}//{parts[2]}/***"
                 return url[:30] + "***"
-            return url[:10] + "***"
-        
+
         config = {
             "webhook_url": persisted_config.get("webhook_url") or mask_url(WEBHOOK_URL),
-            "makecom_webhook_url": persisted_config.get("makecom_webhook_url") or mask_url(MAKECOM_WEBHOOK_URL),
+            "recadrage_webhook_url": persisted_config.get("recadrage_webhook_url") or mask_url(RECADRAGE_MAKE_WEBHOOK_URL),
             "presence_flag": persisted_config.get("presence_flag", PRESENCE_FLAG),
             "presence_true_url": persisted_config.get("presence_true_url") or mask_url(PRESENCE_TRUE_MAKE_WEBHOOK_URL),
             "presence_false_url": persisted_config.get("presence_false_url") or mask_url(PRESENCE_FALSE_MAKE_WEBHOOK_URL),
-            "desabo_url": persisted_config.get("desabo_url") or mask_url(DESABO_MAKE_WEBHOOK_URL),
+            "autorepondeur_webhook_url": persisted_config.get("autorepondeur_webhook_url") or mask_url(AUTOREPONDEUR_MAKE_WEBHOOK_URL),
             "webhook_ssl_verify": persisted_config.get("webhook_ssl_verify", WEBHOOK_SSL_VERIFY),
             "polling_enabled": persisted_config.get("polling_enabled", os.environ.get("ENABLE_BACKGROUND_TASKS", "0").lower() in ("1", "true", "yes")),
         }
-        
+
         return jsonify({"success": True, "config": config}), 200
     except Exception as e:
         app.logger.error(f"API_GET_WEBHOOK_CONFIG: Exception: {e}", exc_info=True)
@@ -2361,54 +2328,54 @@ def api_update_webhook_config():
     """
     try:
         payload = request.get_json(silent=True) or {}
-        
+
         # Charger la config existante
         config = _load_webhook_config()
-        
+
         # Mettre à jour uniquement les champs fournis
         if "webhook_url" in payload:
             val = payload["webhook_url"].strip() if payload["webhook_url"] else None
             if val and not val.startswith("http"):
                 return jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}), 400
             config["webhook_url"] = val
-        
-        if "makecom_webhook_url" in payload:
-            val = payload["makecom_webhook_url"].strip() if payload["makecom_webhook_url"] else None
+
+        if "recadrage_webhook_url" in payload:
+            val = payload["recadrage_webhook_url"].strip() if payload["recadrage_webhook_url"] else None
             if val and not val.startswith("http"):
-                return jsonify({"success": False, "message": "makecom_webhook_url doit être une URL HTTPS valide."}), 400
-            config["makecom_webhook_url"] = val
-        
+                return jsonify({"success": False, "message": "recadrage_webhook_url doit être une URL HTTPS valide."}), 400
+            config["recadrage_webhook_url"] = val
+
         if "presence_flag" in payload:
             config["presence_flag"] = bool(payload["presence_flag"])
-        
+
         if "presence_true_url" in payload:
             val = payload["presence_true_url"].strip() if payload["presence_true_url"] else None
             if val:
                 val = _normalize_make_webhook_url(val)
             config["presence_true_url"] = val
-        
+
         if "presence_false_url" in payload:
             val = payload["presence_false_url"].strip() if payload["presence_false_url"] else None
             if val:
                 val = _normalize_make_webhook_url(val)
             config["presence_false_url"] = val
-        
-        if "desabo_url" in payload:
-            val = payload["desabo_url"].strip() if payload["desabo_url"] else None
+
+        if "autorepondeur_webhook_url" in payload:
+            val = payload["autorepondeur_webhook_url"].strip() if payload["autorepondeur_webhook_url"] else None
             if val:
                 val = _normalize_make_webhook_url(val)
-            config["desabo_url"] = val
-        
+            config["autorepondeur_webhook_url"] = val
+
         if "webhook_ssl_verify" in payload:
             config["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
-        
+
         # Sauvegarder la config
         if not _save_webhook_config(config):
             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration."}), 500
-        
+
         app.logger.info(f"API_UPDATE_WEBHOOK_CONFIG: Configuration mise à jour par '{current_user.id}'.")
         return jsonify({"success": True, "message": "Configuration mise à jour avec succès."}), 200
-    
+
     except Exception as e:
         app.logger.error(f"API_UPDATE_WEBHOOK_CONFIG: Exception: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}), 500
@@ -2426,22 +2393,22 @@ def api_toggle_polling():
     try:
         payload = request.get_json(silent=True) or {}
         enable = payload.get("enable", False)
-        
+
         # Charger et mettre à jour la config
         config = _load_webhook_config()
         config["polling_enabled"] = bool(enable)
-        
+
         if not _save_webhook_config(config):
             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de l'état du polling."}), 500
-        
+
         app.logger.info(f"API_TOGGLE_POLLING: Polling {'activé' if enable else 'désactivé'} par '{current_user.id}'. Nécessite un redémarrage pour effet complet.")
-        
+
         return jsonify({
             "success": True,
             "message": f"Polling {'activé' if enable else 'désactivé'}. Redémarrez le serveur pour que le changement prenne effet.",
             "polling_enabled": enable
         }), 200
-    
+
     except Exception as e:
         app.logger.error(f"API_TOGGLE_POLLING: Exception: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Erreur interne."}), 500
@@ -2454,7 +2421,7 @@ def _append_webhook_log(log_entry: dict):
     """Ajoute une entrée de log webhook au fichier JSON."""
     try:
         WEBHOOK_LOGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Charger les logs existants
         logs = []
         if WEBHOOK_LOGS_FILE.exists():
@@ -2463,18 +2430,18 @@ def _append_webhook_log(log_entry: dict):
                     logs = json.load(f)
             except:
                 logs = []
-        
+
         # Ajouter la nouvelle entrée
         logs.append(log_entry)
-        
+
         # Limiter à 500 entrées max (garder les plus récentes)
         if len(logs) > 500:
             logs = logs[-500:]
-        
+
         # Sauvegarder
         with open(WEBHOOK_LOGS_FILE, 'w', encoding='utf-8') as f:
             json.dump(logs, f, indent=2, ensure_ascii=False)
-    
+
     except Exception as e:
         app.logger.error(f"WEBHOOK_LOG: Erreur d'écriture du log: {e}")
 
@@ -2491,18 +2458,18 @@ def api_webhook_logs():
             days = 7
         if days > 30:
             days = 30
-        
+
         # Charger les logs
         if not WEBHOOK_LOGS_FILE.exists():
             return jsonify({"success": True, "logs": [], "count": 0}), 200
-        
+
         with open(WEBHOOK_LOGS_FILE, 'r', encoding='utf-8') as f:
             all_logs = json.load(f)
-        
+
         # Filtrer par date
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         filtered_logs = []
-        
+
         for log in all_logs:
             try:
                 log_time = datetime.fromisoformat(log.get("timestamp", ""))
@@ -2511,18 +2478,18 @@ def api_webhook_logs():
             except:
                 # Si le timestamp est invalide, on l'inclut quand même
                 filtered_logs.append(log)
-        
+
         # Limiter à 50 entrées les plus récentes
         filtered_logs = filtered_logs[-50:]
         filtered_logs.reverse()  # Plus récent en premier
-        
+
         return jsonify({
             "success": True,
             "logs": filtered_logs,
             "count": len(filtered_logs),
             "days_filter": days
         }), 200
-    
+
     except Exception as e:
         app.logger.error(f"API_WEBHOOK_LOGS: Exception: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Erreur lors de la récupération des logs."}), 500
