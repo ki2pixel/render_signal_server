@@ -284,11 +284,9 @@
 
       .log-empty {
         text-align: center;
-        color: var(--cork-text-secondary);
-        padding: 30px;
-        font-style: italic;
       }
 
+      /* Layout utilitaire pour éléments en ligne */
       .inline-group {
         display: flex;
         gap: 10px;
@@ -339,7 +337,7 @@
       </div>
       <!-- Navigation principale -->
       <div class="nav-tabs" role="tablist">
-        <button class="tab-btn" data-target="#sec-overview" type="button">Vue d’ensemble</button>
+        <button class="tab-btn active" data-target="#sec-overview" type="button">Vue d’ensemble</button>
         <button class="tab-btn" data-target="#sec-webhooks" type="button">Webhooks</button>
         <button class="tab-btn" data-target="#sec-polling" type="button">Polling</button>
         <button class="tab-btn" data-target="#sec-preferences" type="button">Préférences</button>
@@ -548,7 +546,7 @@
       </div>
 
       <!-- Section: Vue d'ensemble (métriques + logs) -->
-      <div id="sec-overview" class="section-panel">
+      <div id="sec-overview" class="section-panel active">
         <div class="card">
           <div class="card-title">📊 Monitoring & Métriques (24h)</div>
           <div class="inline-group" style="margin-bottom: 10px;">
