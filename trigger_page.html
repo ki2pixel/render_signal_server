@@ -129,6 +129,17 @@
                     </label>
                     <span id="pollingStatusText">Chargement...</span>
                 </div>
+                <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div class="form-group">
+                        <label for="vacationStart">POLLING_VACATION_START</label>
+                        <input id="vacationStart" type="date">
+                    </div>
+                    <div class="form-group">
+                        <label for="vacationEnd">POLLING_VACATION_END</label>
+                        <input id="vacationEnd" type="date">
+                    </div>
+                </div>
+                <div id="vacationStatus" class="small-text" style="margin-bottom: 8px;"></div>
                 <button id="togglePollingBtn" class="btn btn-success">Appliquer</button>
                 <div id="pollingMsg" class="status-msg"></div>
                 <div class="small-text">⚠️ Nécessite un redémarrage du serveur pour prendre effet complètement.</div>
