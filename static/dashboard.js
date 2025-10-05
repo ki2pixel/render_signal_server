@@ -11,6 +11,335 @@ function showMessage(elementId, message, type) {
     }, 5000);
 }
 
+// --- Processing Prefs (server) ---
+async function loadProcessingPrefsFromServer() {
+    try {
+        const res = await fetch('/api/get_processing_prefs');
+        const data = await res.json();
+        if (!data.success) return;
+        const p = data.prefs || {};
+        setIfPresent('excludeKeywords', (p.exclude_keywords || []).join('\n'), v => v);
+        const att = document.getElementById('attachmentDetectionToggle');
+        if (att) att.checked = !!p.require_attachments;
+        const maxSz = document.getElementById('maxEmailSizeMB');
+        if (maxSz) maxSz.value = p.max_email_size_mb ?? '';
+        const sp = document.getElementById('senderPriority');
+        if (sp) sp.value = JSON.stringify(p.sender_priority || {}, null, 2);
+        const rc = document.getElementById('retryCount'); if (rc) rc.value = p.retry_count ?? '';
+        const rd = document.getElementById('retryDelaySec'); if (rd) rd.value = p.retry_delay_sec ?? '';
+        const to = document.getElementById('webhookTimeoutSec'); if (to) to.value = p.webhook_timeout_sec ?? '';
+        const rl = document.getElementById('rateLimitPerHour'); if (rl) rl.value = p.rate_limit_per_hour ?? '';
+        const nf = document.getElementById('notifyOnFailureToggle'); if (nf) nf.checked = !!p.notify_on_failure;
+    } catch (e) {
+        console.warn('loadProcessingPrefsFromServer error', e);
+    }
+}
+
+async function saveProcessingPrefsToServer() {
+    const btn = document.getElementById('processingPrefsSaveBtn');
+    const msgId = 'processingPrefsMsg';
+    try {
+        btn && (btn.disabled = true);
+        // Build payload from UI
+        const excludeKeywordsRaw = (document.getElementById('excludeKeywords')?.value || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
+        const requireAttachments = !!document.getElementById('attachmentDetectionToggle')?.checked;
+        const maxEmailSize = document.getElementById('maxEmailSizeMB')?.value.trim();
+        let senderPriorityObj = {};
+        const senderPriorityStr = (document.getElementById('senderPriority')?.value || '').trim();
+        if (senderPriorityStr) {
+            try { senderPriorityObj = JSON.parse(senderPriorityStr); } catch { senderPriorityObj = {}; }
+        }
+        const retryCount = document.getElementById('retryCount')?.value.trim();
+        const retryDelaySec = document.getElementById('retryDelaySec')?.value.trim();
+        const webhookTimeoutSec = document.getElementById('webhookTimeoutSec')?.value.trim();
+        const rateLimitPerHour = document.getElementById('rateLimitPerHour')?.value.trim();
+        const notifyOnFailure = !!document.getElementById('notifyOnFailureToggle')?.checked;
+
+        const payload = {
+            exclude_keywords: excludeKeywordsRaw,
+            require_attachments: requireAttachments,
+            max_email_size_mb: maxEmailSize === '' ? null : parseInt(maxEmailSize, 10),
+            sender_priority: senderPriorityObj,
+            retry_count: retryCount === '' ? 0 : parseInt(retryCount, 10),
+            retry_delay_sec: retryDelaySec === '' ? 0 : parseInt(retryDelaySec, 10),
+            webhook_timeout_sec: webhookTimeoutSec === '' ? 30 : parseInt(webhookTimeoutSec, 10),
+            rate_limit_per_hour: rateLimitPerHour === '' ? 0 : parseInt(rateLimitPerHour, 10),
+            notify_on_failure: notifyOnFailure,
+        };
+
+        const res = await fetch('/api/update_processing_prefs', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) {
+            showMessage(msgId, 'Préférences enregistrées.', 'success');
+            // Recharger pour refléter la normalisation côté serveur
+            loadProcessingPrefsFromServer();
+        } else {
+            showMessage(msgId, data.message || 'Erreur lors de la sauvegarde.', 'error');
+        }
+    } catch (e) {
+        showMessage(msgId, 'Erreur de communication avec le serveur.', 'error');
+    } finally {
+        btn && (btn.disabled = false);
+    }
+}
+
+// -------------------- Nouvelles fonctionnalités UI (client-side only) --------------------
+
+function loadLocalPreferences() {
+    try {
+        const raw = localStorage.getItem('dashboard_prefs_v1');
+        if (!raw) return;
+        const prefs = JSON.parse(raw);
+        setIfPresent('excludeKeywords', prefs.excludeKeywords, v => v);
+        setIfPresent('attachmentDetectionToggle', prefs.attachmentDetection, (v, el) => el.checked = !!v);
+        setIfPresent('maxEmailSizeMB', prefs.maxEmailSizeMB, v => v);
+        setIfPresent('senderPriority', prefs.senderPriorityJson, v => v);
+        setIfPresent('retryCount', prefs.retryCount, v => v);
+        setIfPresent('retryDelaySec', prefs.retryDelaySec, v => v);
+        setIfPresent('webhookTimeoutSec', prefs.webhookTimeoutSec, v => v);
+        setIfPresent('rateLimitPerHour', prefs.rateLimitPerHour, v => v);
+        setIfPresent('notifyOnFailureToggle', prefs.notifyOnFailure, (v, el) => el.checked = !!v);
+        setIfPresent('enableMetricsToggle', prefs.enableMetrics, (v, el) => el.checked = !!v);
+    } catch (e) {
+        console.warn('Prefs load error', e);
+    }
+}
+
+function setIfPresent(id, value, setter) {
+    if (value === undefined) return;
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (typeof setter === 'function') {
+        const ret = setter(value, el);
+        if (ret !== undefined && el.value !== undefined) el.value = ret;
+    } else {
+        el.value = value;
+    }
+}
+
+function saveLocalPreferences() {
+    try {
+        const prefs = {
+            excludeKeywords: (document.getElementById('excludeKeywords')?.value || ''),
+            attachmentDetection: !!document.getElementById('attachmentDetectionToggle')?.checked,
+            maxEmailSizeMB: parseInt(document.getElementById('maxEmailSizeMB')?.value || '0', 10) || undefined,
+            senderPriorityJson: (document.getElementById('senderPriority')?.value || ''),
+            retryCount: parseInt(document.getElementById('retryCount')?.value || '0', 10) || undefined,
+            retryDelaySec: parseInt(document.getElementById('retryDelaySec')?.value || '0', 10) || undefined,
+            webhookTimeoutSec: parseInt(document.getElementById('webhookTimeoutSec')?.value || '0', 10) || undefined,
+            rateLimitPerHour: parseInt(document.getElementById('rateLimitPerHour')?.value || '0', 10) || undefined,
+            notifyOnFailure: !!document.getElementById('notifyOnFailureToggle')?.checked,
+            enableMetrics: !!document.getElementById('enableMetricsToggle')?.checked,
+        };
+        localStorage.setItem('dashboard_prefs_v1', JSON.stringify(prefs));
+    } catch (e) {
+        console.warn('Prefs save error', e);
+    }
+}
+
+async function computeAndRenderMetrics() {
+    try {
+        const res = await fetch('/api/webhook_logs?days=1');
+        const data = await res.json();
+        const logs = (data.success && Array.isArray(data.logs)) ? data.logs : [];
+        const total = logs.length;
+        const sent = logs.filter(l => l.status === 'success').length;
+        const errors = logs.filter(l => l.status === 'error').length;
+        const successRate = total ? Math.round((sent / total) * 100) : 0;
+        setMetric('metricEmailsProcessed', String(total));
+        setMetric('metricWebhooksSent', String(sent));
+        setMetric('metricErrors', String(errors));
+        setMetric('metricSuccessRate', String(successRate));
+        renderMiniChart(logs);
+    } catch (e) {
+        console.warn('metrics error', e);
+        clearMetrics();
+    }
+}
+
+function clearMetrics() {
+    setMetric('metricEmailsProcessed', '—');
+    setMetric('metricWebhooksSent', '—');
+    setMetric('metricErrors', '—');
+    setMetric('metricSuccessRate', '—');
+    const chart = document.getElementById('metricsMiniChart');
+    if (chart) chart.innerHTML = '';
+}
+
+function setMetric(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+}
+
+function renderMiniChart(logs) {
+    const chart = document.getElementById('metricsMiniChart');
+    if (!chart) return;
+    chart.innerHTML = '';
+    const width = chart.clientWidth || 300;
+    const height = chart.clientHeight || 60;
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    chart.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    // Simple timeline: success=1, error=0
+    const n = Math.min(logs.length, Math.floor(width / 4));
+    const step = width / (n || 1);
+    ctx.strokeStyle = '#22c98f';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+        const log = logs[logs.length - n + i];
+        const val = (log && log.status === 'success') ? 1 : 0;
+        const x = i * step + 1;
+        const y = height - (val * (height - 4)) - 2;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+}
+
+async function exportFullConfiguration() {
+    try {
+        // Gather server-side configs
+        const [webhookCfgRes, pollingCfgRes, timeWinRes] = await Promise.all([
+            fetch('/api/get_webhook_config'),
+            fetch('/api/get_polling_config'),
+            fetch('/api/get_webhook_time_window')
+        ]);
+        const [webhookCfg, pollingCfg, timeWin] = await Promise.all([
+            webhookCfgRes.json(), pollingCfgRes.json(), timeWinRes.json()
+        ]);
+        const prefsRaw = localStorage.getItem('dashboard_prefs_v1');
+        const exportObj = {
+            exported_at: new Date().toISOString(),
+            webhook_config: webhookCfg,
+            polling_config: pollingCfg,
+            time_window: timeWin,
+            ui_preferences: prefsRaw ? JSON.parse(prefsRaw) : {}
+        };
+        const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'render_signal_dashboard_config.json';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showMessage('configMgmtMsg', 'Export réalisé avec succès.', 'success');
+    } catch (e) {
+        showMessage('configMgmtMsg', 'Erreur lors de l\'export.', 'error');
+    }
+}
+
+function handleImportConfigFile(evt) {
+    const file = evt.target.files && evt.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+        try {
+            const obj = JSON.parse(String(reader.result || '{}'));
+            // Apply server-supported parts
+            await applyImportedServerConfig(obj);
+            // Store UI preferences
+            if (obj.ui_preferences) {
+                localStorage.setItem('dashboard_prefs_v1', JSON.stringify(obj.ui_preferences));
+                loadLocalPreferences();
+            }
+            showMessage('configMgmtMsg', 'Import appliqué.', 'success');
+        } catch (e) {
+            showMessage('configMgmtMsg', 'Fichier invalide.', 'error');
+        }
+    };
+    reader.readAsText(file);
+    // reset input so consecutive imports fire change
+    evt.target.value = '';
+}
+
+async function applyImportedServerConfig(obj) {
+    // webhook config
+    if (obj?.webhook_config?.config) {
+        const cfg = obj.webhook_config.config;
+        const payload = {};
+        if (cfg.webhook_url) payload.webhook_url = cfg.webhook_url;
+        if (cfg.recadrage_webhook_url) payload.recadrage_webhook_url = cfg.recadrage_webhook_url;
+        if (cfg.autorepondeur_webhook_url) payload.autorepondeur_webhook_url = cfg.autorepondeur_webhook_url;
+        if (cfg.presence_true_url) payload.presence_true_url = cfg.presence_true_url;
+        if (cfg.presence_false_url) payload.presence_false_url = cfg.presence_false_url;
+        if (typeof cfg.presence_flag === 'boolean') payload.presence_flag = cfg.presence_flag;
+        if (typeof cfg.webhook_ssl_verify === 'boolean') payload.webhook_ssl_verify = cfg.webhook_ssl_verify;
+        if (Object.keys(payload).length) {
+            await fetch('/api/update_webhook_config', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+            });
+            await loadWebhookConfig();
+        }
+    }
+    // polling config
+    if (obj?.polling_config?.config) {
+        const cfg = obj.polling_config.config;
+        const payload = {};
+        if (Array.isArray(cfg.active_days)) payload.active_days = cfg.active_days;
+        if (Number.isInteger(cfg.active_start_hour)) payload.active_start_hour = cfg.active_start_hour;
+        if (Number.isInteger(cfg.active_end_hour)) payload.active_end_hour = cfg.active_end_hour;
+        if (typeof cfg.enable_subject_group_dedup === 'boolean') payload.enable_subject_group_dedup = cfg.enable_subject_group_dedup;
+        if (Array.isArray(cfg.sender_of_interest_for_polling)) payload.sender_of_interest_for_polling = cfg.sender_of_interest_for_polling;
+        if ('vacation_start' in cfg) payload.vacation_start = cfg.vacation_start || null;
+        if ('vacation_end' in cfg) payload.vacation_end = cfg.vacation_end || null;
+        if (Object.keys(payload).length) {
+            await fetch('/api/update_polling_config', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+            });
+            await loadPollingConfig();
+        }
+    }
+    // time window
+    if (obj?.time_window) {
+        const start = obj.time_window.webhooks_time_start ?? '';
+        const end = obj.time_window.webhooks_time_end ?? '';
+        await fetch('/api/set_webhook_time_window', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start, end })
+        });
+        await loadTimeWindow();
+    }
+}
+
+function validateWebhookUrlFromInput() {
+    const inp = document.getElementById('testWebhookUrl');
+    const msgId = 'webhookUrlValidationMsg';
+    const val = (inp?.value || '').trim();
+    if (!val) return showMessage(msgId, 'Veuillez saisir une URL ou un alias.', 'error');
+    const ok = isValidMakeWebhookUrl(val) || isValidHttpsUrl(val);
+    if (ok) showMessage(msgId, 'Format valide.', 'success'); else showMessage(msgId, 'Format invalide.', 'error');
+}
+
+function isValidHttpsUrl(url) {
+    try {
+        const u = new URL(url);
+        return u.protocol === 'https:' && !!u.hostname;
+    } catch { return false; }
+}
+
+function isValidMakeWebhookUrl(value) {
+    // Accept either full https URL or alias token@hook.eu2.make.com
+    if (isValidHttpsUrl(value)) return /hook\.eu\d+\.make\.com/i.test(value);
+    return /^[A-Za-z0-9_-]{10,}@[Hh]ook\.eu\d+\.make\.com$/.test(value);
+}
+
+function buildPayloadPreview() {
+    const subject = (document.getElementById('previewSubject')?.value || '').trim();
+    const sender = (document.getElementById('previewSender')?.value || '').trim();
+    const body = (document.getElementById('previewBody')?.value || '').trim();
+    const payload = {
+        subject,
+        sender_email: sender,
+        body_excerpt: body.slice(0, 500),
+        delivery_links: [],
+        first_direct_download_url: null,
+        meta: { preview: true, generated_at: new Date().toISOString() }
+    };
+    const pre = document.getElementById('payloadPreview');
+    if (pre) pre.textContent = JSON.stringify(payload, null, 2);
+}
+
 // Nouvelle approche: gestion via cases à cocher (0=Mon .. 6=Sun)
 function setDayCheckboxes(days) {
     const group = document.getElementById('pollingActiveDaysGroup');
@@ -401,6 +730,62 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(loadWebhookLogs, 30000);
     
     console.log('📊 Dashboard Webhooks initialisé.');
+
+    // --- Préférences UI locales (localStorage) ---
+    loadLocalPreferences();
+
+    // --- Events: Filtres Email Avancés ---
+    const excludeKeywords = document.getElementById('excludeKeywords');
+    const attachmentDetectionToggle = document.getElementById('attachmentDetectionToggle');
+    const maxEmailSizeMB = document.getElementById('maxEmailSizeMB');
+    const senderPriority = document.getElementById('senderPriority');
+    ;[excludeKeywords, attachmentDetectionToggle, maxEmailSizeMB, senderPriority]
+      .forEach(el => el && el.addEventListener('change', saveLocalPreferences));
+
+    // --- Events: Fiabilité ---
+    const retryCount = document.getElementById('retryCount');
+    const retryDelaySec = document.getElementById('retryDelaySec');
+    const webhookTimeoutSec = document.getElementById('webhookTimeoutSec');
+    const rateLimitPerHour = document.getElementById('rateLimitPerHour');
+    const notifyOnFailureToggle = document.getElementById('notifyOnFailureToggle');
+    ;[retryCount, retryDelaySec, webhookTimeoutSec, rateLimitPerHour, notifyOnFailureToggle]
+      .forEach(el => el && el.addEventListener('change', saveLocalPreferences));
+
+    // --- Events: Metrics ---
+    const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+    if (enableMetricsToggle) {
+        enableMetricsToggle.addEventListener('change', async () => {
+            saveLocalPreferences();
+            if (enableMetricsToggle.checked) {
+                await computeAndRenderMetrics();
+            } else {
+                clearMetrics();
+            }
+        });
+        // Auto compute once if enabled from storage
+        if (enableMetricsToggle.checked) computeAndRenderMetrics();
+    }
+
+    // --- Export / Import Config ---
+    const exportBtn = document.getElementById('exportConfigBtn');
+    const importBtn = document.getElementById('importConfigBtn');
+    const importFile = document.getElementById('importConfigFile');
+    exportBtn && exportBtn.addEventListener('click', exportFullConfiguration);
+    importBtn && importBtn.addEventListener('click', () => importFile && importFile.click());
+    importFile && importFile.addEventListener('change', handleImportConfigFile);
+
+    // --- Outils de test --- 
+    const validateWebhookUrlBtn = document.getElementById('validateWebhookUrlBtn');
+    validateWebhookUrlBtn && validateWebhookUrlBtn.addEventListener('click', validateWebhookUrlFromInput);
+    const buildPayloadPreviewBtn = document.getElementById('buildPayloadPreviewBtn');
+    buildPayloadPreviewBtn && buildPayloadPreviewBtn.addEventListener('click', buildPayloadPreview);
+
+    // --- Charger les préférences serveur au démarrage ---
+    loadProcessingPrefsFromServer();
+
+    // --- Sauvegarder préférences de traitement ---
+    const processingPrefsSaveBtn = document.getElementById('processingPrefsSaveBtn');
+    processingPrefsSaveBtn && processingPrefsSaveBtn.addEventListener('click', saveProcessingPrefsToServer);
 });
 
 // --- Polling Config (jours, heures, dédup) ---
