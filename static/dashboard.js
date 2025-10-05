@@ -700,6 +700,71 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// -------------------- Navigation par onglets --------------------
+function initTabs() {
+    const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
+    const panels = Array.from(document.querySelectorAll('.section-panel'));
+
+    const mapHashToId = {
+        '#overview': '#sec-overview',
+        '#webhooks': '#sec-webhooks',
+        '#polling': '#sec-polling',
+        '#preferences': '#sec-preferences',
+        '#tools': '#sec-tools',
+    };
+
+    function activate(targetSelector) {
+        // Toggle active class on panels
+        panels.forEach(p => p.classList.remove('active'));
+        const panel = document.querySelector(targetSelector);
+        if (panel) panel.classList.add('active');
+
+        // Toggle active class on buttons
+        tabButtons.forEach(btn => btn.classList.remove('active'));
+        const btn = tabButtons.find(b => b.getAttribute('data-target') === targetSelector);
+        if (btn) btn.classList.add('active');
+
+        // Optional: refresh section data on show
+        if (targetSelector === '#sec-overview') {
+            const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+            if (enableMetricsToggle && enableMetricsToggle.checked) {
+                computeAndRenderMetrics();
+            }
+            loadWebhookLogs();
+        } else if (targetSelector === '#sec-webhooks') {
+            loadTimeWindow();
+            loadWebhookConfig();
+        } else if (targetSelector === '#sec-polling') {
+            loadPollingConfig();
+            loadPollingStatus();
+        }
+    }
+
+    // Wire click handlers
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const target = btn.getAttribute('data-target');
+            if (target) {
+                // Update URL hash for deep-linking (without scrolling)
+                const entry = Object.entries(mapHashToId).find(([, sel]) => sel === target);
+                if (entry) history.replaceState(null, '', entry[0]);
+                activate(target);
+            }
+        });
+    });
+
+    // Determine initial tab: from hash or default to overview
+    const initialHash = window.location.hash;
+    const initialTarget = mapHashToId[initialHash] || '#sec-overview';
+    activate(initialTarget);
+
+    // React to hash changes (e.g., manual URL edit)
+    window.addEventListener('hashchange', () => {
+        const t = mapHashToId[window.location.hash];
+        if (t) activate(t);
+    });
+}
+
 // Initialisation au chargement de la page
 document.addEventListener('DOMContentLoaded', () => {
     // Charger les données initiales
@@ -762,11 +827,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 clearMetrics();
             }
         });
-        // Auto compute once if enabled from storage
-        if (enableMetricsToggle.checked) computeAndRenderMetrics();
     }
 
-    // --- Export / Import Config ---
+    // --- Export / Import de configuration ---
     const exportBtn = document.getElementById('exportConfigBtn');
     const importBtn = document.getElementById('importConfigBtn');
     const importFile = document.getElementById('importConfigFile');
