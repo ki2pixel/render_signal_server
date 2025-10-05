@@ -667,7 +667,23 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "une-cle-secrete-tres-comple
 # Allowlist origins, comma-separated in env CORS_ALLOWED_ORIGINS (e.g., "https://webhook.kidpixel.fr,https://example.com")
 _cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
 if _cors_origins:
-    CORS(app, resources={r"/api/test/*": {"origins": _cors_origins, "supports_credentials": False}})
+    CORS(
+        app,
+        resources={
+            r"/api/test/*": {
+                "origins": _cors_origins,
+                "supports_credentials": False,
+                "methods": ["GET", "POST", "OPTIONS"],
+                "allow_headers": ["Content-Type", "X-API-Key"],
+                "max_age": 600,
+            }
+        },
+    )
+
+    # Explicit OPTIONS handler to ensure preflight responses are emitted even if no route matched yet
+    @app.route('/api/test/<path:subpath>', methods=['OPTIONS'])
+    def cors_preflight_testapi(subpath: str):  # noqa: D401
+        return ("", 204)
 
 # --- Authentification: Initialisation Flask-Login ---
 # Le décorateur @login_required est utilisé sur plusieurs routes (ex: '/').
