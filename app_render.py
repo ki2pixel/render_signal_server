@@ -929,10 +929,13 @@ app.logger.info(f"CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP={ENABLE_SUBJECT_GROUP_DE
 
 # Fichier d'override persistant pour la configuration du polling
 POLLING_CONFIG_FILE = Path(__file__).resolve().parent / "debug" / "polling_config.json"
+# Vacation window (dates in local polling timezone)
+POLLING_VACATION_START_DATE = None  # type: datetime | None
+POLLING_VACATION_END_DATE = None    # type: datetime | None
 
 def _apply_polling_config_overrides():
     """Charge et applique les overrides depuis le fichier JSON si présent."""
-    global POLLING_ACTIVE_START_HOUR, POLLING_ACTIVE_END_HOUR, POLLING_ACTIVE_DAYS, ENABLE_SUBJECT_GROUP_DEDUP, SENDER_LIST_FOR_POLLING
+    global POLLING_ACTIVE_START_HOUR, POLLING_ACTIVE_END_HOUR, POLLING_ACTIVE_DAYS, ENABLE_SUBJECT_GROUP_DEDUP, SENDER_LIST_FOR_POLLING, POLLING_VACATION_START_DATE, POLLING_VACATION_END_DATE
     try:
         if POLLING_CONFIG_FILE.exists():
             with open(POLLING_CONFIG_FILE, 'r', encoding='utf-8') as f:
@@ -959,11 +962,33 @@ def _apply_polling_config_overrides():
                         norm.append(s.strip().lower())
                 if norm:
                     SENDER_LIST_FOR_POLLING = norm
+            # Vacation dates (ISO YYYY-MM-DD)
+            vac_start = cfg.get('vacation_start')
+            vac_end = cfg.get('vacation_end')
+            try:
+                POLLING_VACATION_START_DATE = datetime.fromisoformat(vac_start).date() if vac_start else None
+            except Exception:
+                POLLING_VACATION_START_DATE = None
+            try:
+                POLLING_VACATION_END_DATE = datetime.fromisoformat(vac_end).date() if vac_end else None
+            except Exception:
+                POLLING_VACATION_END_DATE = None
             app.logger.info("CFG POLL: Overrides loaded from polling_config.json")
     except Exception as e:
         app.logger.warning(f"CFG POLL: Failed to load overrides from {POLLING_CONFIG_FILE}: {e}")
 
 _apply_polling_config_overrides()
+
+def _is_polling_in_vacation(now_dt: datetime) -> bool:
+    """Retourne True si la date courante (dans TZ polling) est dans la plage vacances [start, end]."""
+    try:
+        if POLLING_VACATION_START_DATE is None or POLLING_VACATION_END_DATE is None:
+            return False
+        # Comparaison sur la date (ignore l'heure)
+        d = now_dt.date()
+        return POLLING_VACATION_START_DATE <= d <= POLLING_VACATION_END_DATE
+    except Exception:
+        return False
 
 # --- Chemins et Fichiers ---
 SIGNAL_DIR = Path(os.environ.get("RENDER_DISC_PATH", "./signal_data_app_render"))
@@ -2105,6 +2130,11 @@ def background_email_poller():
     while True:
         try:
             now_in_configured_tz = datetime.now(TZ_FOR_POLLING)
+            # Vacation window check
+            if _is_polling_in_vacation(now_in_configured_tz):
+                app.logger.info("BG_POLLER: Vacation window active. Polling suspended.")
+                time.sleep(POLLING_INACTIVE_CHECK_INTERVAL_SECONDS)
+                continue
             is_active_day = now_in_configured_tz.weekday() in POLLING_ACTIVE_DAYS
             is_active_time = POLLING_ACTIVE_START_HOUR <= now_in_configured_tz.hour < POLLING_ACTIVE_END_HOUR
 
@@ -2504,6 +2534,8 @@ def api_get_polling_config():
             "enable_subject_group_dedup": ENABLE_SUBJECT_GROUP_DEDUP,
             "timezone": POLLING_TIMEZONE_STR,
             "sender_of_interest_for_polling": SENDER_LIST_FOR_POLLING,
+            "vacation_start": POLLING_VACATION_START_DATE.isoformat() if POLLING_VACATION_START_DATE else None,
+            "vacation_end": POLLING_VACATION_END_DATE.isoformat() if POLLING_VACATION_END_DATE else None,
         }
         return jsonify({"success": True, "config": cfg}), 200
     except Exception as e:
@@ -2605,6 +2637,33 @@ def api_update_polling_config():
                     unique_norm.append(s)
             new_senders = unique_norm
 
+        # Vacation dates (ISO YYYY-MM-DD)
+        new_vac_start = None
+        if 'vacation_start' in payload:
+            vs = payload['vacation_start']
+            if vs in (None, ""):
+                new_vac_start = None
+            else:
+                try:
+                    new_vac_start = datetime.fromisoformat(str(vs)).date()
+                except Exception:
+                    return jsonify({"success": False, "message": "vacation_start invalide (format YYYY-MM-DD)."}), 400
+
+        new_vac_end = None
+        if 'vacation_end' in payload:
+            ve = payload['vacation_end']
+            if ve in (None, ""):
+                new_vac_end = None
+            else:
+                try:
+                    new_vac_end = datetime.fromisoformat(str(ve)).date()
+                except Exception:
+                    return jsonify({"success": False, "message": "vacation_end invalide (format YYYY-MM-DD)."}), 400
+
+        # Validate order if both provided
+        if new_vac_start is not None and new_vac_end is not None and new_vac_start > new_vac_end:
+            return jsonify({"success": False, "message": "vacation_start doit être <= vacation_end."}), 400
+
         # Appliquer aux variables en mémoire
         if new_days is not None:
             POLLING_ACTIVE_DAYS = new_days
@@ -2616,6 +2675,11 @@ def api_update_polling_config():
             ENABLE_SUBJECT_GROUP_DEDUP = new_dedup
         if new_senders is not None:
             SENDER_LIST_FOR_POLLING = new_senders
+        if new_vac_start is not None:
+            # if explicitly set None, allow clearing
+            POLLING_VACATION_START_DATE = new_vac_start
+        if new_vac_end is not None:
+            POLLING_VACATION_END_DATE = new_vac_end
 
         # Mettre à jour le fichier de config
         merged = dict(existing)
@@ -2629,6 +2693,10 @@ def api_update_polling_config():
             merged['enable_subject_group_dedup'] = ENABLE_SUBJECT_GROUP_DEDUP
         if new_senders is not None:
             merged['sender_of_interest_for_polling'] = SENDER_LIST_FOR_POLLING
+        if 'vacation_start' in payload:
+            merged['vacation_start'] = POLLING_VACATION_START_DATE.isoformat() if POLLING_VACATION_START_DATE else None
+        if 'vacation_end' in payload:
+            merged['vacation_end'] = POLLING_VACATION_END_DATE.isoformat() if POLLING_VACATION_END_DATE else None
 
         try:
             POLLING_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -2639,7 +2707,7 @@ def api_update_polling_config():
             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
 
         app.logger.info(
-            f"API_UPDATE_POLLING_CONFIG: Jours={POLLING_ACTIVE_DAYS} Heures={POLLING_ACTIVE_START_HOUR:02d}-{POLLING_ACTIVE_END_HOUR:02d} Dedup={ENABLE_SUBJECT_GROUP_DEDUP} Senders={len(SENDER_LIST_FOR_POLLING)}"
+            f"API_UPDATE_POLLING_CONFIG: Jours={POLLING_ACTIVE_DAYS} Heures={POLLING_ACTIVE_START_HOUR:02d}-{POLLING_ACTIVE_END_HOUR:02d} Dedup={ENABLE_SUBJECT_GROUP_DEDUP} Senders={len(SENDER_LIST_FOR_POLLING)} Vac={POLLING_VACATION_START_DATE}..{POLLING_VACATION_END_DATE}"
         )
 
         return jsonify({
@@ -2650,6 +2718,8 @@ def api_update_polling_config():
                 "active_end_hour": POLLING_ACTIVE_END_HOUR,
                 "enable_subject_group_dedup": ENABLE_SUBJECT_GROUP_DEDUP,
                 "sender_of_interest_for_polling": SENDER_LIST_FOR_POLLING,
+                "vacation_start": POLLING_VACATION_START_DATE.isoformat() if POLLING_VACATION_START_DATE else None,
+                "vacation_end": POLLING_VACATION_END_DATE.isoformat() if POLLING_VACATION_END_DATE else None,
             },
             "message": "Configuration polling mise à jour. Un redémarrage peut être nécessaire pour prise en compte complète."
         }), 200
