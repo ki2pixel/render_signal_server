@@ -337,24 +337,81 @@
         </h1>
         <a href="/logout" class="logout-link">Déconnexion</a>
       </div>
-      <div class="grid">
-        <!-- Section 1: Fenêtre horaire globale -->
-        <div class="card">
-          <div class="card-title">🕐 Fenêtre Horaire Globale</div>
-          <div class="form-group">
-            <label for="webhooksTimeStart">Heure de début</label>
-            <input id="webhooksTimeStart" type="text" placeholder="ex: 11h30 ou 11:30">
+      <!-- Navigation principale -->
+      <div class="nav-tabs" role="tablist">
+        <button class="tab-btn" data-target="#sec-overview" type="button">Vue d’ensemble</button>
+        <button class="tab-btn" data-target="#sec-webhooks" type="button">Webhooks</button>
+        <button class="tab-btn" data-target="#sec-polling" type="button">Polling</button>
+        <button class="tab-btn" data-target="#sec-preferences" type="button">Préférences</button>
+        <button class="tab-btn" data-target="#sec-tools" type="button">Outils</button>
+      </div>
+
+      <!-- Section: Webhooks (fenêtre horaire + config URLs) -->
+      <div id="sec-webhooks" class="section-panel">
+        <div class="grid">
+          <!-- Fenêtre horaire globale -->
+          <div class="card">
+            <div class="card-title">🕐 Fenêtre Horaire Globale</div>
+            <div class="form-group">
+              <label for="webhooksTimeStart">Heure de début</label>
+              <input id="webhooksTimeStart" type="text" placeholder="ex: 11h30 ou 11:30">
+            </div>
+            <div class="form-group">
+              <label for="webhooksTimeEnd">Heure de fin</label>
+              <input id="webhooksTimeEnd" type="text" placeholder="ex: 17h30 ou 17:30">
+            </div>
+            <button id="saveTimeWindowBtn" class="btn btn-primary">💾 Enregistrer</button>
+            <div id="timeWindowMsg" class="status-msg"></div>
+            <div id="timeWindowDisplay" class="small-text"></div>
+            <div class="small-text">Laissez les deux champs vides pour désactiver la contrainte horaire.</div>
           </div>
-          <div class="form-group">
-            <label for="webhooksTimeEnd">Heure de fin</label>
-            <input id="webhooksTimeEnd" type="text" placeholder="ex: 17h30 ou 17:30">
-          </div>
-          <button id="saveTimeWindowBtn" class="btn btn-primary">💾 Enregistrer</button>
-          <div id="timeWindowMsg" class="status-msg"></div>
-          <div id="timeWindowDisplay" class="small-text"></div>
-          <div class="small-text">Laissez les deux champs vides pour désactiver la contrainte horaire.</div>
         </div>
-        <!-- Section 2: Configuration du Polling (jours/heures/dédoublonnage) -->
+        <div class="card" style="margin: 20px 0;">
+          <div class="card-title">🔗 Configuration des URLs Webhooks</div>
+          <div class="grid" style="grid-template-columns: 1fr 1fr;">
+            <div class="form-group">
+              <label for="webhookUrl">Webhook Personnalisé (WEBHOOK_URL)</label>
+              <input id="webhookUrl" type="text" placeholder="https://...">
+            </div>
+            <div class="form-group">
+              <label for="recadrageUrl">Recadrage Make.com (Média Solution)</label>
+              <input id="recadrageUrl" type="text" placeholder="https://hook.eu2.make.com/...">
+            </div>
+            <div class="form-group">
+              <label for="presenceTrueUrl">Présence TRUE (samedi)</label>
+              <input id="presenceTrueUrl" type="text" placeholder="https://hook.eu2.make.com/... ou token">
+            </div>
+            <div class="form-group">
+              <label for="presenceFalseUrl">Présence FALSE (samedi)</label>
+              <input id="presenceFalseUrl" type="text" placeholder="https://hook.eu2.make.com/... ou token">
+            </div>
+            <div class="form-group">
+              <label for="autorepondeurUrl">Autorépondeur Make.com</label>
+              <input id="autorepondeurUrl" type="text" placeholder="https://hook.eu2.make.com/... ou token">
+            </div>
+            <div class="form-group">
+              <label for="presenceFlag">Flag PRESENCE</label>
+              <select id="presenceFlag">
+                <option value="false">False</option>
+                <option value="true">True</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top: 15px;">
+            <label class="toggle-switch" style="vertical-align: middle;">
+              <input type="checkbox" id="sslVerifyToggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <span style="margin-left: 10px; vertical-align: middle;">Vérification SSL (WEBHOOK_SSL_VERIFY)</span>
+          </div>
+          <button id="saveConfigBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer la Configuration</button>
+          <div id="configMsg" class="status-msg"></div>
+          <div class="small-text">⚠️ Les URLs masquées partiellement par sécurité. Saisissez l'URL complète pour modifier.</div>
+        </div>
+      </div>
+
+      <!-- Section: Polling (config + contrôle) -->
+      <div id="sec-polling" class="section-panel">
         <div class="card">
           <div class="card-title">🗓️ Configuration du Polling (jours, heures, déduplication)</div>
           <div class="form-group">
@@ -404,8 +461,7 @@
           <div id="pollingCfgMsg" class="status-msg"></div>
           <div class="small-text">⚠️ Un redémarrage du serveur peut être nécessaire pour appliquer totalement les changements.</div>
         </div>
-        <!-- Section 3: Contrôle du Polling -->
-        <div class="card">
+        <div class="card" style="margin-top: 20px;">
           <div class="card-title">⚙️ Contrôle du Polling IMAP</div>
           <div class="inline-group" style="margin-bottom: 15px;">
             <label class="toggle-switch">
@@ -430,172 +486,130 @@
           <div class="small-text">⚠️ Nécessite un redémarrage du serveur pour prendre effet complètement.</div>
         </div>
       </div>
-      <!-- Section 3: Configuration des Webhooks -->
-      <div class="card" style="margin-bottom: 20px;">
-        <div class="card-title">🔗 Configuration des URLs Webhooks</div>
-        <div class="grid" style="grid-template-columns: 1fr 1fr;">
+
+      <!-- Section: Préférences (filtres + fiabilité) -->
+      <div id="sec-preferences" class="section-panel">
+        <div class="card">
+          <div class="card-title">🔍 Filtres Email Avancés</div>
           <div class="form-group">
-            <label for="webhookUrl">Webhook Personnalisé (WEBHOOK_URL)</label>
-            <input id="webhookUrl" type="text" placeholder="https://...">
+            <label for="excludeKeywords">Mots-clés à exclure (un par ligne)</label>
+            <textarea id="excludeKeywords" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+            <div class="small-text">Ces mots-clés sont utilisés côté UI pour le moment (aucune persistance serveur).</div>
           </div>
           <div class="form-group">
-            <label for="recadrageUrl">Recadrage Make.com (Média Solution)</label>
-            <input id="recadrageUrl" type="text" placeholder="https://hook.eu2.make.com/...">
+            <label for="attachmentDetectionToggle">Détection de pièces jointes requise</label>
+            <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+              <input type="checkbox" id="attachmentDetectionToggle">
+              <span class="toggle-slider"></span>
+            </label>
           </div>
           <div class="form-group">
-            <label for="presenceTrueUrl">Présence TRUE (samedi)</label>
-            <input id="presenceTrueUrl" type="text" placeholder="https://hook.eu2.make.com/... ou token">
+            <label for="maxEmailSizeMB">Taille maximale des emails à traiter (Mo)</label>
+            <input id="maxEmailSizeMB" type="number" min="1" max="100" placeholder="ex: 25">
           </div>
           <div class="form-group">
-            <label for="presenceFalseUrl">Présence FALSE (samedi)</label>
-            <input id="presenceFalseUrl" type="text" placeholder="https://hook.eu2.make.com/... ou token">
-          </div>
-          <div class="form-group">
-            <label for="autorepondeurUrl">Autorépondeur Make.com</label>
-            <input id="autorepondeurUrl" type="text" placeholder="https://hook.eu2.make.com/... ou token">
-          </div>
-          <div class="form-group">
-            <label for="presenceFlag">Flag PRESENCE</label>
-            <select id="presenceFlag">
-              <option value="false">False</option>
-              <option value="true">True</option>
-            </select>
+            <label for="senderPriority">Priorité des expéditeurs (JSON simple)</label>
+            <textarea id="senderPriority" rows="3" placeholder='{"vip@example.com":"high","team@example.com":"medium"}' style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+            <div class="small-text">Format: { "email": "high|medium|low", ... } — Validé côté client uniquement pour l'instant.</div>
           </div>
         </div>
-        <div style="margin-top: 15px;">
-          <label class="toggle-switch" style="vertical-align: middle;">
-            <input type="checkbox" id="sslVerifyToggle">
-            <span class="toggle-slider"></span>
-          </label>
-          <span style="margin-left: 10px; vertical-align: middle;">Vérification SSL (WEBHOOK_SSL_VERIFY)</span>
-        </div>
-        <button id="saveConfigBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer la Configuration</button>
-        <div id="configMsg" class="status-msg"></div>
-        <div class="small-text">⚠️ Les URLs masquées partiellement par sécurité. Saisissez l'URL complète pour modifier.</div>
-      </div>
-      <!-- Section 4: Logs des Webhooks -->
-      <div class="logs-container">
-        <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
-        <div style="margin-bottom: 15px;">
-          <button id="refreshLogsBtn" class="btn btn-primary">🔄 Actualiser</button>
-        </div>
-        <div id="logsContainer">
-          <div class="log-empty">Chargement des logs...</div>
-        </div>
-      </div>
-      
-      <!-- Section 5: Filtres Email Avancés (UI-only pour l'instant) -->
-      <div class="card" style="margin-top: 20px;">
-        <div class="card-title">🔍 Filtres Email Avancés</div>
-        <div class="form-group">
-          <label for="excludeKeywords">Mots-clés à exclure (un par ligne)</label>
-          <textarea id="excludeKeywords" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-          <div class="small-text">Ces mots-clés sont utilisés côté UI pour le moment (aucune persistance serveur).</div>
-        </div>
-        <div class="form-group">
-          <label for="attachmentDetectionToggle">Détection de pièces jointes requise</label>
-          <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
-            <input type="checkbox" id="attachmentDetectionToggle">
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="form-group">
-          <label for="maxEmailSizeMB">Taille maximale des emails à traiter (Mo)</label>
-          <input id="maxEmailSizeMB" type="number" min="1" max="100" placeholder="ex: 25">
-        </div>
-        <div class="form-group">
-          <label for="senderPriority">Priorité des expéditeurs (JSON simple)</label>
-          <textarea id="senderPriority" rows="3" placeholder='{"vip@example.com":"high","team@example.com":"medium"}' style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-          <div class="small-text">Format: { "email": "high|medium|low", ... } — Validé côté client uniquement pour l'instant.</div>
+        <div class="card" style="margin-top: 20px;">
+          <div class="card-title">⚡ Paramètres de Fiabilité</div>
+          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="form-group">
+              <label for="retryCount">Nombre de tentatives (retries)</label>
+              <input id="retryCount" type="number" min="0" max="10" placeholder="ex: 3">
+            </div>
+            <div class="form-group">
+              <label for="retryDelaySec">Délai entre retries (secondes)</label>
+              <input id="retryDelaySec" type="number" min="0" max="600" placeholder="ex: 10">
+            </div>
+            <div class="form-group">
+              <label for="webhookTimeoutSec">Timeout Webhook (secondes)</label>
+              <input id="webhookTimeoutSec" type="number" min="1" max="120" placeholder="ex: 30">
+            </div>
+            <div class="form-group">
+              <label for="rateLimitPerHour">Limite d'envoi (webhooks/heure)</label>
+              <input id="rateLimitPerHour" type="number" min="1" max="10000" placeholder="ex: 300">
+            </div>
+          </div>
+          <div style="margin-top: 8px;">
+            <label class="toggle-switch" style="vertical-align: middle;">
+              <input type="checkbox" id="notifyOnFailureToggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <span style="margin-left: 10px; vertical-align: middle;">Notifications d'échec par email (UI-only)</span>
+          </div>
+          <div style="margin-top: 12px;">
+            <button id="processingPrefsSaveBtn" class="btn btn-primary">💾 Enregistrer Préférences de Traitement</button>
+            <div id="processingPrefsMsg" class="status-msg"></div>
+          </div>
         </div>
       </div>
 
-      <!-- Section 6: Paramètres de Fiabilité (UI-only pour l'instant) -->
-      <div class="card" style="margin-top: 20px;">
-        <div class="card-title">⚡ Paramètres de Fiabilité</div>
-        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
-          <div class="form-group">
-            <label for="retryCount">Nombre de tentatives (retries)</label>
-            <input id="retryCount" type="number" min="0" max="10" placeholder="ex: 3">
+      <!-- Section: Vue d'ensemble (métriques + logs) -->
+      <div id="sec-overview" class="section-panel">
+        <div class="card">
+          <div class="card-title">📊 Monitoring & Métriques (24h)</div>
+          <div class="inline-group" style="margin-bottom: 10px;">
+            <label class="toggle-switch">
+              <input type="checkbox" id="enableMetricsToggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <span style="margin-left: 10px;">Activer le calcul de métriques locales</span>
           </div>
-          <div class="form-group">
-            <label for="retryDelaySec">Délai entre retries (secondes)</label>
-            <input id="retryDelaySec" type="number" min="0" max="600" placeholder="ex: 10">
+          <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
+            <div class="form-group"><label>Emails traités</label><div id="metricEmailsProcessed" class="small-text">—</div></div>
+            <div class="form-group"><label>Webhooks envoyés</label><div id="metricWebhooksSent" class="small-text">—</div></div>
+            <div class="form-group"><label>Erreurs</label><div id="metricErrors" class="small-text">—</div></div>
+            <div class="form-group"><label>Taux de succès (%)</label><div id="metricSuccessRate" class="small-text">—</div></div>
           </div>
-          <div class="form-group">
-            <label for="webhookTimeoutSec">Timeout Webhook (secondes)</label>
-            <input id="webhookTimeoutSec" type="number" min="1" max="120" placeholder="ex: 30">
-          </div>
-          <div class="form-group">
-            <label for="rateLimitPerHour">Limite d'envoi (webhooks/heure)</label>
-            <input id="rateLimitPerHour" type="number" min="1" max="10000" placeholder="ex: 300">
-          </div>
+          <div id="metricsMiniChart" style="height: 60px; background: rgba(255,255,255,0.05); border:1px solid var(--cork-border-color); border-radius:4px; margin-top:10px; position: relative; overflow:hidden;"></div>
+          <div class="small-text">Graphique simplifié généré côté client à partir de `/api/webhook_logs`.</div>
         </div>
-        <div style="margin-top: 8px;">
-          <label class="toggle-switch" style="vertical-align: middle;">
-            <input type="checkbox" id="notifyOnFailureToggle">
-            <span class="toggle-slider"></span>
-          </label>
-          <span style="margin-left: 10px; vertical-align: middle;">Notifications d'échec par email (UI-only)</span>
-        </div>
-        <div style="margin-top: 12px;">
-          <button id="processingPrefsSaveBtn" class="btn btn-primary">💾 Enregistrer Préférences de Traitement</button>
-          <div id="processingPrefsMsg" class="status-msg"></div>
+        <div class="logs-container">
+          <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
+          <div style="margin-bottom: 15px;">
+            <button id="refreshLogsBtn" class="btn btn-primary">🔄 Actualiser</button>
+          </div>
+          <div id="logsContainer">
+            <div class="log-empty">Chargement des logs...</div>
+          </div>
         </div>
       </div>
 
-      <!-- Section 7: Monitoring et Métriques (dérivé des logs) -->
-      <div class="card" style="margin-top: 20px;">
-        <div class="card-title">📊 Monitoring & Métriques (24h)</div>
-        <div class="inline-group" style="margin-bottom: 10px;">
-          <label class="toggle-switch">
-            <input type="checkbox" id="enableMetricsToggle">
-            <span class="toggle-slider"></span>
-          </label>
-          <span style="margin-left: 10px;">Activer le calcul de métriques locales</span>
-        </div>
-        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
-          <div class="form-group"><label>Emails traités</label><div id="metricEmailsProcessed" class="small-text">—</div></div>
-          <div class="form-group"><label>Webhooks envoyés</label><div id="metricWebhooksSent" class="small-text">—</div></div>
-          <div class="form-group"><label>Erreurs</label><div id="metricErrors" class="small-text">—</div></div>
-          <div class="form-group"><label>Taux de succès (%)</label><div id="metricSuccessRate" class="small-text">—</div></div>
-        </div>
-        <div id="metricsMiniChart" style="height: 60px; background: rgba(255,255,255,0.05); border:1px solid var(--cork-border-color); border-radius:4px; margin-top:10px; position: relative; overflow:hidden;"></div>
-        <div class="small-text">Graphique simplifié généré côté client à partir de `/api/webhook_logs`.</div>
-      </div>
-
-      <!-- Section 8: Gestion des Configurations (export/import) -->
-      <div class="card" style="margin-top: 20px;">
-        <div class="card-title">💾 Gestion des Configurations</div>
-        <div class="inline-group" style="margin-bottom: 10px;">
-          <button id="exportConfigBtn" class="btn btn-primary">⬇️ Exporter</button>
-          <input id="importConfigFile" type="file" accept="application/json" style="display:none;"/>
-          <button id="importConfigBtn" class="btn btn-primary">⬆️ Importer</button>
-        </div>
-        <div id="configMgmtMsg" class="status-msg"></div>
-        <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
-      </div>
-
-      <!-- Section 9: Outils de Test (client-side) -->
-      <div class="card" style="margin-top: 20px;">
-        <div class="card-title">🧪 Outils de Test</div>
-        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
-          <div class="form-group">
-            <label for="testWebhookUrl">Valider une URL de webhook</label>
-            <input id="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
-            <button id="validateWebhookUrlBtn" class="btn btn-primary" style="margin-top: 8px;">Valider</button>
-            <div id="webhookUrlValidationMsg" class="status-msg"></div>
+      <!-- Section: Outils (config mgmt + outils de test) -->
+      <div id="sec-tools" class="section-panel">
+        <div class="card">
+          <div class="card-title">💾 Gestion des Configurations</div>
+          <div class="inline-group" style="margin-bottom: 10px;">
+            <button id="exportConfigBtn" class="btn btn-primary">⬇️ Exporter</button>
+            <input id="importConfigFile" type="file" accept="application/json" style="display:none;"/>
+            <button id="importConfigBtn" class="btn btn-primary">⬆️ Importer</button>
           </div>
-          <div class="form-group">
-            <label>Prévisualiser un payload</label>
-            <input id="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
-            <input id="previewSender" type="email" placeholder="Expéditeur (ex: media@solution.fr)" style="margin-top: 6px;">
-            <textarea id="previewBody" rows="4" placeholder="Corps de l'email (coller du texte)" style="margin-top: 6px; width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-            <button id="buildPayloadPreviewBtn" class="btn btn-primary" style="margin-top: 8px;">Générer</button>
-            <pre id="payloadPreview" style="margin-top:8px; background: rgba(0,0,0,0.2); border:1px solid var(--cork-border-color); padding:10px; border-radius:4px; max-height:200px; overflow:auto; color: var(--cork-text-primary);"></pre>
-          </div>
+          <div id="configMgmtMsg" class="status-msg"></div>
+          <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
         </div>
-        <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
+        <div class="card" style="margin-top: 20px;">
+          <div class="card-title">🧪 Outils de Test</div>
+          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="form-group">
+              <label for="testWebhookUrl">Valider une URL de webhook</label>
+              <input id="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
+              <button id="validateWebhookUrlBtn" class="btn btn-primary" style="margin-top: 8px;">Valider</button>
+              <div id="webhookUrlValidationMsg" class="status-msg"></div>
+            </div>
+            <div class="form-group">
+              <label>Prévisualiser un payload</label>
+              <input id="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
+              <input id="previewSender" type="email" placeholder="Expéditeur (ex: media@solution.fr)" style="margin-top: 6px;">
+              <textarea id="previewBody" rows="4" placeholder="Corps de l'email (coller du texte)" style="margin-top: 6px; width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+              <button id="buildPayloadPreviewBtn" class="btn btn-primary" style="margin-top: 8px;">Générer</button>
+              <pre id="payloadPreview" style="margin-top:8px; background: rgba(0,0,0,0.2); border:1px solid var(--cork-border-color); padding:10px; border-radius:4px; max-height:200px; overflow:auto; color: var(--cork-text-primary);"></pre>
+            </div>
+          </div>
+          <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
+        </div>
       </div>
     </div>
     <!-- Chargement du script JavaScript -->
