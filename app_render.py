@@ -62,6 +62,14 @@ except Exception:
     PLAYWRIGHT_AVAILABLE = False
 import threading as _threading
 
+# --- Test API auth helper (API key) ---
+def _testapi_authorized(req: request) -> bool:
+    """Authorize test endpoints via X-API-Key matching TEST_API_KEY env. Returns True if allowed."""
+    expected = os.environ.get("TEST_API_KEY")
+    if not expected:
+        return False
+    return req.headers.get("X-API-Key") == expected
+
 # --- URL Providers Pattern ---
 # Détecte les liens de livraison pris en charge dans le corps de l'email
 # - Dropbox folder links
@@ -2497,7 +2505,13 @@ def api_test_get_processing_prefs():
     if not _testapi_authorized(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
     try:
-        return jsonify({"success": True, "prefs": PROCESSING_PREFS}), 200
+        prefs = globals().get("PROCESSING_PREFS")
+        if prefs is None:
+            # lazy-load from storage if not initialized
+            loaded = _load_processing_prefs()
+            globals()["PROCESSING_PREFS"] = loaded
+            prefs = loaded
+        return jsonify({"success": True, "prefs": prefs}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
