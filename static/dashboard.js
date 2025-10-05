@@ -702,8 +702,10 @@ function escapeHtml(text) {
 
 // -------------------- Navigation par onglets --------------------
 function initTabs() {
+    console.log('[tabs] initTabs: starting');
     const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
     const panels = Array.from(document.querySelectorAll('.section-panel'));
+    console.log(`[tabs] found buttons=${tabButtons.length}, panels=${panels.length}`);
 
     const mapHashToId = {
         '#overview': '#sec-overview',
@@ -714,15 +716,26 @@ function initTabs() {
     };
 
     function activate(targetSelector) {
+        console.log('[tabs] activate called for target:', targetSelector);
         // Toggle active class on panels
         panels.forEach(p => p.classList.remove('active'));
         const panel = document.querySelector(targetSelector);
-        if (panel) panel.classList.add('active');
+        if (panel) {
+            panel.classList.add('active');
+            console.log('[tabs] panel activated:', panel.id);
+        } else {
+            console.warn('[tabs] panel not found for selector:', targetSelector);
+        }
 
         // Toggle active class on buttons
         tabButtons.forEach(btn => btn.classList.remove('active'));
         const btn = tabButtons.find(b => b.getAttribute('data-target') === targetSelector);
-        if (btn) btn.classList.add('active');
+        if (btn) {
+            btn.classList.add('active');
+            console.log('[tabs] button activated (data-target):', targetSelector);
+        } else {
+            console.warn('[tabs] button not found for selector:', targetSelector);
+        }
 
         // Optional: refresh section data on show
         if (targetSelector === '#sec-overview') {
@@ -744,6 +757,7 @@ function initTabs() {
     tabButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             const target = btn.getAttribute('data-target');
+            console.log('[tabs] click on tab-btn, target=', target);
             if (target) {
                 // Update URL hash for deep-linking (without scrolling)
                 const entry = Object.entries(mapHashToId).find(([, sel]) => sel === target);
@@ -756,17 +770,21 @@ function initTabs() {
     // Determine initial tab: from hash or default to overview
     const initialHash = window.location.hash;
     const initialTarget = mapHashToId[initialHash] || '#sec-overview';
+    console.log('[tabs] initialHash=', initialHash, ' -> initialTarget=', initialTarget);
     activate(initialTarget);
 
     // React to hash changes (e.g., manual URL edit)
     window.addEventListener('hashchange', () => {
         const t = mapHashToId[window.location.hash];
+        console.log('[tabs] hashchange ->', window.location.hash, ' mapped to ', t);
         if (t) activate(t);
     });
+    console.log('[tabs] initTabs: ready');
 }
 
 // Initialisation au chargement de la page
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('📊 DOMContentLoaded: init start');
     // Charger les données initiales
     loadTimeWindow();
     loadPollingStatus();
