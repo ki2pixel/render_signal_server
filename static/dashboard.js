@@ -24,9 +24,9 @@ function addEmailField(value) {
     input.style.flex = '1';
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'btn btn-danger';
+    btn.className = 'email-remove-btn';
     btn.textContent = '❌';
-    btn.style.marginLeft = '8px';
+    btn.title = 'Supprimer cet email';
     btn.addEventListener('click', () => row.remove());
     row.appendChild(input);
     row.appendChild(btn);
