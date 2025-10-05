@@ -84,7 +84,42 @@
                 <div class="small-text">Laissez les deux champs vides pour désactiver la contrainte horaire.</div>
             </div>
 
-            <!-- Section 2: Contrôle du Polling -->
+            <!-- Section 2: Configuration du Polling (jours/heures/dédoublonnage) -->
+            <div class="card">
+                <div class="card-title">🗓️ Configuration du Polling (jours, heures, déduplication)</div>
+                <div class="form-group">
+                    <label for="pollingActiveDays">POLLING_ACTIVE_DAYS (0=Mon, 6=Sun)</label>
+                    <input id="pollingActiveDays" type="text" placeholder="ex: 0,1,2,3,4 ou monday,friday">
+                    <div class="small-text">Astuce: vous pouvez saisir des chiffres (0-6) ou des noms de jours (monday..sunday) séparés par des virgules.</div>
+                </div>
+                <div class="grid" style="grid-template-columns: 1fr 1fr;">
+                    <div class="form-group">
+                        <label for="pollingStartHour">POLLING_ACTIVE_START_HOUR</label>
+                        <input id="pollingStartHour" type="number" min="0" max="23" placeholder="0-23">
+                    </div>
+                    <div class="form-group">
+                        <label for="pollingEndHour">POLLING_ACTIVE_END_HOUR</label>
+                        <input id="pollingEndHour" type="number" min="0" max="23" placeholder="0-23">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="senderOfInterest">SENDER_OF_INTEREST_FOR_POLLING</label>
+                    <textarea id="senderOfInterest" rows="3" placeholder="ex: sender1@example.com, sender2@example.com"></textarea>
+                    <div class="small-text">Saisir des emails séparés par des virgules. Ils seront nettoyés et mis en minuscules.</div>
+                </div>
+                <div class="inline-group" style="margin: 8px 0 12px 0;">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="enableSubjectGroupDedup">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span style="margin-left: 10px;">ENABLE_SUBJECT_GROUP_DEDUP</span>
+                </div>
+                <button id="savePollingCfgBtn" class="btn btn-primary">💾 Enregistrer la Configuration Polling</button>
+                <div id="pollingCfgMsg" class="status-msg"></div>
+                <div class="small-text">⚠️ Un redémarrage du serveur peut être nécessaire pour appliquer totalement les changements.</div>
+            </div>
+
+            <!-- Section 3: Contrôle du Polling -->
             <div class="card">
                 <div class="card-title">⚙️ Contrôle du Polling IMAP</div>
                 <div class="inline-group" style="margin-bottom: 15px;">
