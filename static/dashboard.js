@@ -799,19 +799,47 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
         console.warn('[tabs] initial hide panels failed:', e);
     }
-    // Charger les données initiales
-    loadTimeWindow();
-    loadPollingStatus();
-    loadWebhookConfig();
-    loadPollingConfig();
-    loadWebhookLogs();
+    // Initialiser les onglets en premier pour garantir l'UX même si des erreurs surviennent après
+    try {
+        console.log('[tabs] calling initTabs early');
+        initTabs();
+        console.log('[tabs] initTabs completed');
+    } catch (e) {
+        console.error('[tabs] initTabs threw (early):', e);
+    }
+
+    // Fallback: programmer un appel asynchrone très tôt pour contourner d'éventuels ordres d'exécution
+    try {
+        setTimeout(() => {
+            try {
+                console.log('[tabs] setTimeout fallback: calling initTabs');
+                initTabs();
+            } catch (err) {
+                console.error('[tabs] setTimeout fallback failed:', err);
+            }
+        }, 0);
+    } catch (e) {
+        console.warn('[tabs] setTimeout fallback scheduling failed:', e);
+    }
+
+    // Charger les données initiales (protégées)
+    try { console.log('[init] loadTimeWindow'); loadTimeWindow(); } catch (e) { console.error('[init] loadTimeWindow failed', e); }
+    try { console.log('[init] loadPollingStatus'); loadPollingStatus(); } catch (e) { console.error('[init] loadPollingStatus failed', e); }
+    try { console.log('[init] loadWebhookConfig'); loadWebhookConfig(); } catch (e) { console.error('[init] loadWebhookConfig failed', e); }
+    try { console.log('[init] loadPollingConfig'); loadPollingConfig(); } catch (e) { console.error('[init] loadPollingConfig failed', e); }
+    try { console.log('[init] loadWebhookLogs'); loadWebhookLogs(); } catch (e) { console.error('[init] loadWebhookLogs failed', e); }
     
-    // Attacher les gestionnaires d'événements
-    document.getElementById('saveTimeWindowBtn').addEventListener('click', saveTimeWindow);
-    document.getElementById('togglePollingBtn').addEventListener('click', togglePolling);
-    document.getElementById('saveConfigBtn').addEventListener('click', saveWebhookConfig);
-    document.getElementById('refreshLogsBtn').addEventListener('click', loadWebhookLogs);
-    document.getElementById('savePollingCfgBtn').addEventListener('click', savePollingConfig);
+    // Attacher les gestionnaires d'événements (avec garde)
+    const elSaveTimeWindow = document.getElementById('saveTimeWindowBtn');
+    elSaveTimeWindow && elSaveTimeWindow.addEventListener('click', saveTimeWindow);
+    const elTogglePolling = document.getElementById('togglePollingBtn');
+    elTogglePolling && elTogglePolling.addEventListener('click', togglePolling);
+    const elSaveConfig = document.getElementById('saveConfigBtn');
+    elSaveConfig && elSaveConfig.addEventListener('click', saveWebhookConfig);
+    const elRefreshLogs = document.getElementById('refreshLogsBtn');
+    elRefreshLogs && elRefreshLogs.addEventListener('click', loadWebhookLogs);
+    const elSavePollingCfg = document.getElementById('savePollingCfgBtn');
+    elSavePollingCfg && elSavePollingCfg.addEventListener('click', savePollingConfig);
     const addSenderBtn = document.getElementById('addSenderBtn');
     if (addSenderBtn) addSenderBtn.addEventListener('click', () => addEmailField(''));
     // Mettre à jour le statut vacances quand l'utilisateur change les dates
@@ -881,6 +909,30 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Sauvegarder préférences de traitement ---
     const processingPrefsSaveBtn = document.getElementById('processingPrefsSaveBtn');
     processingPrefsSaveBtn && processingPrefsSaveBtn.addEventListener('click', saveProcessingPrefsToServer);
+
+    // --- Délégation de clic (fallback) pour .tab-btn ---
+    document.addEventListener('click', (evt) => {
+        const btn = evt.target && evt.target.closest && evt.target.closest('.tab-btn');
+        if (!btn) return;
+        const target = btn.getAttribute('data-target');
+        console.log('[tabs-fallback] click captured on', target);
+        if (!target) return;
+        // Activer/désactiver manuellement sans dépendre d'initTabs
+        try {
+            const panels = Array.from(document.querySelectorAll('.section-panel'));
+            panels.forEach(p => { p.classList.remove('active'); p.style.display = 'none'; });
+            const panel = document.querySelector(target);
+            if (panel) { panel.classList.add('active'); panel.style.display = 'block'; }
+            const allBtns = Array.from(document.querySelectorAll('.tab-btn'));
+            allBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            // Mettre à jour le hash pour deep-linking
+            const map = { '#sec-overview': '#overview', '#sec-webhooks': '#webhooks', '#sec-polling': '#polling', '#sec-preferences': '#preferences', '#sec-tools': '#tools' };
+            const hash = map[target]; if (hash) history.replaceState(null, '', hash);
+        } catch (e) {
+            console.error('[tabs-fallback] activation failed:', e);
+        }
+    });
 });
 
 // --- Polling Config (jours, heures, dédup) ---
