@@ -625,6 +625,17 @@
           <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
         </div>
         <div class="card" style="margin-top: 20px;">
+          <div class="card-title">🔄 Redéploiement / Redémarrage du Serveur</div>
+          <div class="form-group">
+            <p class="small-text">Certaines modifications (ex: paramètres de polling) nécessitent un redémarrage du service pour être pleinement appliquées.</p>
+          </div>
+          <div class="inline-group" style="margin-bottom: 10px;">
+            <button id="restartServerBtn" class="btn btn-success">🔄 Redémarrer le serveur</button>
+          </div>
+          <div id="restartMsg" class="status-msg"></div>
+          <div class="small-text">Cette action redémarre le service applicatif côté serveur (via systemd). La session peut être momentanément interrompue.</div>
+        </div>
+        <div class="card" style="margin-top: 20px;">
           <div class="card-title">🧪 Outils de Test</div>
           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
             <div class="form-group">
