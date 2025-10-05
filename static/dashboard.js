@@ -11,6 +11,30 @@ function showMessage(elementId, message, type) {
     }, 5000);
 }
 
+// Nouvelle approche: gestion via cases à cocher (0=Mon .. 6=Sun)
+function setDayCheckboxes(days) {
+    const group = document.getElementById('pollingActiveDaysGroup');
+    if (!group) return;
+    const set = new Set(Array.isArray(days) ? days : []);
+    const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
+    boxes.forEach(cb => {
+        const idx = parseInt(cb.value, 10);
+        cb.checked = set.has(idx);
+    });
+}
+
+function collectDayCheckboxes() {
+    const group = document.getElementById('pollingActiveDaysGroup');
+    if (!group) return [];
+    const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
+    const out = [];
+    boxes.forEach(cb => {
+        if (cb.checked) out.push(parseInt(cb.value, 10));
+    });
+    // tri croissant et unique par sécurité
+    return Array.from(new Set(out)).sort((a,b)=>a-b);
+}
+
 // ---- UI dynamique pour la liste d'emails ----
 function addEmailField(value) {
     const container = document.getElementById('senderOfInterestContainer');
@@ -380,31 +404,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // --- Polling Config (jours, heures, dédup) ---
-function parseDaysInputToIndices(input) {
-    // Accepte "0,1,2" ou "monday, friday"; retourne liste [0..6]
-    if (!input) return [];
-    const map = {
-        monday: 0, mon: 0, lundi: 0,
-        tuesday: 1, tue: 1, mardi: 1,
-        wednesday: 2, wed: 2, mercredi: 2,
-        thursday: 3, thu: 3, jeudi: 3,
-        friday: 4, fri: 4, vendredi: 4,
-        saturday: 5, sat: 5, samedi: 5,
-        sunday: 6, sun: 6, dimanche: 6
-    };
-    const out = [];
-    input.split(',').map(s => s.trim()).filter(Boolean).forEach(tok => {
-        const low = tok.toLowerCase();
-        if (/^\d+$/.test(low)) {
-            const v = parseInt(low, 10);
-            if (v >= 0 && v <= 6) out.push(v);
-        } else if (map.hasOwnProperty(low)) {
-            out.push(map[low]);
-        }
-    });
-    // unique, trié
-    return Array.from(new Set(out)).sort((a,b)=>a-b);
-}
 
 async function loadPollingConfig() {
     try {
@@ -413,7 +412,7 @@ async function loadPollingConfig() {
         if (data.success) {
             const cfg = data.config || {};
             const days = Array.isArray(cfg.active_days) ? cfg.active_days : [];
-            document.getElementById('pollingActiveDays').value = days.join(',');
+            setDayCheckboxes(days);
             document.getElementById('pollingStartHour').value = cfg.active_start_hour ?? '';
             document.getElementById('pollingEndHour').value = cfg.active_end_hour ?? '';
             document.getElementById('enableSubjectGroupDedup').checked = !!cfg.enable_subject_group_dedup;
@@ -431,7 +430,7 @@ async function loadPollingConfig() {
 
 async function savePollingConfig() {
     const btn = document.getElementById('savePollingCfgBtn');
-    const daysRaw = document.getElementById('pollingActiveDays').value.trim();
+    const selectedDays = collectDayCheckboxes();
     const startStr = document.getElementById('pollingStartHour').value.trim();
     const endStr = document.getElementById('pollingEndHour').value.trim();
     const dedup = document.getElementById('enableSubjectGroupDedup').checked;
@@ -440,8 +439,8 @@ async function savePollingConfig() {
     const vacEnd = document.getElementById('vacationEnd').value.trim();
 
     const payload = {};
-    const parsedDays = parseDaysInputToIndices(daysRaw);
-    if (parsedDays.length) payload.active_days = parsedDays;
+    // Toujours envoyer la liste (éventuellement vide) pour refléter l'état exact des cases cochées
+    payload.active_days = selectedDays;
     if (startStr !== '') payload.active_start_hour = parseInt(startStr, 10);
     if (endStr !== '') payload.active_end_hour = parseInt(endStr, 10);
     payload.enable_subject_group_dedup = dedup;
