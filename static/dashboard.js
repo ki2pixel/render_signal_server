@@ -11,6 +11,54 @@ function showMessage(elementId, message, type) {
     }, 5000);
 }
 
+// ---- UI dynamique pour la liste d'emails ----
+function addEmailField(value) {
+    const container = document.getElementById('senderOfInterestContainer');
+    if (!container) return;
+    const row = document.createElement('div');
+    row.className = 'inline-group';
+    const input = document.createElement('input');
+    input.type = 'email';
+    input.placeholder = 'ex: email@example.com';
+    input.value = value || '';
+    input.style.flex = '1';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-danger';
+    btn.textContent = '❌';
+    btn.style.marginLeft = '8px';
+    btn.addEventListener('click', () => row.remove());
+    row.appendChild(input);
+    row.appendChild(btn);
+    container.appendChild(row);
+}
+
+function renderSenderInputs(list) {
+    const container = document.getElementById('senderOfInterestContainer');
+    if (!container) return;
+    container.innerHTML = '';
+    (list || []).forEach(e => addEmailField(e));
+    if (!list || list.length === 0) addEmailField('');
+}
+
+function collectSenderInputs() {
+    const container = document.getElementById('senderOfInterestContainer');
+    if (!container) return [];
+    const inputs = Array.from(container.querySelectorAll('input[type="email"]'));
+    const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+    const out = [];
+    const seen = new Set();
+    for (const i of inputs) {
+        const v = (i.value || '').trim().toLowerCase();
+        if (!v) continue;
+        if (emailRe.test(v) && !seen.has(v)) {
+            seen.add(v);
+            out.push(v);
+        }
+    }
+    return out;
+}
+
 // Affiche le statut des vacances sous les sélecteurs de dates
 function updateVacationStatus() {
     const el = document.getElementById('vacationStatus');
@@ -314,6 +362,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('saveConfigBtn').addEventListener('click', saveWebhookConfig);
     document.getElementById('refreshLogsBtn').addEventListener('click', loadWebhookLogs);
     document.getElementById('savePollingCfgBtn').addEventListener('click', savePollingConfig);
+    const addSenderBtn = document.getElementById('addSenderBtn');
+    if (addSenderBtn) addSenderBtn.addEventListener('click', () => addEmailField(''));
     // Mettre à jour le statut vacances quand l'utilisateur change les dates
     const vacStartEl = document.getElementById('vacationStart');
     const vacEndEl = document.getElementById('vacationEnd');
@@ -368,7 +418,7 @@ async function loadPollingConfig() {
             document.getElementById('pollingEndHour').value = cfg.active_end_hour ?? '';
             document.getElementById('enableSubjectGroupDedup').checked = !!cfg.enable_subject_group_dedup;
             const senders = Array.isArray(cfg.sender_of_interest_for_polling) ? cfg.sender_of_interest_for_polling : [];
-            document.getElementById('senderOfInterest').value = senders.join(', ');
+            renderSenderInputs(senders);
             // Dates vacances
             if (cfg.vacation_start) document.getElementById('vacationStart').value = cfg.vacation_start;
             if (cfg.vacation_end) document.getElementById('vacationEnd').value = cfg.vacation_end;
@@ -385,7 +435,7 @@ async function savePollingConfig() {
     const startStr = document.getElementById('pollingStartHour').value.trim();
     const endStr = document.getElementById('pollingEndHour').value.trim();
     const dedup = document.getElementById('enableSubjectGroupDedup').checked;
-    const sendersRaw = document.getElementById('senderOfInterest').value.trim();
+    const senders = collectSenderInputs();
     const vacStart = document.getElementById('vacationStart').value.trim();
     const vacEnd = document.getElementById('vacationEnd').value.trim();
 
@@ -396,20 +446,7 @@ async function savePollingConfig() {
     if (endStr !== '') payload.active_end_hour = parseInt(endStr, 10);
     payload.enable_subject_group_dedup = dedup;
 
-    // Parse and validate emails
-    const emails = sendersRaw
-        ? sendersRaw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
-        : [];
-    const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-    const valid = [];
-    const seen = new Set();
-    for (const e of emails) {
-        if (emailRe.test(e) && !seen.has(e)) {
-            seen.add(e);
-            valid.push(e);
-        }
-    }
-    payload.sender_of_interest_for_polling = valid;
+    payload.sender_of_interest_for_polling = senders;
     // Dates ISO (ou null)
     payload.vacation_start = vacStart || null;
     payload.vacation_end = vacEnd || null;
