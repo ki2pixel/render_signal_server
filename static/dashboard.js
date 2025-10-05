@@ -280,6 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadTimeWindow();
     loadPollingStatus();
     loadWebhookConfig();
+    loadPollingConfig();
     loadWebhookLogs();
     
     // Attacher les gestionnaires d'événements
@@ -287,9 +288,108 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('togglePollingBtn').addEventListener('click', togglePolling);
     document.getElementById('saveConfigBtn').addEventListener('click', saveWebhookConfig);
     document.getElementById('refreshLogsBtn').addEventListener('click', loadWebhookLogs);
+    document.getElementById('savePollingCfgBtn').addEventListener('click', savePollingConfig);
     
     // Auto-refresh des logs toutes les 30 secondes
     setInterval(loadWebhookLogs, 30000);
     
     console.log('📊 Dashboard Webhooks initialisé.');
 });
+
+// --- Polling Config (jours, heures, dédup) ---
+function parseDaysInputToIndices(input) {
+    // Accepte "0,1,2" ou "monday, friday"; retourne liste [0..6]
+    if (!input) return [];
+    const map = {
+        monday: 0, mon: 0, lundi: 0,
+        tuesday: 1, tue: 1, mardi: 1,
+        wednesday: 2, wed: 2, mercredi: 2,
+        thursday: 3, thu: 3, jeudi: 3,
+        friday: 4, fri: 4, vendredi: 4,
+        saturday: 5, sat: 5, samedi: 5,
+        sunday: 6, sun: 6, dimanche: 6
+    };
+    const out = [];
+    input.split(',').map(s => s.trim()).filter(Boolean).forEach(tok => {
+        const low = tok.toLowerCase();
+        if (/^\d+$/.test(low)) {
+            const v = parseInt(low, 10);
+            if (v >= 0 && v <= 6) out.push(v);
+        } else if (map.hasOwnProperty(low)) {
+            out.push(map[low]);
+        }
+    });
+    // unique, trié
+    return Array.from(new Set(out)).sort((a,b)=>a-b);
+}
+
+async function loadPollingConfig() {
+    try {
+        const res = await fetch('/api/get_polling_config');
+        const data = await res.json();
+        if (data.success) {
+            const cfg = data.config || {};
+            const days = Array.isArray(cfg.active_days) ? cfg.active_days : [];
+            document.getElementById('pollingActiveDays').value = days.join(',');
+            document.getElementById('pollingStartHour').value = cfg.active_start_hour ?? '';
+            document.getElementById('pollingEndHour').value = cfg.active_end_hour ?? '';
+            document.getElementById('enableSubjectGroupDedup').checked = !!cfg.enable_subject_group_dedup;
+            const senders = Array.isArray(cfg.sender_of_interest_for_polling) ? cfg.sender_of_interest_for_polling : [];
+            document.getElementById('senderOfInterest').value = senders.join(', ');
+        }
+    } catch (e) {
+        console.error('Erreur chargement config polling:', e);
+    }
+}
+
+async function savePollingConfig() {
+    const btn = document.getElementById('savePollingCfgBtn');
+    const daysRaw = document.getElementById('pollingActiveDays').value.trim();
+    const startStr = document.getElementById('pollingStartHour').value.trim();
+    const endStr = document.getElementById('pollingEndHour').value.trim();
+    const dedup = document.getElementById('enableSubjectGroupDedup').checked;
+    const sendersRaw = document.getElementById('senderOfInterest').value.trim();
+
+    const payload = {};
+    const parsedDays = parseDaysInputToIndices(daysRaw);
+    if (parsedDays.length) payload.active_days = parsedDays;
+    if (startStr !== '') payload.active_start_hour = parseInt(startStr, 10);
+    if (endStr !== '') payload.active_end_hour = parseInt(endStr, 10);
+    payload.enable_subject_group_dedup = dedup;
+
+    // Parse and validate emails
+    const emails = sendersRaw
+        ? sendersRaw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+        : [];
+    const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+    const valid = [];
+    const seen = new Set();
+    for (const e of emails) {
+        if (emailRe.test(e) && !seen.has(e)) {
+            seen.add(e);
+            valid.push(e);
+        }
+    }
+    payload.sender_of_interest_for_polling = valid;
+
+    try {
+        btn.disabled = true;
+        const res = await fetch('/api/update_polling_config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) {
+            showMessage('pollingCfgMsg', data.message || 'Configuration polling enregistrée.', 'success');
+            // Recharger pour refléter la normalisation côté serveur
+            loadPollingConfig();
+        } else {
+            showMessage('pollingCfgMsg', data.message || 'Erreur lors de la sauvegarde.', 'error');
+        }
+    } catch (e) {
+        showMessage('pollingCfgMsg', 'Erreur de communication avec le serveur.', 'error');
+    } finally {
+        btn.disabled = false;
+    }
+}
