@@ -1,13 +1,3 @@
-"""
-Test API auth helper (API key)
-"""
-def _testapi_authorized(req: request) -> bool:
-    """Authorize test endpoints via X-API-Key matching TEST_API_KEY env. Returns True if allowed."""
-    expected = os.environ.get("TEST_API_KEY")
-    if not expected:
-        return False
-    return req.headers.get("X-API-Key") == expected
-
 # --- Singleton lock to avoid multiple pollers across Gunicorn workers ---
 BG_LOCK_FH = None  # Keep a global reference so the lock is held for the process lifetime
 
