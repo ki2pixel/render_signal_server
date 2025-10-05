@@ -2443,6 +2443,133 @@ def api_test_presence_webhook():
         app.logger.error(f"API_TEST_PRESENCE: Exception: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
+# --- Test equivalents for config GET/POST (CORS + API key) ---
+@app.route('/api/test/get_webhook_time_window', methods=['GET'])
+def api_test_get_webhook_time_window():
+    if not _testapi_authorized(request):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+    try:
+        return jsonify({
+            "success": True,
+            "webhooks_time_start": WEBHOOKS_TIME_START_STR or None,
+            "webhooks_time_end": WEBHOOKS_TIME_END_STR or None,
+            "timezone": str(TZ_FOR_POLLING.key if hasattr(TZ_FOR_POLLING, 'key') else TZ_FOR_POLLING)
+        }), 200
+    except Exception as e:
+        app.logger.error(f"API_TEST_GET_TIME_WINDOW: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur lors de la récupération de la fenêtre horaire."}), 500
+
+@app.route('/api/test/set_webhook_time_window', methods=['POST'])
+def api_test_set_webhook_time_window():
+    if not _testapi_authorized(request):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+    try:
+        payload = request.get_json(silent=True) or {}
+        start = payload.get('start', '')
+        end = payload.get('end', '')
+        ok, msg = _update_time_window(start, end)
+        status = 200 if ok else 400
+        return jsonify({
+            "success": ok,
+            "message": msg,
+            "webhooks_time_start": WEBHOOKS_TIME_START_STR or None,
+            "webhooks_time_end": WEBHOOKS_TIME_END_STR or None,
+        }), status
+    except Exception as e:
+        app.logger.error(f"API_TEST_SET_TIME_WINDOW: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}), 500
+
+@app.route('/api/test/get_webhook_config', methods=['GET'])
+def api_test_get_webhook_config():
+    if not _testapi_authorized(request):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+    try:
+        persisted_config = _load_webhook_config()
+        def mask_url(url):
+            if not url:
+                return None
+            if url.startswith("http"):
+                parts = url.split("/")
+                if len(parts) > 3:
+                    return f"{parts[0]}//{parts[2]}/***"
+                return url[:30] + "***"
+        config = {
+            "webhook_url": persisted_config.get("webhook_url") or mask_url(WEBHOOK_URL),
+            "recadrage_webhook_url": persisted_config.get("recadrage_webhook_url") or mask_url(RECADRAGE_MAKE_WEBHOOK_URL),
+            "presence_flag": persisted_config.get("presence_flag", PRESENCE_FLAG),
+            "presence_true_url": persisted_config.get("presence_true_url") or mask_url(PRESENCE_TRUE_MAKE_WEBHOOK_URL),
+            "presence_false_url": persisted_config.get("presence_false_url") or mask_url(PRESENCE_FALSE_MAKE_WEBHOOK_URL),
+            "autorepondeur_webhook_url": persisted_config.get("autorepondeur_webhook_url") or mask_url(AUTOREPONDEUR_MAKE_WEBHOOK_URL),
+            "webhook_ssl_verify": persisted_config.get("webhook_ssl_verify", WEBHOOK_SSL_VERIFY),
+            "polling_enabled": persisted_config.get("polling_enabled", os.environ.get("ENABLE_BACKGROUND_TASKS", "0").lower() in ("1", "true", "yes")),
+        }
+        return jsonify({"success": True, "config": config}), 200
+    except Exception as e:
+        app.logger.error(f"API_TEST_GET_WEBHOOK_CONFIG: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration."}), 500
+
+@app.route('/api/test/update_webhook_config', methods=['POST'])
+def api_test_update_webhook_config():
+    if not _testapi_authorized(request):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+    try:
+        payload = request.get_json(silent=True) or {}
+        config = _load_webhook_config()
+        if "webhook_url" in payload:
+            val = payload["webhook_url"].strip() if payload["webhook_url"] else None
+            if val and not val.startswith("http"):
+                return jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}), 400
+            config["webhook_url"] = val
+        if "recadrage_webhook_url" in payload:
+            val = payload["recadrage_webhook_url"].strip() if payload["recadrage_webhook_url"] else None
+            if val and not val.startswith("http"):
+                return jsonify({"success": False, "message": "recadrage_webhook_url doit être une URL HTTPS valide."}), 400
+            config["recadrage_webhook_url"] = val
+        if "presence_flag" in payload:
+            config["presence_flag"] = bool(payload["presence_flag"])
+        if "presence_true_url" in payload:
+            val = payload["presence_true_url"].strip() if payload["presence_true_url"] else None
+            if val:
+                val = _normalize_make_webhook_url(val)
+            config["presence_true_url"] = val
+        if "presence_false_url" in payload:
+            val = payload["presence_false_url"].strip() if payload["presence_false_url"] else None
+            if val:
+                val = _normalize_make_webhook_url(val)
+            config["presence_false_url"] = val
+        if "autorepondeur_webhook_url" in payload:
+            val = payload["autorepondeur_webhook_url"].strip() if payload["autorepondeur_webhook_url"] else None
+            if val:
+                val = _normalize_make_webhook_url(val)
+            config["autorepondeur_webhook_url"] = val
+        if "webhook_ssl_verify" in payload:
+            config["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
+        if not _save_webhook_config(config):
+            return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration."}), 500
+        return jsonify({"success": True, "message": "Configuration mise à jour avec succès."}), 200
+    except Exception as e:
+        app.logger.error(f"API_TEST_UPDATE_WEBHOOK_CONFIG: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}), 500
+
+@app.route('/api/test/get_polling_config', methods=['GET'])
+def api_test_get_polling_config():
+    if not _testapi_authorized(request):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+    try:
+        return jsonify({
+            "success": True,
+            "timezone": POLLING_TIMEZONE_STR,
+            "active_days": POLLING_ACTIVE_DAYS,
+            "active_start_hour": POLLING_ACTIVE_START_HOUR,
+            "active_end_hour": POLLING_ACTIVE_END_HOUR,
+            "interval_seconds": EMAIL_POLLING_INTERVAL_SECONDS,
+            "inactive_check_interval_seconds": POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
+            "enable_subject_group_dedup": ENABLE_SUBJECT_GROUP_DEDUP,
+        }), 200
+    except Exception as e:
+        app.logger.error(f"API_TEST_GET_POLLING_CONFIG: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration de polling."}), 500
+
 @app.route('/api/test/webhook_logs', methods=['GET'])
 def api_test_webhook_logs():
     if not _testapi_authorized(request):
