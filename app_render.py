@@ -2174,7 +2174,7 @@ def background_email_poller():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user and current_user.is_authenticated:
-        return redirect(url_for('serve_trigger_page_main'))
+        return redirect(url_for('serve_dashboard_main'))
 
     if request.method == 'POST':
         username = request.form.get('username')
@@ -2185,7 +2185,7 @@ def login():
             login_user(user_obj)
             app.logger.info(f"AUTH: Connexion réussie pour l'utilisateur '{username}'.")
             next_page = request.args.get('next')
-            return redirect(next_page or url_for('serve_trigger_page_main'))
+            return redirect(next_page or url_for('serve_dashboard_main'))
         else:
             app.logger.warning(f"AUTH: Tentative de connexion échouée pour '{username}'.")
             return render_template('login.html', error="Identifiants invalides.")
@@ -2339,9 +2339,9 @@ def api_test_presence_webhook():
 
 @app.route('/')
 @login_required
-def serve_trigger_page_main():
-    app.logger.info(f"ROOT_UI: Requête pour '/' par l'utilisateur '{current_user.id}'. Service de 'trigger_page.html'.")
-    return render_template('trigger_page.html')
+def serve_dashboard_main():
+    app.logger.info(f"ROOT_UI: Requête pour '/' par l'utilisateur '{current_user.id}'. Service de 'dashboard.html'.")
+    return render_template('dashboard.html')
 
 
 
