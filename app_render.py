@@ -52,6 +52,7 @@ import unicodedata
 from bs4 import BeautifulSoup  # HTML parsing for resolving direct download links
 from urllib.parse import urlparse, urljoin
 import fcntl  # File locking to ensure singleton background poller across processes
+from collections import deque  # Rate limiting queue for webhook sends
 try:
     # Playwright is optional, enabled via env var ENABLE_HEADLESS_RESOLUTION=true
     from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError  # type: ignore
@@ -1717,9 +1718,10 @@ def check_new_emails_and_trigger_webhook():
                     mark_email_as_read_imap(mail, email_num)
                     continue
 
-                # Extraire le contenu complet de l'email
+                # Extraire le contenu complet de l'email + détecter les pièces jointes
                 body_preview = ""
                 full_email_content = ""
+                has_attachment = False
 
                 if email_message.is_multipart():
                     for part in email_message.walk():
@@ -1730,9 +1732,16 @@ def check_new_emails_and_trigger_webhook():
                                     body_preview = content[:500]
                                 if not full_email_content:
                                     full_email_content = content
-                                break
                             except:
                                 pass
+                        # Attachment detection
+                        try:
+                            cd = (part.get('Content-Disposition') or '').lower()
+                            filename = part.get_filename()
+                            if ('attachment' in cd) or filename:
+                                has_attachment = True
+                        except:
+                            pass
                 else:
                     try:
                         content = email_message.get_payload(decode=True).decode('utf-8', errors='ignore')
@@ -1740,6 +1749,39 @@ def check_new_emails_and_trigger_webhook():
                         full_email_content = content
                     except:
                         pass
+
+                # --- Processing filters (exclude keywords, attachments, size) ---
+                try:
+                    # Max size
+                    max_mb = PROCESSING_PREFS.get('max_email_size_mb')
+                    if isinstance(max_mb, int) and max_mb > 0:
+                        if len(raw_email) > max_mb * 1024 * 1024:
+                            app.logger.info(f"FILTERS: Email {email_id} skipped due to size > {max_mb}MB")
+                            mark_email_as_read_imap(mail, email_num)
+                            mark_email_id_as_processed_redis(email_id)
+                            continue
+                    # Require attachments
+                    if PROCESSING_PREFS.get('require_attachments') and not has_attachment:
+                        app.logger.info(f"FILTERS: Email {email_id} skipped (attachments required)")
+                        mark_email_as_read_imap(mail, email_num)
+                        mark_email_id_as_processed_redis(email_id)
+                        continue
+                    # Exclude keywords (normalize subject+body)
+                    exclude_kw = PROCESSING_PREFS.get('exclude_keywords') or []
+                    if exclude_kw:
+                        def _normalize_no_accents_lower_local(s: str) -> str:
+                            nfkd = unicodedata.normalize('NFD', s or '')
+                            no_accents = ''.join(ch for ch in nfkd if not unicodedata.combining(ch))
+                            return no_accents.lower()
+                        norm_subj = _normalize_no_accents_lower_local(subject)
+                        norm_body = _normalize_no_accents_lower_local(full_email_content)
+                        if any((kw or '').strip().lower() in norm_subj or (kw or '').strip().lower() in norm_body for kw in exclude_kw):
+                            app.logger.info(f"FILTERS: Email {email_id} skipped (matched exclude keyword)")
+                            mark_email_as_read_imap(mail, email_num)
+                            mark_email_id_as_processed_redis(email_id)
+                            continue
+                except Exception as e_filters:
+                    app.logger.error(f"FILTERS: Exception applying processing filters for email {email_id}: {e_filters}")
 
                 # Indicateur d'exclusivité pour la logique "présence samedi"
                 presence_routed = False
@@ -1979,13 +2021,46 @@ def check_new_emails_and_trigger_webhook():
                 # Cela évite d'appeler WEBHOOK_URL pour les emails de disponibilité (qui n'ont pas d'URL Dropbox)
                 if not presence_routed:
                     try:
-                        webhook_response = requests.post(
-                            WEBHOOK_URL,
-                            json=payload_for_webhook,
-                            headers={'Content-Type': 'application/json'},
-                            timeout=30,
-                            verify=WEBHOOK_SSL_VERIFY
-                        )
+                        # Rate limiting check
+                        if not _rate_limit_allow_send():
+                            app.logger.warning("RATE_LIMIT: Skipping webhook send due to rate limit.")
+                            _append_webhook_log({
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "type": "custom",
+                                "email_id": email_id,
+                                "status": "error",
+                                "status_code": 429,
+                                "error": "Rate limit exceeded",
+                                "target_url": WEBHOOK_URL[:50] + "..." if len(WEBHOOK_URL) > 50 else WEBHOOK_URL,
+                                "subject": subject[:100] if subject else None,
+                            })
+                            # Do not mark as processed so it can be retried next run
+                            continue
+
+                        # Retries with timeout from prefs
+                        retries = int(PROCESSING_PREFS.get('retry_count') or 0)
+                        delay = int(PROCESSING_PREFS.get('retry_delay_sec') or 0)
+                        timeout_sec = int(PROCESSING_PREFS.get('webhook_timeout_sec') or 30)
+                        last_exc = None
+                        webhook_response = None
+                        for attempt in range(retries + 1):
+                            try:
+                                webhook_response = requests.post(
+                                    WEBHOOK_URL,
+                                    json=payload_for_webhook,
+                                    headers={'Content-Type': 'application/json'},
+                                    timeout=timeout_sec,
+                                    verify=WEBHOOK_SSL_VERIFY
+                                )
+                                break
+                            except Exception as e_req:
+                                last_exc = e_req
+                                if attempt < retries and delay > 0:
+                                    time.sleep(delay)
+                        # Record attempt for rate-limit window even if failed
+                        _record_send_event()
+                        if webhook_response is None:
+                            raise last_exc or Exception("Webhook request failed")
 
                         # Vérifier la réponse du webhook
                         if webhook_response.status_code == 200:
@@ -2731,13 +2806,197 @@ def api_update_polling_config():
 
 # --- Dashboard Webhooks: Logs ---
 WEBHOOK_LOGS_FILE = Path(__file__).resolve().parent / "debug" / "webhook_logs.json"
+WEBHOOK_LOGS_REDIS_KEY = "r:ss:webhook_logs:v1"  # Redis list, each item is JSON string
+
+# --- Processing Preferences (Filters, Reliability, Rate limiting) ---
+PROCESSING_PREFS_FILE = Path(__file__).resolve().parent / "debug" / "processing_prefs.json"
+PROCESSING_PREFS_REDIS_KEY = "r:ss:processing_prefs:v1"
+
+# Defaults (can be overridden via API)
+DEFAULT_PROCESSING_PREFS = {
+    "exclude_keywords": [],              # list[str]
+    "require_attachments": False,        # bool
+    "max_email_size_mb": None,           # int | None
+    "sender_priority": {},               # { email: "high|medium|low" }
+    "retry_count": 0,                    # int (custom webhook)
+    "retry_delay_sec": 2,                # int seconds between retries
+    "webhook_timeout_sec": 30,           # int timeout for custom webhook
+    "rate_limit_per_hour": 0,            # int, 0=disabled
+    "notify_on_failure": False,          # bool (placeholder)
+}
+
+PROCESSING_PREFS = DEFAULT_PROCESSING_PREFS.copy()
+
+def _load_processing_prefs() -> dict:
+    """Charge les préférences depuis Redis si disponible, sinon depuis le fichier JSON."""
+    # Try Redis first
+    try:
+        rc = globals().get("redis_client")
+        if rc is not None:
+            raw = rc.get(PROCESSING_PREFS_REDIS_KEY)
+            if raw:
+                try:
+                    data = json.loads(raw if isinstance(raw, str) else raw.decode("utf-8"))
+                    if isinstance(data, dict):
+                        return {**DEFAULT_PROCESSING_PREFS, **data}
+                except Exception:
+                    pass
+    except Exception as e:
+        app.logger.error(f"PROCESSING_PREFS: redis load error: {e}")
+    # Fallback to file
+    try:
+        if PROCESSING_PREFS_FILE.exists():
+            with open(PROCESSING_PREFS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return {**DEFAULT_PROCESSING_PREFS, **data}
+    except Exception as e:
+        app.logger.error(f"PROCESSING_PREFS: file load error: {e}")
+    return DEFAULT_PROCESSING_PREFS.copy()
+
+def _save_processing_prefs(prefs: dict) -> bool:
+    """Sauvegarde prioritairement dans Redis si disponible, sinon sur disque."""
+    # Try Redis first
+    try:
+        rc = globals().get("redis_client")
+        if rc is not None:
+            rc.set(PROCESSING_PREFS_REDIS_KEY, json.dumps(prefs, ensure_ascii=False))
+            return True
+    except Exception as e:
+        app.logger.error(f"PROCESSING_PREFS: redis save error: {e}")
+    # Fallback to file
+    try:
+        PROCESSING_PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(PROCESSING_PREFS_FILE, "w", encoding="utf-8") as f:
+            json.dump(prefs, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        app.logger.error(f"PROCESSING_PREFS: file save error: {e}")
+        return False
+
+# Initialize at import
+PROCESSING_PREFS = _load_processing_prefs()
+
+# Rate limiting state (timestamps in epoch seconds of successful/attempted sends)
+WEBHOOK_SEND_EVENTS = deque()
+
+def _rate_limit_allow_send() -> bool:
+    try:
+        limit = int(PROCESSING_PREFS.get("rate_limit_per_hour") or 0)
+    except Exception:
+        limit = 0
+    if limit <= 0:
+        return True
+    now = time.time()
+    # prune older than 3600s
+    while WEBHOOK_SEND_EVENTS and (now - WEBHOOK_SEND_EVENTS[0]) > 3600:
+        WEBHOOK_SEND_EVENTS.popleft()
+    return len(WEBHOOK_SEND_EVENTS) < limit
+
+def _record_send_event():
+    WEBHOOK_SEND_EVENTS.append(time.time())
+
+# --- API: Processing Preferences ---
+@app.route('/api/get_processing_prefs', methods=['GET'])
+@login_required
+def api_get_processing_prefs():
+    try:
+        return jsonify({"success": True, "prefs": PROCESSING_PREFS})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
+    out = PROCESSING_PREFS.copy()
+    try:
+        if "exclude_keywords" in payload:
+            val = payload["exclude_keywords"]
+            if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
+                return False, "exclude_keywords doit être une liste de chaînes", out
+            out["exclude_keywords"] = [x.strip() for x in val if x and isinstance(x, str)]
+        if "require_attachments" in payload:
+            out["require_attachments"] = bool(payload["require_attachments"])
+        if "max_email_size_mb" in payload:
+            v = payload["max_email_size_mb"]
+            if v is None:
+                out["max_email_size_mb"] = None
+            else:
+                vi = int(v)
+                if vi <= 0:
+                    return False, "max_email_size_mb doit être > 0 ou null", out
+                out["max_email_size_mb"] = vi
+        if "sender_priority" in payload:
+            sp = payload["sender_priority"]
+            if not isinstance(sp, dict):
+                return False, "sender_priority doit être un objet {email: niveau}", out
+            allowed = {"high", "medium", "low"}
+            norm = {}
+            for k, v in sp.items():
+                if not isinstance(k, str) or not isinstance(v, str):
+                    return False, "sender_priority: clés et valeurs doivent être des chaînes", out
+                lv = v.lower().strip()
+                if lv not in allowed:
+                    return False, "sender_priority: niveau invalide (high|medium|low)", out
+                norm[k.strip().lower()] = lv
+            out["sender_priority"] = norm
+        if "retry_count" in payload:
+            rc = int(payload["retry_count"])
+            if rc < 0 or rc > 10:
+                return False, "retry_count hors limites (0..10)", out
+            out["retry_count"] = rc
+        if "retry_delay_sec" in payload:
+            rd = int(payload["retry_delay_sec"])
+            if rd < 0 or rd > 600:
+                return False, "retry_delay_sec hors limites (0..600)", out
+            out["retry_delay_sec"] = rd
+        if "webhook_timeout_sec" in payload:
+            to = int(payload["webhook_timeout_sec"])
+            if to < 1 or to > 300:
+                return False, "webhook_timeout_sec hors limites (1..300)", out
+            out["webhook_timeout_sec"] = to
+        if "rate_limit_per_hour" in payload:
+            rl = int(payload["rate_limit_per_hour"])
+            if rl < 0 or rl > 100000:
+                return False, "rate_limit_per_hour hors limites (0..100000)", out
+            out["rate_limit_per_hour"] = rl
+        if "notify_on_failure" in payload:
+            out["notify_on_failure"] = bool(payload["notify_on_failure"])
+        return True, "ok", out
+    except Exception as e:
+        return False, f"Validation error: {e}", out
+
+@app.route('/api/update_processing_prefs', methods=['POST'])
+@login_required
+def api_update_processing_prefs():
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        ok, msg, new_prefs = _validate_processing_prefs(payload)
+        if not ok:
+            return jsonify({"success": False, "message": msg}), 400
+        # Save and swap
+        if _save_processing_prefs(new_prefs):
+            global PROCESSING_PREFS
+            PROCESSING_PREFS = new_prefs
+            return jsonify({"success": True, "message": "Préférences mises à jour."})
+        return jsonify({"success": False, "message": "Échec de sauvegarde."}), 500
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 def _append_webhook_log(log_entry: dict):
-    """Ajoute une entrée de log webhook au fichier JSON."""
+    """Ajoute une entrée de log webhook dans Redis si dispo, sinon dans un fichier JSON.
+    Conserve au plus 500 entrées (les plus récentes)."""
+    # Try Redis list first
+    try:
+        rc = globals().get("redis_client")
+        if rc is not None:
+            rc.rpush(WEBHOOK_LOGS_REDIS_KEY, json.dumps(log_entry, ensure_ascii=False))
+            # Trim to last 500 entries
+            rc.ltrim(WEBHOOK_LOGS_REDIS_KEY, -500, -1)
+            return
+    except Exception as e:
+        app.logger.error(f"WEBHOOK_LOG: redis write error: {e}")
+    # Fallback to file
     try:
         WEBHOOK_LOGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-
-        # Charger les logs existants
         logs = []
         if WEBHOOK_LOGS_FILE.exists():
             try:
@@ -2745,20 +3004,13 @@ def _append_webhook_log(log_entry: dict):
                     logs = json.load(f)
             except:
                 logs = []
-
-        # Ajouter la nouvelle entrée
         logs.append(log_entry)
-
-        # Limiter à 500 entrées max (garder les plus récentes)
         if len(logs) > 500:
             logs = logs[-500:]
-
-        # Sauvegarder
         with open(WEBHOOK_LOGS_FILE, 'w', encoding='utf-8') as f:
             json.dump(logs, f, indent=2, ensure_ascii=False)
-
     except Exception as e:
-        app.logger.error(f"WEBHOOK_LOG: Erreur d'écriture du log: {e}")
+        app.logger.error(f"WEBHOOK_LOG: file write error: {e}")
 
 @app.route('/api/webhook_logs', methods=['GET'])
 @login_required
@@ -2774,24 +3026,38 @@ def api_webhook_logs():
         if days > 30:
             days = 30
 
-        # Charger les logs
-        if not WEBHOOK_LOGS_FILE.exists():
-            return jsonify({"success": True, "logs": [], "count": 0}), 200
+        # Try Redis first
+        all_logs = None
+        try:
+            rc = globals().get("redis_client")
+            if rc is not None:
+                items = rc.lrange(WEBHOOK_LOGS_REDIS_KEY, 0, -1)
+                all_logs = []
+                for it in items:
+                    try:
+                        s = it if isinstance(it, str) else it.decode('utf-8')
+                        all_logs.append(json.loads(s))
+                    except Exception:
+                        pass
+        except Exception as e:
+            app.logger.error(f"API_WEBHOOK_LOGS: redis read error: {e}")
 
-        with open(WEBHOOK_LOGS_FILE, 'r', encoding='utf-8') as f:
-            all_logs = json.load(f)
+        # Fallback to file
+        if all_logs is None:
+            if not WEBHOOK_LOGS_FILE.exists():
+                return jsonify({"success": True, "logs": [], "count": 0, "days_filter": days}), 200
+            with open(WEBHOOK_LOGS_FILE, 'r', encoding='utf-8') as f:
+                all_logs = json.load(f)
 
         # Filtrer par date
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         filtered_logs = []
-
         for log in all_logs:
             try:
                 log_time = datetime.fromisoformat(log.get("timestamp", ""))
                 if log_time >= cutoff:
                     filtered_logs.append(log)
-            except:
-                # Si le timestamp est invalide, on l'inclut quand même
+            except Exception:
                 filtered_logs.append(log)
 
         # Limiter à 50 entrées les plus récentes
