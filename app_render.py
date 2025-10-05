@@ -34,6 +34,7 @@ from flask import Flask, jsonify, request, send_from_directory, render_template,
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 import os
+import subprocess
 import time
 from pathlib import Path
 import json
@@ -2665,9 +2666,35 @@ def serve_dashboard_main():
     app.logger.info(f"ROOT_UI: Requête pour '/' par l'utilisateur '{current_user.id}'. Service de 'dashboard.html'.")
     return render_template('dashboard.html')
 
-
-
-
+@app.route('/api/restart_server', methods=['POST'])
+@login_required
+def api_restart_server():
+    """
+    Programme un redémarrage du service applicatif via systemd.
+    Sécurité:
+    - Requiert une session authentifiée (@login_required)
+    - Le compte du processus doit avoir une règle sudoers permettant 'systemctl restart' sans mot de passe
+      (exemple: www-data ALL=NOPASSWD: /bin/systemctl restart render-signal-server)
+    Implémentation:
+    - Utilise un sous-processus détaché qui dort 1s puis exécute la commande de redémarrage afin de laisser
+      le temps à cette requête de renvoyer une réponse 200 au client.
+    Config:
+    - RESTART_CMD peut surcharger la commande par défaut.
+    """
+    try:
+        restart_cmd = os.environ.get("RESTART_CMD", "sudo systemctl restart render-signal-server")
+        app.logger.warning(f"ADMIN: Redémarrage demandé par '{current_user.id}' depuis {request.remote_addr}. Cmd='{restart_cmd}'")
+        # Démarrer un sous-processus détaché (nouvelle session) qui exécute la commande après un court délai
+        subprocess.Popen(
+            ["/bin/bash", "-lc", f"sleep 1; {restart_cmd}"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return jsonify({"success": True, "message": "Redémarrage planifié. L'application sera indisponible quelques secondes."}), 200
+    except Exception as e:
+        app.logger.exception("ADMIN: Échec lors de la planification du redémarrage")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/api/check_emails_and_download', methods=['POST'])
 @login_required
