@@ -1,3 +1,13 @@
+"""
+Test API auth helper (API key)
+"""
+def _testapi_authorized(req: request) -> bool:
+    """Authorize test endpoints via X-API-Key matching TEST_API_KEY env. Returns True if allowed."""
+    expected = os.environ.get("TEST_API_KEY")
+    if not expected:
+        return False
+    return req.headers.get("X-API-Key") == expected
+
 # --- Singleton lock to avoid multiple pollers across Gunicorn workers ---
 BG_LOCK_FH = None  # Keep a global reference so the lock is held for the process lifetime
 
@@ -31,6 +41,7 @@ def acquire_singleton_lock(lock_path: str) -> bool:
             BG_LOCK_FH = None
         return False
 from flask import Flask, jsonify, request, send_from_directory, render_template, redirect, url_for
+from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 import os
 import time
@@ -661,6 +672,12 @@ app = Flask(__name__, template_folder='.', static_folder='static')
 # NOUVEAU: Une clé secrète est OBLIGATOIRE pour les sessions.
 # Pour la production, utilisez une valeur complexe stockée dans les variables d'environnement.
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "une-cle-secrete-tres-complexe-pour-le-developpement-a-changer")
+
+# --- CORS (for test tools calling from another origin) ---
+# Allowlist origins, comma-separated in env CORS_ALLOWED_ORIGINS (e.g., "https://webhook.kidpixel.fr,https://example.com")
+_cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+if _cors_origins:
+    CORS(app, resources={r"/api/test/*": {"origins": _cors_origins, "supports_credentials": False}})
 
 # --- Authentification: Initialisation Flask-Login ---
 # Le décorateur @login_required est utilisé sur plusieurs routes (ex: '/').
@@ -2410,6 +2427,89 @@ def api_test_presence_webhook():
 
     except Exception as e:
         app.logger.error(f"API_TEST_PRESENCE: Exception: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/test/webhook_logs', methods=['GET'])
+def api_test_webhook_logs():
+    if not _testapi_authorized(request):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+    try:
+        days = int(request.args.get('days', 7))
+        if days < 1:
+            days = 7
+        if days > 30:
+            days = 30
+
+        all_logs = None
+        try:
+            rc = globals().get("redis_client")
+            if rc is not None:
+                items = rc.lrange(WEBHOOK_LOGS_REDIS_KEY, 0, -1)
+                all_logs = []
+                for it in items:
+                    try:
+                        s = it if isinstance(it, str) else it.decode('utf-8')
+                        all_logs.append(json.loads(s))
+                    except Exception:
+                        pass
+        except Exception as e:
+            app.logger.error(f"API_TEST_WEBHOOK_LOGS: redis read error: {e}")
+
+        if all_logs is None:
+            if not WEBHOOK_LOGS_FILE.exists():
+                return jsonify({"success": True, "logs": [], "count": 0, "days_filter": days}), 200
+            with open(WEBHOOK_LOGS_FILE, 'r', encoding='utf-8') as f:
+                all_logs = json.load(f)
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        filtered_logs = []
+        for log in all_logs:
+            try:
+                log_time = datetime.fromisoformat(log.get("timestamp", ""))
+                if log_time >= cutoff:
+                    filtered_logs.append(log)
+            except Exception:
+                filtered_logs.append(log)
+
+        filtered_logs = filtered_logs[-50:]
+        filtered_logs.reverse()
+
+        return jsonify({
+            "success": True,
+            "logs": filtered_logs,
+            "count": len(filtered_logs),
+            "days_filter": days
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"API_TEST_WEBHOOK_LOGS: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur lors de la récupération des logs."}), 500
+
+# --- Test endpoints (CORS + API key) ---
+@app.route('/api/test/get_processing_prefs', methods=['GET'])
+def api_test_get_processing_prefs():
+    if not _testapi_authorized(request):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+    try:
+        return jsonify({"success": True, "prefs": PROCESSING_PREFS}), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/test/update_processing_prefs', methods=['POST'])
+def api_test_update_processing_prefs():
+    if not _testapi_authorized(request):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        ok, msg, new_prefs = _validate_processing_prefs(payload)
+        if not ok:
+            return jsonify({"success": False, "message": msg}), 400
+        if _save_processing_prefs(new_prefs):
+            global PROCESSING_PREFS
+            PROCESSING_PREFS = new_prefs
+            return jsonify({"success": True, "message": "Préférences mises à jour.", "prefs": PROCESSING_PREFS})
+        return jsonify({"success": False, "message": "Échec de sauvegarde."}), 500
+    except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/')
