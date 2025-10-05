@@ -910,6 +910,34 @@ document.addEventListener('DOMContentLoaded', () => {
     const processingPrefsSaveBtn = document.getElementById('processingPrefsSaveBtn');
     processingPrefsSaveBtn && processingPrefsSaveBtn.addEventListener('click', saveProcessingPrefsToServer);
 
+    // --- Redémarrage serveur ---
+    const restartBtn = document.getElementById('restartServerBtn');
+    if (restartBtn) {
+        restartBtn.addEventListener('click', async () => {
+            const msgId = 'restartMsg';
+            try {
+                if (!confirm('Confirmez-vous le redémarrage du serveur ? L\'application sera indisponible quelques secondes.')) return;
+                restartBtn.disabled = true;
+                showMessage(msgId, 'Redémarrage en cours...', 'info');
+                const res = await fetch('/api/restart_server', { method: 'POST' });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && data.success) {
+                    showMessage(msgId, data.message || 'Redémarrage planifié.', 'success');
+                    // Attendre un court délai puis tenter un reload
+                    setTimeout(() => {
+                        try { location.reload(); } catch {}
+                    }, 3000);
+                } else {
+                    showMessage(msgId, data.message || 'Échec du redémarrage (vérifiez permissions sudoers).', 'error');
+                }
+            } catch (e) {
+                showMessage(msgId, 'Erreur de communication avec le serveur.', 'error');
+            } finally {
+                restartBtn.disabled = false;
+            }
+        });
+    }
+
     // --- Délégation de clic (fallback) pour .tab-btn ---
     document.addEventListener('click', (evt) => {
         const btn = evt.target && evt.target.closest && evt.target.closest('.tab-btn');
