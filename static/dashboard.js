@@ -1,5 +1,7 @@
 // static/dashboard.js
 // Dashboard de contrôle des webhooks
+window.DASHBOARD_BUILD = 'tabs-2025-10-05-15h29';
+console.log('[build] static/dashboard.js loaded:', window.DASHBOARD_BUILD);
 
 // Utilitaires
 function showMessage(elementId, message, type) {
@@ -718,10 +720,11 @@ function initTabs() {
     function activate(targetSelector) {
         console.log('[tabs] activate called for target:', targetSelector);
         // Toggle active class on panels
-        panels.forEach(p => p.classList.remove('active'));
+        panels.forEach(p => { p.classList.remove('active'); p.style.display = 'none'; });
         const panel = document.querySelector(targetSelector);
         if (panel) {
             panel.classList.add('active');
+            panel.style.display = 'block';
             console.log('[tabs] panel activated:', panel.id);
         } else {
             console.warn('[tabs] panel not found for selector:', targetSelector);
@@ -785,6 +788,17 @@ function initTabs() {
 // Initialisation au chargement de la page
 document.addEventListener('DOMContentLoaded', () => {
     console.log('📊 DOMContentLoaded: init start');
+    // Hide non-active panels immediately (not relying only on CSS)
+    try {
+        const allPanels = document.querySelectorAll('.section-panel');
+        allPanels.forEach(p => {
+            if (!p.classList.contains('active')) p.style.display = 'none';
+            else p.style.display = 'block';
+        });
+        console.log(`[tabs] initial panel visibility set (count=${allPanels.length})`);
+    } catch (e) {
+        console.warn('[tabs] initial hide panels failed:', e);
+    }
     // Charger les données initiales
     loadTimeWindow();
     loadPollingStatus();
