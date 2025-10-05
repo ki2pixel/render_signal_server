@@ -923,6 +923,48 @@ app.logger.info(
 app.logger.info(
     f"CFG POLL: Active schedule ({POLLING_TIMEZONE_STR}): {POLLING_ACTIVE_START_HOUR:02d}:00-{POLLING_ACTIVE_END_HOUR:02d}:00. Days (0=Mon): {POLLING_ACTIVE_DAYS}")
 
+# Flag pour activer/désactiver la déduplication par groupe de sujet
+ENABLE_SUBJECT_GROUP_DEDUP = os.environ.get("ENABLE_SUBJECT_GROUP_DEDUP", "true").strip().lower() in ("1", "true", "yes", "on")
+app.logger.info(f"CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP={ENABLE_SUBJECT_GROUP_DEDUP}")
+
+# Fichier d'override persistant pour la configuration du polling
+POLLING_CONFIG_FILE = Path(__file__).resolve().parent / "debug" / "polling_config.json"
+
+def _apply_polling_config_overrides():
+    """Charge et applique les overrides depuis le fichier JSON si présent."""
+    global POLLING_ACTIVE_START_HOUR, POLLING_ACTIVE_END_HOUR, POLLING_ACTIVE_DAYS, ENABLE_SUBJECT_GROUP_DEDUP, SENDER_LIST_FOR_POLLING
+    try:
+        if POLLING_CONFIG_FILE.exists():
+            with open(POLLING_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                cfg = json.load(f) or {}
+            # Heures
+            if isinstance(cfg.get('active_start_hour'), int) and 0 <= cfg['active_start_hour'] <= 23:
+                POLLING_ACTIVE_START_HOUR = cfg['active_start_hour']
+            if isinstance(cfg.get('active_end_hour'), int) and 0 <= cfg['active_end_hour'] <= 23:
+                POLLING_ACTIVE_END_HOUR = cfg['active_end_hour']
+            # Jours
+            days = cfg.get('active_days')
+            if isinstance(days, list) and all(isinstance(d, int) and 0 <= d <= 6 for d in days):
+                # éviter liste vide -> fallback par défaut
+                POLLING_ACTIVE_DAYS = days or [0,1,2,3,4]
+            # Dedup flag
+            if 'enable_subject_group_dedup' in cfg:
+                ENABLE_SUBJECT_GROUP_DEDUP = bool(cfg.get('enable_subject_group_dedup'))
+            # Senders list
+            senders = cfg.get('sender_of_interest_for_polling')
+            if isinstance(senders, list):
+                norm = []
+                for s in senders:
+                    if isinstance(s, str) and '@' in s:
+                        norm.append(s.strip().lower())
+                if norm:
+                    SENDER_LIST_FOR_POLLING = norm
+            app.logger.info("CFG POLL: Overrides loaded from polling_config.json")
+    except Exception as e:
+        app.logger.warning(f"CFG POLL: Failed to load overrides from {POLLING_CONFIG_FILE}: {e}")
+
+_apply_polling_config_overrides()
+
 # --- Chemins et Fichiers ---
 SIGNAL_DIR = Path(os.environ.get("RENDER_DISC_PATH", "./signal_data_app_render"))
 TRIGGER_SIGNAL_FILE = SIGNAL_DIR / "local_workflow_trigger_signal.json"
@@ -2446,6 +2488,175 @@ def api_toggle_polling():
     except Exception as e:
         app.logger.error(f"API_TOGGLE_POLLING: Exception: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Erreur interne."}), 500
+
+
+# --- Dashboard Webhooks: Polling Configuration ---
+@app.route('/api/get_polling_config', methods=['GET'])
+@login_required
+def api_get_polling_config():
+    """Retourne la configuration courante de la fenêtre d'activité du polling."""
+    try:
+        # Lire depuis variables actives (déjà overridées par _apply_polling_config_overrides)
+        cfg = {
+            "active_days": POLLING_ACTIVE_DAYS,
+            "active_start_hour": POLLING_ACTIVE_START_HOUR,
+            "active_end_hour": POLLING_ACTIVE_END_HOUR,
+            "enable_subject_group_dedup": ENABLE_SUBJECT_GROUP_DEDUP,
+            "timezone": POLLING_TIMEZONE_STR,
+            "sender_of_interest_for_polling": SENDER_LIST_FOR_POLLING,
+        }
+        return jsonify({"success": True, "config": cfg}), 200
+    except Exception as e:
+        app.logger.error(f"API_GET_POLLING_CONFIG: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration polling."}), 500
+
+
+@app.route('/api/update_polling_config', methods=['POST'])
+@login_required
+def api_update_polling_config():
+    """Met à jour la configuration du polling (jours, heures, dedup) et la persiste en JSON."""
+    global POLLING_ACTIVE_DAYS, POLLING_ACTIVE_START_HOUR, POLLING_ACTIVE_END_HOUR, ENABLE_SUBJECT_GROUP_DEDUP, SENDER_LIST_FOR_POLLING
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        # Charger l'existant (si le fichier n'existe pas, partir d'un dict vide)
+        existing: dict = {}
+        try:
+            if POLLING_CONFIG_FILE.exists():
+                with open(POLLING_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    existing = json.load(f) or {}
+        except Exception:
+            existing = {}
+
+        # Normalisation des champs
+        new_days = None
+        if 'active_days' in payload:
+            days_val = payload['active_days']
+            parsed_days: list[int] = []
+            if isinstance(days_val, str):
+                parts = [p.strip() for p in days_val.split(',') if p.strip()]
+                for p in parts:
+                    if p.isdigit():
+                        d = int(p)
+                        if 0 <= d <= 6:
+                            parsed_days.append(d)
+            elif isinstance(days_val, list):
+                for p in days_val:
+                    try:
+                        d = int(p)
+                        if 0 <= d <= 6:
+                            parsed_days.append(d)
+                    except Exception:
+                        continue
+            if parsed_days:
+                new_days = sorted(set(parsed_days))
+            else:
+                # si vide/invalid, fallback Mon-Fri
+                new_days = [0,1,2,3,4]
+
+        new_start = None
+        if 'active_start_hour' in payload:
+            try:
+                v = int(payload['active_start_hour'])
+                if 0 <= v <= 23:
+                    new_start = v
+                else:
+                    return jsonify({"success": False, "message": "active_start_hour doit être entre 0 et 23."}), 400
+            except Exception:
+                return jsonify({"success": False, "message": "active_start_hour invalide (entier attendu)."}), 400
+
+        new_end = None
+        if 'active_end_hour' in payload:
+            try:
+                v = int(payload['active_end_hour'])
+                if 0 <= v <= 23:
+                    new_end = v
+                else:
+                    return jsonify({"success": False, "message": "active_end_hour doit être entre 0 et 23."}), 400
+            except Exception:
+                return jsonify({"success": False, "message": "active_end_hour invalide (entier attendu)."}), 400
+
+        new_dedup = None
+        if 'enable_subject_group_dedup' in payload:
+            new_dedup = bool(payload['enable_subject_group_dedup'])
+
+        # Senders list (validate basic email format)
+        new_senders = None
+        if 'sender_of_interest_for_polling' in payload:
+            candidates = payload['sender_of_interest_for_polling']
+            normalized: list[str] = []
+            if isinstance(candidates, str):
+                parts = [p.strip() for p in candidates.split(',') if p.strip()]
+            elif isinstance(candidates, list):
+                parts = [str(p).strip() for p in candidates if str(p).strip()]
+            else:
+                parts = []
+            email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+            for p in parts:
+                low = p.lower()
+                if email_re.match(low):
+                    normalized.append(low)
+            # Deduplicate while preserving order
+            seen = set()
+            unique_norm = []
+            for s in normalized:
+                if s not in seen:
+                    seen.add(s)
+                    unique_norm.append(s)
+            new_senders = unique_norm
+
+        # Appliquer aux variables en mémoire
+        if new_days is not None:
+            POLLING_ACTIVE_DAYS = new_days
+        if new_start is not None:
+            POLLING_ACTIVE_START_HOUR = new_start
+        if new_end is not None:
+            POLLING_ACTIVE_END_HOUR = new_end
+        if new_dedup is not None:
+            ENABLE_SUBJECT_GROUP_DEDUP = new_dedup
+        if new_senders is not None:
+            SENDER_LIST_FOR_POLLING = new_senders
+
+        # Mettre à jour le fichier de config
+        merged = dict(existing)
+        if new_days is not None:
+            merged['active_days'] = POLLING_ACTIVE_DAYS
+        if new_start is not None:
+            merged['active_start_hour'] = POLLING_ACTIVE_START_HOUR
+        if new_end is not None:
+            merged['active_end_hour'] = POLLING_ACTIVE_END_HOUR
+        if new_dedup is not None:
+            merged['enable_subject_group_dedup'] = ENABLE_SUBJECT_GROUP_DEDUP
+        if new_senders is not None:
+            merged['sender_of_interest_for_polling'] = SENDER_LIST_FOR_POLLING
+
+        try:
+            POLLING_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(POLLING_CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(merged, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            app.logger.error(f"API_UPDATE_POLLING_CONFIG: Erreur d'écriture du fichier: {e}")
+            return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
+
+        app.logger.info(
+            f"API_UPDATE_POLLING_CONFIG: Jours={POLLING_ACTIVE_DAYS} Heures={POLLING_ACTIVE_START_HOUR:02d}-{POLLING_ACTIVE_END_HOUR:02d} Dedup={ENABLE_SUBJECT_GROUP_DEDUP} Senders={len(SENDER_LIST_FOR_POLLING)}"
+        )
+
+        return jsonify({
+            "success": True,
+            "config": {
+                "active_days": POLLING_ACTIVE_DAYS,
+                "active_start_hour": POLLING_ACTIVE_START_HOUR,
+                "active_end_hour": POLLING_ACTIVE_END_HOUR,
+                "enable_subject_group_dedup": ENABLE_SUBJECT_GROUP_DEDUP,
+                "sender_of_interest_for_polling": SENDER_LIST_FOR_POLLING,
+            },
+            "message": "Configuration polling mise à jour. Un redémarrage peut être nécessaire pour prise en compte complète."
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"API_UPDATE_POLLING_CONFIG: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour du polling."}), 500
 
 
 # --- Dashboard Webhooks: Logs ---
