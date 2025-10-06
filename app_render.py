@@ -1782,20 +1782,27 @@ def check_new_emails_and_trigger_webhook():
                     # En cas d'erreur inattendue sur la dédup, ne pas bloquer le traitement
                     pass
 
-                # Extraire le contenu complet de l'email + détecter les pièces jointes
+                # Extraire le contenu complet de l'email (text/plain et text/html) + détecter les pièces jointes
                 body_preview = ""
-                full_email_content = ""
+                full_email_content = ""  # texte brut si disponible (text/plain ou HTML nettoyé)
+                html_email_content = ""   # contenu HTML (brut) si présent
                 has_attachment = False
 
                 if email_message.is_multipart():
                     for part in email_message.walk():
-                        if part.get_content_type() == "text/plain":
+                        ctype = (part.get_content_type() or "").lower()
+                        if ctype == "text/plain":
                             try:
                                 content = part.get_payload(decode=True).decode('utf-8', errors='ignore')
                                 if not body_preview:
                                     body_preview = content[:500]
                                 if not full_email_content:
                                     full_email_content = content
+                            except:
+                                pass
+                        elif ctype == "text/html":
+                            try:
+                                html_email_content = part.get_payload(decode=True).decode('utf-8', errors='ignore') or html_email_content
                             except:
                                 pass
                         # Attachment detection
@@ -1809,9 +1816,27 @@ def check_new_emails_and_trigger_webhook():
                 else:
                     try:
                         content = email_message.get_payload(decode=True).decode('utf-8', errors='ignore')
-                        body_preview = content[:500]
-                        full_email_content = content
+                        # Heuristique simple: si contient des balises, considérer comme HTML
+                        if '<html' in (content or '').lower() or '</p>' in (content or '').lower():
+                            html_email_content = content
+                        else:
+                            body_preview = content[:500]
+                            full_email_content = content
                     except:
+                        pass
+
+                # Si pas de text/plain, fallback sur HTML nettoyé
+                if not full_email_content and html_email_content:
+                    try:
+                        txt = BeautifulSoup(html_email_content, "html.parser").get_text("\n")
+                        full_email_content = txt or ""
+                        if not body_preview:
+                            body_preview = (txt or "")[:500]
+                        try:
+                            app.logger.debug("EMAIL_PARTS_DEBUG: Using text extracted from HTML part for email %s (len=%d)", email_id, len(full_email_content))
+                        except Exception:
+                            pass
+                    except Exception:
                         pass
 
                 # --- Processing filters (exclude keywords, attachments, size) ---
@@ -1985,7 +2010,9 @@ def check_new_emails_and_trigger_webhook():
 
                     has_required = all(term in norm_body2 for term in required_terms)
                     has_forbidden = any(term in norm_body2 for term in forbidden_terms)
-                    has_dropbox_request = "https://www.dropbox.com/request/" in (full_email_content or "").lower()
+                    # Chercher l'URL Dropbox request dans le texte combiné (plain + HTML brut)
+                    combined_text = ((full_email_content or "") + "\n" + (html_email_content or "")).lower()
+                    has_dropbox_request = "https://www.dropbox.com/request/" in combined_text
 
                     # Debug détaillé: tracer l'état des vérifications de termes et de l'URL Dropbox
                     try:
@@ -2073,7 +2100,8 @@ def check_new_emails_and_trigger_webhook():
                 # Extraire et résoudre les liens de livraison (Dropbox/FromSmash/SwissTransfer)
                 # Note: le scraping des pages publiques sert uniquement à découvrir un lien direct si visible dans le HTML.
                 # Si aucun lien direct n'est exposé côté public, "direct_url" restera None.
-                provider_links = extract_provider_links_from_text(full_email_content)
+                # Extraire depuis le texte combiné afin de capturer les URLs présentes uniquement dans le HTML
+                provider_links = extract_provider_links_from_text((full_email_content or "") + "\n" + (html_email_content or ""))
                 delivery_links = []
                 first_direct_url = None
                 for link in provider_links:
