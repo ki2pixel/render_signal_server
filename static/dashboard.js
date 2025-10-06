@@ -13,6 +13,64 @@ function showMessage(elementId, message, type) {
     }, 5000);
 }
 
+// -------------------- Runtime Flags (Debug) --------------------
+async function loadRuntimeFlags() {
+    try {
+        const res = await fetch('/api/get_runtime_flags');
+        const data = await res.json();
+        if (!data.success || !data.flags) return;
+        const f = data.flags;
+        const dedupToggle = document.getElementById('disableEmailIdDedupToggle');
+        const allowCustomToggle = document.getElementById('allowCustomWithoutLinksToggle');
+        if (dedupToggle) dedupToggle.checked = !!f.disable_email_id_dedup;
+        if (allowCustomToggle) allowCustomToggle.checked = !!f.allow_custom_webhook_without_links;
+    } catch (e) {
+        console.warn('loadRuntimeFlags error', e);
+    }
+}
+
+async function saveRuntimeFlags() {
+    const msgId = 'runtimeFlagsMsg';
+    const btn = document.getElementById('runtimeFlagsSaveBtn');
+    try {
+        btn && (btn.disabled = true);
+        const payload = {
+            disable_email_id_dedup: !!document.getElementById('disableEmailIdDedupToggle')?.checked,
+            allow_custom_webhook_without_links: !!document.getElementById('allowCustomWithoutLinksToggle')?.checked,
+        };
+        const res = await fetch('/api/update_runtime_flags', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) {
+            showMessage(msgId, 'Flags runtime enregistrés.', 'success');
+        } else {
+            showMessage(msgId, data.message || 'Erreur lors de la sauvegarde des flags.', 'error');
+        }
+    } catch (e) {
+        showMessage(msgId, 'Erreur de communication avec le serveur.', 'error');
+    } finally {
+        btn && (btn.disabled = false);
+    }
+}
+
+// --- Bootstrap: attach handlers after DOM load ---
+window.addEventListener('DOMContentLoaded', () => {
+    // Existing initializers
+    loadWebhookConfig();
+    loadTimeWindow();
+    loadProcessingPrefsFromServer();
+    computeAndRenderMetrics();
+    loadPollingConfig();
+    loadPollingStatus();
+    // New: runtime flags
+    loadRuntimeFlags();
+
+    // Buttons
+    const rfBtn = document.getElementById('runtimeFlagsSaveBtn');
+    if (rfBtn) rfBtn.addEventListener('click', saveRuntimeFlags);
+});
+
 // --- Processing Prefs (server) ---
 async function loadProcessingPrefsFromServer() {
     try {
