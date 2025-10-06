@@ -810,6 +810,10 @@ ENABLE_SUBJECT_GROUP_DEDUP = _env_bool("ENABLE_SUBJECT_GROUP_DEDUP", True)
 # Feature flag: allow disabling per-email-ID deduplication (for debugging/testing only)
 DISABLE_EMAIL_ID_DEDUP = _env_bool("DISABLE_EMAIL_ID_DEDUP", False)
 
+# Feature flag: allow sending custom webhook without any detected delivery links
+# Default False to avoid predictable 422 errors downstream
+ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = _env_bool("ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS", False)
+
 # Webhook Make (désabonnement/journée/tarifs) configurable
 # Default to the latest provided URL so it works out-of-the-box; can be overridden in Render env
 AUTOREPONDEUR_MAKE_WEBHOOK_URL = _normalize_make_webhook_url(
@@ -963,6 +967,7 @@ app.logger.info(
 ENABLE_SUBJECT_GROUP_DEDUP = os.environ.get("ENABLE_SUBJECT_GROUP_DEDUP", "true").strip().lower() in ("1", "true", "yes", "on")
 app.logger.info(f"CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP={ENABLE_SUBJECT_GROUP_DEDUP}")
 app.logger.info(f"CFG DEDUP: DISABLE_EMAIL_ID_DEDUP={DISABLE_EMAIL_ID_DEDUP}")
+app.logger.info(f"CFG CUSTOM: ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS={ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS}")
 
 # Fichier d'override persistant pour la configuration du polling
 POLLING_CONFIG_FILE = Path(__file__).resolve().parent / "debug" / "polling_config.json"
@@ -1026,12 +1031,53 @@ def _is_polling_in_vacation(now_dt: datetime) -> bool:
         return POLLING_VACATION_START_DATE <= d <= POLLING_VACATION_END_DATE
     except Exception:
         return False
-
-# --- Chemins et Fichiers ---
 SIGNAL_DIR = Path(os.environ.get("RENDER_DISC_PATH", "./signal_data_app_render"))
 TRIGGER_SIGNAL_FILE = SIGNAL_DIR / "local_workflow_trigger_signal.json"
+RUNTIME_FLAGS_FILE = Path(__file__).resolve().parent / "debug" / "runtime_flags.json"
 SIGNAL_DIR.mkdir(parents=True, exist_ok=True)
 app.logger.info(f"CFG PATH: Signal directory for ephemeral files: {SIGNAL_DIR.resolve()}")
+
+# Runtime flags helpers
+def _load_runtime_flags_file() -> dict:
+    try:
+        if RUNTIME_FLAGS_FILE.exists():
+            with open(RUNTIME_FLAGS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f) or {}
+                if isinstance(data, dict):
+                    return data
+    except Exception as e:
+        app.logger.warning(f"RUNTIME_FLAGS: read error: {e}")
+    return {}
+
+def _save_runtime_flags_file(data: dict) -> bool:
+    try:
+        RUNTIME_FLAGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(RUNTIME_FLAGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        app.logger.warning(f"RUNTIME_FLAGS: write error: {e}")
+        return False
+
+def _apply_runtime_flags_overrides():
+    """Override runtime flags from debug/runtime_flags.json if present."""
+    global DISABLE_EMAIL_ID_DEDUP, ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS
+    data = _load_runtime_flags_file()
+    if 'disable_email_id_dedup' in data:
+        try:
+            DISABLE_EMAIL_ID_DEDUP = bool(data.get('disable_email_id_dedup'))
+        except Exception:
+            pass
+    if 'allow_custom_webhook_without_links' in data:
+        try:
+            ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = bool(data.get('allow_custom_webhook_without_links'))
+        except Exception:
+            pass
+    app.logger.info(
+        f"CFG RUNTIME: Flags applied from file — DISABLE_EMAIL_ID_DEDUP={DISABLE_EMAIL_ID_DEDUP}, ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS={ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS}")
+
+# Apply runtime flags after env/defaults
+_apply_runtime_flags_overrides()
 
 # --- Configuration Redis ---
 REDIS_URL = os.environ.get('REDIS_URL')
@@ -2156,6 +2202,35 @@ def check_new_emails_and_trigger_webhook():
                 # Déclencher le webhook personnalisé UNIQUEMENT si aucun routage exclusif "présence" n'a été effectué
                 # Cela évite d'appeler WEBHOOK_URL pour les emails de disponibilité (qui n'ont pas d'URL Dropbox)
                 if not presence_routed:
+                    # Si aucune URL de livraison détectée et que l'option n'autorise pas l'envoi sans liens,
+                    # éviter un appel 422 inutile et marquer comme traité
+                    try:
+                        if (not delivery_links) and (not ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS):
+                            app.logger.info(
+                                "CUSTOM_WEBHOOK: Skipping send for %s because no delivery links were detected and ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS=false",
+                                email_id,
+                            )
+                            # Marquer comme traité pour éviter les répétitions
+                            try:
+                                if mark_email_id_as_processed_redis(email_id):
+                                    mark_email_as_read_imap(mail, email_num)
+                            except Exception:
+                                pass
+                            # Enregistrer dans les logs du dashboard
+                            _append_webhook_log({
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "type": "custom",
+                                "email_id": email_id,
+                                "status": "skipped",
+                                "status_code": 204,
+                                "error": "No delivery links detected; skipping per config",
+                                "target_url": WEBHOOK_URL[:50] + "..." if len(WEBHOOK_URL) > 50 else WEBHOOK_URL,
+                                "subject": subject[:100] if subject else None,
+                            })
+                            # Passer à l'email suivant
+                            continue
+                    except Exception:
+                        pass
                     try:
                         # Rate limiting check
                         if not _rate_limit_allow_send():
@@ -2772,6 +2847,110 @@ def api_test_clear_email_dedup():
         return jsonify({"success": True, "removed": removed, "email_id": email_id}), 200
     except Exception as e:
         app.logger.error(f"API_TEST_CLEAR_EMAIL_DEDUP: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur interne"}), 500
+
+# Session-protected counterparts for dashboard UI
+@app.route('/api/get_runtime_flags', methods=['GET'])
+@login_required
+def api_get_runtime_flags():
+    try:
+        return jsonify({
+            "success": True,
+            "flags": {
+                "disable_email_id_dedup": bool(DISABLE_EMAIL_ID_DEDUP),
+                "allow_custom_webhook_without_links": bool(ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
+            }
+        }), 200
+    except Exception as e:
+        app.logger.error(f"API_GET_RUNTIME_FLAGS: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur interne"}), 500
+
+@app.route('/api/update_runtime_flags', methods=['POST'])
+@login_required
+def api_update_runtime_flags():
+    try:
+        payload = request.get_json(silent=True) or {}
+        global DISABLE_EMAIL_ID_DEDUP, ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS
+        updated = False
+        if 'disable_email_id_dedup' in payload:
+            try:
+                DISABLE_EMAIL_ID_DEDUP = bool(payload.get('disable_email_id_dedup'))
+                updated = True
+            except Exception:
+                pass
+        if 'allow_custom_webhook_without_links' in payload:
+            try:
+                ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = bool(payload.get('allow_custom_webhook_without_links'))
+                updated = True
+            except Exception:
+                pass
+        if updated:
+            data = _load_runtime_flags_file()
+            data['disable_email_id_dedup'] = bool(DISABLE_EMAIL_ID_DEDUP)
+            data['allow_custom_webhook_without_links'] = bool(ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS)
+            _save_runtime_flags_file(data)
+        return jsonify({
+            "success": True,
+            "flags": {
+                "disable_email_id_dedup": bool(DISABLE_EMAIL_ID_DEDUP),
+                "allow_custom_webhook_without_links": bool(ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
+            }
+        }), 200
+    except Exception as e:
+        app.logger.error(f"API_UPDATE_RUNTIME_FLAGS: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur interne"}), 500
+
+@app.route('/api/test/get_runtime_flags', methods=['GET'])
+def api_test_get_runtime_flags():
+    if not _testapi_authorized(request):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+    try:
+        return jsonify({
+            "success": True,
+            "flags": {
+                "disable_email_id_dedup": bool(DISABLE_EMAIL_ID_DEDUP),
+                "allow_custom_webhook_without_links": bool(ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
+            }
+        }), 200
+    except Exception as e:
+        app.logger.error(f"API_TEST_GET_RUNTIME_FLAGS: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur interne"}), 500
+
+@app.route('/api/test/update_runtime_flags', methods=['POST'])
+def api_test_update_runtime_flags():
+    if not _testapi_authorized(request):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+    try:
+        payload = request.get_json(silent=True) or {}
+        global DISABLE_EMAIL_ID_DEDUP, ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS
+        updated = False
+        if 'disable_email_id_dedup' in payload:
+            try:
+                DISABLE_EMAIL_ID_DEDUP = bool(payload.get('disable_email_id_dedup'))
+                updated = True
+            except Exception:
+                pass
+        if 'allow_custom_webhook_without_links' in payload:
+            try:
+                ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = bool(payload.get('allow_custom_webhook_without_links'))
+                updated = True
+            except Exception:
+                pass
+        # Persist to file
+        if updated:
+            data = _load_runtime_flags_file()
+            data['disable_email_id_dedup'] = bool(DISABLE_EMAIL_ID_DEDUP)
+            data['allow_custom_webhook_without_links'] = bool(ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS)
+            _save_runtime_flags_file(data)
+        return jsonify({
+            "success": True,
+            "flags": {
+                "disable_email_id_dedup": bool(DISABLE_EMAIL_ID_DEDUP),
+                "allow_custom_webhook_without_links": bool(ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
+            }
+        }), 200
+    except Exception as e:
+        app.logger.error(f"API_TEST_UPDATE_RUNTIME_FLAGS: Exception: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Erreur interne"}), 500
 
 # --- Test endpoints (CORS + API key) ---
