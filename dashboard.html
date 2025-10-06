@@ -655,6 +655,30 @@
           </div>
           <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
         </div>
+        <div class="card" style="margin-top: 20px;">
+          <div class="card-title"> Flags Runtime (Debug)</div>
+          <div class="form-group">
+            <label>Bypass déduplication par ID d’email (debug)</label>
+            <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+              <input type="checkbox" id="disableEmailIdDedupToggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <div class="small-text">Quand activé, ignore la déduplication par ID d'email. À utiliser uniquement pour des tests.
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 10px;">
+            <label>Autoriser envoi CUSTOM sans liens de livraison</label>
+            <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+              <input type="checkbox" id="allowCustomWithoutLinksToggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu’aucun lien (Dropbox/FromSmash/SwissTransfer) n’est détecté, pour éviter les 422.</div>
+          </div>
+          <div style="margin-top: 12px;">
+            <button id="runtimeFlagsSaveBtn" class="btn btn-primary"> Enregistrer Flags Runtime</button>
+            <div id="runtimeFlagsMsg" class="status-msg"></div>
+          </div>
+        </div>
       </div>
     </div>
     <!-- Chargement du script JavaScript -->
