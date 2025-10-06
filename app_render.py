@@ -807,6 +807,9 @@ PRESENCE_FALSE_MAKE_WEBHOOK_URL = _normalize_make_webhook_url(os.environ.get("PR
 # Feature flag: allow disabling subject-group deduplication temporarily for testing
 ENABLE_SUBJECT_GROUP_DEDUP = _env_bool("ENABLE_SUBJECT_GROUP_DEDUP", True)
 
+# Feature flag: allow disabling per-email-ID deduplication (for debugging/testing only)
+DISABLE_EMAIL_ID_DEDUP = _env_bool("DISABLE_EMAIL_ID_DEDUP", False)
+
 # Webhook Make (désabonnement/journée/tarifs) configurable
 # Default to the latest provided URL so it works out-of-the-box; can be overridden in Render env
 AUTOREPONDEUR_MAKE_WEBHOOK_URL = _normalize_make_webhook_url(
@@ -959,6 +962,7 @@ app.logger.info(
 # Flag pour activer/désactiver la déduplication par groupe de sujet
 ENABLE_SUBJECT_GROUP_DEDUP = os.environ.get("ENABLE_SUBJECT_GROUP_DEDUP", "true").strip().lower() in ("1", "true", "yes", "on")
 app.logger.info(f"CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP={ENABLE_SUBJECT_GROUP_DEDUP}")
+app.logger.info(f"CFG DEDUP: DISABLE_EMAIL_ID_DEDUP={DISABLE_EMAIL_ID_DEDUP}")
 
 # Fichier d'override persistant pour la configuration du polling
 POLLING_CONFIG_FILE = Path(__file__).resolve().parent / "debug" / "polling_config.json"
@@ -1765,11 +1769,18 @@ def check_new_emails_and_trigger_webhook():
                 except Exception:
                     pass
 
-                # Vérifier si l'email a déjà été traité
-                if is_email_id_processed_redis(email_id):
-                    app.logger.debug(f"POLLER: Email ID {email_id} already processed. Marking as read.")
-                    mark_email_as_read_imap(mail, email_num)
-                    continue
+                # Vérifier si l'email a déjà été traité (bypass possible via DISABLE_EMAIL_ID_DEDUP)
+                try:
+                    if DISABLE_EMAIL_ID_DEDUP:
+                        app.logger.debug("DEDUP_EMAIL: Bypass enabled (DISABLE_EMAIL_ID_DEDUP=true). Skipping per-email-ID dedup for %s", email_id)
+                    else:
+                        if is_email_id_processed_redis(email_id):
+                            app.logger.debug("DEDUP_EMAIL: Email ID %s already processed (Redis key=%s). Marking as read and skipping.", email_id, PROCESSED_EMAIL_IDS_REDIS_KEY)
+                            mark_email_as_read_imap(mail, email_num)
+                            continue
+                except Exception:
+                    # En cas d'erreur inattendue sur la dédup, ne pas bloquer le traitement
+                    pass
 
                 # Extraire le contenu complet de l'email + détecter les pièces jointes
                 body_preview = ""
@@ -2703,6 +2714,37 @@ def api_test_webhook_logs():
     except Exception as e:
         app.logger.error(f"API_TEST_WEBHOOK_LOGS: Exception: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Erreur lors de la récupération des logs."}), 500
+
+@app.route('/api/test/clear_email_dedup', methods=['POST'])
+def api_test_clear_email_dedup():
+    """Clear a specific email ID from the per-email dedup storage (Redis set or memory fallback).
+    Auth: X-API-Key via _testapi_authorized().
+    Body JSON: { "email_id": "<id>" }
+    """
+    if not _testapi_authorized(request):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+    try:
+        payload = request.get_json(silent=True) or {}
+        email_id = str(payload.get("email_id") or "").strip()
+        if not email_id:
+            return jsonify({"success": False, "message": "email_id manquant"}), 400
+        removed = False
+        # Try Redis set removal
+        try:
+            rc = globals().get("redis_client")
+            if rc is not None:
+                try:
+                    removed = bool(rc.srem(PROCESSED_EMAIL_IDS_REDIS_KEY, email_id))
+                except Exception as e:
+                    app.logger.warning(f"API_TEST_CLEAR_EMAIL_DEDUP: Redis srem error: {e}")
+        except Exception as e:
+            app.logger.warning(f"API_TEST_CLEAR_EMAIL_DEDUP: Redis access error: {e}")
+        # Memory fallback has no persistent store of processed email IDs in this codebase
+        # (only subject-group memory set exists). So nothing to clear in-memory for IDs.
+        return jsonify({"success": True, "removed": removed, "email_id": email_id}), 200
+    except Exception as e:
+        app.logger.error(f"API_TEST_CLEAR_EMAIL_DEDUP: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur interne"}), 500
 
 # --- Test endpoints (CORS + API key) ---
 @app.route('/api/test/get_processing_prefs', methods=['GET'])
