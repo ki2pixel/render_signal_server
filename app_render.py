@@ -1939,9 +1939,37 @@ def check_new_emails_and_trigger_webhook():
                     has_forbidden = any(term in norm_body2 for term in forbidden_terms)
                     has_dropbox_request = "https://www.dropbox.com/request/" in (full_email_content or "").lower()
 
+                    # Debug détaillé: tracer l'état des vérifications de termes et de l'URL Dropbox
+                    try:
+                        missing_required = [t for t in required_terms if t not in norm_body2]
+                        present_forbidden = [t for t in forbidden_terms if t in norm_body2]
+                        app.logger.debug(
+                            "DESABO_DEBUG: Email %s - required_terms_ok=%s, forbidden_present=%s, dropbox_request=%s, missing_required=%s, present_forbidden=%s",
+                            email_id,
+                            has_required,
+                            has_forbidden,
+                            has_dropbox_request,
+                            missing_required,
+                            present_forbidden,
+                        )
+                    except Exception:
+                        # Ne jamais faire échouer le traitement à cause des logs de debug
+                        pass
+
                     if has_required and not has_forbidden and has_dropbox_request:
                         # Vérifier contrainte horaire globale avant envoi Make
                         now_local = datetime.now(TZ_FOR_POLLING)
+                        # Debug: afficher l'évaluation de la fenêtre horaire
+                        try:
+                            app.logger.debug(
+                                "DESABO_DEBUG: Time window evaluation for email %s: now=%s, window=%s-%s",
+                                email_id,
+                                now_local.strftime('%H:%M'),
+                                WEBHOOKS_TIME_START_STR or 'unset',
+                                WEBHOOKS_TIME_END_STR or 'unset',
+                            )
+                        except Exception:
+                            pass
                         if not _is_within_time_window_local(now_local):
                             app.logger.info(
                                 f"DESABO: Time window not satisfied for email {email_id} (now={now_local.strftime('%H:%M')}, window={WEBHOOKS_TIME_START_STR or 'unset'}-{WEBHOOKS_TIME_END_STR or 'unset'}). Skipping."
