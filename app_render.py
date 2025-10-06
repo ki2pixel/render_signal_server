@@ -1727,6 +1727,16 @@ def check_new_emails_and_trigger_webhook():
                     subject_group_id = ""
                     app.logger.error(f"DEDUP_GROUP: Failed to compute subject group for email {email_id}: {e_group}")
 
+                # Debug: tracer l'ID de groupe de sujet calculé (si disponible)
+                try:
+                    app.logger.debug(
+                        "DEDUP_GROUP_DEBUG: Email %s - computed subject_group_id=%s",
+                        email_id,
+                        subject_group_id or "None",
+                    )
+                except Exception:
+                    pass
+
                 if ENABLE_SUBJECT_GROUP_DEDUP and subject_group_id and is_subject_group_processed(subject_group_id):
                     app.logger.info(
                         f"DEDUP_GROUP: Subject-group '{subject_group_id}' already processed. Skipping webhooks for email {email_id}.")
@@ -1743,6 +1753,17 @@ def check_new_emails_and_trigger_webhook():
                 if not is_from_monitored_sender:
                     app.logger.debug(f"POLLER: Email {email_num} from {sender} is not from a monitored sender. Skipping.")
                     continue
+
+                # Debug: expéditeur surveillé OK
+                try:
+                    app.logger.debug(
+                        "POLLER_DEBUG: Email %s - monitored_sender=True (sender=%s, monitored_list_count=%d)",
+                        email_id,
+                        sender_email,
+                        len(SENDER_LIST_FOR_POLLING) if SENDER_LIST_FOR_POLLING else 0,
+                    )
+                except Exception:
+                    pass
 
                 # Vérifier si l'email a déjà été traité
                 if is_email_id_processed_redis(email_id):
@@ -1815,6 +1836,12 @@ def check_new_emails_and_trigger_webhook():
                 except Exception as e_filters:
                     app.logger.error(f"FILTERS: Exception applying processing filters for email {email_id}: {e_filters}")
 
+                # Debug: si nous atteignons ce point, les filtres n'ont pas provoqué de 'continue' => filtres passés
+                try:
+                    app.logger.debug("FILTERS_DEBUG: Email %s passed all processing filters", email_id)
+                except Exception:
+                    pass
+
                 # Indicateur d'exclusivité pour la logique "présence samedi"
                 presence_routed = False
                 # Indicateur d'exclusivité pour le nouveau webhook "désabonnement/journée/tarifs habituels"
@@ -1834,6 +1861,16 @@ def check_new_emails_and_trigger_webhook():
                     contains_samedi = ("samedi" in norm_subject) and ("samedi" in norm_body)
 
                     if contains_samedi:
+                        # Debug: contexte présence
+                        try:
+                            now_check = datetime.now(TZ_FOR_POLLING)
+                            app.logger.debug(
+                                "PRESENCE_DEBUG: Email %s - contains_samedi=True, weekday=%d",
+                                email_id,
+                                now_check.weekday(),
+                            )
+                        except Exception:
+                            pass
                         # Restriction: n'envoyer les webhooks présence/absence que le JEUDI (weekday=3) ou VENDREDI (weekday=4)
                         now_local = datetime.now(TZ_FOR_POLLING)
                         is_friday = now_local.weekday() == 4
@@ -2103,6 +2140,18 @@ def check_new_emails_and_trigger_webhook():
                         timeout_sec = int(PROCESSING_PREFS.get('webhook_timeout_sec') or 30)
                         last_exc = None
                         webhook_response = None
+                        # Debug: tentative d'envoi du webhook personnalisé (avant boucle de retries)
+                        try:
+                            app.logger.debug(
+                                "CUSTOM_WEBHOOK_DEBUG: Preparing to send custom webhook for email %s to %s (timeout=%ss, retries=%d, delay=%ds)",
+                                email_id,
+                                WEBHOOK_URL,
+                                timeout_sec,
+                                retries,
+                                delay,
+                            )
+                        except Exception:
+                            pass
                         for attempt in range(retries + 1):
                             try:
                                 webhook_response = requests.post(
@@ -2924,7 +2973,7 @@ def api_get_polling_config():
 @login_required
 def api_update_polling_config():
     """Met à jour la configuration du polling (jours, heures, dedup) et la persiste en JSON."""
-    global POLLING_ACTIVE_DAYS, POLLING_ACTIVE_START_HOUR, POLLING_ACTIVE_END_HOUR, ENABLE_SUBJECT_GROUP_DEDUP, SENDER_LIST_FOR_POLLING
+    global POLLING_ACTIVE_DAYS, POLLING_ACTIVE_START_HOUR, POLLING_ACTIVE_END_HOUR, ENABLE_SUBJECT_GROUP_DEDUP, SENDER_LIST_FOR_POLLING, POLLING_VACATION_START_DATE, POLLING_VACATION_END_DATE
     try:
         payload = request.get_json(silent=True) or {}
 
