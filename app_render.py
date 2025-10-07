@@ -2079,6 +2079,8 @@ def check_new_emails_and_trigger_webhook():
 
                     if has_required and not has_forbidden and has_dropbox_request:
                         # Vérifier contrainte horaire globale avant envoi Make
+                        # Nouvelle règle: si l'email arrive AVANT l'heure de début configurée,
+                        # nous AUTORISONS l'envoi et mettons webhooks_time_start = "maintenant".
                         now_local = datetime.now(TZ_FOR_POLLING)
                         # Debug: afficher l'évaluation de la fenêtre horaire
                         try:
@@ -2091,16 +2093,32 @@ def check_new_emails_and_trigger_webhook():
                             )
                         except Exception:
                             pass
-                        if not _is_within_time_window_local(now_local):
+
+                        early_ok = False
+                        try:
+                            # Autoriser explicitement si avant l'heure de début
+                            if WEBHOOKS_TIME_START and now_local.time() < WEBHOOKS_TIME_START:
+                                early_ok = True
+                        except Exception:
+                            # Défaut conservateur si comparaison échoue
+                            early_ok = False
+
+                        if not early_ok and not _is_within_time_window_local(now_local):
                             app.logger.info(
                                 f"DESABO: Time window not satisfied for email {email_id} (now={now_local.strftime('%H:%M')}, window={WEBHOOKS_TIME_START_STR or 'unset'}-{WEBHOOKS_TIME_END_STR or 'unset'}). Skipping."
                             )
                             raise Exception("DESABO_TIME_WINDOW_NOT_SATISFIED")
+
+                        # Déterminer la valeur à exposer dans le payload pour webhooks_time_start
+                        time_start_payload = WEBHOOKS_TIME_START_STR or None
+                        if early_ok:
+                            time_start_payload = "maintenant"
+
                         target_make_url = AUTOREPONDEUR_MAKE_WEBHOOK_URL
                         sender_email_clean = extract_sender_email(sender)
 
                         app.logger.info(
-                            f"DESABO: Conditions matched for email {email_id}. Sending Make webhook to {target_make_url}"
+                            f"DESABO: Conditions matched for email {email_id}. Sending Make webhook to {target_make_url} (early_ok={early_ok}, start_payload={time_start_payload})"
                         )
 
                         send_ok = send_makecom_webhook(
@@ -2118,7 +2136,7 @@ def check_new_emails_and_trigger_webhook():
                                 "Subject": subject,
                                 "Sender": {"email": sender_email_clean},
                                 # Exposer la fenêtre horaire globale pour mapping côté Make
-                                "webhooks_time_start": WEBHOOKS_TIME_START_STR or None,
+                                "webhooks_time_start": time_start_payload,
                                 "webhooks_time_end": WEBHOOKS_TIME_END_STR or None,
                             },
                         )
