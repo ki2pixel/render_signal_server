@@ -2110,10 +2110,13 @@ def check_new_emails_and_trigger_webhook():
                             raise Exception("DESABO_TIME_WINDOW_NOT_SATISFIED")
 
                         # Déterminer la valeur à exposer dans le payload pour webhooks_time_start
-                        # Exposer systématiquement l'heure de début configurée, même en cas d'envoi précoce
-                        # Raison: "maintenant" rend l'orchestration Make ambiguë (dépend du moment de traitement).
-                        # En conservant la valeur configurée (ex: "10h30"), le mapping côté Make reste déterministe.
-                        time_start_payload = WEBHOOKS_TIME_START_STR or None
+                        # Règle métier:
+                        # - Envoi précoce (early_ok=True, avant l'heure de début) → exposer l'heure de début configurée
+                        # - Envoi dans la fenêtre → exposer "maintenant" pour refléter un traitement immédiat
+                        if early_ok:
+                            time_start_payload = WEBHOOKS_TIME_START_STR or None
+                        else:
+                            time_start_payload = "maintenant"
 
                         target_make_url = AUTOREPONDEUR_MAKE_WEBHOOK_URL
                         sender_email_clean = extract_sender_email(sender)
