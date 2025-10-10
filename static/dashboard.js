@@ -961,6 +961,38 @@ document.addEventListener('DOMContentLoaded', () => {
     const buildPayloadPreviewBtn = document.getElementById('buildPayloadPreviewBtn');
     buildPayloadPreviewBtn && buildPayloadPreviewBtn.addEventListener('click', buildPayloadPreview);
 
+    // --- Ouvrir une page de téléchargement (manuel) ---
+    const openDownloadPageBtn = document.getElementById('openDownloadPageBtn');
+    if (openDownloadPageBtn) {
+        openDownloadPageBtn.addEventListener('click', () => {
+            const msgId = 'openDownloadMsg';
+            try {
+                const input = document.getElementById('downloadPageUrl');
+                const val = (input?.value || '').trim();
+                if (!val) {
+                    showMessage(msgId, 'Veuillez saisir une URL.', 'error');
+                    return;
+                }
+                // Vérification basique HTTPS + domaine attendu (optionnelle, on reste permissif)
+                let ok = false;
+                try {
+                    const u = new URL(val);
+                    ok = (u.protocol === 'https:');
+                } catch (_) {
+                    ok = false;
+                }
+                if (!ok) {
+                    showMessage(msgId, 'URL invalide. Utilisez un lien HTTPS.', 'error');
+                    return;
+                }
+                window.open(val, '_blank', 'noopener');
+                showMessage(msgId, 'Ouverture dans un nouvel onglet…', 'info');
+            } catch (e) {
+                showMessage(msgId, 'Impossible d’ouvrir l’URL.', 'error');
+            }
+        });
+    }
+
     // --- Charger les préférences serveur au démarrage ---
     loadProcessingPrefsFromServer();
 
