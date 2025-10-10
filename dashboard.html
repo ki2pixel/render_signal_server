@@ -656,6 +656,16 @@
           <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
         </div>
         <div class="card" style="margin-top: 20px;">
+          <div class="card-title">🔗 Ouvrir une page de téléchargement</div>
+          <div class="form-group">
+            <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
+            <input id="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
+            <button id="openDownloadPageBtn" class="btn btn-primary" style="margin-top: 8px;">Ouvrir la page</button>
+            <div id="openDownloadMsg" class="status-msg"></div>
+            <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
+          </div>
+        </div>
+        <div class="card" style="margin-top: 20px;">
           <div class="card-title"> Flags Runtime (Debug)</div>
           <div class="form-group">
             <label>Bypass déduplication par ID d’email (debug)</label>
