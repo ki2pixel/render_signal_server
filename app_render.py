@@ -1170,6 +1170,10 @@ def check_new_emails_and_trigger_webhook():
     """
     Vérifie les nouveaux emails via IMAP et déclenche le webhook personnalisé pour chaque email valide.
     VERSION IMAP - remplace l'ancienne version Microsoft Graph API.
+    
+    Pour les emails DESABO (autorépondeur), détermine le start_payload basé sur l'heure de traitement:
+    - Si traité avant la fenêtre (early_ok=True): start_payload = WEBHOOKS_TIME_START_STR (heure de début)
+    - Si traité dans la fenêtre (early_ok=False): start_payload = "maintenant"
     """
     app.logger.info("POLLER: Email polling cycle started (IMAP).")
     if not all([SENDER_LIST_FOR_POLLING, WEBHOOK_URL, email_config_valid]):
@@ -1630,9 +1634,9 @@ def check_new_emails_and_trigger_webhook():
                         f"DESABO: Exception during unsubscribe/journee/tarifs handling for email {email_id}: {e_desabo}"
                     )
 
-                # Extraire et résoudre les liens de livraison (Dropbox/FromSmash/SwissTransfer)
-                # Note: le scraping des pages publiques sert uniquement à découvrir un lien direct si visible dans le HTML.
-                # Si aucun lien direct n'est exposé côté public, "direct_url" restera None.
+                # Extraire les liens de livraison (Dropbox/FromSmash/SwissTransfer)
+                # Décision 2025-10-10: on ne résout plus les liens directs automatiquement.
+                # On expose uniquement les liens bruts (raw_url) et l'UI gère l'ouverture manuelle.
                 # Extraire depuis le texte combiné afin de capturer les URLs présentes uniquement dans le HTML
                 provider_links = extract_provider_links_from_text((full_email_content or "") + "\n" + (html_email_content or ""))
                 delivery_links = []
@@ -1640,14 +1644,14 @@ def check_new_emails_and_trigger_webhook():
                 for link in provider_links:
                     provider = link["provider"]
                     raw_url = link["raw_url"]
-                    direct_url = resolve_direct_download_url(provider, raw_url)
+                    # Ne plus tenter de résoudre une URL directe; conserver seulement l'URL brute
                     delivery_links.append({
                         "provider": provider,
                         "raw_url": raw_url,
-                        "direct_url": direct_url
                     })
-                    if not first_direct_url and direct_url:
-                        first_direct_url = direct_url
+                    # Compat: utiliser la première raw_url comme first_direct_download_url côté payload
+                    if not first_direct_url and raw_url:
+                        first_direct_url = raw_url
 
                 # Préparer le payload pour le webhook personnalisé (format requis + contenu complet)
                 payload_for_webhook = {
@@ -1657,7 +1661,7 @@ def check_new_emails_and_trigger_webhook():
                     "sender_address": sender,
                     "bodyPreview": body_preview,
                     "email_content": full_email_content,  # Contenu complet pour éviter la recherche IMAP
-                    # Nouveau: informations sur les liens de livraison détectés et résolus
+                    # Nouveau: informations sur les liens de livraison détectés (liens bruts uniquement)
                     "delivery_links": delivery_links,
                     "first_direct_download_url": first_direct_url,
                 }
