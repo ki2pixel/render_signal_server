@@ -2496,9 +2496,9 @@ def api_test_clear_email_dedup():
         app.logger.error(f"API_TEST_CLEAR_EMAIL_DEDUP: Exception: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Erreur interne"}), 500
 
-@app.route('/api/get_processing_prefs', methods=['GET'])
+@app.route('/api/get_processing_prefs', methods=['GET'], endpoint='ui_get_processing_prefs')
 @login_required
-def api_get_processing_prefs():
+def ui_get_processing_prefs():
     """Return current processing preferences (session-protected)."""
     try:
         prefs = globals().get("PROCESSING_PREFS")
@@ -2511,9 +2511,9 @@ def api_get_processing_prefs():
         app.logger.error(f"API_GET_PROCESSING_PREFS: Exception: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Erreur interne"}), 500
 
-@app.route('/api/update_processing_prefs', methods=['POST'])
+@app.route('/api/update_processing_prefs', methods=['POST'], endpoint='ui_update_processing_prefs')
 @login_required
-def api_update_processing_prefs():
+def ui_update_processing_prefs():
     """Validate, persist and apply processing preferences (session-protected)."""
     try:
         payload = request.get_json(silent=True) or {}
