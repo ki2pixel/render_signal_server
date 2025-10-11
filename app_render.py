@@ -587,6 +587,125 @@ else:
 
 app.logger.info(f"CFG DEDUP: SUBJECT_GROUP_TTL_DAYS={SUBJECT_GROUP_TTL_DAYS} (seconds={SUBJECT_GROUP_TTL_SECONDS}) — applies only when Redis is available.")
 
+# --- Processing Preferences (persistent JSON) ---
+# Store various processing-related preferences editable from the UI, including per-webhook exclude keywords.
+# Persisted in debug/processing_prefs.json so changes survive restarts.
+PROCESSING_PREFS_FILE = Path(__file__).resolve().parent / "debug" / "processing_prefs.json"
+
+def _default_processing_prefs() -> dict:
+    return {
+        # Global filters applied before any routing
+        "exclude_keywords": [],  # list[str]
+        "require_attachments": False,
+        "max_email_size_mb": None,  # int | None
+        # Retry and networking
+        "retry_count": 0,
+        "retry_delay_sec": 0,
+        "webhook_timeout_sec": 30,
+        "rate_limit_per_hour": 0,
+        "notify_on_failure": False,
+        # Optional sender priority map (email -> weight)
+        "sender_priority": {},
+        # Per-webhook exclude lists
+        "exclude_keywords_recadrage": [],
+        "exclude_keywords_autorepondeur": [],
+    }
+
+def _load_processing_prefs() -> dict:
+    try:
+        if PROCESSING_PREFS_FILE.exists():
+            with open(PROCESSING_PREFS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            # Merge with defaults to ensure new keys exist
+            base = _default_processing_prefs()
+            base.update({k: v for k, v in (data or {}).items() if k in base})
+            return base
+    except Exception as e:
+        app.logger.warning(f"PROCESSING_PREFS: read error: {e}")
+    return _default_processing_prefs()
+
+def _save_processing_prefs(prefs: dict) -> bool:
+    try:
+        PROCESSING_PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(PROCESSING_PREFS_FILE, "w", encoding="utf-8") as f:
+            json.dump(prefs, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        app.logger.error(f"PROCESSING_PREFS: write error: {e}")
+        return False
+
+def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
+    """Validate and normalize processing prefs payload from API.
+    Returns (ok, message, normalized_prefs). On failure ok=False with message.
+    """
+    if not isinstance(payload, dict):
+        return False, "Payload invalide.", {}
+    cur = _load_processing_prefs()
+
+    def _norm_list_of_str(val):
+        if not val:
+            return []
+        if isinstance(val, list):
+            out = []
+            for it in val:
+                s = str(it or "").strip()
+                if s:
+                    out.append(s)
+            return out
+        # accept string with newlines
+        return [s.strip() for s in str(val).splitlines() if s.strip()]
+
+    # Global exclude (kept for backward compatibility)
+    if "exclude_keywords" in payload:
+        cur["exclude_keywords"] = _norm_list_of_str(payload.get("exclude_keywords"))
+
+    # Per-webhook exclude lists
+    if "exclude_keywords_recadrage" in payload:
+        cur["exclude_keywords_recadrage"] = _norm_list_of_str(payload.get("exclude_keywords_recadrage"))
+    if "exclude_keywords_autorepondeur" in payload:
+        cur["exclude_keywords_autorepondeur"] = _norm_list_of_str(payload.get("exclude_keywords_autorepondeur"))
+
+    # Other numeric/boolean fields (optional)
+    def _to_int_or_none(v):
+        if v is None or v == "":
+            return None
+        try:
+            return int(v)
+        except Exception:
+            return None
+    if "require_attachments" in payload:
+        cur["require_attachments"] = bool(payload.get("require_attachments"))
+    if "max_email_size_mb" in payload:
+        me = _to_int_or_none(payload.get("max_email_size_mb"))
+        cur["max_email_size_mb"] = me if (me is None or me >= 0) else None
+    if "retry_count" in payload:
+        rc = _to_int_or_none(payload.get("retry_count")) or 0
+        cur["retry_count"] = max(0, rc)
+    if "retry_delay_sec" in payload:
+        rd = _to_int_or_none(payload.get("retry_delay_sec")) or 0
+        cur["retry_delay_sec"] = max(0, rd)
+    if "webhook_timeout_sec" in payload:
+        to = _to_int_or_none(payload.get("webhook_timeout_sec")) or 30
+        cur["webhook_timeout_sec"] = max(1, to)
+    if "rate_limit_per_hour" in payload:
+        rl = _to_int_or_none(payload.get("rate_limit_per_hour")) or 0
+        cur["rate_limit_per_hour"] = max(0, rl)
+    if "notify_on_failure" in payload:
+        cur["notify_on_failure"] = bool(payload.get("notify_on_failure"))
+    if "sender_priority" in payload and isinstance(payload.get("sender_priority"), dict):
+        cur["sender_priority"] = payload.get("sender_priority")
+
+    return True, "OK", cur
+
+# Initialize at startup so PROCESSING_PREFS is available for the poller
+PROCESSING_PREFS = _load_processing_prefs()
+app.logger.info(
+    "CFG PROCESSING_PREFS: loaded (exclude=%d, recadrage=%d, autorepondeur=%d)",
+    len(PROCESSING_PREFS.get("exclude_keywords", []) or []),
+    len(PROCESSING_PREFS.get("exclude_keywords_recadrage", []) or []),
+    len(PROCESSING_PREFS.get("exclude_keywords_autorepondeur", []) or []),
+)
+
 # --- Configuration IMAP Email ---
 EMAIL_ADDRESS = os.environ.get('EMAIL_ADDRESS', REF_EMAIL_ADDRESS)
 EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD', REF_EMAIL_PASSWORD)
@@ -1370,7 +1489,7 @@ def check_new_emails_and_trigger_webhook():
                         mark_email_as_read_imap(mail, email_num)
                         mark_email_id_as_processed_redis(email_id)
                         continue
-                    # Exclude keywords (normalize subject+body)
+                    # Exclude keywords (GLOBAL) — normalize subject+body
                     exclude_kw = PROCESSING_PREFS.get('exclude_keywords') or []
                     if exclude_kw:
                         def _normalize_no_accents_lower_local(s: str) -> str:
@@ -1380,7 +1499,7 @@ def check_new_emails_and_trigger_webhook():
                         norm_subj = _normalize_no_accents_lower_local(subject)
                         norm_body = _normalize_no_accents_lower_local(full_email_content)
                         if any((kw or '').strip().lower() in norm_subj or (kw or '').strip().lower() in norm_body for kw in exclude_kw):
-                            app.logger.info(f"FILTERS: Email {email_id} skipped (matched exclude keyword)")
+                            app.logger.info(f"FILTERS: Email {email_id} skipped (matched GLOBAL exclude keyword)")
                             mark_email_as_read_imap(mail, email_num)
                             mark_email_id_as_processed_redis(email_id)
                             continue
@@ -1547,6 +1666,19 @@ def check_new_emails_and_trigger_webhook():
                         pass
 
                     if has_required and not has_forbidden and has_dropbox_request:
+                        # Per-webhook exclude list for AUTOREPONDEUR
+                        desabo_excluded = False
+                        try:
+                            ex_auto = PROCESSING_PREFS.get('exclude_keywords_autorepondeur') or []
+                            if ex_auto:
+                                # Use normalized body/subject from above scope
+                                norm_subj2 = _normalize_no_accents_lower_v2(subject)
+                                if any((kw or '').strip().lower() in norm_subj2 or (kw or '').strip().lower() in norm_body2 for kw in ex_auto):
+                                    app.logger.info(f"EXCLUDE_KEYWORD: AUTOREPONDEUR skipped for {email_id} (matched per-webhook exclude)")
+                                    desabo_excluded = True
+                        except Exception as _ex:
+                            app.logger.debug("EXCLUDE_KEYWORD: error evaluating autorepondeur excludes: %s", _ex)
+                    if not desabo_excluded:
                         # Vérifier contrainte horaire globale avant envoi Make
                         # Nouvelle règle: si l'email arrive AVANT l'heure de début configurée,
                         # nous AUTORISONS l'envoi et mettons webhooks_time_start = "maintenant".
@@ -1614,7 +1746,6 @@ def check_new_emails_and_trigger_webhook():
                             },
                         )
 
-                        # Activer l'exclusivité vis-à-vis du flux Média Solution si tentative d'envoi
                         desabo_routed = True
                         if send_ok:
                             app.logger.info(
@@ -1633,7 +1764,6 @@ def check_new_emails_and_trigger_webhook():
                     app.logger.error(
                         f"DESABO: Exception during unsubscribe/journee/tarifs handling for email {email_id}: {e_desabo}"
                     )
-
                 # Extraire les liens de livraison (Dropbox/FromSmash/SwissTransfer)
                 # Décision 2025-10-10: on ne résout plus les liens directs automatiquement.
                 # On expose uniquement les liens bruts (raw_url) et l'UI gère l'ouverture manuelle.
@@ -1874,13 +2004,39 @@ def check_new_emails_and_trigger_webhook():
                             # Extraire l'adresse email de l'expéditeur
                             sender_email = extract_sender_email(sender)
 
-                            # Envoyer à Make.com webhook (URL par défaut)
-                            makecom_success = send_makecom_webhook(
-                                subject=subject,
-                                delivery_time=pattern_result['delivery_time'],
-                                sender_email=sender_email,
-                                email_id=email_id
-                            )
+                            # Per-webhook exclude list for RECADRAGE
+                            try:
+                                ex_rec = PROCESSING_PREFS.get('exclude_keywords_recadrage') or []
+                                if ex_rec:
+                                    def _norm3(s: str) -> str:
+                                        nfkd = unicodedata.normalize('NFD', s or '')
+                                        no_accents = ''.join(ch for ch in nfkd if not unicodedata.combining(ch))
+                                        return no_accents.lower()
+                                    ns = _norm3(subject)
+                                    nb = _norm3(full_email_content)
+                                    if any((kw or '').strip().lower() in ns or (kw or '').strip().lower() in nb for kw in ex_rec):
+                                        app.logger.info(f"EXCLUDE_KEYWORD: RECADRAGE skipped for {email_id} (matched per-webhook exclude)")
+                                        raise Exception("RECADRAGE_EXCLUDED")
+                            except Exception as _ex2:
+                                if str(_ex2) == "RECADRAGE_EXCLUDED":
+                                    # Skip Make recadrage send; do not mark subject group here, let custom webhook run
+                                    makecom_success = False
+                                    # fall through to else-branch below without calling send
+                                else:
+                                    makecom_success = send_makecom_webhook(
+                                        subject=subject,
+                                        delivery_time=pattern_result['delivery_time'],
+                                        sender_email=sender_email,
+                                        email_id=email_id
+                                    )
+                            else:
+                                # No exclusion: proceed with Make.com send
+                                makecom_success = send_makecom_webhook(
+                                    subject=subject,
+                                    delivery_time=pattern_result['delivery_time'],
+                                    sender_email=sender_email,
+                                    email_id=email_id
+                                )
 
                             if makecom_success:
                                 app.logger.info(f"POLLER: Make.com webhook sent successfully for email {email_id}")
@@ -2338,6 +2494,39 @@ def api_test_clear_email_dedup():
         return jsonify({"success": True, "removed": removed, "email_id": email_id}), 200
     except Exception as e:
         app.logger.error(f"API_TEST_CLEAR_EMAIL_DEDUP: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur interne"}), 500
+
+@app.route('/api/get_processing_prefs', methods=['GET'])
+@login_required
+def api_get_processing_prefs():
+    """Return current processing preferences (session-protected)."""
+    try:
+        prefs = globals().get("PROCESSING_PREFS")
+        if prefs is None:
+            loaded = _load_processing_prefs()
+            globals()["PROCESSING_PREFS"] = loaded
+            prefs = loaded
+        return jsonify({"success": True, "prefs": prefs}), 200
+    except Exception as e:
+        app.logger.error(f"API_GET_PROCESSING_PREFS: Exception: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Erreur interne"}), 500
+
+@app.route('/api/update_processing_prefs', methods=['POST'])
+@login_required
+def api_update_processing_prefs():
+    """Validate, persist and apply processing preferences (session-protected)."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        ok, msg, new_prefs = _validate_processing_prefs(payload)
+        if not ok:
+            return jsonify({"success": False, "message": msg}), 400
+        if _save_processing_prefs(new_prefs):
+            global PROCESSING_PREFS
+            PROCESSING_PREFS = new_prefs
+            return jsonify({"success": True, "message": "Préférences mises à jour.", "prefs": PROCESSING_PREFS}), 200
+        return jsonify({"success": False, "message": "Échec de sauvegarde."}), 500
+    except Exception as e:
+        app.logger.error(f"API_UPDATE_PROCESSING_PREFS: Exception: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Erreur interne"}), 500
 
 # Session-protected counterparts for dashboard UI
