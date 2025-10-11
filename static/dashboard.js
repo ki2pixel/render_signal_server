@@ -78,7 +78,22 @@ async function loadProcessingPrefsFromServer() {
         const data = await res.json();
         if (!data.success) return;
         const p = data.prefs || {};
-        setIfPresent('excludeKeywords', (p.exclude_keywords || []).join('\n'), v => v);
+        // Backward compatibility: legacy single list + new per-webhook lists
+        const legacy = Array.isArray(p.exclude_keywords) ? p.exclude_keywords : [];
+        const rec = Array.isArray(p.exclude_keywords_recadrage) ? p.exclude_keywords_recadrage : [];
+        const aut = Array.isArray(p.exclude_keywords_autorepondeur) ? p.exclude_keywords_autorepondeur : [];
+        const recEl = document.getElementById('excludeKeywordsRecadrage');
+        const autEl = document.getElementById('excludeKeywordsAutorepondeur');
+        if (recEl) {
+            recEl.value = rec.join('\n');
+            recEl.placeholder = (rec.length ? rec : ['ex: annulation', 'ex: rappel']).join('\n');
+        }
+        if (autEl) {
+            autEl.value = aut.join('\n');
+            autEl.placeholder = (aut.length ? aut : ['ex: facture', 'ex: hors périmètre']).join('\n');
+        }
+        // Keep legacy field if present in DOM
+        setIfPresent('excludeKeywords', legacy.join('\n'), v => v);
         const att = document.getElementById('attachmentDetectionToggle');
         if (att) att.checked = !!p.require_attachments;
         const maxSz = document.getElementById('maxEmailSizeMB');
@@ -102,6 +117,8 @@ async function saveProcessingPrefsToServer() {
         btn && (btn.disabled = true);
         // Build payload from UI
         const excludeKeywordsRaw = (document.getElementById('excludeKeywords')?.value || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
+        const excludeKeywordsRecadrage = (document.getElementById('excludeKeywordsRecadrage')?.value || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
+        const excludeKeywordsAutorepondeur = (document.getElementById('excludeKeywordsAutorepondeur')?.value || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
         const requireAttachments = !!document.getElementById('attachmentDetectionToggle')?.checked;
         const maxEmailSize = document.getElementById('maxEmailSizeMB')?.value.trim();
         let senderPriorityObj = {};
@@ -116,7 +133,11 @@ async function saveProcessingPrefsToServer() {
         const notifyOnFailure = !!document.getElementById('notifyOnFailureToggle')?.checked;
 
         const payload = {
+            // keep legacy for backward compatibility
             exclude_keywords: excludeKeywordsRaw,
+            // new per-webhook lists
+            exclude_keywords_recadrage: excludeKeywordsRecadrage,
+            exclude_keywords_autorepondeur: excludeKeywordsAutorepondeur,
             require_attachments: requireAttachments,
             max_email_size_mb: maxEmailSize === '' ? null : parseInt(maxEmailSize, 10),
             sender_priority: senderPriorityObj,
@@ -153,6 +174,8 @@ function loadLocalPreferences() {
         if (!raw) return;
         const prefs = JSON.parse(raw);
         setIfPresent('excludeKeywords', prefs.excludeKeywords, v => v);
+        setIfPresent('excludeKeywordsRecadrage', prefs.excludeKeywordsRecadrage, v => v);
+        setIfPresent('excludeKeywordsAutorepondeur', prefs.excludeKeywordsAutorepondeur, v => v);
         setIfPresent('attachmentDetectionToggle', prefs.attachmentDetection, (v, el) => el.checked = !!v);
         setIfPresent('maxEmailSizeMB', prefs.maxEmailSizeMB, v => v);
         setIfPresent('senderPriority', prefs.senderPriorityJson, v => v);
@@ -183,6 +206,8 @@ function saveLocalPreferences() {
     try {
         const prefs = {
             excludeKeywords: (document.getElementById('excludeKeywords')?.value || ''),
+            excludeKeywordsRecadrage: (document.getElementById('excludeKeywordsRecadrage')?.value || ''),
+            excludeKeywordsAutorepondeur: (document.getElementById('excludeKeywordsAutorepondeur')?.value || ''),
             attachmentDetection: !!document.getElementById('attachmentDetectionToggle')?.checked,
             maxEmailSizeMB: parseInt(document.getElementById('maxEmailSizeMB')?.value || '0', 10) || undefined,
             senderPriorityJson: (document.getElementById('senderPriority')?.value || ''),
