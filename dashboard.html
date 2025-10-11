@@ -526,9 +526,19 @@
         <div class="card">
           <div class="card-title">🔍 Filtres Email Avancés</div>
           <div class="form-group">
-            <label for="excludeKeywords">Mots-clés à exclure (un par ligne)</label>
-            <textarea id="excludeKeywords" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-            <div class="small-text">Ces mots-clés sont utilisés côté UI pour le moment (aucune persistance serveur).</div>
+            <label for="excludeKeywordsRecadrage">Mots-clés à exclure (Recadrage) — un par ligne</label>
+            <textarea id="excludeKeywordsRecadrage" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+            <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `RECADRAGE_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
+          </div>
+          <div class="form-group">
+            <label for="excludeKeywordsAutorepondeur">Mots-clés à exclure (Autorépondeur) — un par ligne</label>
+            <textarea id="excludeKeywordsAutorepondeur" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+            <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `AUTOREPONDEUR_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
+          </div>
+          <div class="form-group">
+            <label for="excludeKeywords">Mots-clés à exclure (global, compatibilité) — un par ligne</label>
+            <textarea id="excludeKeywords" rows="3" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+            <div class="small-text">Liste globale (héritage). S'applique avant toute logique et avant les listes spécifiques.</div>
           </div>
           <div class="form-group">
             <label for="attachmentDetectionToggle">Détection de pièces jointes requise</label>
