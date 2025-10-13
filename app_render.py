@@ -222,6 +222,63 @@ try:
 except Exception:
     pass
 
+# --- Polling config overrides (optional UI overrides from disk) ---
+try:
+    _poll_cfg_path = settings.POLLING_CONFIG_FILE
+    if _poll_cfg_path.exists():
+        with open(_poll_cfg_path, "r", encoding="utf-8") as _f:
+            _pc = json.load(_f) or {}
+        # Apply if present
+        if isinstance(_pc.get("active_days"), list) and _pc.get("active_days"):
+            settings.POLLING_ACTIVE_DAYS = [int(d) for d in _pc["active_days"] if isinstance(d, (int, str))]
+        if "active_start_hour" in _pc:
+            try:
+                v = int(_pc["active_start_hour"]) ;
+                if 0 <= v <= 23:
+                    settings.POLLING_ACTIVE_START_HOUR = v
+            except Exception:
+                pass
+        if "active_end_hour" in _pc:
+            try:
+                v = int(_pc["active_end_hour"]) ;
+                if 0 <= v <= 23:
+                    settings.POLLING_ACTIVE_END_HOUR = v
+            except Exception:
+                pass
+        if "enable_subject_group_dedup" in _pc:
+            try:
+                settings.ENABLE_SUBJECT_GROUP_DEDUP = bool(_pc["enable_subject_group_dedup"])
+            except Exception:
+                pass
+        if isinstance(_pc.get("sender_of_interest_for_polling"), list):
+            try:
+                settings.SENDER_LIST_FOR_POLLING = [str(e).strip().lower() for e in _pc["sender_of_interest_for_polling"] if str(e).strip()]
+            except Exception:
+                pass
+        # Vacation dates
+        if "vacation_start" in _pc:
+            try:
+                vs = _pc.get("vacation_start")
+                polling_config.POLLING_VACATION_START_DATE = None if not vs else datetime.fromisoformat(str(vs)).date()
+            except Exception:
+                polling_config.POLLING_VACATION_START_DATE = None
+        if "vacation_end" in _pc:
+            try:
+                ve = _pc.get("vacation_end")
+                polling_config.POLLING_VACATION_END_DATE = None if not ve else datetime.fromisoformat(str(ve)).date()
+            except Exception:
+                polling_config.POLLING_VACATION_END_DATE = None
+        # Log effective schedule after overrides
+        try:
+            app.logger.info(
+                f"CFG POLL(override): days={settings.POLLING_ACTIVE_DAYS}; start={settings.POLLING_ACTIVE_START_HOUR}; end={settings.POLLING_ACTIVE_END_HOUR}; dedup_monthly_scope={settings.ENABLE_SUBJECT_GROUP_DEDUP}"
+            )
+        except Exception:
+            pass
+except Exception:
+    # Non-blocking if file missing or invalid
+    pass
+
 # --- Dedup constants mapping (from central settings) ---
 PROCESSED_EMAIL_IDS_REDIS_KEY = settings.PROCESSED_EMAIL_IDS_REDIS_KEY
 PROCESSED_SUBJECT_GROUPS_REDIS_KEY = settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY
