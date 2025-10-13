@@ -8,20 +8,15 @@ from typing import Tuple
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
 
-from config import webhook_time_window, polling_config
+from config import webhook_time_window, polling_config, settings
 from config.runtime_flags import load_runtime_flags, save_runtime_flags
 from config.settings import (
     RUNTIME_FLAGS_FILE,
     DISABLE_EMAIL_ID_DEDUP as DEFAULT_DISABLE_EMAIL_ID_DEDUP,
     ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS as DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS,
     POLLING_TIMEZONE_STR,
-    POLLING_ACTIVE_DAYS,
-    POLLING_ACTIVE_START_HOUR,
-    POLLING_ACTIVE_END_HOUR,
     EMAIL_POLLING_INTERVAL_SECONDS,
     POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
-    ENABLE_SUBJECT_GROUP_DEDUP,
-    SENDER_LIST_FOR_POLLING,
     POLLING_CONFIG_FILE,
 )
 
@@ -129,12 +124,12 @@ def update_runtime_flags():
 def get_polling_config():
     try:
         cfg = {
-            "active_days": POLLING_ACTIVE_DAYS,
-            "active_start_hour": POLLING_ACTIVE_START_HOUR,
-            "active_end_hour": POLLING_ACTIVE_END_HOUR,
-            "enable_subject_group_dedup": ENABLE_SUBJECT_GROUP_DEDUP,
+            "active_days": settings.POLLING_ACTIVE_DAYS,
+            "active_start_hour": settings.POLLING_ACTIVE_START_HOUR,
+            "active_end_hour": settings.POLLING_ACTIVE_END_HOUR,
+            "enable_subject_group_dedup": settings.ENABLE_SUBJECT_GROUP_DEDUP,
             "timezone": POLLING_TIMEZONE_STR,
-            "sender_of_interest_for_polling": SENDER_LIST_FOR_POLLING,
+            "sender_of_interest_for_polling": settings.SENDER_LIST_FOR_POLLING,
             "vacation_start": polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None,
             "vacation_end": polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None,
         }
@@ -264,6 +259,19 @@ def update_polling_config():
         if new_vac_end is not None:
             polling_config.POLLING_VACATION_END_DATE = new_vac_end
 
+        # Mettre à jour dynamiquement les réglages globaux utilisés par l'API/UI
+        # Cela évite que des valeurs importées à l'initialisation restent figées.
+        if new_days is not None:
+            settings.POLLING_ACTIVE_DAYS = new_days
+        if new_start is not None:
+            settings.POLLING_ACTIVE_START_HOUR = new_start
+        if new_end is not None:
+            settings.POLLING_ACTIVE_END_HOUR = new_end
+        if new_dedup is not None:
+            settings.ENABLE_SUBJECT_GROUP_DEDUP = new_dedup
+        if new_senders is not None:
+            settings.SENDER_LIST_FOR_POLLING = new_senders
+
         # Persistance fichier
         merged = dict(existing)
         if new_days is not None:
@@ -291,11 +299,11 @@ def update_polling_config():
         return jsonify({
             "success": True,
             "config": {
-                "active_days": merged.get('active_days', POLLING_ACTIVE_DAYS),
-                "active_start_hour": merged.get('active_start_hour', POLLING_ACTIVE_START_HOUR),
-                "active_end_hour": merged.get('active_end_hour', POLLING_ACTIVE_END_HOUR),
-                "enable_subject_group_dedup": merged.get('enable_subject_group_dedup', ENABLE_SUBJECT_GROUP_DEDUP),
-                "sender_of_interest_for_polling": merged.get('sender_of_interest_for_polling', SENDER_LIST_FOR_POLLING),
+                "active_days": merged.get('active_days', settings.POLLING_ACTIVE_DAYS),
+                "active_start_hour": merged.get('active_start_hour', settings.POLLING_ACTIVE_START_HOUR),
+                "active_end_hour": merged.get('active_end_hour', settings.POLLING_ACTIVE_END_HOUR),
+                "enable_subject_group_dedup": merged.get('enable_subject_group_dedup', settings.ENABLE_SUBJECT_GROUP_DEDUP),
+                "sender_of_interest_for_polling": merged.get('sender_of_interest_for_polling', settings.SENDER_LIST_FOR_POLLING),
                 "vacation_start": merged.get('vacation_start'),
                 "vacation_end": merged.get('vacation_end'),
             },
