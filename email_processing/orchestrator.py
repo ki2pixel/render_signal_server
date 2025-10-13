@@ -15,27 +15,269 @@ from datetime import datetime, timezone
 # NOTE: We import lazily inside functions to avoid circular imports at module load
 
 
-def check_new_emails_and_trigger_webhook():
-    """Delegate to legacy implementation if available, otherwise no-op safely.
+def check_new_emails_and_trigger_webhook() -> int:
+    """Execute one IMAP polling cycle and trigger webhooks when appropriate.
 
-    Returns:
-        int: number of webhooks triggered (0 on fallback)
+    Returns the number of triggered actions (best-effort count).
+
+    Implementation notes:
+    - Imports are inside the function to avoid circular dependencies at import time.
+    - Uses helpers exposed by app_render and modules under email_processing/.
+    - Defensive logging; never raises to the background loop.
     """
+    # Lazy imports to avoid cycles
     try:
-        # Local import to avoid circular dependency at import time
-        from app_render import _legacy_check_new_emails_and_trigger_webhook as _legacy_check
-        return _legacy_check()
-    except Exception as _e_legacy:
-        # Fallback: avoid crashing the polling thread if legacy impl is absent
+        import imaplib
+        from email import message_from_bytes
+    except Exception:
+        # If stdlib imports fail, nothing we can do
+        return 0
+
+    try:
+        # Pull runtime components from app_render (configured at app startup)
+        from app_render import (
+            app as _app,
+            create_imap_connection,
+            close_imap_connection,
+            extract_sender_email,
+            decode_email_header,
+            mark_email_as_read_imap,
+            send_makecom_webhook,
+            generate_subject_group_id,
+            is_subject_group_processed,
+            mark_subject_group_processed,
+            is_email_id_processed_redis,
+            mark_email_id_as_processed_redis,
+            _rate_limit_allow_send,
+            _record_send_event,
+            _append_webhook_log,
+            WEBHOOK_URL,
+            ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS,
+            PROCESSING_PREFS,
+            SENDER_LIST_FOR_POLLING,
+            TZ_FOR_POLLING,
+        )
+        # Local modules
+        from email_processing import imap_client
+        from email_processing import pattern_matching
+        from email_processing import link_extraction
+        from config import webhook_time_window as _w_tw
+    except Exception as _imp_ex:
         try:
+            # If wiring isn't ready, log and bail out
             from app_render import app as _app
             _app.logger.error(
-                "ORCHESTRATOR: Legacy implementation not found; skipping cycle (returns 0). Error: %s",
-                _e_legacy,
+                "ORCHESTRATOR: Wiring error; skipping cycle: %s", _imp_ex
             )
         except Exception:
             pass
         return 0
+
+    logger = getattr(_app, 'logger', None)
+    if not logger:
+        return 0
+
+    # Establish IMAP connection
+    mail = create_imap_connection()
+    if not mail:
+        logger.error("POLLER: Email polling cycle aborted: IMAP connection failed.")
+        return 0
+
+    triggered_count = 0
+    try:
+        # Select INBOX
+        try:
+            status, _ = mail.select('INBOX')
+            if status != 'OK':
+                logger.error("IMAP: Unable to select INBOX (status=%s)", status)
+                return 0
+        except Exception as e_sel:
+            logger.error("IMAP: Exception selecting INBOX: %s", e_sel)
+            return 0
+
+        # Search unseen messages
+        try:
+            status, data = mail.search(None, 'UNSEEN')
+            if status != 'OK':
+                logger.error("IMAP: search UNSEEN failed (status=%s)", status)
+                return 0
+            email_nums = data[0].split() if data and data[0] else []
+        except Exception as e_search:
+            logger.error("IMAP: Exception during search UNSEEN: %s", e_search)
+            return 0
+
+        # Helper: is within Make webhook window (for presence route)
+        def _is_within_time_window_local(now_local):
+            try:
+                return _w_tw.is_within_global_time_window(now_local)
+            except Exception:
+                return True
+
+        # Process each unseen message
+        for num in email_nums:
+            try:
+                # Fetch full message
+                status, msg_data = mail.fetch(num, '(RFC822)')
+                if status != 'OK' or not msg_data:
+                    logger.warning("IMAP: Failed to fetch message %s (status=%s)", num, status)
+                    continue
+                raw_bytes = None
+                for part in msg_data:
+                    if isinstance(part, tuple) and isinstance(part[1], (bytes, bytearray)):
+                        raw_bytes = part[1]
+                        break
+                if not raw_bytes:
+                    logger.warning("IMAP: No RFC822 bytes for message %s", num)
+                    continue
+
+                msg = message_from_bytes(raw_bytes)
+                subj_raw = msg.get('Subject', '')
+                from_raw = msg.get('From', '')
+                date_raw = msg.get('Date', '')
+                subject = decode_email_header(subj_raw)
+                sender_addr = extract_sender_email(from_raw).lower()
+
+                # Filter by allowed senders
+                try:
+                    allowed = [s.lower() for s in (SENDER_LIST_FOR_POLLING or [])]
+                except Exception:
+                    allowed = []
+                if allowed and sender_addr not in allowed:
+                    logger.info("POLLER: Skipping email %s (sender %s not in allowlist)", num.decode() if isinstance(num, bytes) else str(num), sender_addr)
+                    continue
+
+                # Build a simple headers dict to compute email_id
+                headers_map = {
+                    'Message-ID': msg.get('Message-ID', ''),
+                    'Subject': subject or '',
+                    'Date': date_raw or '',
+                }
+                email_id = imap_client.generate_email_id(headers_map)
+                if is_email_id_processed_redis(email_id):
+                    logger.info("DEDUP_EMAIL: Skipping already processed email_id=%s", email_id)
+                    continue
+
+                # Extract plain text content for pattern checks and link extraction
+                full_text = ""
+                try:
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            ctype = part.get_content_type()
+                            disp = (part.get('Content-Disposition') or '').lower()
+                            if ctype == 'text/plain' and 'attachment' not in disp:
+                                payload = part.get_payload(decode=True) or b''
+                                full_text += payload.decode(part.get_content_charset() or 'utf-8', errors='ignore')
+                    else:
+                        payload = msg.get_payload(decode=True) or b''
+                        full_text = payload.decode(msg.get_content_charset() or 'utf-8', errors='ignore')
+                except Exception:
+                    full_text = full_text or ''
+
+                # 1) Presence "samedi" route (exclusive if matched)
+                routed_presence = handle_presence_route(
+                    subject=subject or '',
+                    full_email_content=full_text or '',
+                    email_id=email_id,
+                    sender_raw=from_raw,
+                    tz_for_polling=TZ_FOR_POLLING,
+                    webhooks_time_start_str=None,
+                    webhooks_time_end_str=None,
+                    presence_flag=False if _app.config.get('PRESENCE_FLAG') is None else _app.config.get('PRESENCE_FLAG'),
+                    presence_true_url=_app.config.get('PRESENCE_TRUE_MAKE_WEBHOOK_URL'),
+                    presence_false_url=_app.config.get('PRESENCE_FALSE_MAKE_WEBHOOK_URL'),
+                    is_within_time_window_local=_is_within_time_window_local,
+                    extract_sender_email=extract_sender_email,
+                    send_makecom_webhook=send_makecom_webhook,
+                    logger=logger,
+                )
+                if routed_presence:
+                    # Presence is exclusive; mark processed and continue
+                    mark_email_id_as_processed_redis(email_id)
+                    mark_email_as_read_imap(mail, num)
+                    triggered_count += 1
+                    continue
+
+                # 2) Media Solution route (Make webhook)
+                media_ok = handle_media_solution_route(
+                    subject=subject or '',
+                    full_email_content=full_text or '',
+                    email_id=email_id,
+                    processing_prefs=PROCESSING_PREFS,
+                    tz_for_polling=TZ_FOR_POLLING,
+                    check_media_solution_pattern=lambda s, b, tz, l: pattern_matching.check_media_solution_pattern(s, b, tz, logger),
+                    extract_sender_email=extract_sender_email,
+                    sender_raw=from_raw,
+                    send_makecom_webhook=send_makecom_webhook,
+                    mark_subject_group_processed=mark_subject_group_processed,
+                    subject_group_id=generate_subject_group_id(subject or ''),
+                    logger=logger,
+                )
+                if media_ok:
+                    mark_email_id_as_processed_redis(email_id)
+                    mark_email_as_read_imap(mail, num)
+                    triggered_count += 1
+                    continue
+
+                # 3) Custom webhook flow (if WEBHOOK_URL configured)
+                if not WEBHOOK_URL:
+                    logger.info("POLLER: WEBHOOK_URL not configured; skipping custom webhook for %s", email_id)
+                    continue
+
+                delivery_links = link_extraction.extract_provider_links_from_text(full_text or '')
+                # Group dedup check for custom webhook
+                group_id = generate_subject_group_id(subject or '')
+                if is_subject_group_processed(group_id):
+                    logger.info("DEDUP_GROUP: Skipping email %s (group %s processed)", email_id, group_id)
+                    mark_email_id_as_processed_redis(email_id)
+                    mark_email_as_read_imap(mail, num)
+                    continue
+
+                # Build minimal payload for custom webhook
+                payload_for_webhook = {
+                    "email_id": email_id,
+                    "subject": subject or None,
+                    "delivery_links": delivery_links or [],
+                    "sender_email": sender_addr,
+                }
+
+                # Execute custom webhook flow (handles retries, logging, read marking on success)
+                cont = send_custom_webhook_flow(
+                    email_id=email_id,
+                    subject=subject or '',
+                    payload_for_webhook=payload_for_webhook,
+                    delivery_links=delivery_links or [],
+                    webhook_url=WEBHOOK_URL,
+                    webhook_ssl_verify=True,
+                    allow_without_links=bool(ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
+                    processing_prefs=PROCESSING_PREFS,
+                    rate_limit_allow_send=_rate_limit_allow_send,
+                    record_send_event=_record_send_event,
+                    append_webhook_log=_append_webhook_log,
+                    mark_email_id_as_processed_redis=mark_email_id_as_processed_redis,
+                    mark_email_as_read_imap=mark_email_as_read_imap,
+                    mail=mail,
+                    email_num=num,
+                    urlparse=None,
+                    requests=__import__('requests'),
+                    time=__import__('time'),
+                    logger=logger,
+                )
+                # Best-effort: if the flow returned False, an attempt was made (success or handled error)
+                if cont is False:
+                    triggered_count += 1
+
+            except Exception as e_one:
+                logger.error("POLLER: Exception while processing message %s: %s", num, e_one)
+                # Keep going for other emails
+                continue
+
+        return triggered_count
+    finally:
+        # Ensure IMAP is closed
+        try:
+            close_imap_connection(mail)
+        except Exception:
+            pass
 
 
 def compute_desabo_time_window(

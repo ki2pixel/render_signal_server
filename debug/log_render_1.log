@@ -1,10 +1,3 @@
-2025-10-13T17:18:33.761300357Z   File "/opt/render/project/src/app_render.py", line 380, in _run_cycle
-2025-10-13T17:18:33.761303147Z     return email_orchestrator.check_new_emails_and_trigger_webhook()
-2025-10-13T17:18:33.761305527Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-2025-10-13T17:18:33.761307947Z   File "/opt/render/project/src/email_processing/orchestrator.py", line 25, in check_new_emails_and_trigger_webhook
-2025-10-13T17:18:33.761310317Z     from app_render import _legacy_check_new_emails_and_trigger_webhook as _legacy_check
-2025-10-13T17:18:33.761312637Z ImportError: cannot import name '_legacy_check_new_emails_and_trigger_webhook' from 'app_render' (/opt/render/project/src/app_render.py)
-2025-10-13T17:18:33.761314917Z 2025-10-13 17:18:33,760 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
 2025-10-13T17:18:33.76145801Z 2025-10-13 17:18:33,761 - ERROR - app_render - polling_thread - background_email_poller_loop - 90 - BG_POLLER: Unhandled error in polling loop (Error #3): cannot import name '_legacy_check_new_emails_and_trigger_webhook' from 'app_render' (/opt/render/project/src/app_render.py)
 2025-10-13T17:18:33.761464481Z Traceback (most recent call last):
 2025-10-13T17:18:33.761467331Z   File "/opt/render/project/src/background/polling_thread.py", line 76, in background_email_poller_loop
@@ -48,3 +41,40 @@
 2025-10-13T17:18:37.662770825Z ==> Available at your primary URL https://render-signal-server.onrender.com
 2025-10-13T17:18:37.691345033Z ==>
 2025-10-13T17:18:37.717096452Z ==> ///////////////////////////////////////////////////////////
+2025-10-13T17:19:36.619810075Z [2025-10-13 17:19:36 +0000] [55] [INFO] Handling signal: term
+2025-10-13T17:19:36.620288285Z [2025-10-13 17:19:36 +0000] [56] [INFO] Worker exiting (pid: 56)
+2025-10-13T17:19:37.32101053Z [2025-10-13 17:19:37 +0000] [55] [INFO] Shutting down: Master
+2025-10-13T17:23:38.398139339Z ==> Detected service running on port 10000
+2025-10-13T17:23:38.544018042Z ==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+2025-10-13T17:26:44.800329995Z ==> Deploying...
+2025-10-13T17:27:16.814242898Z ==> Running 'gunicorn --workers 1 --bind 0.0.0.0:$PORT app_render:app'
+2025-10-13T17:27:18.010792497Z [2025-10-13 17:27:18 +0000] [56] [INFO] Starting gunicorn 23.0.0
+2025-10-13T17:27:18.011141912Z [2025-10-13 17:27:18 +0000] [56] [INFO] Listening at: http://0.0.0.0:10000 (56)
+2025-10-13T17:27:18.011836063Z [2025-10-13 17:27:18 +0000] [56] [INFO] Using worker: sync
+2025-10-13T17:27:18.014942188Z [2025-10-13 17:27:18 +0000] [57] [INFO] Booting worker with pid: 57
+2025-10-13T17:27:22.614569361Z 2025-10-13 17:27:22,614 - INFO - app_render - settings - log_configuration - 174 - CFG WEBHOOK: Custom webhook URL configured to: https://webhook.kidpixel.fr/index.php
+2025-10-13T17:27:22.614618564Z 2025-10-13 17:27:22,614 - INFO - app_render - settings - log_configuration - 175 - CFG MAKECOM: Make.com webhook URL configured to: https://hook.eu2.make.com/s98s0s735h23qakb9pp0id8c8hbhfqph
+2025-10-13T17:27:22.614624605Z 2025-10-13 17:27:22,614 - INFO - app_render - settings - log_configuration - 176 - CFG WEBHOOK: SSL verification = True
+2025-10-13T17:27:22.614630685Z 2025-10-13 17:27:22,614 - INFO - app_render - settings - log_configuration - 179 - CFG POLL: Monitoring emails from 6 senders: ['achats@media-solution.fr', 'camille.moine.pro@gmail.com', 'a.peault@media-solution.fr', 'v.lorent@media-solution.fr', 'technique@media-solution.fr', 't.deslus@media-solution.fr']
+2025-10-13T17:27:22.614637326Z 2025-10-13 17:27:22,614 - INFO - app_render - settings - log_configuration - 188 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
+2025-10-13T17:27:22.614642216Z 2025-10-13 17:27:22,614 - INFO - app_render - settings - log_configuration - 190 - CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP=False
+2025-10-13T17:27:22.614646626Z 2025-10-13 17:27:22,614 - INFO - app_render - settings - log_configuration - 191 - CFG DEDUP: DISABLE_EMAIL_ID_DEDUP=False
+2025-10-13T17:27:22.614650867Z 2025-10-13 17:27:22,614 - INFO - app_render - settings - log_configuration - 194 - CFG BG: ENABLE_BACKGROUND_TASKS=True
+2025-10-13T17:27:22.614655197Z 2025-10-13 17:27:22,614 - INFO - app_render - settings - log_configuration - 195 - CFG BG: BG_POLLER_LOCK_FILE=/tmp/render_signal_server_email_poller.lock
+2025-10-13T17:27:22.619884187Z 2025-10-13 17:27:22,618 - INFO - app_render - polling_config - initialize_polling_timezone - 41 - CFG POLL: Using timezone 'Europe/Paris' for polling schedule.
+2025-10-13T17:27:22.619899888Z 2025-10-13 17:27:22,618 - INFO - app_render - app_render - <module> - 206 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
+2025-10-13T17:27:22.619905208Z 2025-10-13 17:27:22,618 - INFO - app_render - app_render - <module> - 410 - BG_POLLER: Singleton lock acquired on /tmp/render_signal_server_email_poller.lock. Starting background thread.
+2025-10-13T17:27:22.619909968Z 2025-10-13 17:27:22,619 - INFO - app_render - polling_thread - background_email_poller_loop - 44 - BG_POLLER: Email polling loop started. TZ for schedule is configured.
+2025-10-13T17:27:22.620269165Z 2025-10-13 17:27:22,619 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
+2025-10-13T17:27:22.620285646Z 2025-10-13 17:27:22,620 - ERROR - app_render - orchestrator - check_new_emails_and_trigger_webhook - 32 - ORCHESTRATOR: Legacy implementation not found; skipping cycle (returns 0). Error: cannot import name '_legacy_check_new_emails_and_trigger_webhook' from 'app_render' (/opt/render/project/src/app_render.py)
+2025-10-13T17:27:22.62034487Z 2025-10-13 17:27:22,620 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
+2025-10-13T17:27:25.557482161Z ==> Your service is live 🎉
+2025-10-13T17:27:25.598021528Z ==>
+2025-10-13T17:27:25.624829087Z ==> ///////////////////////////////////////////////////////////
+2025-10-13T17:27:25.651217275Z ==>
+2025-10-13T17:27:25.676679144Z ==> Available at your primary URL https://render-signal-server.onrender.com
+2025-10-13T17:27:25.703706152Z ==>
+2025-10-13T17:27:25.73301706Z ==> ///////////////////////////////////////////////////////////
+2025-10-13T17:27:52.620898606Z 2025-10-13 17:27:52,620 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
+2025-10-13T17:27:52.62095249Z 2025-10-13 17:27:52,620 - ERROR - app_render - orchestrator - check_new_emails_and_trigger_webhook - 32 - ORCHESTRATOR: Legacy implementation not found; skipping cycle (returns 0). Error: cannot import name '_legacy_check_new_emails_and_trigger_webhook' from 'app_render' (/opt/render/project/src/app_render.py)
+2025-10-13T17:27:52.62095925Z 2025-10-13 17:27:52,620 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
