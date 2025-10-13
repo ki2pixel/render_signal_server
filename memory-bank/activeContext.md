@@ -1,6 +1,12 @@
 # Contexte Actif
 
 ## Objectif Atteint
+- **Configuration flexible des webhooks**
+  - ✅ **Chargement des variables d'environnement** pour la fenêtre horaire des webhooks
+  - 🔧 Les valeurs par défaut sont maintenant définies dans les variables d'environnement Render
+  - 🎛️ Possibilité de surcharge via l'interface utilisateur préservée
+  - 📦 Aucun impact sur le comportement existant des webhooks
+
 - **Couverture de test cible atteinte**
   - ✅ **303 tests** exécutés avec succès (100% de passage)
   - 📊 **Couverture de code** : 80.75% (objectif ≥80% atteint)

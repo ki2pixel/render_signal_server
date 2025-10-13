@@ -2,6 +2,18 @@
 
 Ce document enregistre les décisions techniques et architecturales importantes prises au cours du projet.
 
+- **[2025-10-13 22:50] - Chargement des variables d'environnement pour la fenêtre horaire des webhooks**
+  - **Décision** : Modifier l'initialisation de la fenêtre horaire des webhooks pour charger les valeurs par défaut depuis les variables d'environnement `WEBHOOKS_TIME_START` et `WEBHOOKS_TIME_END` au démarrage, tout en conservant la possibilité de les remplacer via l'interface utilisateur.
+  - **Implémentation** :
+    - Mise à jour de `app_render.py` pour passer les valeurs des variables d'environnement à `webhook_time_window.initialize_webhook_time_window()`
+    - Conservation de l'appel à `reload_time_window_from_disk()` pour permettre les remplacements via l'interface utilisateur
+    - Vérification que les valeurs sont correctement chargées dans le payload des webhooks DESABO
+  - **Raison** : Permettre une configuration plus flexible via les variables d'environnement dans Render, tout en maintenant la possibilité de modifier les valeurs via l'interface utilisateur si nécessaire.
+  - **Impacts** :
+    - Les valeurs par défaut sont maintenant définies dans les variables d'environnement de Render
+    - L'interface utilisateur peut toujours remplacer ces valeurs si nécessaire
+    - Aucun impact sur le comportement existant des webhooks
+
 - **[2025-10-13 12:20] - Création d'une suite de tests complète**
   - **Décision** : Mettre en place une suite de tests complète pour assurer la qualité et la fiabilité de l'application avant la mise en production.
   - **Implémentation** :

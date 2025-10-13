@@ -58,16 +58,33 @@ def reload_time_window_from_disk() -> None:
                 data = json.load(f)
             s = (data.get('start') or '').strip()
             e = (data.get('end') or '').strip()
-            if s or e:
-                ps = parse_time_hhmm(s) if s else None
-                pe = parse_time_hhmm(e) if e else None
-                if (ps is None and s) or (pe is None and e):
-                    # invalid content on disk; ignore
-                    return
-                WEBHOOKS_TIME_START_STR = s
-                WEBHOOKS_TIME_END_STR = e
-                WEBHOOKS_TIME_START = ps
-                WEBHOOKS_TIME_END = pe
+
+            # Cas 1: clear explicite (les deux vides) → désactive toute contrainte
+            if s == '' and e == '':
+                WEBHOOKS_TIME_START_STR = ""
+                WEBHOOKS_TIME_END_STR = ""
+                WEBHOOKS_TIME_START = None
+                WEBHOOKS_TIME_END = None
+                return
+
+            # Cas 2: overrides partiels → n'écrase que les valeurs fournies
+            if s:
+                ps = parse_time_hhmm(s)
+                if ps is None:
+                    # format invalide: ignorer l'override start
+                    pass
+                else:
+                    WEBHOOKS_TIME_START_STR = s
+                    WEBHOOKS_TIME_START = ps
+
+            if e:
+                pe = parse_time_hhmm(e)
+                if pe is None:
+                    # format invalide: ignorer l'override end
+                    pass
+                else:
+                    WEBHOOKS_TIME_END_STR = e
+                    WEBHOOKS_TIME_END = pe
     except Exception:
         # lecture échouée: ne pas bloquer la logique
         pass

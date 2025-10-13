@@ -35,6 +35,11 @@
 
 ## Terminé
 
+-   [2025-10-13 22:50] **Configuration de la fenêtre horaire des webhooks**
+    - Modification de `app_render.py` pour charger les valeurs par défaut des variables d'environnement `WEBHOOKS_TIME_START` et `WEBHOOKS_TIME_END`
+    - Conservation de la possibilité de surcharge via l'interface utilisateur
+    - Vérification du bon fonctionnement avec les webhooks DESABO
+
 -   [2025-10-13 00:55] **Refactoring Étape 5 (final) : Migration de la dernière route**
     -   Déplacement de `/api/check_emails_and_download` de `app_render.py` vers `routes/api_admin.py` (handler `check_emails_and_download()`), protégé par `@login_required`, exécution en tâche de fond via `threading.Thread`.
     -   Suppression de la route legacy dans `app_render.py` (plus aucun `@app.route` dans ce fichier).

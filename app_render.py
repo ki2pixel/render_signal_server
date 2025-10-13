@@ -211,13 +211,13 @@ else:
 # --- Email server config validation flag ---
 email_config_valid = bool(EMAIL_ADDRESS and EMAIL_PASSWORD and IMAP_SERVER)
 
-# --- Webhook time window initialization (values may be overridden from disk) ---
+# --- Webhook time window initialization (env -> then optional UI override from disk) ---
 try:
     webhook_time_window.initialize_webhook_time_window(
-        start_str="",
-        end_str="",
+        start_str=os.environ.get("WEBHOOKS_TIME_START", ""),
+        end_str=os.environ.get("WEBHOOKS_TIME_END", ""),
     )
-    # Try to load persisted overrides if any
+    # Try to load persisted overrides if any (UI can override env)
     webhook_time_window.reload_time_window_from_disk()
 except Exception:
     pass

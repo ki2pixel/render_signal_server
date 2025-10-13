@@ -25,6 +25,8 @@ Ce document recense les patrons de conception et les standards récurrents dans 
 
 ## Architecture & Déploiement
 
+-   **Modèle de Configuration Hiérarchique** : La configuration suit un modèle hiérarchique où les valeurs par défaut sont définies dans le code (`REF_*`), peuvent être remplacées par des variables d'environnement, et enfin par des surcharges via l'interface utilisateur. Ce modèle est particulièrement utilisé pour les paramètres de fenêtres horaires (ex: `WEBHOOKS_TIME_START`, `WEBHOOKS_TIME_END`).
+
 -   **Configuration par Environnement** : Toute la configuration (secrets, URLs, paramètres) est injectée via des variables d'environnement. Le code contient des valeurs `REF_*` pour le développement uniquement.
 -   **Service Web + Worker en Arrière-plan** : L'application Flask sert une API/UI et gère en parallèle une tâche de fond (le polling IMAP) dans un thread distinct. Ce patron évite de bloquer les requêtes HTTP et ne nécessite pas de scheduler externe (comme Celery ou cron) pour des besoins simples.
 -   **Déploiement via Reverse Proxy** : Le déploiement standard se fait via un serveur d'application (Gunicorn) derrière un reverse proxy (Nginx), qui gère la terminaison SSL, les headers de sécurité et le service des fichiers statiques.
