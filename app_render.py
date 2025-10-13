@@ -225,9 +225,28 @@ except Exception:
 # --- Polling config overrides (optional UI overrides from disk) ---
 try:
     _poll_cfg_path = settings.POLLING_CONFIG_FILE
+    # TEMP DIAG: log path and existence for polling_config.json
+    try:
+        app.logger.info(
+            f"CFG POLL(file): path={_poll_cfg_path}; exists={_poll_cfg_path.exists()}"
+        )
+    except Exception:
+        pass
     if _poll_cfg_path.exists():
         with open(_poll_cfg_path, "r", encoding="utf-8") as _f:
             _pc = json.load(_f) or {}
+        # TEMP DIAG: show relevant keys loaded
+        try:
+            app.logger.info(
+                "CFG POLL(loaded): keys=%s; snippet={active_days=%s,start=%s,end=%s,enable_polling=%s}",
+                list(_pc.keys()),
+                _pc.get("active_days"),
+                _pc.get("active_start_hour"),
+                _pc.get("active_end_hour"),
+                _pc.get("enable_polling"),
+            )
+        except Exception:
+            pass
         # Apply if present
         if isinstance(_pc.get("active_days"), list) and _pc.get("active_days"):
             settings.POLLING_ACTIVE_DAYS = [int(d) for d in _pc["active_days"] if isinstance(d, (int, str))]
@@ -272,6 +291,19 @@ try:
         try:
             app.logger.info(
                 f"CFG POLL(override): days={settings.POLLING_ACTIVE_DAYS}; start={settings.POLLING_ACTIVE_START_HOUR}; end={settings.POLLING_ACTIVE_END_HOUR}; dedup_monthly_scope={settings.ENABLE_SUBJECT_GROUP_DEDUP}"
+            )
+        except Exception:
+            pass
+        # IMPORTANT: refresh module-level aliases so the polling thread uses updated values
+        try:
+            global POLLING_ACTIVE_DAYS, POLLING_ACTIVE_START_HOUR, POLLING_ACTIVE_END_HOUR, SENDER_LIST_FOR_POLLING, ENABLE_SUBJECT_GROUP_DEDUP
+            POLLING_ACTIVE_DAYS = settings.POLLING_ACTIVE_DAYS
+            POLLING_ACTIVE_START_HOUR = settings.POLLING_ACTIVE_START_HOUR
+            POLLING_ACTIVE_END_HOUR = settings.POLLING_ACTIVE_END_HOUR
+            SENDER_LIST_FOR_POLLING = settings.SENDER_LIST_FOR_POLLING
+            ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
+            app.logger.info(
+                f"CFG POLL(effective): days={POLLING_ACTIVE_DAYS}; start={POLLING_ACTIVE_START_HOUR}; end={POLLING_ACTIVE_END_HOUR}; senders={len(SENDER_LIST_FOR_POLLING)}; dedup_monthly_scope={ENABLE_SUBJECT_GROUP_DEDUP}"
             )
         except Exception:
             pass
