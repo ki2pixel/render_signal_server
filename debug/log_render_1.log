@@ -1,36 +1,4 @@
-2025-10-13T22:43:49.04380717Z ==>
-2025-10-13T22:43:49.069454758Z ==> ///////////////////////////////////////////////////////////
-2025-10-13T22:43:49.673781722Z 2025-10-13 22:43:49,673 - INFO - app_render - polling_config - initialize_polling_timezone - 42 - CFG POLL: Using timezone 'Europe/Paris' for polling schedule.
-2025-10-13T22:43:49.673808054Z 2025-10-13 22:43:49,673 - INFO - app_render - app_render - <module> - 206 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
-2025-10-13T22:43:49.674276771Z 2025-10-13 22:43:49,674 - INFO - app_render - app_render - <module> - 413 - BG_POLLER: Singleton lock acquired on /tmp/render_signal_server_email_poller.lock. Starting background thread.
-2025-10-13T22:43:49.674668944Z 2025-10-13 22:43:49,674 - INFO - app_render - polling_thread - background_email_poller_loop - 44 - BG_POLLER: Email polling loop started. TZ for schedule is configured.
-2025-10-13T22:43:49.67477238Z 2025-10-13 22:43:49,674 - INFO - app_render - polling_thread - background_email_poller_loop - 83 - BG_POLLER: Outside active period. Sleeping.
-2025-10-13T22:44:48.811623737Z [2025-10-13 22:44:48 +0000] [56] [INFO] Handling signal: term
-2025-10-13T22:44:48.812149729Z [2025-10-13 22:44:48 +0000] [57] [INFO] Worker exiting (pid: 57)
-2025-10-13T22:44:49.512862913Z [2025-10-13 22:44:49 +0000] [56] [INFO] Shutting down: Master
-2025-10-13T22:48:45.23837729Z 2025-10-13 22:48:45,238 - INFO - app_render - api_admin - restart_server - 34 - ADMIN: Server restart requested by 'admin' with command: sudo systemctl restart render-signal-server
-2025-10-13T22:48:45.238931223Z 2025-10-13 22:48:45,238 - INFO - app_render - api_admin - restart_server - 51 - ADMIN: Restart command scheduled (background).
-2025-10-13T22:48:54.053876401Z ==> Detected service running on port 10000
-2025-10-13T22:48:54.142760788Z ==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
-2025-10-13T22:49:43.13089387Z 2025-10-13 22:49:43,130 - INFO - app_render - api_admin - restart_server - 34 - ADMIN: Server restart requested by 'admin' with command: sudo systemctl restart render-signal-server
-2025-10-13T22:49:43.131381729Z 2025-10-13 22:49:43,131 - INFO - app_render - api_admin - restart_server - 51 - ADMIN: Restart command scheduled (background).
-2025-10-13T22:53:49.676014233Z 2025-10-13 22:53:49,675 - INFO - app_render - polling_thread - background_email_poller_loop - 83 - BG_POLLER: Outside active period. Sleeping.
 2025-10-13T22:56:17.416920771Z ==> Deploying...
-2025-10-13T22:56:51.082335762Z ==> Running 'gunicorn --workers 1 --bind 0.0.0.0:$PORT app_render:app'
-2025-10-13T22:56:51.87985978Z [2025-10-13 22:56:51 +0000] [55] [INFO] Starting gunicorn 23.0.0
-2025-10-13T22:56:51.880123979Z [2025-10-13 22:56:51 +0000] [55] [INFO] Listening at: http://0.0.0.0:10000 (55)
-2025-10-13T22:56:51.880160702Z [2025-10-13 22:56:51 +0000] [55] [INFO] Using worker: sync
-2025-10-13T22:56:51.88343452Z [2025-10-13 22:56:51 +0000] [56] [INFO] Booting worker with pid: 56
-2025-10-13T22:56:55.183293872Z 2025-10-13 22:56:55,183 - INFO - app_render - settings - log_configuration - 174 - CFG WEBHOOK: Custom webhook URL configured to: https://webhook.kidpixel.fr/index.php
-2025-10-13T22:56:55.183324064Z 2025-10-13 22:56:55,183 - INFO - app_render - settings - log_configuration - 175 - CFG MAKECOM: Make.com webhook URL configured to: https://hook.eu2.make.com/s98s0s735h23qakb9pp0id8c8hbhfqph
-2025-10-13T22:56:55.183341615Z 2025-10-13 22:56:55,183 - INFO - app_render - settings - log_configuration - 176 - CFG WEBHOOK: SSL verification = True
-2025-10-13T22:56:55.18341275Z 2025-10-13 22:56:55,183 - INFO - app_render - settings - log_configuration - 179 - CFG POLL: Monitoring emails from 6 senders: ['achats@media-solution.fr', 'camille.moine.pro@gmail.com', 'a.peault@media-solution.fr', 'v.lorent@media-solution.fr', 'technique@media-solution.fr', 't.deslus@media-solution.fr']
-2025-10-13T22:56:55.183433732Z 2025-10-13 22:56:55,183 - INFO - app_render - settings - log_configuration - 188 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
-2025-10-13T22:56:55.183501517Z 2025-10-13 22:56:55,183 - INFO - app_render - settings - log_configuration - 190 - CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP=False
-2025-10-13T22:56:55.183514988Z 2025-10-13 22:56:55,183 - INFO - app_render - settings - log_configuration - 191 - CFG DEDUP: DISABLE_EMAIL_ID_DEDUP=False
-2025-10-13T22:56:55.183579652Z 2025-10-13 22:56:55,183 - INFO - app_render - settings - log_configuration - 194 - CFG BG: ENABLE_BACKGROUND_TASKS=True
-2025-10-13T22:56:55.183599574Z 2025-10-13 22:56:55,183 - INFO - app_render - settings - log_configuration - 195 - CFG BG: BG_POLLER_LOCK_FILE=/tmp/render_signal_server_email_poller.lock
-2025-10-13T22:56:55.184625649Z 2025-10-13 22:56:55,184 - INFO - app_render - polling_config - initialize_polling_timezone - 42 - CFG POLL: Using timezone 'Europe/Paris' for polling schedule.
 2025-10-13T22:56:55.184658021Z 2025-10-13 22:56:55,184 - INFO - app_render - app_render - <module> - 206 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
 2025-10-13T22:56:55.184972964Z 2025-10-13 22:56:55,184 - INFO - app_render - app_render - <module> - 408 - CFG BG: enable_polling(UI)=True; ENABLE_BACKGROUND_TASKS(env)=True
 2025-10-13T22:56:55.185172008Z 2025-10-13 22:56:55,185 - INFO - app_render - app_render - <module> - 420 - BG_POLLER: Singleton lock acquired on /tmp/render_signal_server_email_poller.lock. Starting background thread.
@@ -50,3 +18,38 @@
 2025-10-13T22:57:59.916943939Z 2025-10-13 22:57:59,916 - INFO - app_render - api_admin - restart_server - 51 - ADMIN: Restart command scheduled (background).
 2025-10-13T22:59:48.615998792Z 2025-10-13 22:59:48,615 - INFO - app_render - api_admin - restart_server - 34 - ADMIN: Server restart requested by 'admin' with command: sudo systemctl restart render-signal-server
 2025-10-13T22:59:48.616592126Z 2025-10-13 22:59:48,616 - INFO - app_render - api_admin - restart_server - 51 - ADMIN: Restart command scheduled (background).
+2025-10-13T23:02:01.579487425Z ==> Detected service running on port 10000
+2025-10-13T23:02:01.686178575Z ==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+2025-10-13T23:04:59.22813568Z ==> Deploying...
+2025-10-13T23:05:29.507804507Z ==> Running 'gunicorn --workers 1 --bind 0.0.0.0:$PORT app_render:app'
+2025-10-13T23:05:30.502649983Z [2025-10-13 23:05:30 +0000] [56] [INFO] Starting gunicorn 23.0.0
+2025-10-13T23:05:30.503059427Z [2025-10-13 23:05:30 +0000] [56] [INFO] Listening at: http://0.0.0.0:10000 (56)
+2025-10-13T23:05:30.503082248Z [2025-10-13 23:05:30 +0000] [56] [INFO] Using worker: sync
+2025-10-13T23:05:30.506233399Z [2025-10-13 23:05:30 +0000] [57] [INFO] Booting worker with pid: 57
+2025-10-13T23:05:34.711166021Z 2025-10-13 23:05:34,710 - INFO - app_render - settings - log_configuration - 174 - CFG WEBHOOK: Custom webhook URL configured to: https://webhook.kidpixel.fr/index.php
+2025-10-13T23:05:34.711190423Z 2025-10-13 23:05:34,711 - INFO - app_render - settings - log_configuration - 175 - CFG MAKECOM: Make.com webhook URL configured to: https://hook.eu2.make.com/s98s0s735h23qakb9pp0id8c8hbhfqph
+2025-10-13T23:05:34.71166755Z 2025-10-13 23:05:34,711 - INFO - app_render - settings - log_configuration - 176 - CFG WEBHOOK: SSL verification = True
+2025-10-13T23:05:34.71167546Z 2025-10-13 23:05:34,711 - INFO - app_render - settings - log_configuration - 179 - CFG POLL: Monitoring emails from 6 senders: ['achats@media-solution.fr', 'camille.moine.pro@gmail.com', 'a.peault@media-solution.fr', 'v.lorent@media-solution.fr', 'technique@media-solution.fr', 't.deslus@media-solution.fr']
+2025-10-13T23:05:34.711681011Z 2025-10-13 23:05:34,711 - INFO - app_render - settings - log_configuration - 188 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
+2025-10-13T23:05:34.711684941Z 2025-10-13 23:05:34,711 - INFO - app_render - settings - log_configuration - 190 - CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP=False
+2025-10-13T23:05:34.711688761Z 2025-10-13 23:05:34,711 - INFO - app_render - settings - log_configuration - 191 - CFG DEDUP: DISABLE_EMAIL_ID_DEDUP=False
+2025-10-13T23:05:34.711692331Z 2025-10-13 23:05:34,711 - INFO - app_render - settings - log_configuration - 194 - CFG BG: ENABLE_BACKGROUND_TASKS=True
+2025-10-13T23:05:34.711696012Z 2025-10-13 23:05:34,711 - INFO - app_render - settings - log_configuration - 195 - CFG BG: BG_POLLER_LOCK_FILE=/tmp/render_signal_server_email_poller.lock
+2025-10-13T23:05:34.713454962Z 2025-10-13 23:05:34,713 - INFO - app_render - polling_config - initialize_polling_timezone - 42 - CFG POLL: Using timezone 'Europe/Paris' for polling schedule.
+2025-10-13T23:05:34.713537167Z 2025-10-13 23:05:34,713 - INFO - app_render - app_render - <module> - 206 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
+2025-10-13T23:05:34.713877037Z 2025-10-13 23:05:34,713 - INFO - app_render - app_render - <module> - 465 - CFG BG: enable_polling(UI)=True; ENABLE_BACKGROUND_TASKS(env)=True
+2025-10-13T23:05:34.714074648Z 2025-10-13 23:05:34,713 - INFO - app_render - app_render - <module> - 477 - BG_POLLER: Singleton lock acquired on /tmp/render_signal_server_email_poller.lock. Starting background thread.
+2025-10-13T23:05:34.714445579Z 2025-10-13 23:05:34,714 - INFO - app_render - polling_thread - background_email_poller_loop - 44 - BG_POLLER: Email polling loop started. TZ for schedule is configured.
+2025-10-13T23:05:34.714516984Z 2025-10-13 23:05:34,714 - INFO - app_render - polling_thread - background_email_poller_loop - 83 - BG_POLLER: Outside active period. Sleeping.
+2025-10-13T23:05:40.034558022Z ==> Your service is live 🎉
+2025-10-13T23:05:40.06059562Z ==>
+2025-10-13T23:05:40.083097699Z ==> ///////////////////////////////////////////////////////////
+2025-10-13T23:05:40.105525987Z ==>
+2025-10-13T23:05:40.129195286Z ==> Available at your primary URL https://render-signal-server.onrender.com
+2025-10-13T23:05:40.152079064Z ==>
+2025-10-13T23:05:40.174345542Z ==> ///////////////////////////////////////////////////////////
+2025-10-13T23:06:19.008549205Z 2025-10-13 23:06:19,008 - INFO - app_render - api_admin - restart_server - 34 - ADMIN: Server restart requested by 'admin' with command: sudo systemctl restart render-signal-server
+2025-10-13T23:06:19.009020862Z 2025-10-13 23:06:19,008 - INFO - app_render - api_admin - restart_server - 51 - ADMIN: Restart command scheduled (background).
+2025-10-13T23:06:39.929603653Z [2025-10-13 23:06:39 +0000] [55] [INFO] Handling signal: term
+2025-10-13T23:06:39.92997496Z [2025-10-13 23:06:39 +0000] [56] [INFO] Worker exiting (pid: 56)
+2025-10-13T23:06:40.479493422Z [2025-10-13 23:06:40 +0000] [55] [INFO] Shutting down: Master

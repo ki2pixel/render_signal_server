@@ -45,6 +45,8 @@ def background_email_poller_loop(
         "BG_POLLER: Email polling loop started. TZ for schedule is configured."
     )
     consecutive_error_count = 0
+    # Avoid spamming logs when schedule is not active; log diagnostic once
+    outside_period_diag_logged = False
 
     while True:
         try:
@@ -81,6 +83,20 @@ def background_email_poller_loop(
                 sleep_duration = active_sleep_seconds
             else:
                 logger.info("BG_POLLER: Outside active period. Sleeping.")
+                if not outside_period_diag_logged:
+                    try:
+                        logger.info(
+                            "BG_POLLER: DIAG outside period — now=%s, active_days=%s, start_hour=%s, end_hour=%s, is_active_day=%s, is_active_time=%s",
+                            now_in_tz.isoformat(),
+                            sorted(list(active_days)),
+                            start_hour,
+                            end_hour,
+                            is_active_day,
+                            is_active_time,
+                        )
+                    except Exception:
+                        pass
+                    outside_period_diag_logged = True
                 sleep_duration = inactive_sleep_seconds
 
             time.sleep(sleep_duration)
