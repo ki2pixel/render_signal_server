@@ -1,0 +1,41 @@
+DEPLOYMENT INSTRUCTIONS for webhook.kidpixel.fr
+==============================================
+
+1. Upload Structure:
+   - Upload contents of public_html/ to your domain's public_html/ directory
+   - Upload config/, src/, logs/, database/ directories to /home/kidpixel/webhook.kidpixel.fr/
+   - Upload install.php, verify-compatibility.php to /home/kidpixel/webhook.kidpixel.fr/
+
+2. Final Structure on Server:
+   /home/kidpixel/webhook.kidpixel.fr/
+   ├── public_html/          # Your domain's document root
+   │   ├── index.php
+   │   ├── dashboard.php
+   │   ├── test.php
+   │   └── .htaccess
+   ├── config/
+   ├── src/
+   ├── logs/
+   ├── database/
+   ├── install.php
+   └── verify-compatibility.php
+
+3. Set Permissions:
+   chmod 755 /home/kidpixel/webhook.kidpixel.fr/logs
+   chmod 644 /home/kidpixel/webhook.kidpixel.fr/public_html/*.php
+   chmod 644 /home/kidpixel/webhook.kidpixel.fr/config/*.php
+   chmod 644 /home/kidpixel/webhook.kidpixel.fr/src/*.php
+
+4. Test Installation:
+   Visit: https://webhook.kidpixel.fr/install.php (temporarily upload to public_html)
+
+5. Webhook URLs:
+   Main endpoint: https://webhook.kidpixel.fr/index.php
+   Alternative:   https://webhook.kidpixel.fr/webhook
+   Dashboard:     https://webhook.kidpixel.fr/dashboard.php
+   Testing:       https://webhook.kidpixel.fr/test.php
+
+6. Security:
+   - Remove install.php from public_html after testing
+   - Verify .htaccess is working
+   - Check that config/ and src/ directories are not web-accessible

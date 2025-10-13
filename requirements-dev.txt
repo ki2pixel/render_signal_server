@@ -1,0 +1,29 @@
+# Dépendances de développement et de test pour render_signal_server
+
+# Dépendances de production
+-r requirements.txt
+
+# Framework de test
+pytest>=7.0
+pytest-cov>=4.0        # Génération de rapports de couverture
+pytest-mock>=3.10      # Helpers pour le mocking
+pytest-flask>=1.2      # Helpers spécifiques Flask
+
+# Outils de qualité de code
+black>=23.0            # Formatage automatique
+isort>=5.12            # Tri des imports
+flake8>=6.0            # Linting
+ruff>=0.1.0            # Linting moderne et rapide
+
+# Outils de test avancés
+pytest-timeout>=2.1    # Timeout pour les tests
+pytest-xdist>=3.3      # Exécution parallèle des tests
+freezegun>=1.2         # Mocking du temps
+responses>=0.23        # Mock HTTP responses
+fakeredis>=2.10        # Redis mock pour les tests
+
+# Type checking (optionnel)
+mypy>=1.0              # Vérification de types statique
+
+# Documentation
+sphinx>=5.0            # Génération de documentation (optionnel)

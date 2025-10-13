@@ -1,0 +1,38 @@
+# Configuration de couverture de code pour pytest-cov
+
+[run]
+source = .
+omit = 
+    */tests/*
+    */test_*.py
+    *_test.py
+    .venv/*
+    venv/*
+    */site-packages/*
+    deployment/*
+    static/*
+    docs/*
+    setup.py
+    conftest.py
+
+[report]
+# Afficher les lignes manquantes
+show_missing = True
+
+# Exclure les lignes avec ces patterns
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+    @abc.abstractmethod
+    pass
+
+# Précision des pourcentages
+precision = 2
+
+[html]
+directory = htmlcov

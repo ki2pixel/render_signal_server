@@ -1,0 +1,9 @@
+Flask>=2.0
+gunicorn
+Flask-Login
+Flask-Cors>=4.0
+requests
+redis>=4.0
+email-validator
+pytest>=7.0
+ 

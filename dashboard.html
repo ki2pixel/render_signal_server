@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📊 Dashboard Webhooks - Contrôle</title>
+    <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700" rel="stylesheet">
+    <style>
+      :root {
+        --cork-dark-bg: #060818;
+        --cork-card-bg: #0e1726;
+        --cork-text-primary: #e0e6ed;
+        --cork-text-secondary: #888ea8;
+        --cork-primary-accent: #4361ee;
+        --cork-secondary-accent: #1abc9c;
+        --cork-success: #1abc9c;
+        --cork-warning: #e2a03f;
+        --cork-danger: #e7515a;
+        --cork-info: #2196f3;
+        --cork-border-color: #191e3a;
+      }
+
+      body {
+        font-family: 'Nunito', sans-serif;
+        margin: 0;
+        background-color: var(--cork-dark-bg);
+        color: var(--cork-text-primary);
+        padding: 20px;
+        box-sizing: border-box;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+        padding: 20px;
+        background-color: var(--cork-card-bg);
+        border-radius: 8px;
+        border: 1px solid var(--cork-border-color);
+      }
+
+      h1 {
+        color: var(--cork-text-primary);
+        font-size: 1.8em;
+        font-weight: 600;
+        margin: 0;
+      }
+
+      h1 .emoji {
+        font-size: 1.2em;
+        margin-right: 10px;
+      }
+
+      /* ---- Navigation par onglets ---- */
+      .nav-tabs {
+        display: flex;
+        gap: 8px;
+        margin: 0 0 16px 0;
+        flex-wrap: wrap;
+        position: sticky; /* reste visible si contenu long */
+        top: 0;
+        z-index: 5;
+        background: var(--cork-dark-bg);
+        padding: 8px 0;
+      }
+      .nav-tabs .tab-btn {
+        appearance: none;
+        background: var(--cork-card-bg);
+        color: var(--cork-text-primary);
+        border: 1px solid var(--cork-border-color);
+        border-radius: 6px;
+        padding: 8px 12px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+      }
+      .nav-tabs .tab-btn.active {
+        background: var(--cork-primary-accent);
+        border-color: var(--cork-primary-accent);
+        color: #ffffff;
+      }
+      .nav-tabs .tab-btn:hover { border-color: var(--cork-primary-accent); }
+      .nav-tabs .tab-btn:active { transform: translateY(1px); }
+      .nav-tabs .tab-btn:focus { outline: 2px solid var(--cork-primary-accent); outline-offset: 2px; }
+
+      /* ---- Panneaux d'onglets ---- */
+      .section-panel { display: none; }
+      .section-panel.active { display: block; }
+
+      .logout-link {
+        text-decoration: none;
+        font-size: 0.9em;
+        font-weight: 600;
+        background-color: var(--cork-danger);
+        color: white;
+        padding: 8px 16px;
+        border-radius: 4px;
+        transition: background-color 0.2s ease;
+      }
+
+      .logout-link:hover {
+        background-color: #c93e47;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+
+      .card {
+        background-color: var(--cork-card-bg);
+        padding: 20px;
+        border-radius: 8px;
+        border: 1px solid var(--cork-border-color);
+      }
+
+      .card-title {
+        font-weight: 600;
+        color: var(--cork-secondary-accent);
+        font-size: 1.1em;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--cork-border-color);
+      }
+
+      .form-group {
+        margin-bottom: 15px;
+      }
+
+      .form-group label {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 0.9em;
+        color: var(--cork-text-secondary);
+      }
+
+      .form-group input,
+      .form-group select {
+        width: 100%;
+        padding: 10px;
+        border-radius: 4px;
+        border: 1px solid var(--cork-border-color);
+        background: rgba(0, 0, 0, 0.2);
+        color: var(--cork-text-primary);
+        font-size: 0.95em;
+        box-sizing: border-box;
+      }
+
+      .form-group input:focus {
+        outline: none;
+        border-color: var(--cork-primary-accent);
+      }
+
+      .btn {
+        padding: 10px 20px;
+        font-weight: 600;
+        cursor: pointer;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.95em;
+        transition: all 0.2s ease;
+      }
+
+      .btn-primary {
+        background: linear-gradient(to right, var(--cork-primary-accent) 0%, #5470f1 100%);
+      }
+
+      .btn-primary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 5px 15px rgba(67, 97, 238, 0.4);
+      }
+
+      .btn-success {
+        background: linear-gradient(to right, var(--cork-success) 0%, #22c98f 100%);
+      }
+
+      .btn-success:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 5px 15px rgba(26, 188, 156, 0.4);
+      }
+
+      .btn:disabled {
+        background: #555e72;
+        color: var(--cork-text-secondary);
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .status-msg {
+        margin-top: 10px;
+        padding: 10px;
+        border-radius: 4px;
+        font-size: 0.9em;
+        display: none;
+      }
+
+      .status-msg.success {
+        background: rgba(26, 188, 156, 0.2);
+        color: var(--cork-success);
+        border: 1px solid var(--cork-success);
+        display: block;
+      }
+
+      .status-msg.error {
+        background: rgba(231, 81, 90, 0.2);
+        color: var(--cork-danger);
+        border: 1px solid var(--cork-danger);
+        display: block;
+      }
+
+      .status-msg.info {
+        background: rgba(33, 150, 243, 0.2);
+        color: var(--cork-info);
+        border: 1px solid var(--cork-info);
+        display: block;
+      }
+
+      .toggle-switch {
+        position: relative;
+        display: inline-block;
+        width: 50px;
+        height: 24px;
+      }
+
+      .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #555e72;
+        transition: 0.3s;
+        border-radius: 24px;
+      }
+
+      .toggle-slider:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: 0.3s;
+        border-radius: 50%;
+      }
+
+      input:checked+.toggle-slider {
+        background-color: var(--cork-success);
+      }
+
+      input:checked+.toggle-slider:before {
+        transform: translateX(26px);
+      }
+
+      .logs-container {
+        background-color: var(--cork-card-bg);
+        padding: 20px;
+        border-radius: 8px;
+        border: 1px solid var(--cork-border-color);
+      }
+
+      .log-entry {
+        padding: 12px;
+        margin-bottom: 8px;
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.2);
+        border-left: 3px solid var(--cork-text-secondary);
+        font-size: 0.85em;
+        line-height: 1.5;
+      }
+
+      .log-entry.success {
+        border-left-color: var(--cork-success);
+      }
+
+      .log-entry.error {
+        border-left-color: var(--cork-danger);
+      }
+
+      .log-entry-time {
+        color: var(--cork-text-secondary);
+        font-size: 0.85em;
+      }
+
+      .log-entry-type {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-size: 0.8em;
+        font-weight: 600;
+        margin-left: 8px;
+      }
+
+      .log-entry-type.custom {
+        background: var(--cork-info);
+        color: white;
+      }
+
+      .log-entry-type.makecom {
+        background: var(--cork-warning);
+        color: white;
+      }
+
+      .log-empty {
+        text-align: center;
+      }
+
+      /* Layout utilitaire pour éléments en ligne */
+      .inline-group {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      /* Style pour les boutons d'emails */
+      .email-remove-btn {
+        background-color: var(--cork-card-bg);
+        border: 1px solid var(--cork-border-color);
+        color: var(--cork-text-primary);
+        border-radius: 4px;
+        cursor: pointer;
+        padding: 2px 8px;
+        margin-left: 5px;
+      }
+
+      .email-remove-btn:hover {
+        background-color: var(--cork-danger);
+        color: white;
+      }
+
+      #addSenderBtn {
+        background-color: var(--cork-card-bg);
+        color: var(--cork-text-primary);
+        border: 1px solid var(--cork-border-color);
+      }
+
+      #addSenderBtn:hover {
+        background-color: var(--cork-primary-accent);
+        color: white;
+      }
+
+      .small-text {
+        font-size: 0.85em;
+        color: var(--cork-text-secondary);
+        margin-top: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>
+          <span class="emoji">📊</span>Dashboard Webhooks
+        </h1>
+        <a href="/logout" class="logout-link">Déconnexion</a>
+      </div>
+      <!-- Navigation principale -->
+      <div class="nav-tabs" role="tablist">
+        <button class="tab-btn active" data-target="#sec-overview" type="button">Vue d’ensemble</button>
+        <button class="tab-btn" data-target="#sec-webhooks" type="button">Webhooks</button>
+        <button class="tab-btn" data-target="#sec-polling" type="button">Polling</button>
+        <button class="tab-btn" data-target="#sec-preferences" type="button">Préférences</button>
+        <button class="tab-btn" data-target="#sec-tools" type="button">Outils</button>
+      </div>
+
+      <!-- Section: Webhooks (fenêtre horaire + config URLs) -->
+      <div id="sec-webhooks" class="section-panel">
+        <div class="grid">
+          <!-- Fenêtre horaire globale -->
+          <div class="card">
+            <div class="card-title">🕐 Fenêtre Horaire Globale</div>
+            <div class="form-group">
+              <label for="webhooksTimeStart">Heure de début</label>
+              <input id="webhooksTimeStart" type="text" placeholder="ex: 11h30 ou 11:30">
+            </div>
+            <div class="form-group">
+              <label for="webhooksTimeEnd">Heure de fin</label>
+              <input id="webhooksTimeEnd" type="text" placeholder="ex: 17h30 ou 17:30">
+            </div>
+            <button id="saveTimeWindowBtn" class="btn btn-primary">💾 Enregistrer</button>
+            <div id="timeWindowMsg" class="status-msg"></div>
+            <div id="timeWindowDisplay" class="small-text"></div>
+            <div class="small-text">Laissez les deux champs vides pour désactiver la contrainte horaire.</div>
+          </div>
+        </div>
+        <div class="card" style="margin: 20px 0;">
+          <div class="card-title">🔗 Configuration des URLs Webhooks</div>
+          <div class="grid" style="grid-template-columns: 1fr 1fr;">
+            <div class="form-group">
+              <label for="webhookUrl">Webhook Personnalisé (WEBHOOK_URL)</label>
+              <input id="webhookUrl" type="text" placeholder="https://...">
+            </div>
+            <div class="form-group">
+              <label for="recadrageUrl">Recadrage Make.com (Média Solution)</label>
+              <input id="recadrageUrl" type="text" placeholder="https://hook.eu2.make.com/...">
+            </div>
+            <div class="form-group">
+              <label for="presenceTrueUrl">Présence TRUE (samedi)</label>
+              <input id="presenceTrueUrl" type="text" placeholder="https://hook.eu2.make.com/... ou token">
+            </div>
+            <div class="form-group">
+              <label for="presenceFalseUrl">Présence FALSE (samedi)</label>
+              <input id="presenceFalseUrl" type="text" placeholder="https://hook.eu2.make.com/... ou token">
+            </div>
+            <div class="form-group">
+              <label for="autorepondeurUrl">Autorépondeur Make.com</label>
+              <input id="autorepondeurUrl" type="text" placeholder="https://hook.eu2.make.com/... ou token">
+            </div>
+            <div class="form-group">
+              <label for="presenceFlag">Flag PRESENCE</label>
+              <select id="presenceFlag">
+                <option value="false">False</option>
+                <option value="true">True</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top: 15px;">
+            <label class="toggle-switch" style="vertical-align: middle;">
+              <input type="checkbox" id="sslVerifyToggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <span style="margin-left: 10px; vertical-align: middle;">Vérification SSL (WEBHOOK_SSL_VERIFY)</span>
+          </div>
+          <button id="saveConfigBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer la Configuration</button>
+          <div id="configMsg" class="status-msg"></div>
+          <div class="small-text">⚠️ Les URLs masquées partiellement par sécurité. Saisissez l'URL complète pour modifier.</div>
+        </div>
+      </div>
+
+      <!-- Section: Polling (config + contrôle) -->
+      <div id="sec-polling" class="section-panel">
+        <div class="card">
+          <div class="card-title">🗓️ Configuration du Polling (jours, heures, déduplication)</div>
+          <div class="form-group">
+            <label>POLLING_ACTIVE_DAYS (0=Mon, 6=Sun)</label>
+            <div id="pollingActiveDaysGroup" class="inline-group" style="flex-wrap: wrap; gap: 8px;">
+              <label>
+                <input type="checkbox" name="pollingDay" value="0"> Lun </label>
+              <label>
+                <input type="checkbox" name="pollingDay" value="1"> Mar </label>
+              <label>
+                <input type="checkbox" name="pollingDay" value="2"> Mer </label>
+              <label>
+                <input type="checkbox" name="pollingDay" value="3"> Jeu </label>
+              <label>
+                <input type="checkbox" name="pollingDay" value="4"> Ven </label>
+              <label>
+                <input type="checkbox" name="pollingDay" value="5"> Sam </label>
+              <label>
+                <input type="checkbox" name="pollingDay" value="6"> Dim </label>
+            </div>
+            <div class="small-text">Sélectionnez les jours actifs via les cases à cocher.</div>
+          </div>
+          <div class="grid" style="grid-template-columns: 1fr 1fr;">
+            <div class="form-group">
+              <label for="pollingStartHour">POLLING_ACTIVE_START_HOUR</label>
+              <input id="pollingStartHour" type="number" min="0" max="23" placeholder="0-23">
+            </div>
+            <div class="form-group">
+              <label for="pollingEndHour">POLLING_ACTIVE_END_HOUR</label>
+              <input id="pollingEndHour" type="number" min="0" max="23" placeholder="0-23">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>SENDER_OF_INTEREST_FOR_POLLING</label>
+            <div id="senderOfInterestContainer" class="stack" style="gap:8px;"></div>
+            <button id="addSenderBtn" type="button" class="btn btn-secondary" style="margin-top:8px;">➕ Ajouter Email</button>
+            <div class="small-text">Ajouter / modifier / supprimer des emails individuellement. Ils seront validés et normalisés (minuscules).</div>
+          </div>
+          <div class="inline-group" style="margin: 8px 0 12px 0;">
+            <label class="toggle-switch">
+              <input type="checkbox" id="enableSubjectGroupDedup">
+              <span class="toggle-slider"></span>
+            </label>
+            <span style="margin-left: 10px;">ENABLE_SUBJECT_GROUP_DEDUP</span>
+          </div>
+          <button id="savePollingCfgBtn" class="btn btn-primary">💾 Enregistrer la Configuration Polling</button>
+          <div id="pollingCfgMsg" class="status-msg"></div>
+          <div class="small-text">⚠️ Un redémarrage du serveur peut être nécessaire pour appliquer totalement les changements.</div>
+        </div>
+        <div class="card" style="margin-top: 20px;">
+          <div class="card-title">⚙️ Contrôle du Polling IMAP</div>
+          <div class="inline-group" style="margin-bottom: 15px;">
+            <label class="toggle-switch">
+              <input type="checkbox" id="pollingToggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <span id="pollingStatusText">Chargement...</span>
+          </div>
+          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+            <div class="form-group">
+              <label for="vacationStart">POLLING_VACATION_START</label>
+              <input id="vacationStart" type="date">
+            </div>
+            <div class="form-group">
+              <label for="vacationEnd">POLLING_VACATION_END</label>
+              <input id="vacationEnd" type="date">
+            </div>
+          </div>
+          <div id="vacationStatus" class="small-text" style="margin-bottom: 8px;"></div>
+          <button id="togglePollingBtn" class="btn btn-success">Appliquer</button>
+          <div id="pollingMsg" class="status-msg"></div>
+          <div class="small-text">⚠️ Nécessite un redémarrage du serveur pour prendre effet complètement.</div>
+        </div>
+      </div>
+
+      <!-- Section: Préférences (filtres + fiabilité) -->
+      <div id="sec-preferences" class="section-panel">
+        <div class="card">
+          <div class="card-title">🔍 Filtres Email Avancés</div>
+          <div class="form-group">
+            <label for="excludeKeywordsRecadrage">Mots-clés à exclure (Recadrage) — un par ligne</label>
+            <textarea id="excludeKeywordsRecadrage" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+            <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `RECADRAGE_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
+          </div>
+          <div class="form-group">
+            <label for="excludeKeywordsAutorepondeur">Mots-clés à exclure (Autorépondeur) — un par ligne</label>
+            <textarea id="excludeKeywordsAutorepondeur" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+            <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `AUTOREPONDEUR_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
+          </div>
+          <div class="form-group">
+            <label for="excludeKeywords">Mots-clés à exclure (global, compatibilité) — un par ligne</label>
+            <textarea id="excludeKeywords" rows="3" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+            <div class="small-text">Liste globale (héritage). S'applique avant toute logique et avant les listes spécifiques.</div>
+          </div>
+          <div class="form-group">
+            <label for="attachmentDetectionToggle">Détection de pièces jointes requise</label>
+            <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+              <input type="checkbox" id="attachmentDetectionToggle">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="form-group">
+            <label for="maxEmailSizeMB">Taille maximale des emails à traiter (Mo)</label>
+            <input id="maxEmailSizeMB" type="number" min="1" max="100" placeholder="ex: 25">
+          </div>
+          <div class="form-group">
+            <label for="senderPriority">Priorité des expéditeurs (JSON simple)</label>
+            <textarea id="senderPriority" rows="3" placeholder='{"vip@example.com":"high","team@example.com":"medium"}' style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+            <div class="small-text">Format: { "email": "high|medium|low", ... } — Validé côté client uniquement pour l'instant.</div>
+          </div>
+        </div>
+        <div class="card" style="margin-top: 20px;">
+          <div class="card-title">⚡ Paramètres de Fiabilité</div>
+          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="form-group">
+              <label for="retryCount">Nombre de tentatives (retries)</label>
+              <input id="retryCount" type="number" min="0" max="10" placeholder="ex: 3">
+            </div>
+            <div class="form-group">
+              <label for="retryDelaySec">Délai entre retries (secondes)</label>
+              <input id="retryDelaySec" type="number" min="0" max="600" placeholder="ex: 10">
+            </div>
+            <div class="form-group">
+              <label for="webhookTimeoutSec">Timeout Webhook (secondes)</label>
+              <input id="webhookTimeoutSec" type="number" min="1" max="120" placeholder="ex: 30">
+            </div>
+            <div class="form-group">
+              <label for="rateLimitPerHour">Limite d'envoi (webhooks/heure)</label>
+              <input id="rateLimitPerHour" type="number" min="1" max="10000" placeholder="ex: 300">
+            </div>
+          </div>
+          <div style="margin-top: 8px;">
+            <label class="toggle-switch" style="vertical-align: middle;">
+              <input type="checkbox" id="notifyOnFailureToggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <span style="margin-left: 10px; vertical-align: middle;">Notifications d'échec par email (UI-only)</span>
+          </div>
+          <div style="margin-top: 12px;">
+            <button id="processingPrefsSaveBtn" class="btn btn-primary">💾 Enregistrer Préférences de Traitement</button>
+            <div id="processingPrefsMsg" class="status-msg"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Vue d'ensemble (métriques + logs) -->
+      <div id="sec-overview" class="section-panel active">
+        <div class="card">
+          <div class="card-title">📊 Monitoring & Métriques (24h)</div>
+          <div class="inline-group" style="margin-bottom: 10px;">
+            <label class="toggle-switch">
+              <input type="checkbox" id="enableMetricsToggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <span style="margin-left: 10px;">Activer le calcul de métriques locales</span>
+          </div>
+          <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
+            <div class="form-group"><label>Emails traités</label><div id="metricEmailsProcessed" class="small-text">—</div></div>
+            <div class="form-group"><label>Webhooks envoyés</label><div id="metricWebhooksSent" class="small-text">—</div></div>
+            <div class="form-group"><label>Erreurs</label><div id="metricErrors" class="small-text">—</div></div>
+            <div class="form-group"><label>Taux de succès (%)</label><div id="metricSuccessRate" class="small-text">—</div></div>
+          </div>
+          <div id="metricsMiniChart" style="height: 60px; background: rgba(255,255,255,0.05); border:1px solid var(--cork-border-color); border-radius:4px; margin-top:10px; position: relative; overflow:hidden;"></div>
+          <div class="small-text">Graphique simplifié généré côté client à partir de `/api/webhook_logs`.</div>
+        </div>
+        <div class="logs-container">
+          <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
+          <div style="margin-bottom: 15px;">
+            <button id="refreshLogsBtn" class="btn btn-primary">🔄 Actualiser</button>
+          </div>
+          <div id="logsContainer">
+            <div class="log-empty">Chargement des logs...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Outils (config mgmt + outils de test) -->
+      <div id="sec-tools" class="section-panel">
+        <div class="card">
+          <div class="card-title">💾 Gestion des Configurations</div>
+          <div class="inline-group" style="margin-bottom: 10px;">
+            <button id="exportConfigBtn" class="btn btn-primary">⬇️ Exporter</button>
+            <input id="importConfigFile" type="file" accept="application/json" style="display:none;"/>
+            <button id="importConfigBtn" class="btn btn-primary">⬆️ Importer</button>
+          </div>
+          <div id="configMgmtMsg" class="status-msg"></div>
+          <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
+        </div>
+        <div class="card" style="margin-top: 20px;">
+          <div class="card-title">🔄 Redéploiement / Redémarrage du Serveur</div>
+          <div class="form-group">
+            <p class="small-text">Certaines modifications (ex: paramètres de polling) nécessitent un redémarrage du service pour être pleinement appliquées.</p>
+          </div>
+          <div class="inline-group" style="margin-bottom: 10px;">
+            <button id="restartServerBtn" class="btn btn-success">🔄 Redémarrer le serveur</button>
+          </div>
+          <div id="restartMsg" class="status-msg"></div>
+          <div class="small-text">Cette action redémarre le service applicatif côté serveur (via systemd). La session peut être momentanément interrompue.</div>
+        </div>
+        <div class="card" style="margin-top: 20px;">
+          <div class="card-title">🧪 Outils de Test</div>
+          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="form-group">
+              <label for="testWebhookUrl">Valider une URL de webhook</label>
+              <input id="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
+              <button id="validateWebhookUrlBtn" class="btn btn-primary" style="margin-top: 8px;">Valider</button>
+              <div id="webhookUrlValidationMsg" class="status-msg"></div>
+            </div>
+            <div class="form-group">
+              <label>Prévisualiser un payload</label>
+              <input id="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
+              <input id="previewSender" type="email" placeholder="Expéditeur (ex: media@solution.fr)" style="margin-top: 6px;">
+              <textarea id="previewBody" rows="4" placeholder="Corps de l'email (coller du texte)" style="margin-top: 6px; width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+              <button id="buildPayloadPreviewBtn" class="btn btn-primary" style="margin-top: 8px;">Générer</button>
+              <pre id="payloadPreview" style="margin-top:8px; background: rgba(0,0,0,0.2); border:1px solid var(--cork-border-color); padding:10px; border-radius:4px; max-height:200px; overflow:auto; color: var(--cork-text-primary);"></pre>
+            </div>
+          </div>
+          <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
+        </div>
+        <div class="card" style="margin-top: 20px;">
+          <div class="card-title">🔗 Ouvrir une page de téléchargement</div>
+          <div class="form-group">
+            <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
+            <input id="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
+            <button id="openDownloadPageBtn" class="btn btn-primary" style="margin-top: 8px;">Ouvrir la page</button>
+            <div id="openDownloadMsg" class="status-msg"></div>
+            <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
+          </div>
+        </div>
+        <div class="card" style="margin-top: 20px;">
+          <div class="card-title"> Flags Runtime (Debug)</div>
+          <div class="form-group">
+            <label>Bypass déduplication par ID d’email (debug)</label>
+            <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+              <input type="checkbox" id="disableEmailIdDedupToggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <div class="small-text">Quand activé, ignore la déduplication par ID d'email. À utiliser uniquement pour des tests.
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 10px;">
+            <label>Autoriser envoi CUSTOM sans liens de livraison</label>
+            <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+              <input type="checkbox" id="allowCustomWithoutLinksToggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu’aucun lien (Dropbox/FromSmash/SwissTransfer) n’est détecté, pour éviter les 422.</div>
+          </div>
+          <div style="margin-top: 12px;">
+            <button id="runtimeFlagsSaveBtn" class="btn btn-primary"> Enregistrer Flags Runtime</button>
+            <div id="runtimeFlagsMsg" class="status-msg"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Chargement du script JavaScript -->
+    <script src="{{ url_for('static', filename='dashboard.js') }}?v=20251005-1529"></script>
+  </body>
+</html>
