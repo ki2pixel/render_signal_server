@@ -236,7 +236,8 @@ def check_desabo_conditions(subject: str, email_content: str, logger):
             "total ht",
         ]
 
-        has_required = has_journee and has_tarifs and has_desabo
+        # Relaxed rule: allow match if (journee AND tarifs) AND (explicit desabo OR dropbox request link present)
+        has_required = (has_journee and has_tarifs) and (has_desabo or has_dropbox_request)
         has_forbidden = any(term in norm_body for term in forbidden_terms)
 
         # Détection du lien Dropbox Request dans le contenu d'entrée
@@ -258,9 +259,7 @@ def check_desabo_conditions(subject: str, email_content: str, logger):
         except Exception:
             pass
 
-        # Correspond à l'attente des tests: le match DESABO repose sur les mots-clés,
-        # la présence du lien Dropbox /request est signalée séparément via has_dropbox_request
-        # mais n'est pas requise pour matches.
+        # Match if required conditions satisfied and no forbidden terms
         result["matches"] = bool(has_required and (not has_forbidden))
         return result
     except Exception as e:

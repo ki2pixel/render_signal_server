@@ -60,8 +60,10 @@ def check_new_emails_and_trigger_webhook() -> int:
         # Local modules
         from email_processing import imap_client
         from email_processing import pattern_matching
+        from email_processing import payloads
         from email_processing import link_extraction
         from config import webhook_time_window as _w_tw
+        from config.settings import AUTOREPONDEUR_MAKE_WEBHOOK_URL
     except Exception as _imp_ex:
         try:
             # If wiring isn't ready, log and bail out
@@ -197,7 +199,35 @@ def check_new_emails_and_trigger_webhook() -> int:
                     triggered_count += 1
                     continue
 
-                # 2) Media Solution route (Make webhook)
+                # 2) DESABO route (Make webhook - AUTOREPONDEUR)
+                desabo_ok = handle_desabo_route(
+                    subject=subject or '',
+                    full_email_content=full_text or '',
+                    html_email_content=None,
+                    email_id=email_id,
+                    sender_raw=from_raw,
+                    tz_for_polling=TZ_FOR_POLLING,
+                    webhooks_time_start=_w_tw.WEBHOOKS_TIME_START,
+                    webhooks_time_start_str=_w_tw.WEBHOOKS_TIME_START_STR or None,
+                    webhooks_time_end_str=_w_tw.WEBHOOKS_TIME_END_STR or None,
+                    processing_prefs=PROCESSING_PREFS,
+                    extract_sender_email=extract_sender_email,
+                    check_desabo_conditions=pattern_matching.check_desabo_conditions,
+                    build_desabo_make_payload=payloads.build_desabo_make_payload,
+                    send_makecom_webhook=send_makecom_webhook,
+                    override_webhook_url=AUTOREPONDEUR_MAKE_WEBHOOK_URL,
+                    mark_subject_group_processed=mark_subject_group_processed,
+                    subject_group_id=generate_subject_group_id(subject or ''),
+                    is_within_time_window_local=_is_within_time_window_local,
+                    logger=logger,
+                )
+                if desabo_ok:
+                    mark_email_id_as_processed_redis(email_id)
+                    mark_email_as_read_imap(mail, num)
+                    triggered_count += 1
+                    continue
+
+                # 3) Media Solution route (Make webhook)
                 media_ok = handle_media_solution_route(
                     subject=subject or '',
                     full_email_content=full_text or '',
@@ -218,7 +248,7 @@ def check_new_emails_and_trigger_webhook() -> int:
                     triggered_count += 1
                     continue
 
-                # 3) Custom webhook flow (if WEBHOOK_URL configured)
+                # 4) Custom webhook flow (if WEBHOOK_URL configured)
                 if not WEBHOOK_URL:
                     logger.info("POLLER: WEBHOOK_URL not configured; skipping custom webhook for %s", email_id)
                     continue

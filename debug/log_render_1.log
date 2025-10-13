@@ -1,253 +1,167 @@
-2025-10-13T17:36:52.629728064Z 2025-10-13 17:36:52,629 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:37:22.630015032Z 2025-10-13 17:37:22,629 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:37:22.630075087Z 2025-10-13 17:37:22,629 - ERROR - app_render - orchestrator - check_new_emails_and_trigger_webhook - 32 - ORCHESTRATOR: Legacy implementation not found; skipping cycle (returns 0). Error: cannot import name '_legacy_check_new_emails_and_trigger_webhook' from 'app_render' (/opt/render/project/src/app_render.py)
-2025-10-13T17:37:22.630125861Z 2025-10-13 17:37:22,630 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:37:52.63048914Z 2025-10-13 17:37:52,630 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:37:52.630554584Z 2025-10-13 17:37:52,630 - ERROR - app_render - orchestrator - check_new_emails_and_trigger_webhook - 32 - ORCHESTRATOR: Legacy implementation not found; skipping cycle (returns 0). Error: cannot import name '_legacy_check_new_emails_and_trigger_webhook' from 'app_render' (/opt/render/project/src/app_render.py)
-2025-10-13T17:37:52.630609898Z 2025-10-13 17:37:52,630 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:38:22.63093944Z 2025-10-13 17:38:22,630 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:38:22.631001765Z 2025-10-13 17:38:22,630 - ERROR - app_render - orchestrator - check_new_emails_and_trigger_webhook - 32 - ORCHESTRATOR: Legacy implementation not found; skipping cycle (returns 0). Error: cannot import name '_legacy_check_new_emails_and_trigger_webhook' from 'app_render' (/opt/render/project/src/app_render.py)
-2025-10-13T17:38:22.631054549Z 2025-10-13 17:38:22,630 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:38:52.63133538Z 2025-10-13 17:38:52,631 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:38:52.631420336Z 2025-10-13 17:38:52,631 - ERROR - app_render - orchestrator - check_new_emails_and_trigger_webhook - 32 - ORCHESTRATOR: Legacy implementation not found; skipping cycle (returns 0). Error: cannot import name '_legacy_check_new_emails_and_trigger_webhook' from 'app_render' (/opt/render/project/src/app_render.py)
-2025-10-13T17:38:52.63147678Z 2025-10-13 17:38:52,631 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:39:22.631822372Z 2025-10-13 17:39:22,631 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:39:22.631973482Z 2025-10-13 17:39:22,631 - ERROR - app_render - orchestrator - check_new_emails_and_trigger_webhook - 32 - ORCHESTRATOR: Legacy implementation not found; skipping cycle (returns 0). Error: cannot import name '_legacy_check_new_emails_and_trigger_webhook' from 'app_render' (/opt/render/project/src/app_render.py)
-2025-10-13T17:39:22.631993724Z 2025-10-13 17:39:22,631 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:39:48.553838353Z ==> Deploying...
-2025-10-13T17:39:52.632278456Z 2025-10-13 17:39:52,632 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:39:52.632416966Z 2025-10-13 17:39:52,632 - ERROR - app_render - orchestrator - check_new_emails_and_trigger_webhook - 32 - ORCHESTRATOR: Legacy implementation not found; skipping cycle (returns 0). Error: cannot import name '_legacy_check_new_emails_and_trigger_webhook' from 'app_render' (/opt/render/project/src/app_render.py)
-2025-10-13T17:39:52.632434597Z 2025-10-13 17:39:52,632 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:40:16.613583259Z ==> Running 'gunicorn --workers 1 --bind 0.0.0.0:$PORT app_render:app'
-2025-10-13T17:40:17.718920802Z [2025-10-13 17:40:17 +0000] [55] [INFO] Starting gunicorn 23.0.0
-2025-10-13T17:40:17.719223748Z [2025-10-13 17:40:17 +0000] [55] [INFO] Listening at: http://0.0.0.0:10000 (55)
-2025-10-13T17:40:17.719240408Z [2025-10-13 17:40:17 +0000] [55] [INFO] Using worker: sync
-2025-10-13T17:40:17.722035755Z [2025-10-13 17:40:17 +0000] [56] [INFO] Booting worker with pid: 56
-2025-10-13T17:40:21.316090966Z 2025-10-13 17:40:21,315 - INFO - app_render - settings - log_configuration - 174 - CFG WEBHOOK: Custom webhook URL configured to: https://webhook.kidpixel.fr/index.php
-2025-10-13T17:40:21.316123287Z 2025-10-13 17:40:21,315 - INFO - app_render - settings - log_configuration - 175 - CFG MAKECOM: Make.com webhook URL configured to: https://hook.eu2.make.com/s98s0s735h23qakb9pp0id8c8hbhfqph
-2025-10-13T17:40:21.316145167Z 2025-10-13 17:40:21,316 - INFO - app_render - settings - log_configuration - 176 - CFG WEBHOOK: SSL verification = True
-2025-10-13T17:40:21.316191778Z 2025-10-13 17:40:21,316 - INFO - app_render - settings - log_configuration - 179 - CFG POLL: Monitoring emails from 6 senders: ['achats@media-solution.fr', 'camille.moine.pro@gmail.com', 'a.peault@media-solution.fr', 'v.lorent@media-solution.fr', 'technique@media-solution.fr', 't.deslus@media-solution.fr']
-2025-10-13T17:40:21.316208818Z 2025-10-13 17:40:21,316 - INFO - app_render - settings - log_configuration - 188 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
-2025-10-13T17:40:21.3162951Z 2025-10-13 17:40:21,316 - INFO - app_render - settings - log_configuration - 190 - CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP=False
-2025-10-13T17:40:21.316330991Z 2025-10-13 17:40:21,316 - INFO - app_render - settings - log_configuration - 191 - CFG DEDUP: DISABLE_EMAIL_ID_DEDUP=False
-2025-10-13T17:40:21.316336551Z 2025-10-13 17:40:21,316 - INFO - app_render - settings - log_configuration - 194 - CFG BG: ENABLE_BACKGROUND_TASKS=True
-2025-10-13T17:40:21.316368142Z 2025-10-13 17:40:21,316 - INFO - app_render - settings - log_configuration - 195 - CFG BG: BG_POLLER_LOCK_FILE=/tmp/render_signal_server_email_poller.lock
-2025-10-13T17:40:21.318070996Z 2025-10-13 17:40:21,317 - INFO - app_render - polling_config - initialize_polling_timezone - 41 - CFG POLL: Using timezone 'Europe/Paris' for polling schedule.
-2025-10-13T17:40:21.318097207Z 2025-10-13 17:40:21,318 - INFO - app_render - app_render - <module> - 206 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
-2025-10-13T17:40:21.318419314Z 2025-10-13 17:40:21,318 - INFO - app_render - app_render - <module> - 410 - BG_POLLER: Singleton lock acquired on /tmp/render_signal_server_email_poller.lock. Starting background thread.
-2025-10-13T17:40:21.318840702Z 2025-10-13 17:40:21,318 - INFO - app_render - polling_thread - background_email_poller_loop - 44 - BG_POLLER: Email polling loop started. TZ for schedule is configured.
-2025-10-13T17:40:21.318946344Z 2025-10-13 17:40:21,318 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:40:21.321391384Z 2025-10-13 17:40:21,321 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:40:21.321408914Z 2025-10-13 17:40:21,321 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:40:21.321430285Z 2025-10-13 17:40:21,321 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:40:21.322098548Z 2025-10-13 17:40:21,321 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:40:21.322247901Z 2025-10-13 17:40:21,322 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:40:21.322779182Z 2025-10-13 17:40:21,322 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:40:21.322791662Z 2025-10-13 17:40:21,322 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:40:22.711036716Z 2025-10-13 17:40:22,710 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:40:22.882601655Z 2025-10-13 17:40:22,882 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:40:23.546321909Z 2025-10-13 17:40:23,546 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:40:23.546359529Z 2025-10-13 17:40:23,546 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:40:22.632680941Z 2025-10-13 17:40:22,632 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:40:22.632744735Z 2025-10-13 17:40:22,632 - ERROR - app_render - orchestrator - check_new_emails_and_trigger_webhook - 32 - ORCHESTRATOR: Legacy implementation not found; skipping cycle (returns 0). Error: cannot import name '_legacy_check_new_emails_and_trigger_webhook' from 'app_render' (/opt/render/project/src/app_render.py)
-2025-10-13T17:40:22.632850773Z 2025-10-13 17:40:22,632 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:40:36.52501619Z ==> Your service is live 🎉
-2025-10-13T17:40:36.556024138Z ==>
-2025-10-13T17:40:37.923384359Z ==> ///////////////////////////////////////////////////////////
-2025-10-13T17:40:39.297743939Z ==>
-2025-10-13T17:40:40.621131444Z ==> Available at your primary URL https://render-signal-server.onrender.com
-2025-10-13T17:40:41.797776457Z ==>
-2025-10-13T17:40:43.168978477Z ==> ///////////////////////////////////////////////////////////
-2025-10-13T17:40:53.546780032Z 2025-10-13 17:40:53,546 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:40:53.547364423Z 2025-10-13 17:40:53,546 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:40:53.547374574Z 2025-10-13 17:40:53,546 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:40:53.547378864Z 2025-10-13 17:40:53,546 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:40:53.547382554Z 2025-10-13 17:40:53,546 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:40:53.547386444Z 2025-10-13 17:40:53,546 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:40:53.547390084Z 2025-10-13 17:40:53,546 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:40:53.547394644Z 2025-10-13 17:40:53,546 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:40:54.601354449Z 2025-10-13 17:40:54,601 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:40:54.774843486Z 2025-10-13 17:40:54,774 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:40:55.446924068Z 2025-10-13 17:40:55,446 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:40:55.446955339Z 2025-10-13 17:40:55,446 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:40:52.633068279Z 2025-10-13 17:40:52,632 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:40:52.633144594Z 2025-10-13 17:40:52,633 - ERROR - app_render - orchestrator - check_new_emails_and_trigger_webhook - 32 - ORCHESTRATOR: Legacy implementation not found; skipping cycle (returns 0). Error: cannot import name '_legacy_check_new_emails_and_trigger_webhook' from 'app_render' (/opt/render/project/src/app_render.py)
-2025-10-13T17:40:52.633168886Z 2025-10-13 17:40:52,633 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:41:19.688054183Z [2025-10-13 17:41:19 +0000] [56] [INFO] Handling signal: term
-2025-10-13T17:41:19.688575491Z [2025-10-13 17:41:19 +0000] [57] [INFO] Worker exiting (pid: 57)
-2025-10-13T17:41:20.289080164Z [2025-10-13 17:41:20 +0000] [56] [INFO] Shutting down: Master
-2025-10-13T17:41:25.447174639Z 2025-10-13 17:41:25,446 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:41:25.44722774Z 2025-10-13 17:41:25,447 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:41:25.44725337Z 2025-10-13 17:41:25,447 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:41:25.44726281Z 2025-10-13 17:41:25,447 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:41:25.447269861Z 2025-10-13 17:41:25,447 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:41:25.447332552Z 2025-10-13 17:41:25,447 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:41:25.447336742Z 2025-10-13 17:41:25,447 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:41:25.447376353Z 2025-10-13 17:41:25,447 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:41:26.506886068Z 2025-10-13 17:41:26,506 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:41:26.681971307Z 2025-10-13 17:41:26,681 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:41:27.358416736Z 2025-10-13 17:41:27,358 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:41:27.358473147Z 2025-10-13 17:41:27,358 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:41:57.358821882Z 2025-10-13 17:41:57,358 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:41:57.358867323Z 2025-10-13 17:41:57,358 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:41:57.358872373Z 2025-10-13 17:41:57,358 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:41:57.358912724Z 2025-10-13 17:41:57,358 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:41:57.358935205Z 2025-10-13 17:41:57,358 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:41:57.358992226Z 2025-10-13 17:41:57,358 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:41:57.359034267Z 2025-10-13 17:41:57,358 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:41:57.359081828Z 2025-10-13 17:41:57,359 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:41:58.402177756Z 2025-10-13 17:41:58,402 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:41:58.574636641Z 2025-10-13 17:41:58,574 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:41:59.239413571Z 2025-10-13 17:41:59,239 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:41:59.239481533Z 2025-10-13 17:41:59,239 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:42:29.23974543Z 2025-10-13 17:42:29,239 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:42:29.239772571Z 2025-10-13 17:42:29,239 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:42:29.239842022Z 2025-10-13 17:42:29,239 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:42:29.239862553Z 2025-10-13 17:42:29,239 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:42:29.239906124Z 2025-10-13 17:42:29,239 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:42:29.239957445Z 2025-10-13 17:42:29,239 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:42:29.240032976Z 2025-10-13 17:42:29,239 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:42:29.240046296Z 2025-10-13 17:42:29,239 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:42:30.291000752Z 2025-10-13 17:42:30,290 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:42:30.464387576Z 2025-10-13 17:42:30,464 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:42:31.132466041Z 2025-10-13 17:42:31,132 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:42:31.132566424Z 2025-10-13 17:42:31,132 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:43:01.138688383Z 2025-10-13 17:43:01,136 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:43:01.138723694Z 2025-10-13 17:43:01,136 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:43:01.138729014Z 2025-10-13 17:43:01,136 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:43:01.138733434Z 2025-10-13 17:43:01,136 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:43:01.138737764Z 2025-10-13 17:43:01,137 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:43:01.138742264Z 2025-10-13 17:43:01,137 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:43:01.138746434Z 2025-10-13 17:43:01,137 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:43:01.138754105Z 2025-10-13 17:43:01,137 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:43:02.20948402Z 2025-10-13 17:43:02,209 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:43:02.381969644Z 2025-10-13 17:43:02,381 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:43:03.051027528Z 2025-10-13 17:43:03,050 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:43:03.051062739Z 2025-10-13 17:43:03,050 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:43:33.051483348Z 2025-10-13 17:43:33,051 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:43:33.05158519Z 2025-10-13 17:43:33,051 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:43:33.051665592Z 2025-10-13 17:43:33,051 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:43:33.051673182Z 2025-10-13 17:43:33,051 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:43:33.051689102Z 2025-10-13 17:43:33,051 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:43:33.051691762Z 2025-10-13 17:43:33,051 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:43:33.051734273Z 2025-10-13 17:43:33,051 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:43:33.051819145Z 2025-10-13 17:43:33,051 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:43:34.099302645Z 2025-10-13 17:43:34,099 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:43:34.270195797Z 2025-10-13 17:43:34,270 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:43:34.936493603Z 2025-10-13 17:43:34,936 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:43:34.936626566Z 2025-10-13 17:43:34,936 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:44:04.936915248Z 2025-10-13 17:44:04,936 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:44:04.93702006Z 2025-10-13 17:44:04,936 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:44:04.93703737Z 2025-10-13 17:44:04,936 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:44:04.93705143Z 2025-10-13 17:44:04,936 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:44:04.937109391Z 2025-10-13 17:44:04,937 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:44:04.937115672Z 2025-10-13 17:44:04,937 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:44:04.937190583Z 2025-10-13 17:44:04,937 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:44:04.937207244Z 2025-10-13 17:44:04,937 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:44:05.98707921Z 2025-10-13 17:44:05,986 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:44:06.158640704Z 2025-10-13 17:44:06,158 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:44:06.826292266Z 2025-10-13 17:44:06,826 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:44:06.827140804Z 2025-10-13 17:44:06,826 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:44:36.827378391Z 2025-10-13 17:44:36,827 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:44:36.827426892Z 2025-10-13 17:44:36,827 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:44:36.827518424Z 2025-10-13 17:44:36,827 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:44:36.827574715Z 2025-10-13 17:44:36,827 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:44:36.827589236Z 2025-10-13 17:44:36,827 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:44:36.827635026Z 2025-10-13 17:44:36,827 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:44:36.827652817Z 2025-10-13 17:44:36,827 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:44:36.827729448Z 2025-10-13 17:44:36,827 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:44:37.861087506Z 2025-10-13 17:44:37,860 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:44:38.032238523Z 2025-10-13 17:44:38,030 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:44:38.690069983Z 2025-10-13 17:44:38,689 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:44:38.690112504Z 2025-10-13 17:44:38,690 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:45:08.690411479Z 2025-10-13 17:45:08,690 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:45:08.690440529Z 2025-10-13 17:45:08,690 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:45:08.690543961Z 2025-10-13 17:45:08,690 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:45:08.690616883Z 2025-10-13 17:45:08,690 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:45:08.690622653Z 2025-10-13 17:45:08,690 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:45:08.690626483Z 2025-10-13 17:45:08,690 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:45:08.690633333Z 2025-10-13 17:45:08,690 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:45:08.690669424Z 2025-10-13 17:45:08,690 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:45:09.739410702Z 2025-10-13 17:45:09,739 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:45:09.910609589Z 2025-10-13 17:45:09,910 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:45:10.579516753Z 2025-10-13 17:45:10,579 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:45:10.579536433Z 2025-10-13 17:45:10,579 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:45:28.125396075Z ==> Detected service running on port 10000
-2025-10-13T17:45:28.357643723Z ==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
-2025-10-13T17:45:40.580186792Z 2025-10-13 17:45:40,579 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:45:40.580290094Z 2025-10-13 17:45:40,580 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:45:40.581364616Z 2025-10-13 17:45:40,580 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:45:40.581391906Z 2025-10-13 17:45:40,580 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:45:40.581395096Z 2025-10-13 17:45:40,580 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:45:40.581397776Z 2025-10-13 17:45:40,580 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:45:40.581400296Z 2025-10-13 17:45:40,580 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:45:40.581403486Z 2025-10-13 17:45:40,580 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:45:41.823511858Z 2025-10-13 17:45:41,822 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:45:41.989603661Z 2025-10-13 17:45:41,989 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:45:42.649365078Z 2025-10-13 17:45:42,649 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:45:42.649403089Z 2025-10-13 17:45:42,649 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:46:12.651253707Z 2025-10-13 17:46:12,649 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:46:12.651757258Z 2025-10-13 17:46:12,649 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:46:12.651772658Z 2025-10-13 17:46:12,649 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:46:12.651777598Z 2025-10-13 17:46:12,649 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:46:12.651781838Z 2025-10-13 17:46:12,649 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:46:12.651786238Z 2025-10-13 17:46:12,649 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:46:12.651790449Z 2025-10-13 17:46:12,649 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:46:12.651794838Z 2025-10-13 17:46:12,649 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:46:13.700065742Z 2025-10-13 17:46:13,699 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:46:13.871041773Z 2025-10-13 17:46:13,870 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:46:14.537864702Z 2025-10-13 17:46:14,536 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:46:14.537886422Z 2025-10-13 17:46:14,537 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:46:44.537526065Z 2025-10-13 17:46:44,537 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:46:44.537559856Z 2025-10-13 17:46:44,537 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:46:44.537633167Z 2025-10-13 17:46:44,537 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:46:44.537663248Z 2025-10-13 17:46:44,537 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:46:44.53774666Z 2025-10-13 17:46:44,537 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:46:44.53775292Z 2025-10-13 17:46:44,537 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:46:44.53776858Z 2025-10-13 17:46:44,537 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:46:44.537861632Z 2025-10-13 17:46:44,537 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:46:45.59351341Z 2025-10-13 17:46:45,593 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:46:45.766845217Z 2025-10-13 17:46:45,766 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:46:46.46548247Z 2025-10-13 17:46:46,465 - DEBUG - app_render - pattern_matching - check_media_solution_pattern - 92 - PATTERN_CHECK: Delivery URL present (dropbox/fromsmash/swisstransfer): True, Subject pattern: False
-2025-10-13T17:46:46.468217066Z 2025-10-13 17:46:46,468 - DEBUG - app_render - orchestrator - send_custom_webhook_flow - 673 - CUSTOM_WEBHOOK_DEBUG: Preparing to send custom webhook for email 2477f80ae40380f44732c83aca99181b to https://webhook.kidpixel.fr/index.php (timeout=30s, retries=2, delay=1s)
-2025-10-13T17:46:46.473535835Z 2025-10-13 17:46:46,473 - DEBUG - urllib3.connectionpool - connectionpool - _new_conn - 1049 - Starting new HTTPS connection (1): webhook.kidpixel.fr:443
-2025-10-13T17:46:48.043997805Z 2025-10-13 17:46:48,043 - DEBUG - urllib3.connectionpool - connectionpool - _make_request - 544 - https://webhook.kidpixel.fr:443 "POST /index.php HTTP/1.1" 422 96
-2025-10-13T17:46:48.044467515Z 2025-10-13 17:46:48,044 - ERROR - app_render - orchestrator - send_custom_webhook_flow - 739 - POLLER: Webhook call FAILED for email 2477f80ae40380f44732c83aca99181b. Status: 422, Response: {"success":false,"message":"Invalid webhook data","processed_urls":[],"errors":[]}
-2025-10-13T17:46:48.436341754Z 2025-10-13 17:46:48,433 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:46:48.436364465Z 2025-10-13 17:46:48,433 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 1 webhook(s) triggered.
-2025-10-13T17:47:18.437230509Z 2025-10-13 17:47:18,434 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:47:18.437308811Z 2025-10-13 17:47:18,434 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:47:18.437314851Z 2025-10-13 17:47:18,434 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:47:18.437319941Z 2025-10-13 17:47:18,434 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:47:18.437323871Z 2025-10-13 17:47:18,434 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:47:18.437327941Z 2025-10-13 17:47:18,434 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:47:18.437332191Z 2025-10-13 17:47:18,434 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:47:18.437349352Z 2025-10-13 17:47:18,434 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:47:19.491809601Z 2025-10-13 17:47:19,491 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:47:19.664237778Z 2025-10-13 17:47:19,664 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:47:20.337735953Z 2025-10-13 17:47:20,337 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:47:20.337787494Z 2025-10-13 17:47:20,337 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:47:50.338090417Z 2025-10-13 17:47:50,337 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:47:50.33822105Z 2025-10-13 17:47:50,338 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:47:50.3382355Z 2025-10-13 17:47:50,338 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:47:50.338245641Z 2025-10-13 17:47:50,338 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:47:50.338341513Z 2025-10-13 17:47:50,338 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:47:50.338430295Z 2025-10-13 17:47:50,338 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:47:50.338440515Z 2025-10-13 17:47:50,338 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:47:50.338488856Z 2025-10-13 17:47:50,338 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:47:51.380026036Z 2025-10-13 17:47:51,379 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:47:51.550636885Z 2025-10-13 17:47:51,550 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:47:52.214477269Z 2025-10-13 17:47:52,214 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:47:52.214566761Z 2025-10-13 17:47:52,214 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
-2025-10-13T17:48:22.214855607Z 2025-10-13 17:48:22,214 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
-2025-10-13T17:48:22.21552079Z 2025-10-13 17:48:22,214 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
-2025-10-13T17:48:22.215554821Z 2025-10-13 17:48:22,214 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
-2025-10-13T17:48:22.215559771Z 2025-10-13 17:48:22,214 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
-2025-10-13T17:48:22.215563971Z 2025-10-13 17:48:22,214 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
-2025-10-13T17:48:22.215567661Z 2025-10-13 17:48:22,214 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
-2025-10-13T17:48:22.215585231Z 2025-10-13 17:48:22,215 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
-2025-10-13T17:48:22.215588562Z 2025-10-13 17:48:22,215 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
-2025-10-13T17:48:23.242316554Z 2025-10-13 17:48:23,242 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
-2025-10-13T17:48:23.411650926Z 2025-10-13 17:48:23,411 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
-2025-10-13T17:48:24.065188266Z 2025-10-13 17:48:24,064 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
-2025-10-13T17:48:24.065225717Z 2025-10-13 17:48:24,065 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
+2025-10-13T17:57:04.515352262Z 2025-10-13 17:57:04,515 - INFO - app_render - settings - log_configuration - 174 - CFG WEBHOOK: Custom webhook URL configured to: https://webhook.kidpixel.fr/index.php
+2025-10-13T17:57:04.515383183Z 2025-10-13 17:57:04,515 - INFO - app_render - settings - log_configuration - 175 - CFG MAKECOM: Make.com webhook URL configured to: https://hook.eu2.make.com/s98s0s735h23qakb9pp0id8c8hbhfqph
+2025-10-13T17:57:04.515396284Z 2025-10-13 17:57:04,515 - INFO - app_render - settings - log_configuration - 176 - CFG WEBHOOK: SSL verification = True
+2025-10-13T17:57:04.515506831Z 2025-10-13 17:57:04,515 - INFO - app_render - settings - log_configuration - 179 - CFG POLL: Monitoring emails from 6 senders: ['achats@media-solution.fr', 'camille.moine.pro@gmail.com', 'a.peault@media-solution.fr', 'v.lorent@media-solution.fr', 'technique@media-solution.fr', 't.deslus@media-solution.fr']
+2025-10-13T17:57:04.515515481Z 2025-10-13 17:57:04,515 - INFO - app_render - settings - log_configuration - 188 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
+2025-10-13T17:57:04.515523271Z 2025-10-13 17:57:04,515 - INFO - app_render - settings - log_configuration - 190 - CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP=False
+2025-10-13T17:57:04.600263259Z 2025-10-13 17:57:04,600 - INFO - app_render - settings - log_configuration - 191 - CFG DEDUP: DISABLE_EMAIL_ID_DEDUP=False
+2025-10-13T17:57:04.600287231Z 2025-10-13 17:57:04,600 - INFO - app_render - settings - log_configuration - 194 - CFG BG: ENABLE_BACKGROUND_TASKS=True
+2025-10-13T17:57:04.600297112Z 2025-10-13 17:57:04,600 - INFO - app_render - settings - log_configuration - 195 - CFG BG: BG_POLLER_LOCK_FILE=/tmp/render_signal_server_email_poller.lock
+2025-10-13T17:57:04.602098465Z 2025-10-13 17:57:04,601 - INFO - app_render - polling_config - initialize_polling_timezone - 41 - CFG POLL: Using timezone 'Europe/Paris' for polling schedule.
+2025-10-13T17:57:04.602165949Z 2025-10-13 17:57:04,602 - INFO - app_render - app_render - <module> - 206 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
+2025-10-13T17:57:04.602455855Z 2025-10-13 17:57:04,602 - INFO - app_render - app_render - <module> - 410 - BG_POLLER: Singleton lock acquired on /tmp/render_signal_server_email_poller.lock. Starting background thread.
+2025-10-13T17:57:04.602815926Z 2025-10-13 17:57:04,602 - INFO - app_render - polling_thread - background_email_poller_loop - 44 - BG_POLLER: Email polling loop started. TZ for schedule is configured.
+2025-10-13T17:57:04.602918482Z 2025-10-13 17:57:04,602 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
+2025-10-13T17:57:04.603606721Z 2025-10-13 17:57:04,603 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
+2025-10-13T17:57:04.603617462Z 2025-10-13 17:57:04,603 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
+2025-10-13T17:57:04.603664005Z 2025-10-13 17:57:04,603 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
+2025-10-13T17:57:04.603735469Z 2025-10-13 17:57:04,603 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
+2025-10-13T17:57:04.603744179Z 2025-10-13 17:57:04,603 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
+2025-10-13T17:57:04.603826944Z 2025-10-13 17:57:04,603 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
+2025-10-13T17:57:04.603856225Z 2025-10-13 17:57:04,603 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
+2025-10-13T17:57:05.998538943Z 2025-10-13 17:57:05,998 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
+2025-10-13T17:57:06.171203432Z 2025-10-13 17:57:06,171 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
+2025-10-13T17:57:06.841008402Z 2025-10-13 17:57:06,840 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
+2025-10-13T17:57:06.841043904Z 2025-10-13 17:57:06,840 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
+2025-10-13T17:57:25.010720788Z 2025-10-13 17:57:25,010 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
+2025-10-13T17:57:25.010767949Z 2025-10-13 17:57:25,010 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
+2025-10-13T17:57:25.010775439Z 2025-10-13 17:57:25,010 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
+2025-10-13T17:57:25.01078397Z 2025-10-13 17:57:25,010 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
+2025-10-13T17:57:25.01079216Z 2025-10-13 17:57:25,010 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
+2025-10-13T17:57:25.010830391Z 2025-10-13 17:57:25,010 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
+2025-10-13T17:57:25.010844541Z 2025-10-13 17:57:25,010 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
+2025-10-13T17:57:25.010876812Z 2025-10-13 17:57:25,010 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
+2025-10-13T17:57:26.065670334Z 2025-10-13 17:57:26,065 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
+2025-10-13T17:57:26.23969427Z 2025-10-13 17:57:26,239 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
+2025-10-13T17:57:26.915192587Z 2025-10-13 17:57:26,914 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
+2025-10-13T17:57:26.915231007Z 2025-10-13 17:57:26,915 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
+2025-10-13T17:57:36.841353992Z 2025-10-13 17:57:36,841 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
+2025-10-13T17:57:36.841447237Z 2025-10-13 17:57:36,841 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
+2025-10-13T17:57:36.841482469Z 2025-10-13 17:57:36,841 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
+2025-10-13T17:57:36.84150653Z 2025-10-13 17:57:36,841 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
+2025-10-13T17:57:36.841577394Z 2025-10-13 17:57:36,841 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
+2025-10-13T17:57:36.841591955Z 2025-10-13 17:57:36,841 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
+2025-10-13T17:57:36.841640078Z 2025-10-13 17:57:36,841 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
+2025-10-13T17:57:36.84167509Z 2025-10-13 17:57:36,841 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
+2025-10-13T17:57:37.891587032Z 2025-10-13 17:57:37,891 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
+2025-10-13T17:57:38.064825095Z 2025-10-13 17:57:38,064 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
+2025-10-13T17:57:38.734648976Z 2025-10-13 17:57:38,734 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
+2025-10-13T17:57:38.734686828Z 2025-10-13 17:57:38,734 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
+2025-10-13T17:57:56.915616205Z 2025-10-13 17:57:56,915 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
+2025-10-13T17:57:56.915689906Z 2025-10-13 17:57:56,915 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
+2025-10-13T17:57:56.915700526Z 2025-10-13 17:57:56,915 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
+2025-10-13T17:57:56.915829759Z 2025-10-13 17:57:56,915 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
+2025-10-13T17:57:56.915835039Z 2025-10-13 17:57:56,915 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
+2025-10-13T17:57:56.915838029Z 2025-10-13 17:57:56,915 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
+2025-10-13T17:57:56.91585704Z 2025-10-13 17:57:56,915 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
+2025-10-13T17:57:56.915967022Z 2025-10-13 17:57:56,915 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
+2025-10-13T17:57:57.970502597Z 2025-10-13 17:57:57,970 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
+2025-10-13T17:57:58.140246676Z 2025-10-13 17:57:58,140 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
+2025-10-13T17:57:58.803268328Z 2025-10-13 17:57:58,802 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
+2025-10-13T17:57:58.803291379Z 2025-10-13 17:57:58,803 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
+2025-10-13T17:58:02.616947463Z [2025-10-13 17:58:02 +0000] [55] [INFO] Handling signal: term
+2025-10-13T17:58:02.617255989Z [2025-10-13 17:58:02 +0000] [56] [INFO] Worker exiting (pid: 56)
+2025-10-13T17:58:03.217801796Z [2025-10-13 17:58:03 +0000] [55] [INFO] Shutting down: Master
+2025-10-13T17:58:08.735008693Z 2025-10-13 17:58:08,734 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
+2025-10-13T17:58:08.735094688Z 2025-10-13 17:58:08,734 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
+2025-10-13T17:58:08.73512034Z 2025-10-13 17:58:08,735 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
+2025-10-13T17:58:08.735194794Z 2025-10-13 17:58:08,735 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
+2025-10-13T17:58:08.735228256Z 2025-10-13 17:58:08,735 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
+2025-10-13T17:58:08.735272728Z 2025-10-13 17:58:08,735 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
+2025-10-13T17:58:08.735309411Z 2025-10-13 17:58:08,735 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
+2025-10-13T17:58:08.735364524Z 2025-10-13 17:58:08,735 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
+2025-10-13T17:58:09.776445741Z 2025-10-13 17:58:09,776 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
+2025-10-13T17:58:09.945522174Z 2025-10-13 17:58:09,945 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
+2025-10-13T17:58:10.609052426Z 2025-10-13 17:58:10,608 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
+2025-10-13T17:58:10.609084378Z 2025-10-13 17:58:10,609 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
+2025-10-13T17:58:40.609404968Z 2025-10-13 17:58:40,609 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
+2025-10-13T17:58:40.609529265Z 2025-10-13 17:58:40,609 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
+2025-10-13T17:58:40.609575348Z 2025-10-13 17:58:40,609 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
+2025-10-13T17:58:40.609582688Z 2025-10-13 17:58:40,609 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
+2025-10-13T17:58:40.609587359Z 2025-10-13 17:58:40,609 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
+2025-10-13T17:58:40.609634562Z 2025-10-13 17:58:40,609 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
+2025-10-13T17:58:40.609641122Z 2025-10-13 17:58:40,609 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
+2025-10-13T17:58:40.609645722Z 2025-10-13 17:58:40,609 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
+2025-10-13T17:58:41.66861495Z 2025-10-13 17:58:41,668 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
+2025-10-13T17:58:41.843137282Z 2025-10-13 17:58:41,842 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
+2025-10-13T17:58:42.517914112Z 2025-10-13 17:58:42,517 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
+2025-10-13T17:58:42.518337657Z 2025-10-13 17:58:42,517 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
+2025-10-13T17:59:12.519667107Z 2025-10-13 17:59:12,518 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
+2025-10-13T17:59:12.519689749Z 2025-10-13 17:59:12,518 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
+2025-10-13T17:59:12.519694689Z 2025-10-13 17:59:12,518 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
+2025-10-13T17:59:12.519698519Z 2025-10-13 17:59:12,518 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
+2025-10-13T17:59:12.519709Z 2025-10-13 17:59:12,518 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
+2025-10-13T17:59:12.5197115Z 2025-10-13 17:59:12,518 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
+2025-10-13T17:59:12.51971402Z 2025-10-13 17:59:12,518 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
+2025-10-13T17:59:12.51971714Z 2025-10-13 17:59:12,518 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
+2025-10-13T17:59:13.569234078Z 2025-10-13 17:59:13,569 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
+2025-10-13T17:59:13.738167589Z 2025-10-13 17:59:13,737 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
+2025-10-13T17:59:14.407967856Z 2025-10-13 17:59:14,407 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
+2025-10-13T17:59:14.407995637Z 2025-10-13 17:59:14,407 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
+2025-10-13T17:59:44.408345883Z 2025-10-13 17:59:44,408 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
+2025-10-13T17:59:44.408383346Z 2025-10-13 17:59:44,408 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
+2025-10-13T17:59:44.408423448Z 2025-10-13 17:59:44,408 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
+2025-10-13T17:59:44.408434909Z 2025-10-13 17:59:44,408 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
+2025-10-13T17:59:44.408484511Z 2025-10-13 17:59:44,408 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
+2025-10-13T17:59:44.408514573Z 2025-10-13 17:59:44,408 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
+2025-10-13T17:59:44.408545905Z 2025-10-13 17:59:44,408 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
+2025-10-13T17:59:44.408588757Z 2025-10-13 17:59:44,408 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
+2025-10-13T17:59:45.465662829Z 2025-10-13 17:59:45,465 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
+2025-10-13T17:59:45.64034825Z 2025-10-13 17:59:45,640 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
+2025-10-13T17:59:46.315706125Z 2025-10-13 17:59:46,315 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
+2025-10-13T17:59:46.315800361Z 2025-10-13 17:59:46,315 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
+2025-10-13T18:00:16.316135337Z 2025-10-13 18:00:16,315 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
+2025-10-13T18:00:16.316230842Z 2025-10-13 18:00:16,316 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
+2025-10-13T18:00:16.316246483Z 2025-10-13 18:00:16,316 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
+2025-10-13T18:00:16.316974405Z 2025-10-13 18:00:16,316 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
+2025-10-13T18:00:16.316997936Z 2025-10-13 18:00:16,316 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
+2025-10-13T18:00:16.317001507Z 2025-10-13 18:00:16,316 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
+2025-10-13T18:00:16.317004196Z 2025-10-13 18:00:16,316 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
+2025-10-13T18:00:16.317007327Z 2025-10-13 18:00:16,316 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
+2025-10-13T18:00:17.364760565Z 2025-10-13 18:00:17,364 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
+2025-10-13T18:00:17.540591302Z 2025-10-13 18:00:17,540 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
+2025-10-13T18:00:18.2100393Z 2025-10-13 18:00:18,209 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
+2025-10-13T18:00:18.210108044Z 2025-10-13 18:00:18,210 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
+2025-10-13T18:00:48.210417989Z 2025-10-13 18:00:48,210 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
+2025-10-13T18:00:48.210504294Z 2025-10-13 18:00:48,210 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
+2025-10-13T18:00:48.210531716Z 2025-10-13 18:00:48,210 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
+2025-10-13T18:00:48.21060505Z 2025-10-13 18:00:48,210 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
+2025-10-13T18:00:48.210617401Z 2025-10-13 18:00:48,210 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
+2025-10-13T18:00:48.210660283Z 2025-10-13 18:00:48,210 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
+2025-10-13T18:00:48.210677644Z 2025-10-13 18:00:48,210 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
+2025-10-13T18:00:48.210743498Z 2025-10-13 18:00:48,210 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
+2025-10-13T18:00:49.258741841Z 2025-10-13 18:00:49,258 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
+2025-10-13T18:00:49.430565099Z 2025-10-13 18:00:49,430 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
+2025-10-13T18:00:50.105108959Z 2025-10-13 18:00:50,104 - DEBUG - app_render - pattern_matching - check_media_solution_pattern - 92 - PATTERN_CHECK: Delivery URL present (dropbox/fromsmash/swisstransfer): True, Subject pattern: False
+2025-10-13T18:00:50.105242317Z 2025-10-13 18:00:50,105 - DEBUG - app_render - orchestrator - send_custom_webhook_flow - 678 - CUSTOM_WEBHOOK_DEBUG: Preparing to send custom webhook for email 23171aa5217307f2d8e5b648a93d331d to https://webhook.kidpixel.fr/index.php (timeout=30s, retries=2, delay=1s)
+2025-10-13T18:00:50.108648002Z 2025-10-13 18:00:50,108 - DEBUG - urllib3.connectionpool - connectionpool - _new_conn - 1049 - Starting new HTTPS connection (1): webhook.kidpixel.fr:443
+2025-10-13T18:00:50.977119697Z 2025-10-13 18:00:50,976 - DEBUG - urllib3.connectionpool - connectionpool - _make_request - 544 - https://webhook.kidpixel.fr:443 "POST /index.php HTTP/1.1" 200 156
+2025-10-13T18:00:50.977311317Z 2025-10-13 18:00:50,977 - INFO - app_render - orchestrator - send_custom_webhook_flow - 712 - POLLER: Webhook triggered successfully for email 23171aa5217307f2d8e5b648a93d331d.
+2025-10-13T18:00:51.314263009Z 2025-10-13 18:00:51,314 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
+2025-10-13T18:00:51.314303871Z 2025-10-13 18:00:51,314 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 1 webhook(s) triggered.
+2025-10-13T18:01:21.31464552Z 2025-10-13 18:01:21,314 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
+2025-10-13T18:01:21.314689763Z 2025-10-13 18:01:21,314 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
+2025-10-13T18:01:21.314729085Z 2025-10-13 18:01:21,314 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
+2025-10-13T18:01:21.314740886Z 2025-10-13 18:01:21,314 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
+2025-10-13T18:01:21.314751516Z 2025-10-13 18:01:21,314 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
+2025-10-13T18:01:21.314759216Z 2025-10-13 18:01:21,314 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
+2025-10-13T18:01:21.314784298Z 2025-10-13 18:01:21,314 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
+2025-10-13T18:01:21.314805379Z 2025-10-13 18:01:21,314 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
+2025-10-13T18:01:22.354988896Z 2025-10-13 18:01:22,354 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
+2025-10-13T18:01:22.530309394Z 2025-10-13 18:01:22,530 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
+2025-10-13T18:01:23.194365103Z 2025-10-13 18:01:23,194 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
+2025-10-13T18:01:23.194464729Z 2025-10-13 18:01:23,194 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
+2025-10-13T18:01:53.194806698Z 2025-10-13 18:01:53,194 - INFO - app_render - polling_thread - background_email_poller_loop - 67 - BG_POLLER: In active period. Starting poll cycle.
+2025-10-13T18:01:53.194940196Z 2025-10-13 18:01:53,194 - INFO - app_render - imap_client - create_imap_connection - 33 - IMAP_DEBUG: Attempting connection with:
+2025-10-13T18:01:53.194968577Z 2025-10-13 18:01:53,194 - INFO - app_render - imap_client - create_imap_connection - 34 - IMAP_DEBUG: - Server: mail.inbox.lt
+2025-10-13T18:01:53.194977878Z 2025-10-13 18:01:53,194 - INFO - app_render - imap_client - create_imap_connection - 35 - IMAP_DEBUG: - Port: 993
+2025-10-13T18:01:53.19501511Z 2025-10-13 18:01:53,194 - INFO - app_render - imap_client - create_imap_connection - 36 - IMAP_DEBUG: - SSL: True
+2025-10-13T18:01:53.195075233Z 2025-10-13 18:01:53,195 - INFO - app_render - imap_client - create_imap_connection - 37 - IMAP_DEBUG: - Email: kidpixel@inbox.lt
+2025-10-13T18:01:53.195177929Z 2025-10-13 18:01:53,195 - INFO - app_render - imap_client - create_imap_connection - 38 - IMAP_DEBUG: - Password: **********
+2025-10-13T18:01:53.195275155Z 2025-10-13 18:01:53,195 - INFO - app_render - imap_client - create_imap_connection - 43 - IMAP_DEBUG: Creating SSL connection to mail.inbox.lt:993
+2025-10-13T18:01:54.247927327Z 2025-10-13 18:01:54,244 - INFO - app_render - imap_client - create_imap_connection - 50 - IMAP_DEBUG: Connection established, attempting authentication...
+2025-10-13T18:01:54.418909467Z 2025-10-13 18:01:54,418 - INFO - app_render - imap_client - create_imap_connection - 53 - IMAP: Successfully connected to mail.inbox.lt:993
+2025-10-13T18:01:55.088477803Z 2025-10-13 18:01:55,088 - DEBUG - app_render - imap_client - close_imap_connection - 70 - IMAP: Connection closed successfully
+2025-10-13T18:01:55.088543217Z 2025-10-13 18:01:55,088 - INFO - app_render - polling_thread - background_email_poller_loop - 77 - BG_POLLER: Active poll cycle finished. 0 webhook(s) triggered.
+2025-10-13T18:02:07.592381845Z ==> Detected service running on port 10000
+2025-10-13T18:02:07.802699852Z ==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
