@@ -4,3 +4,7 @@ __pycache__/
 .pytest_cache/
 *.log
 .env
+.idea/
+htmlcov/
+.windsurf/
+debug/

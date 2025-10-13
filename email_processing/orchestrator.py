@@ -232,12 +232,17 @@ def check_new_emails_and_trigger_webhook() -> int:
                     mark_email_as_read_imap(mail, num)
                     continue
 
-                # Build minimal payload for custom webhook
+                # Build payload expected by PHP endpoint (see deployment/public_html/index.php)
+                # Required by validator: sender_address, subject, receivedDateTime
+                # Provide email_content to avoid server-side IMAP search and allow URL extraction.
+                preview = (full_text or "")[:200]
                 payload_for_webhook = {
-                    "email_id": email_id,
-                    "subject": subject or None,
-                    "delivery_links": delivery_links or [],
-                    "sender_email": sender_addr,
+                    "microsoft_graph_email_id": email_id,  # reuse our ID for compatibility
+                    "subject": subject or "",
+                    "receivedDateTime": date_raw or "",  # raw Date header (RFC 2822)
+                    "sender_address": from_raw or sender_addr,
+                    "bodyPreview": preview,
+                    "email_content": full_text or "",
                 }
 
                 # Execute custom webhook flow (handles retries, logging, read marking on success)
