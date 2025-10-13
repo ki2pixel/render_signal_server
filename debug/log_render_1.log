@@ -1,28 +1,50 @@
-
-2025-10-13T16:54:15.93667886Z ==> Deploying...
-2025-10-13T16:54:46.188175059Z ==> Running 'gunicorn --workers 1 --bind 0.0.0.0:$PORT app_render:app'
-2025-10-13T16:54:47.38296246Z [2025-10-13 16:54:47 +0000] [56] [INFO] Starting gunicorn 23.0.0
-2025-10-13T16:54:47.383392Z [2025-10-13 16:54:47 +0000] [56] [INFO] Listening at: http://0.0.0.0:10000 (56)
-2025-10-13T16:54:47.383578844Z [2025-10-13 16:54:47 +0000] [56] [INFO] Using worker: sync
-2025-10-13T16:54:47.389196262Z [2025-10-13 16:54:47 +0000] [57] [INFO] Booting worker with pid: 57
-2025-10-13T16:54:49.88917349Z 2025-10-13 16:54:49,888 - INFO - app_render - settings - log_configuration - 167 - CFG WEBHOOK: Custom webhook URL configured to: https://webhook.kidpixel.fr/index.php
-2025-10-13T16:54:49.889204491Z 2025-10-13 16:54:49,889 - INFO - app_render - settings - log_configuration - 168 - CFG MAKECOM: Make.com webhook URL configured to: https://hook.eu2.make.com/s98s0s735h23qakb9pp0id8c8hbhfqph
-2025-10-13T16:54:49.889213491Z 2025-10-13 16:54:49,889 - INFO - app_render - settings - log_configuration - 169 - CFG WEBHOOK: SSL verification = True
-2025-10-13T16:54:49.889295973Z 2025-10-13 16:54:49,889 - INFO - app_render - settings - log_configuration - 172 - CFG POLL: Monitoring emails from 6 senders: ['achats@media-solution.fr', 'camille.moine.pro@gmail.com', 'a.peault@media-solution.fr', 'v.lorent@media-solution.fr', 'technique@media-solution.fr', 't.deslus@media-solution.fr']
-2025-10-13T16:54:49.889359994Z 2025-10-13 16:54:49,889 - INFO - app_render - settings - log_configuration - 181 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
-2025-10-13T16:54:49.889383785Z 2025-10-13 16:54:49,889 - INFO - app_render - settings - log_configuration - 183 - CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP=False
-2025-10-13T16:54:49.889393505Z 2025-10-13 16:54:49,889 - INFO - app_render - settings - log_configuration - 184 - CFG DEDUP: DISABLE_EMAIL_ID_DEDUP=False
-2025-10-13T16:54:49.891213357Z 2025-10-13 16:54:49,891 - INFO - app_render - polling_config - initialize_polling_timezone - 41 - CFG POLL: Using timezone 'Europe/Paris' for polling schedule.
-2025-10-13T16:54:49.891266068Z 2025-10-13 16:54:49,891 - INFO - app_render - app_render - <module> - 206 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
-2025-10-13T16:54:56.814300601Z ==> Your service is live 🎉
-2025-10-13T16:54:56.846576449Z ==>
-2025-10-13T16:54:56.873913517Z ==> ///////////////////////////////////////////////////////////
-2025-10-13T16:54:56.900893816Z ==>
-2025-10-13T16:54:56.927221214Z ==> Available at your primary URL https://render-signal-server.onrender.com
-2025-10-13T16:54:56.953551173Z ==>
-2025-10-13T16:54:56.979835471Z ==> ///////////////////////////////////////////////////////////
-2025-10-13T16:55:56.677658481Z [2025-10-13 16:55:56 +0000] [55] [INFO] Handling signal: term
-2025-10-13T16:55:56.678224104Z [2025-10-13 16:55:56 +0000] [56] [INFO] Worker exiting (pid: 56)
-2025-10-13T16:55:57.078401279Z [2025-10-13 16:55:57 +0000] [55] [INFO] Shutting down: Master
-2025-10-13T16:59:59.867280947Z ==> Detected service running on port 10000
-2025-10-13T17:00:00.006158819Z ==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+2025-10-13T17:12:33.866147795Z Using cached dnspython-2.8.0-py3-none-any.whl (331 kB)
+2025-10-13T17:12:33.891077246Z Using cached idna-3.11-py3-none-any.whl (71 kB)
+2025-10-13T17:12:33.893047213Z Using cached iniconfig-2.1.0-py3-none-any.whl (6.0 kB)
+2025-10-13T17:12:33.894909537Z Using cached itsdangerous-2.2.0-py3-none-any.whl (16 kB)
+2025-10-13T17:12:33.896772761Z Using cached jinja2-3.1.6-py3-none-any.whl (134 kB)
+2025-10-13T17:12:33.898811659Z Using cached markupsafe-3.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (22 kB)
+2025-10-13T17:12:33.900667233Z Using cached packaging-25.0-py3-none-any.whl (66 kB)
+2025-10-13T17:12:33.902805824Z Using cached pluggy-1.6.0-py3-none-any.whl (20 kB)
+2025-10-13T17:12:33.904610107Z Using cached pygments-2.19.2-py3-none-any.whl (1.2 MB)
+2025-10-13T17:12:33.908448528Z Using cached urllib3-2.5.0-py3-none-any.whl (129 kB)
+2025-10-13T17:12:33.910456155Z Using cached werkzeug-3.1.3-py3-none-any.whl (224 kB)
+2025-10-13T17:12:34.047186534Z Installing collected packages: urllib3, redis, pygments, pluggy, packaging, markupsafe, itsdangerous, iniconfig, idna, dnspython, click, charset_normalizer, certifi, blinker, werkzeug, requests, pytest, jinja2, gunicorn, email-validator, Flask, Flask-Login, Flask-Cors
+2025-10-13T17:12:43.634093398Z Successfully installed Flask-3.1.2 Flask-Cors-6.0.1 Flask-Login-0.6.3 blinker-1.9.0 certifi-2025.10.5 charset_normalizer-3.4.3 click-8.3.0 dnspython-2.8.0 email-validator-2.3.0 gunicorn-23.0.0 idna-3.11 iniconfig-2.1.0 itsdangerous-2.2.0 jinja2-3.1.6 markupsafe-3.0.3 packaging-25.0 pluggy-1.6.0 pygments-2.19.2 pytest-8.4.2 redis-6.4.0 requests-2.32.5 urllib3-2.5.0 werkzeug-3.1.3
+2025-10-13T17:12:43.702039818Z 
+2025-10-13T17:12:43.702059808Z [notice] A new release of pip is available: 24.0 -> 25.2
+2025-10-13T17:12:43.702063419Z [notice] To update, run: pip install --upgrade pip
+2025-10-13T17:12:44.900296635Z ==> Uploading build...
+2025-10-13T17:13:04.879311838Z ==> Uploaded in 10.4s. Compression took 9.6s
+2025-10-13T17:13:05.015036853Z ==> Build successful 🎉
+2025-10-13T17:13:25.377934052Z ==> Deploying...
+2025-10-13T17:14:01.005942498Z ==> Running 'gunicorn --workers 1 --bind 0.0.0.0:$PORT app_render:app'
+2025-10-13T17:14:01.808451398Z [2025-10-13 17:14:01 +0000] [55] [INFO] Starting gunicorn 23.0.0
+2025-10-13T17:14:01.808791606Z [2025-10-13 17:14:01 +0000] [55] [INFO] Listening at: http://0.0.0.0:10000 (55)
+2025-10-13T17:14:01.808803106Z [2025-10-13 17:14:01 +0000] [55] [INFO] Using worker: sync
+2025-10-13T17:14:01.898492524Z [2025-10-13 17:14:01 +0000] [56] [INFO] Booting worker with pid: 56
+2025-10-13T17:14:06.269023785Z ==> Your service is live 🎉
+2025-10-13T17:14:06.343264861Z ==> 
+2025-10-13T17:14:06.369353789Z ==> ///////////////////////////////////////////////////////////
+2025-10-13T17:14:07.000877599Z 2025-10-13 17:14:07,000 - INFO - app_render - settings - log_configuration - 174 - CFG WEBHOOK: Custom webhook URL configured to: https://webhook.kidpixel.fr/index.php
+2025-10-13T17:14:07.00091572Z 2025-10-13 17:14:07,000 - INFO - app_render - settings - log_configuration - 175 - CFG MAKECOM: Make.com webhook URL configured to: https://hook.eu2.make.com/s98s0s735h23qakb9pp0id8c8hbhfqph
+2025-10-13T17:14:07.00093619Z 2025-10-13 17:14:07,000 - INFO - app_render - settings - log_configuration - 176 - CFG WEBHOOK: SSL verification = True
+2025-10-13T17:14:07.000999852Z 2025-10-13 17:14:07,000 - INFO - app_render - settings - log_configuration - 179 - CFG POLL: Monitoring emails from 6 senders: ['achats@media-solution.fr', 'camille.moine.pro@gmail.com', 'a.peault@media-solution.fr', 'v.lorent@media-solution.fr', 'technique@media-solution.fr', 't.deslus@media-solution.fr']
+2025-10-13T17:14:07.001051953Z 2025-10-13 17:14:07,000 - INFO - app_render - settings - log_configuration - 188 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
+2025-10-13T17:14:07.001058813Z 2025-10-13 17:14:07,001 - INFO - app_render - settings - log_configuration - 190 - CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP=False
+2025-10-13T17:14:07.001110614Z 2025-10-13 17:14:07,001 - INFO - app_render - settings - log_configuration - 191 - CFG DEDUP: DISABLE_EMAIL_ID_DEDUP=False
+2025-10-13T17:14:07.001128924Z 2025-10-13 17:14:07,001 - INFO - app_render - settings - log_configuration - 194 - CFG BG: ENABLE_BACKGROUND_TASKS=True
+2025-10-13T17:14:07.001172095Z 2025-10-13 17:14:07,001 - INFO - app_render - settings - log_configuration - 195 - CFG BG: BG_POLLER_LOCK_FILE=/tmp/render_signal_server_email_poller.lock
+2025-10-13T17:14:07.002866831Z 2025-10-13 17:14:07,002 - INFO - app_render - polling_config - initialize_polling_timezone - 41 - CFG POLL: Using timezone 'Europe/Paris' for polling schedule.
+2025-10-13T17:14:07.002912161Z 2025-10-13 17:14:07,002 - INFO - app_render - app_render - <module> - 206 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
+2025-10-13T17:14:07.003212088Z 2025-10-13 17:14:07,003 - INFO - app_render - app_render - <module> - 239 - BG_POLLER: Singleton lock acquired on /tmp/render_signal_server_email_poller.lock. Starting background thread.
+2025-10-13T17:14:07.003865831Z 2025-10-13 17:14:07,003 - ERROR - app_render - app_render - <module> - 251 - BG_POLLER: Failed to start background thread: name 'background_email_poller' is not defined
+2025-10-13T17:14:07.003873552Z Traceback (most recent call last):
+2025-10-13T17:14:07.003878052Z   File "/opt/render/project/src/app_render.py", line 243, in <module>
+2025-10-13T17:14:07.003881482Z     target=background_email_poller, daemon=True
+2025-10-13T17:14:07.003886782Z            ^^^^^^^^^^^^^^^^^^^^^^^
+2025-10-13T17:14:07.003893172Z NameError: name 'background_email_poller' is not defined
+2025-10-13T17:14:07.064445398Z ==> 
+2025-10-13T17:14:07.089812106Z ==> Available at your primary URL https://render-signal-server.onrender.com
+2025-10-13T17:14:07.116544215Z ==> 
+2025-10-13T17:14:07.142627733Z ==> ///////////////////////////////////////////////////////////
