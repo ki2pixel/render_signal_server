@@ -230,6 +230,35 @@ SUBJECT_GROUP_TTL_SECONDS = settings.SUBJECT_GROUP_TTL_SECONDS
 # In-memory fallback store for subject groups (process-local only)
 SUBJECT_GROUPS_MEMORY = set()
 
+# --- Start Background Tasks (Email Poller) ---
+try:
+    if getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
+        lock_path = getattr(settings, "BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock")
+        try:
+            if acquire_singleton_lock(lock_path):
+                app.logger.info(
+                    f"BG_POLLER: Singleton lock acquired on {lock_path}. Starting background thread."
+                )
+                _bg_email_poller_thread = threading.Thread(
+                    target=background_email_poller, daemon=True
+                )
+                _bg_email_poller_thread.start()
+            else:
+                app.logger.info(
+                    f"BG_POLLER: Singleton lock NOT acquired on {lock_path}. Background thread will not start."
+                )
+        except Exception as e:
+            app.logger.error(
+                f"BG_POLLER: Failed to start background thread: {e}", exc_info=True
+            )
+    else:
+        app.logger.info(
+            "BG_POLLER: ENABLE_BACKGROUND_TASKS is false. Background poller not started."
+        )
+except Exception:
+    # Defensive: never block app startup because of background thread wiring
+    pass
+
 # --- Fonctions Utilitaires IMAP ---
 def create_imap_connection():
     """Wrapper vers email_processing.imap_client.create_imap_connection."""

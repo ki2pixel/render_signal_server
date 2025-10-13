@@ -115,6 +115,13 @@ POLLING_INACTIVE_CHECK_INTERVAL_SECONDS = int(
     os.environ.get("POLLING_INACTIVE_CHECK_INTERVAL_SECONDS", 600)
 )
 
+# --- Contrôle des tâches de fond (poller IMAP) ---
+# Doit être activé explicitement en production pour démarrer le thread de polling.
+ENABLE_BACKGROUND_TASKS = env_bool("ENABLE_BACKGROUND_TASKS", False)
+BG_POLLER_LOCK_FILE = os.environ.get(
+    "BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock"
+)
+
 # --- Feature Flags ---
 ENABLE_SUBJECT_GROUP_DEDUP = env_bool("ENABLE_SUBJECT_GROUP_DEDUP", True)
 DISABLE_EMAIL_ID_DEDUP = env_bool("DISABLE_EMAIL_ID_DEDUP", False)
@@ -182,3 +189,7 @@ def log_configuration(logger):
     
     logger.info(f"CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP={ENABLE_SUBJECT_GROUP_DEDUP}")
     logger.info(f"CFG DEDUP: DISABLE_EMAIL_ID_DEDUP={DISABLE_EMAIL_ID_DEDUP}")
+    
+    # Visibilité opérationnelle du poller IMAP
+    logger.info(f"CFG BG: ENABLE_BACKGROUND_TASKS={ENABLE_BACKGROUND_TASKS}")
+    logger.info(f"CFG BG: BG_POLLER_LOCK_FILE={BG_POLLER_LOCK_FILE}")

@@ -1,100 +1,28 @@
-2025-10-11T21:01:11.684715769Z     return _bootstrap._gcd_import(name[level:], package, level)
-2025-10-11T21:01:11.684717899Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-2025-10-11T21:01:11.684720289Z   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
-2025-10-11T21:01:11.684739459Z   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
-2025-10-11T21:01:11.684742199Z   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
-2025-10-11T21:01:11.684744649Z   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
-2025-10-11T21:01:11.684746839Z   File "<frozen importlib._bootstrap_external>", line 940, in exec_module
-2025-10-11T21:01:11.684748919Z   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
-2025-10-11T21:01:11.684751069Z   File "/opt/render/project/src/app_render.py", line 3180, in <module>
-2025-10-11T21:01:11.684753329Z     @app.route('/api/get_processing_prefs', methods=['GET'])
-2025-10-11T21:01:11.684755479Z      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-2025-10-11T21:01:11.684757789Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/flask/sansio/scaffold.py", line 362, in decorator
-2025-10-11T21:01:11.684760069Z     self.add_url_rule(rule, endpoint, f, **options)
-2025-10-11T21:01:11.684762329Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/flask/sansio/scaffold.py", line 47, in wrapper_func
-2025-10-11T21:01:11.684764489Z     return f(self, *args, **kwargs)
-2025-10-11T21:01:11.684766529Z            ^^^^^^^^^^^^^^^^^^^^^^^^
-2025-10-11T21:01:11.684768899Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/flask/sansio/app.py", line 657, in add_url_rule
-2025-10-11T21:01:11.68477095Z     raise AssertionError(
-2025-10-11T21:01:11.684773719Z AssertionError: View function mapping is overwriting an existing endpoint function: api_get_processing_prefs
-2025-10-11T21:01:11.68478705Z [2025-10-11 21:01:11 +0000] [38] [INFO] Worker exiting (pid: 38)
-2025-10-11T21:01:12.275612874Z [2025-10-11 21:01:12 +0000] [37] [ERROR] Worker (pid:38) exited with code 3
-2025-10-11T21:01:12.275961799Z [2025-10-11 21:01:12 +0000] [37] [ERROR] Shutting down: Master
-2025-10-11T21:01:12.276150182Z [2025-10-11 21:01:12 +0000] [37] [ERROR] Reason: Worker failed to boot.
-2025-10-11T21:02:08.343042617Z ==> Running 'gunicorn --workers 1 --bind 0.0.0.0:$PORT app_render:app'
-2025-10-11T21:02:09.232834811Z [2025-10-11 21:02:09 +0000] [38] [INFO] Starting gunicorn 23.0.0
-2025-10-11T21:02:09.233162396Z [2025-10-11 21:02:09 +0000] [38] [INFO] Listening at: http://0.0.0.0:10000 (38)
-2025-10-11T21:02:09.233239577Z [2025-10-11 21:02:09 +0000] [38] [INFO] Using worker: sync
-2025-10-11T21:02:09.236241879Z [2025-10-11 21:02:09 +0000] [39] [INFO] Booting worker with pid: 39
-2025-10-11T21:02:12.135006082Z 2025-10-11 21:02:12,134 - INFO - app_render - app_render - <module> - 413 - CFG POLL: Using timezone 'Europe/Paris' for polling schedule.
-2025-10-11T21:02:12.135039513Z 2025-10-11 21:02:12,134 - INFO - app_render - app_render - <module> - 426 - CFG POLL: Active polling interval: 30s. Inactive period check interval: 600s.
-2025-10-11T21:02:12.135057593Z 2025-10-11 21:02:12,134 - INFO - app_render - app_render - <module> - 428 - CFG POLL: Active schedule (Europe/Paris): 09:00-21:00. Days (0=Mon): [0, 1, 2, 3, 4, 5]
-2025-10-11T21:02:12.135126184Z 2025-10-11 21:02:12,135 - INFO - app_render - app_render - <module> - 433 - CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP=False
-2025-10-11T21:02:12.135139344Z 2025-10-11 21:02:12,135 - INFO - app_render - app_render - <module> - 434 - CFG DEDUP: DISABLE_EMAIL_ID_DEDUP=False
-2025-10-11T21:02:12.135194185Z 2025-10-11 21:02:12,135 - INFO - app_render - app_render - <module> - 435 - CFG CUSTOM: ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS=False
-2025-10-11T21:02:12.135592851Z 2025-10-11 21:02:12,135 - INFO - app_render - app_render - <module> - 503 - CFG PATH: Signal directory for ephemeral files: /opt/render/project/src/signal_data_app_render
-2025-10-11T21:02:12.135630771Z 2025-10-11 21:02:12,135 - INFO - app_render - app_render - _apply_runtime_flags_overrides - 541 - CFG RUNTIME: Flags applied from file — DISABLE_EMAIL_ID_DEDUP=False, ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS=False
-2025-10-11T21:02:12.142079502Z 2025-10-11 21:02:12,141 - INFO - app_render - app_render - <module> - 570 - CFG REDIS: Successfully connected to Redis at red-d0l2c17fte5s73955i40:6379.
-2025-10-11T21:02:12.142122002Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 588 - CFG DEDUP: SUBJECT_GROUP_TTL_DAYS=0 (seconds=0) — applies only when Redis is available.
-2025-10-11T21:02:12.142323175Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 702 - CFG PROCESSING_PREFS: loaded (exclude=0, recadrage=0, autorepondeur=0)
-2025-10-11T21:02:12.142365346Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 717 - CFG EMAIL_DEBUG: Configuration sources:
-2025-10-11T21:02:12.142396836Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 718 - CFG EMAIL_DEBUG: - EMAIL_ADDRESS: ENV = kidpixel@inbox.lt
-2025-10-11T21:02:12.142457887Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 719 - CFG EMAIL_DEBUG: - EMAIL_PASSWORD: ENV = **********
-2025-10-11T21:02:12.142475177Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 720 - CFG EMAIL_DEBUG: - IMAP_SERVER: ENV = mail.inbox.lt
-2025-10-11T21:02:12.142513648Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 721 - CFG EMAIL_DEBUG: - IMAP_PORT: ENV = 993
-2025-10-11T21:02:12.142569489Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 722 - CFG EMAIL_DEBUG: - IMAP_USE_SSL: ENV = True
-2025-10-11T21:02:12.142594729Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 725 - CFG EMAIL_DEBUG: Reference values:
-2025-10-11T21:02:12.142629239Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 726 - CFG EMAIL_DEBUG: - REF_EMAIL_ADDRESS = kidpixel@inbox.lt
-2025-10-11T21:02:12.14267992Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 727 - CFG EMAIL_DEBUG: - REF_IMAP_SERVER = mail.inbox.lt
-2025-10-11T21:02:12.14270172Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 728 - CFG EMAIL_DEBUG: - REF_IMAP_PORT = 993
-2025-10-11T21:02:12.142739881Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 739 - CFG EMAIL: Email polling configured for kidpixel@inbox.lt via mail.inbox.lt:993 (SSL: True)
-2025-10-11T21:02:12.142792112Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 748 - CFG WEBHOOK: Custom webhook URL configured to: https://webhook.kidpixel.fr/index.php
-2025-10-11T21:02:12.142831602Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 749 - CFG MAKECOM: Make.com webhook URL configured to: https://hook.eu2.make.com/s98s0s735h23qakb9pp0id8c8hbhfqph
-2025-10-11T21:02:12.142872773Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 750 - CFG WEBHOOK: SSL verification = True
-2025-10-11T21:02:12.142923514Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 760 - CFG POLL: Monitoring emails from 6 senders: ['achats@media-solution.fr', 'camille.moine.pro@gmail.com', 'a.peault@media-solution.fr', 'v.lorent@media-solution.fr', 'technique@media-solution.fr', 't.deslus@media-solution.fr']
-2025-10-11T21:02:12.142986075Z 2025-10-11 21:02:12,142 - INFO - app_render - app_render - <module> - 768 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
-2025-10-11T21:02:12.242541302Z [2025-10-11 21:02:12 +0000] [39] [ERROR] Exception in worker process
-2025-10-11T21:02:12.242576493Z Traceback (most recent call last):
-2025-10-11T21:02:12.242580493Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
-2025-10-11T21:02:12.242583793Z     worker.init_process()
-2025-10-11T21:02:12.242586203Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
-2025-10-11T21:02:12.242589133Z     self.load_wsgi()
-2025-10-11T21:02:12.242591413Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
-2025-10-11T21:02:12.242593593Z     self.wsgi = self.app.wsgi()
-2025-10-11T21:02:12.242595683Z                 ^^^^^^^^^^^^^^^
-2025-10-11T21:02:12.242598453Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
-2025-10-11T21:02:12.242600633Z     self.callable = self.load()
-2025-10-11T21:02:12.242602763Z                     ^^^^^^^^^^^
-2025-10-11T21:02:12.242604973Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
-2025-10-11T21:02:12.242607133Z     return self.load_wsgiapp()
-2025-10-11T21:02:12.242609243Z            ^^^^^^^^^^^^^^^^^^^
-2025-10-11T21:02:12.242611583Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
-2025-10-11T21:02:12.242613763Z     return util.import_app(self.app_uri)
-2025-10-11T21:02:12.242616143Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-2025-10-11T21:02:12.242619143Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
-2025-10-11T21:02:12.242621514Z     mod = importlib.import_module(module)
-2025-10-11T21:02:12.242623654Z           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-2025-10-11T21:02:12.242625914Z   File "/opt/render/project/python/Python-3.11.11/lib/python3.11/importlib/__init__.py", line 126, in import_module
-2025-10-11T21:02:12.242628774Z     return _bootstrap._gcd_import(name[level:], package, level)
-2025-10-11T21:02:12.242631124Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-2025-10-11T21:02:12.242633574Z   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
-2025-10-11T21:02:12.242650784Z   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
-2025-10-11T21:02:12.242653384Z   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
-2025-10-11T21:02:12.242655744Z   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
-2025-10-11T21:02:12.242658054Z   File "<frozen importlib._bootstrap_external>", line 940, in exec_module
-2025-10-11T21:02:12.242660344Z   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
-2025-10-11T21:02:12.242662534Z   File "/opt/render/project/src/app_render.py", line 3180, in <module>
-2025-10-11T21:02:12.242664764Z     @app.route('/api/get_processing_prefs', methods=['GET'])
-2025-10-11T21:02:12.242667104Z      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-2025-10-11T21:02:12.242669324Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/flask/sansio/scaffold.py", line 362, in decorator
-2025-10-11T21:02:12.242671554Z     self.add_url_rule(rule, endpoint, f, **options)
-2025-10-11T21:02:12.242673794Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/flask/sansio/scaffold.py", line 47, in wrapper_func
-2025-10-11T21:02:12.242675904Z     return f(self, *args, **kwargs)
-2025-10-11T21:02:12.242678334Z            ^^^^^^^^^^^^^^^^^^^^^^^^
-2025-10-11T21:02:12.242680514Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/flask/sansio/app.py", line 657, in add_url_rule
-2025-10-11T21:02:12.242682804Z     raise AssertionError(
-2025-10-11T21:02:12.242685054Z AssertionError: View function mapping is overwriting an existing endpoint function: api_get_processing_prefs
-2025-10-11T21:02:12.242752715Z [2025-10-11 21:02:12 +0000] [39] [INFO] Worker exiting (pid: 39)
-2025-10-11T21:02:12.745231661Z [2025-10-11 21:02:12 +0000] [38] [ERROR] Worker (pid:39) exited with code 3
-2025-10-11T21:02:12.745362763Z [2025-10-11 21:02:12 +0000] [38] [ERROR] Shutting down: Master
-2025-10-11T21:02:12.745383523Z [2025-10-11 21:02:12 +0000] [38] [ERROR] Reason: Worker failed to boot.
+
+2025-10-13T16:54:15.93667886Z ==> Deploying...
+2025-10-13T16:54:46.188175059Z ==> Running 'gunicorn --workers 1 --bind 0.0.0.0:$PORT app_render:app'
+2025-10-13T16:54:47.38296246Z [2025-10-13 16:54:47 +0000] [56] [INFO] Starting gunicorn 23.0.0
+2025-10-13T16:54:47.383392Z [2025-10-13 16:54:47 +0000] [56] [INFO] Listening at: http://0.0.0.0:10000 (56)
+2025-10-13T16:54:47.383578844Z [2025-10-13 16:54:47 +0000] [56] [INFO] Using worker: sync
+2025-10-13T16:54:47.389196262Z [2025-10-13 16:54:47 +0000] [57] [INFO] Booting worker with pid: 57
+2025-10-13T16:54:49.88917349Z 2025-10-13 16:54:49,888 - INFO - app_render - settings - log_configuration - 167 - CFG WEBHOOK: Custom webhook URL configured to: https://webhook.kidpixel.fr/index.php
+2025-10-13T16:54:49.889204491Z 2025-10-13 16:54:49,889 - INFO - app_render - settings - log_configuration - 168 - CFG MAKECOM: Make.com webhook URL configured to: https://hook.eu2.make.com/s98s0s735h23qakb9pp0id8c8hbhfqph
+2025-10-13T16:54:49.889213491Z 2025-10-13 16:54:49,889 - INFO - app_render - settings - log_configuration - 169 - CFG WEBHOOK: SSL verification = True
+2025-10-13T16:54:49.889295973Z 2025-10-13 16:54:49,889 - INFO - app_render - settings - log_configuration - 172 - CFG POLL: Monitoring emails from 6 senders: ['achats@media-solution.fr', 'camille.moine.pro@gmail.com', 'a.peault@media-solution.fr', 'v.lorent@media-solution.fr', 'technique@media-solution.fr', 't.deslus@media-solution.fr']
+2025-10-13T16:54:49.889359994Z 2025-10-13 16:54:49,889 - INFO - app_render - settings - log_configuration - 181 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
+2025-10-13T16:54:49.889383785Z 2025-10-13 16:54:49,889 - INFO - app_render - settings - log_configuration - 183 - CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP=False
+2025-10-13T16:54:49.889393505Z 2025-10-13 16:54:49,889 - INFO - app_render - settings - log_configuration - 184 - CFG DEDUP: DISABLE_EMAIL_ID_DEDUP=False
+2025-10-13T16:54:49.891213357Z 2025-10-13 16:54:49,891 - INFO - app_render - polling_config - initialize_polling_timezone - 41 - CFG POLL: Using timezone 'Europe/Paris' for polling schedule.
+2025-10-13T16:54:49.891266068Z 2025-10-13 16:54:49,891 - INFO - app_render - app_render - <module> - 206 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
+2025-10-13T16:54:56.814300601Z ==> Your service is live 🎉
+2025-10-13T16:54:56.846576449Z ==>
+2025-10-13T16:54:56.873913517Z ==> ///////////////////////////////////////////////////////////
+2025-10-13T16:54:56.900893816Z ==>
+2025-10-13T16:54:56.927221214Z ==> Available at your primary URL https://render-signal-server.onrender.com
+2025-10-13T16:54:56.953551173Z ==>
+2025-10-13T16:54:56.979835471Z ==> ///////////////////////////////////////////////////////////
+2025-10-13T16:55:56.677658481Z [2025-10-13 16:55:56 +0000] [55] [INFO] Handling signal: term
+2025-10-13T16:55:56.678224104Z [2025-10-13 16:55:56 +0000] [56] [INFO] Worker exiting (pid: 56)
+2025-10-13T16:55:57.078401279Z [2025-10-13 16:55:57 +0000] [55] [INFO] Shutting down: Master
+2025-10-13T16:59:59.867280947Z ==> Detected service running on port 10000
+2025-10-13T17:00:00.006158819Z ==> Docs on specifying a port: https://render.com/docs/web-services#port-binding

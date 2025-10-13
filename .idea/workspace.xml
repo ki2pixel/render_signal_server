@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="1a7fcc8b-f495-4c83-a7af-02aa6f2673d0" name="Changes" comment="" />
+    <list default="true" id="1a7fcc8b-f495-4c83-a7af-02aa6f2673d0" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/debug/log_render_1.log" beforeDir="false" afterPath="$PROJECT_DIR$/debug/log_render_1.log" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -28,6 +31,7 @@
   "keyToString": {
     "ModuleVcsDetector.initialDetectionPerformed": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.zencoder-patch-add-chat-message-raw-content": "true",
     "RunOnceActivity.zencoder-patch-chat-storage-migration": "true",
     "RunOnceActivity.zencoder-patch-generate-chat-message-id": "true",
