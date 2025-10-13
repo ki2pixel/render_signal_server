@@ -16,15 +16,26 @@ from datetime import datetime, timezone
 
 
 def check_new_emails_and_trigger_webhook():
-    """Delegate to legacy implementation in app_render.check_new_emails_and_trigger_webhook().
+    """Delegate to legacy implementation if available, otherwise no-op safely.
 
     Returns:
-        int: number of webhooks triggered (legacy return value)
+        int: number of webhooks triggered (0 on fallback)
     """
-    # Local import to avoid circular dependency at import time
-    from app_render import _legacy_check_new_emails_and_trigger_webhook as _legacy_check
-
-    return _legacy_check()
+    try:
+        # Local import to avoid circular dependency at import time
+        from app_render import _legacy_check_new_emails_and_trigger_webhook as _legacy_check
+        return _legacy_check()
+    except Exception as _e_legacy:
+        # Fallback: avoid crashing the polling thread if legacy impl is absent
+        try:
+            from app_render import app as _app
+            _app.logger.error(
+                "ORCHESTRATOR: Legacy implementation not found; skipping cycle (returns 0). Error: %s",
+                _e_legacy,
+            )
+        except Exception:
+            pass
+        return 0
 
 
 def compute_desabo_time_window(
