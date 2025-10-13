@@ -29,13 +29,28 @@ bp = Blueprint("api_admin", __name__, url_prefix="/api")
 def restart_server():
     try:
         restart_cmd = os.environ.get("RESTART_CMD", "sudo systemctl restart render-signal-server")
-        # Simple log via stdout is avoided; let caller app logger handle access logs
+        # Journaliser explicitement la demande de redémarrage pour traçabilité
+        try:
+            current_app.logger.info(
+                "ADMIN: Server restart requested by '%s' with command: %s",
+                getattr(current_user, "id", "unknown"),
+                restart_cmd,
+            )
+        except Exception:
+            pass
+
+        # Exécuter la commande en arrière-plan pour ne pas bloquer la requête HTTP
         subprocess.Popen(
             ["/bin/bash", "-lc", f"sleep 1; {restart_cmd}"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
+
+        try:
+            current_app.logger.info("ADMIN: Restart command scheduled (background).")
+        except Exception:
+            pass
         return jsonify({"success": True, "message": "Redémarrage planifié. L'application sera indisponible quelques secondes."}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
