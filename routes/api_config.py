@@ -132,6 +132,8 @@ def get_polling_config():
             "sender_of_interest_for_polling": settings.SENDER_LIST_FOR_POLLING,
             "vacation_start": polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None,
             "vacation_end": polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None,
+            # New global toggle (persisted)
+            "enable_polling": polling_config.get_enable_polling(True),
         }
         return jsonify({"success": True, "config": cfg}), 200
     except Exception:
@@ -253,6 +255,14 @@ def update_polling_config():
         if new_vac_start is not None and new_vac_end is not None and new_vac_start > new_vac_end:
             return jsonify({"success": False, "message": "vacation_start doit être <= vacation_end."}), 400
 
+        # Global enable (boolean)
+        new_enable_polling = None
+        if 'enable_polling' in payload:
+            try:
+                new_enable_polling = bool(payload.get('enable_polling'))
+            except Exception:
+                new_enable_polling = None
+
         # Mettre à jour les variables runtime du module polling_config
         if new_vac_start is not None:
             polling_config.POLLING_VACATION_START_DATE = new_vac_start
@@ -288,6 +298,8 @@ def update_polling_config():
             merged['vacation_start'] = polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None
         if 'vacation_end' in payload:
             merged['vacation_end'] = polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None
+        if new_enable_polling is not None:
+            merged['enable_polling'] = new_enable_polling
 
         try:
             POLLING_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -306,6 +318,7 @@ def update_polling_config():
                 "sender_of_interest_for_polling": merged.get('sender_of_interest_for_polling', settings.SENDER_LIST_FOR_POLLING),
                 "vacation_start": merged.get('vacation_start'),
                 "vacation_end": merged.get('vacation_end'),
+                "enable_polling": merged.get('enable_polling', polling_config.get_enable_polling(True)),
             },
             "message": "Configuration polling mise à jour. Un redémarrage peut être nécessaire pour prise en compte complète."
         }), 200

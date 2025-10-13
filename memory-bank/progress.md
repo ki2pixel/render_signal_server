@@ -35,6 +35,16 @@
 
 ## Terminé
 
+-   [2025-10-14 00:24:00] **Ajout de logs explicites pour le redémarrage serveur**
+    - Modification de `routes/api_admin.py` pour journaliser les demandes de redémarrage initiées depuis l'UI.
+    - Logs "ADMIN: Server restart requested..." et "scheduled (background)" via `current_app.logger.info()`.
+    - Amélioration de la traçabilité pour diagnostiquer les échecs (permissions sudoers, etc.).
+
+-   [2025-10-14 00:24:00] **Correction de la persistance des heures de polling dans l'UI**
+    - Modification de `routes/api_config.py` pour lire depuis `config.settings` (live) et mettre à jour dynamiquement après sauvegarde.
+    - Résolution du bug où les anciennes valeurs réapparaissaient après clic sur "💾 Enregistrer la Configuration Polling".
+    - Cohérence immédiate entre UI et backend sans redémarrage.
+
 -   [2025-10-13 22:50] **Configuration de la fenêtre horaire des webhooks**
     - Modification de `app_render.py` pour charger les valeurs par défaut des variables d'environnement `WEBHOOKS_TIME_START` et `WEBHOOKS_TIME_END`
     - Conservation de la possibilité de surcharge via l'interface utilisateur

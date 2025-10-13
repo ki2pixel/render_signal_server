@@ -7,7 +7,8 @@ Gère le timezone, la fenêtre horaire, et les paramètres de vacances.
 """
 
 from datetime import timezone, datetime, date
-from config.settings import POLLING_TIMEZONE_STR
+from config.settings import POLLING_TIMEZONE_STR, POLLING_CONFIG_FILE
+import json
 
 # Tentative d'import de ZoneInfo (Python 3.9+)
 try:
@@ -129,3 +130,42 @@ def is_polling_active(now_dt: datetime, active_days: list[int],
     is_active_time = start_hour <= now_dt.hour < end_hour
     
     return is_active_day and is_active_time
+
+
+# =============================================================================
+# GLOBAL ENABLE (BOOT-TIME POLLER SWITCH)
+# =============================================================================
+
+def get_enable_polling(default: bool = True) -> bool:
+    """Return whether polling is globally enabled from the persisted polling config.
+
+    Why: UI may disable polling at the configuration level (in addition to the
+    environment flag ENABLE_BACKGROUND_TASKS). This helper centralizes reading
+    of the persisted switch stored alongside other polling parameters in
+    POLLING_CONFIG_FILE.
+
+    Notes:
+    - If the file or the key is missing/invalid, we fall back to `default=True`
+      to preserve the existing behavior (polling enabled unless explicitly
+      disabled via UI).
+    """
+    try:
+        if not POLLING_CONFIG_FILE.exists():
+            return bool(default)
+        with open(POLLING_CONFIG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f) or {}
+        val = data.get("enable_polling")
+        # Accept truthy/falsy representations robustly
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, (int, float)):
+            return bool(val)
+        if isinstance(val, str):
+            s = val.strip().lower()
+            if s in {"1", "true", "yes", "y", "on"}:
+                return True
+            if s in {"0", "false", "no", "n", "off"}:
+                return False
+        return bool(default)
+    except Exception:
+        return bool(default)

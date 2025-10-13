@@ -2,6 +2,28 @@
 
 Ce document enregistre les décisions techniques et architecturales importantes prises au cours du projet.
 
+- **[2025-10-14 00:24:00] - Ajout de logs explicites sur le redémarrage serveur via l'interface utilisateur**
+  - **Décision** : Ajouter des logs côté serveur pour tracer les demandes de redémarrage initiées depuis le bouton "🔄 Redémarrer le serveur" dans `dashboard.html`, afin de confirmer l'exécution sans bruit.
+  - **Implémentation** :
+    - Modification de `routes/api_admin.py` dans `restart_server()` pour journaliser la demande et la planification.
+    - Logs via `current_app.logger.info()` : "ADMIN: Server restart requested by '%s' with command: %s" et "ADMIN: Restart command scheduled (background).".
+    - Conservation du comportement non bloquant (subprocess.Popen avec sleep 1).
+  - **Raison** : Améliorer la traçabilité des actions administratives critiques, permettant de diagnostiquer les échecs de redémarrage (ex: permissions sudoers, commande système).
+  - **Impacts** :
+    - Ligne de log visible dans les fichiers Flask confirmant la réception de la demande.
+    - Aucun changement fonctionnel côté UI ou comportement serveur.
+
+- **[2025-10-14 00:24:00] - Correction de la persistance des heures de polling dans l'interface utilisateur**
+  - **Décision** : Résoudre le bug où les modifications de `POLLING_ACTIVE_START_HOUR` et `POLLING_ACTIVE_END_HOUR` via l'UI ne persistaient pas après sauvegarde, réaffichant les anciennes valeurs.
+  - **Implémentation** :
+    - Modification de `routes/api_config.py` pour lire les valeurs depuis `config.settings` (live) dans `get_polling_config()`.
+    - Mise à jour dynamique de `config.settings` dans `update_polling_config()` après validation, permettant la synchronisation runtime sans redémarrage.
+    - Conservation de la persistance dans `debug/polling_config.json`.
+  - **Raison** : L'endpoint GET renvoyait des constantes importées figées au démarrage, masquant les mises à jour en runtime. L'UI rechargeait les anciennes valeurs.
+  - **Impacts** :
+    - Les changements d'heures de polling sont immédiatement visibles après sauvegarde sans rechargement de page.
+    - Cohérence entre UI, API et logique de polling en arrière-plan.
+
 - **[2025-10-13 22:50] - Chargement des variables d'environnement pour la fenêtre horaire des webhooks**
   - **Décision** : Modifier l'initialisation de la fenêtre horaire des webhooks pour charger les valeurs par défaut depuis les variables d'environnement `WEBHOOKS_TIME_START` et `WEBHOOKS_TIME_END` au démarrage, tout en conservant la possibilité de les remplacer via l'interface utilisateur.
   - **Implémentation** :

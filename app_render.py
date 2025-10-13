@@ -403,7 +403,10 @@ def background_email_poller():
 
 # --- Start Background Tasks (Email Poller) ---
 try:
-    if getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
+    # Start background poller only if both the environment flag and the persisted
+    # UI-controlled switch are enabled. This avoids unexpected background work
+    # when the operator intentionally disabled polling from the dashboard.
+    if getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and polling_config.get_enable_polling(True):
         lock_path = getattr(settings, "BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock")
         try:
             if acquire_singleton_lock(lock_path):
@@ -423,9 +426,15 @@ try:
                 f"BG_POLLER: Failed to start background thread: {e}", exc_info=True
             )
     else:
-        app.logger.info(
-            "BG_POLLER: ENABLE_BACKGROUND_TASKS is false. Background poller not started."
-        )
+        # Clarify which condition prevented starting the poller
+        if not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
+            app.logger.info(
+                "BG_POLLER: ENABLE_BACKGROUND_TASKS is false. Background poller not started."
+            )
+        elif not polling_config.get_enable_polling(True):
+            app.logger.info(
+                "BG_POLLER: UI 'enable_polling' flag is false. Background poller not started."
+            )
 except Exception:
     # Defensive: never block app startup because of background thread wiring
     pass

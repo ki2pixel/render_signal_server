@@ -1097,6 +1097,9 @@ async function loadPollingConfig() {
             if (cfg.vacation_start) document.getElementById('vacationStart').value = cfg.vacation_start;
             if (cfg.vacation_end) document.getElementById('vacationEnd').value = cfg.vacation_end;
             updateVacationStatus();
+            // Global enable toggle
+            const gp = document.getElementById('enableGlobalPolling');
+            if (gp) gp.checked = !!cfg.enable_polling;
         }
     } catch (e) {
         console.error('Erreur chargement config polling:', e);
@@ -1112,6 +1115,7 @@ async function savePollingConfig() {
     const senders = collectSenderInputs();
     const vacStart = document.getElementById('vacationStart').value.trim();
     const vacEnd = document.getElementById('vacationEnd').value.trim();
+    const enableGlobalPolling = !!document.getElementById('enableGlobalPolling')?.checked;
 
     const payload = {};
     // Toujours envoyer la liste (éventuellement vide) pour refléter l'état exact des cases cochées
@@ -1124,6 +1128,8 @@ async function savePollingConfig() {
     // Dates ISO (ou null)
     payload.vacation_start = vacStart || null;
     payload.vacation_end = vacEnd || null;
+    // New global toggle persisted with polling config
+    payload.enable_polling = enableGlobalPolling;
 
     try {
         btn.disabled = true;
