@@ -288,7 +288,7 @@ async function exportFullConfiguration() {
     try {
         // Gather server-side configs
         const [webhookCfgRes, pollingCfgRes, timeWinRes] = await Promise.all([
-            fetch('/api/get_webhook_config'),
+            fetch('/api/webhooks/config'),
             fetch('/api/get_polling_config'),
             fetch('/api/get_webhook_time_window')
         ]);
@@ -352,7 +352,7 @@ async function applyImportedServerConfig(obj) {
         if (typeof cfg.presence_flag === 'boolean') payload.presence_flag = cfg.presence_flag;
         if (typeof cfg.webhook_ssl_verify === 'boolean') payload.webhook_ssl_verify = cfg.webhook_ssl_verify;
         if (Object.keys(payload).length) {
-            await fetch('/api/update_webhook_config', {
+            await fetch('/api/webhooks/config', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
             });
             await loadWebhookConfig();
@@ -608,7 +608,7 @@ async function saveTimeWindow() {
 // Section 2: Contrôle du polling
 async function loadPollingStatus() {
     try {
-        const res = await fetch('/api/get_webhook_config');
+        const res = await fetch('/api/webhooks/config');
         const data = await res.json();
         
         if (data.success) {
@@ -649,7 +649,7 @@ async function togglePolling() {
 // Section 3: Configuration des webhooks
 async function loadWebhookConfig() {
     try {
-        const res = await fetch('/api/get_webhook_config');
+        const res = await fetch('/api/webhooks/config');
         const data = await res.json();
         
         if (data.success) {
@@ -693,7 +693,7 @@ async function saveWebhookConfig() {
     payload.webhook_ssl_verify = document.getElementById('sslVerifyToggle').checked;
     
     try {
-        const res = await fetch('/api/update_webhook_config', {
+        const res = await fetch('/api/webhooks/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
