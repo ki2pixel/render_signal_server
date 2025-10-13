@@ -296,7 +296,6 @@ try:
             pass
         # IMPORTANT: refresh module-level aliases so the polling thread uses updated values
         try:
-            global POLLING_ACTIVE_DAYS, POLLING_ACTIVE_START_HOUR, POLLING_ACTIVE_END_HOUR, SENDER_LIST_FOR_POLLING, ENABLE_SUBJECT_GROUP_DEDUP
             POLLING_ACTIVE_DAYS = settings.POLLING_ACTIVE_DAYS
             POLLING_ACTIVE_START_HOUR = settings.POLLING_ACTIVE_START_HOUR
             POLLING_ACTIVE_END_HOUR = settings.POLLING_ACTIVE_END_HOUR

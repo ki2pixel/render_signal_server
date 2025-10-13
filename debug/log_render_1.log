@@ -1,55 +1,50 @@
-2025-10-13T23:05:34.711688761Z 2025-10-13 23:05:34,711 - INFO - app_render - settings - log_configuration - 191 - CFG DEDUP: DISABLE_EMAIL_ID_DEDUP=False
-2025-10-13T23:05:34.711692331Z 2025-10-13 23:05:34,711 - INFO - app_render - settings - log_configuration - 194 - CFG BG: ENABLE_BACKGROUND_TASKS=True
-2025-10-13T23:05:34.711696012Z 2025-10-13 23:05:34,711 - INFO - app_render - settings - log_configuration - 195 - CFG BG: BG_POLLER_LOCK_FILE=/tmp/render_signal_server_email_poller.lock
-2025-10-13T23:05:34.713454962Z 2025-10-13 23:05:34,713 - INFO - app_render - polling_config - initialize_polling_timezone - 42 - CFG POLL: Using timezone 'Europe/Paris' for polling schedule.
-2025-10-13T23:05:34.713537167Z 2025-10-13 23:05:34,713 - INFO - app_render - app_render - <module> - 206 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
-2025-10-13T23:05:34.713877037Z 2025-10-13 23:05:34,713 - INFO - app_render - app_render - <module> - 465 - CFG BG: enable_polling(UI)=True; ENABLE_BACKGROUND_TASKS(env)=True
-2025-10-13T23:05:34.714074648Z 2025-10-13 23:05:34,713 - INFO - app_render - app_render - <module> - 477 - BG_POLLER: Singleton lock acquired on /tmp/render_signal_server_email_poller.lock. Starting background thread.
-2025-10-13T23:05:34.714445579Z 2025-10-13 23:05:34,714 - INFO - app_render - polling_thread - background_email_poller_loop - 44 - BG_POLLER: Email polling loop started. TZ for schedule is configured.
-2025-10-13T23:05:34.714516984Z 2025-10-13 23:05:34,714 - INFO - app_render - polling_thread - background_email_poller_loop - 83 - BG_POLLER: Outside active period. Sleeping.
-2025-10-13T23:05:40.034558022Z ==> Your service is live 🎉
-2025-10-13T23:05:40.06059562Z ==>
-2025-10-13T23:05:40.083097699Z ==> ///////////////////////////////////////////////////////////
-2025-10-13T23:05:40.105525987Z ==>
-2025-10-13T23:05:40.129195286Z ==> Available at your primary URL https://render-signal-server.onrender.com
-2025-10-13T23:05:40.152079064Z ==>
-2025-10-13T23:05:40.174345542Z ==> ///////////////////////////////////////////////////////////
-2025-10-13T23:06:19.008549205Z 2025-10-13 23:06:19,008 - INFO - app_render - api_admin - restart_server - 34 - ADMIN: Server restart requested by 'admin' with command: sudo systemctl restart render-signal-server
-2025-10-13T23:06:19.009020862Z 2025-10-13 23:06:19,008 - INFO - app_render - api_admin - restart_server - 51 - ADMIN: Restart command scheduled (background).
-2025-10-13T23:06:39.929603653Z [2025-10-13 23:06:39 +0000] [55] [INFO] Handling signal: term
-2025-10-13T23:06:39.92997496Z [2025-10-13 23:06:39 +0000] [56] [INFO] Worker exiting (pid: 56)
-2025-10-13T23:06:40.479493422Z [2025-10-13 23:06:40 +0000] [55] [INFO] Shutting down: Master
-2025-10-13T23:11:04.65072476Z ==> Deploying...
-2025-10-13T23:11:34.806060643Z ==> Running 'gunicorn --workers 1 --bind 0.0.0.0:$PORT app_render:app'
-2025-10-13T23:11:35.610000069Z [2025-10-13 23:11:35 +0000] [55] [INFO] Starting gunicorn 23.0.0
-2025-10-13T23:11:35.610274091Z [2025-10-13 23:11:35 +0000] [55] [INFO] Listening at: http://0.0.0.0:10000 (55)
-2025-10-13T23:11:35.610317194Z [2025-10-13 23:11:35 +0000] [55] [INFO] Using worker: sync
-2025-10-13T23:11:35.613235237Z [2025-10-13 23:11:35 +0000] [56] [INFO] Booting worker with pid: 56
-2025-10-13T23:11:41.906534593Z 2025-10-13 23:11:41,906 - INFO - app_render - settings - log_configuration - 174 - CFG WEBHOOK: Custom webhook URL configured to: https://webhook.kidpixel.fr/index.php
-2025-10-13T23:11:41.906571307Z 2025-10-13 23:11:41,906 - INFO - app_render - settings - log_configuration - 175 - CFG MAKECOM: Make.com webhook URL configured to: https://hook.eu2.make.com/s98s0s735h23qakb9pp0id8c8hbhfqph
-2025-10-13T23:11:41.906578577Z 2025-10-13 23:11:41,906 - INFO - app_render - settings - log_configuration - 176 - CFG WEBHOOK: SSL verification = True
-2025-10-13T23:11:41.906668644Z 2025-10-13 23:11:41,906 - INFO - app_render - settings - log_configuration - 179 - CFG POLL: Monitoring emails from 6 senders: ['achats@media-solution.fr', 'camille.moine.pro@gmail.com', 'a.peault@media-solution.fr', 'v.lorent@media-solution.fr', 'technique@media-solution.fr', 't.deslus@media-solution.fr']
-2025-10-13T23:11:41.906718148Z 2025-10-13 23:11:41,906 - INFO - app_render - settings - log_configuration - 188 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
-2025-10-13T23:11:41.906800555Z 2025-10-13 23:11:41,906 - INFO - app_render - settings - log_configuration - 190 - CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP=False
-2025-10-13T23:11:41.906807085Z 2025-10-13 23:11:41,906 - INFO - app_render - settings - log_configuration - 191 - CFG DEDUP: DISABLE_EMAIL_ID_DEDUP=False
-2025-10-13T23:11:41.906811746Z 2025-10-13 23:11:41,906 - INFO - app_render - settings - log_configuration - 194 - CFG BG: ENABLE_BACKGROUND_TASKS=True
-2025-10-13T23:11:41.906819346Z 2025-10-13 23:11:41,906 - INFO - app_render - settings - log_configuration - 195 - CFG BG: BG_POLLER_LOCK_FILE=/tmp/render_signal_server_email_poller.lock
-2025-10-13T23:11:41.909067166Z 2025-10-13 23:11:41,908 - INFO - app_render - polling_config - initialize_polling_timezone - 42 - CFG POLL: Using timezone 'Europe/Paris' for polling schedule.
-2025-10-13T23:11:41.909076496Z 2025-10-13 23:11:41,908 - INFO - app_render - app_render - <module> - 206 - CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: 'rnd_P...')
-2025-10-13T23:11:41.909451956Z 2025-10-13 23:11:41,909 - INFO - app_render - app_render - <module> - 465 - CFG BG: enable_polling(UI)=True; ENABLE_BACKGROUND_TASKS(env)=True
-2025-10-13T23:11:41.909460977Z 2025-10-13 23:11:41,909 - INFO - app_render - app_render - <module> - 477 - BG_POLLER: Singleton lock acquired on /tmp/render_signal_server_email_poller.lock. Starting background thread.
-2025-10-13T23:11:41.910042764Z 2025-10-13 23:11:41,909 - INFO - app_render - polling_thread - background_email_poller_loop - 44 - BG_POLLER: Email polling loop started. TZ for schedule is configured.
-2025-10-13T23:11:41.910052994Z 2025-10-13 23:11:41,909 - INFO - app_render - polling_thread - background_email_poller_loop - 85 - BG_POLLER: Outside active period. Sleeping.
-2025-10-13T23:11:41.910059145Z 2025-10-13 23:11:41,909 - INFO - app_render - polling_thread - background_email_poller_loop - 88 - BG_POLLER: DIAG outside period — now=2025-10-14T01:11:41.909804+02:00, active_days=[0, 1, 2, 3, 4, 5], start_hour=9, end_hour=21, is_active_day=True, is_active_time=False
-2025-10-13T23:11:45.744034996Z ==> Your service is live 🎉
-2025-10-13T23:11:45.773154494Z ==>
-2025-10-13T23:11:45.798017282Z ==> ///////////////////////////////////////////////////////////
-2025-10-13T23:11:45.821690931Z ==>
-2025-10-13T23:11:45.851228199Z ==> Available at your primary URL https://render-signal-server.onrender.com
-2025-10-13T23:11:45.875088277Z ==>
-2025-10-13T23:11:45.898869025Z ==> ///////////////////////////////////////////////////////////
-2025-10-13T23:12:45.338060711Z [2025-10-13 23:12:45 +0000] [56] [INFO] Handling signal: term
-2025-10-13T23:12:45.338494676Z [2025-10-13 23:12:45 +0000] [57] [INFO] Worker exiting (pid: 57)
-2025-10-13T23:12:45.939059392Z [2025-10-13 23:12:45 +0000] [56] [INFO] Shutting down: Master
-2025-10-13T23:12:51.437352917Z 2025-10-13 23:12:51,437 - INFO - app_render - api_admin - restart_server - 34 - ADMIN: Server restart requested by 'admin' with command: sudo systemctl restart render-signal-server
-2025-10-13T23:12:51.438305053Z 2025-10-13 23:12:51,437 - INFO - app_render - api_admin - restart_server - 51 - ADMIN: Restart command scheduled (background).
+2025-10-13T23:21:53.411843902Z [2025-10-13 23:21:53 +0000] [55] [ERROR] Worker (pid:56) exited with code 3
+2025-10-13T23:21:53.412138758Z [2025-10-13 23:21:53 +0000] [55] [ERROR] Shutting down: Master
+2025-10-13T23:21:53.412178569Z [2025-10-13 23:21:53 +0000] [55] [ERROR] Reason: Worker failed to boot.
+2025-10-13T23:21:59.864613645Z ==> Exited with status 3
+2025-10-13T23:21:59.880578684Z ==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
+2025-10-13T23:22:04.254531824Z ==> Running 'gunicorn --workers 1 --bind 0.0.0.0:$PORT app_render:app'
+2025-10-13T23:22:05.051949852Z [2025-10-13 23:22:05 +0000] [43] [INFO] Starting gunicorn 23.0.0
+2025-10-13T23:22:05.052233757Z [2025-10-13 23:22:05 +0000] [43] [INFO] Listening at: http://0.0.0.0:10000 (43)
+2025-10-13T23:22:05.052254708Z [2025-10-13 23:22:05 +0000] [43] [INFO] Using worker: sync
+2025-10-13T23:22:05.055014199Z [2025-10-13 23:22:05 +0000] [44] [INFO] Booting worker with pid: 44
+2025-10-13T23:22:05.147826514Z [2025-10-13 23:22:05 +0000] [44] [ERROR] Exception in worker process
+2025-10-13T23:22:05.147849914Z Traceback (most recent call last):
+2025-10-13T23:22:05.147853354Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/gunicorn/arbiter.py", line 608, in spawn_worker
+2025-10-13T23:22:05.147857015Z     worker.init_process()
+2025-10-13T23:22:05.147859135Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/gunicorn/workers/base.py", line 135, in init_process
+2025-10-13T23:22:05.147861404Z     self.load_wsgi()
+2025-10-13T23:22:05.147863504Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/gunicorn/workers/base.py", line 147, in load_wsgi
+2025-10-13T23:22:05.147865235Z     self.wsgi = self.app.wsgi()
+2025-10-13T23:22:05.147866885Z                 ^^^^^^^^^^^^^^^
+2025-10-13T23:22:05.147869045Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/gunicorn/app/base.py", line 66, in wsgi
+2025-10-13T23:22:05.147870745Z     self.callable = self.load()
+2025-10-13T23:22:05.147872575Z                     ^^^^^^^^^^^
+2025-10-13T23:22:05.147874205Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+2025-10-13T23:22:05.147875915Z     return self.load_wsgiapp()
+2025-10-13T23:22:05.147877595Z            ^^^^^^^^^^^^^^^^^^^
+2025-10-13T23:22:05.147880515Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+2025-10-13T23:22:05.147883515Z     return util.import_app(self.app_uri)
+2025-10-13T23:22:05.147886245Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-10-13T23:22:05.147888685Z   File "/opt/render/project/src/.venv/lib/python3.11/site-packages/gunicorn/util.py", line 370, in import_app
+2025-10-13T23:22:05.147891635Z     mod = importlib.import_module(module)
+2025-10-13T23:22:05.147894135Z           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-10-13T23:22:05.147896815Z   File "/opt/render/project/python/Python-3.11.11/lib/python3.11/importlib/__init__.py", line 126, in import_module
+2025-10-13T23:22:05.147900565Z     return _bootstrap._gcd_import(name[level:], package, level)
+2025-10-13T23:22:05.147903265Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-10-13T23:22:05.147906215Z   File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+2025-10-13T23:22:05.147908655Z   File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+2025-10-13T23:22:05.147910845Z   File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+2025-10-13T23:22:05.147912596Z   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+2025-10-13T23:22:05.147914265Z   File "<frozen importlib._bootstrap_external>", line 936, in exec_module
+2025-10-13T23:22:05.147915905Z   File "<frozen importlib._bootstrap_external>", line 1074, in get_code
+2025-10-13T23:22:05.147917596Z   File "<frozen importlib._bootstrap_external>", line 1004, in source_to_code
+2025-10-13T23:22:05.147919705Z   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+2025-10-13T23:22:05.147921406Z   File "/opt/render/project/src/app_render.py", line 299
+2025-10-13T23:22:05.147923806Z     global POLLING_ACTIVE_DAYS, POLLING_ACTIVE_START_HOUR, POLLING_ACTIVE_END_HOUR, SENDER_LIST_FOR_POLLING, ENABLE_SUBJECT_GROUP_DEDUP
+2025-10-13T23:22:05.147943386Z     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-10-13T23:22:05.147945266Z SyntaxError: name 'POLLING_ACTIVE_DAYS' is assigned to before global declaration
+2025-10-13T23:22:05.147956426Z [2025-10-13 23:22:05 +0000] [44] [INFO] Worker exiting (pid: 44)
+2025-10-13T23:22:05.346275671Z [2025-10-13 23:22:05 +0000] [43] [ERROR] Worker (pid:44) exited with code 3
+2025-10-13T23:22:05.346610108Z [2025-10-13 23:22:05 +0000] [43] [ERROR] Shutting down: Master
+2025-10-13T23:22:05.346641438Z [2025-10-13 23:22:05 +0000] [43] [ERROR] Reason: Worker failed to boot.

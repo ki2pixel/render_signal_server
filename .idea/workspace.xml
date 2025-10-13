@@ -4,9 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="1a7fcc8b-f495-4c83-a7af-02aa6f2673d0" name="Changes" comment="-11">
-      <change beforePath="$PROJECT_DIR$/debug/log_render_1.log" beforeDir="false" afterPath="$PROJECT_DIR$/debug/log_render_1.log" afterDir="false" />
-    </list>
+    <list default="true" id="1a7fcc8b-f495-4c83-a7af-02aa6f2673d0" name="Changes" comment="-13" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -230,7 +228,23 @@
       <option name="project" value="LOCAL" />
       <updated>1760396568116</updated>
     </task>
-    <option name="localTasksCounter" value="14" />
+    <task id="LOCAL-00014" summary="-12">
+      <option name="closed" value="true" />
+      <created>1760396991786</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1760396991786</updated>
+    </task>
+    <task id="LOCAL-00015" summary="-13">
+      <option name="closed" value="true" />
+      <created>1760397491184</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1760397491184</updated>
+    </task>
+    <option name="localTasksCounter" value="16" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -248,7 +262,9 @@
     <MESSAGE value="-9" />
     <MESSAGE value="-10" />
     <MESSAGE value="-11" />
-    <option name="LAST_COMMIT_MESSAGE" value="-11" />
+    <MESSAGE value="-12" />
+    <MESSAGE value="-13" />
+    <option name="LAST_COMMIT_MESSAGE" value="-13" />
   </component>
   <component name="ai.zencoder.plugin.mcp">
     <option name="internalToolsState" value="{&quot;fetch_webpage&quot;:true,&quot;web_search&quot;:true,&quot;ExecuteShellCommand&quot;:true,&quot;file_search&quot;:true,&quot;str_replace_editor&quot;:true,&quot;list_resources&quot;:true,&quot;FileDiagnosticsTool&quot;:true,&quot;fulltext_search&quot;:true,&quot;read_resource&quot;:true,&quot;RequirementsTool&quot;:true}" />
