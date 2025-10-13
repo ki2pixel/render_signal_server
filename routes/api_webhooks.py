@@ -76,12 +76,6 @@ def get_webhook_config():
         os.environ.get("WEBHOOK_SSL_VERIFY", "true").strip().lower()
         in ("1", "true", "yes", "on"),
     )
-    polling_enabled = persisted.get(
-        "polling_enabled",
-        os.environ.get("ENABLE_BACKGROUND_TASKS", "0").strip().lower()
-        in ("1", "true", "yes", "on"),
-    )
-
     config = {
         "webhook_url": webhook_url or _mask_url(webhook_url),
         "recadrage_webhook_url": recadrage_url or _mask_url(recadrage_url),
@@ -90,7 +84,6 @@ def get_webhook_config():
         "presence_false_url": presence_false_url or _mask_url(presence_false_url),
         "autorepondeur_webhook_url": autorepondeur_url or _mask_url(autorepondeur_url),
         "webhook_ssl_verify": webhook_ssl_verify,
-        "polling_enabled": polling_enabled,
     }
     return jsonify({"success": True, "config": config}), 200
 
@@ -145,6 +138,13 @@ def update_webhook_config():
 
     if "webhook_ssl_verify" in payload:
         config["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
+
+    # Sanitize: drop deprecated field no longer used by the UI/backend
+    if "polling_enabled" in config:
+        try:
+            del config["polling_enabled"]
+        except Exception:
+            pass
 
     if not _save_webhook_config(config):
         return (

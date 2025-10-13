@@ -11,7 +11,7 @@ L'API est structurée en blueprints Flask pour une meilleure organisation et mai
 | `health` | `routes/health.py` | Vérification de l'état du service | `GET /health` |
 | `dashboard` | `routes/dashboard.py` | Interface utilisateur | `GET /`, `/login`, `/logout` |
 | `api_webhooks` | `routes/api_webhooks.py` | Gestion des webhooks | `GET/POST /api/webhooks/config` |
-| `api_polling` | `routes/api_polling.py` | Contrôle du polling | `POST /api/polling/toggle` |
+| `api_polling` | `routes/api_polling.py` | Réservé pour extensions futures | — |
 | `api_processing` | `routes/api_processing.py` | Préférences de traitement | `GET/POST /api/processing_prefs` |
 | `api_logs` | `routes/api_logs.py` | Consultation des logs | `GET /api/webhook_logs` |
 | `api_test` | `routes/api_test.py` | Endpoints de test (CORS) | `GET /api/test/*` |
@@ -143,13 +143,27 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
     - 400: `{ "success": false, "message": "..." }` (validation échouée)
     - 500: `{ "success": false, "message": "..." }` (erreur interne)
 
-### Contrôle du polling
+### Contrôle du polling (via configuration)
 
-- `POST /api/polling/toggle` (protégé)
-  - Active ou désactive le polling IMAP dynamiquement
-  - Corps JSON: `{ "enable": true|false }`
-  - Note: Nécessite un redémarrage du serveur pour prise en compte complète
-  - Réponse: `{ "success": true, "message": "...", "polling_enabled": bool }`
+- `GET /api/get_polling_config` (protégé)
+  - Retourne la configuration persistée côté serveur, incluant le flag `enable_polling`.
+  - Réponse: `{ "success": true, "config": { ..., "enable_polling": bool } }`
+
+- `POST /api/update_polling_config` (protégé)
+  - Met à jour la configuration de polling. Champs optionnels (merge partiel), dont `enable_polling` (bool):
+    - `active_days`: array d'entiers 0..6 (0=lundi)
+    - `active_start_hour`: int 0..23
+    - `active_end_hour`: int 0..23
+    - `enable_subject_group_dedup`: bool
+    - `sender_of_interest_for_polling`: array d'emails (validés/normalisés)
+    - `vacation_start`: `YYYY-MM-DD` | null
+    - `vacation_end`: `YYYY-MM-DD` | null
+    - `enable_polling`: bool
+  - Réponses:
+    - 200: `{ "success": true, "message": "Configuration polling enregistrée.", "config": { ..., "enable_polling": bool } }`
+  - Notes:
+    - Le thread de polling au démarrage est conditionné par: `ENABLE_BACKGROUND_TASKS` (env) ET `enable_polling` (config persistée).
+    - Un redémarrage du service est nécessaire pour (dés)activer effectivement le thread de fond.
 
 ### Configuration du Polling (jours/heures/déduplication + vacances)
 
@@ -181,10 +195,10 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
 
 ## Endpoints legacy (dépréciés ou supprimés)
 
-- Supprimés lors de l'Étape 5 (refactoring routes → blueprints):
+- Supprimés lors du refactoring (routes → blueprints) puis consolidation polling:
   - `GET /api/get_webhook_config` → remplacé par `GET /api/webhooks/config`
   - `POST /api/update_webhook_config` → remplacé par `POST /api/webhooks/config`
-  - `POST /api/toggle_polling` → remplacé par `POST /api/polling/toggle`
+  - `POST /api/toggle_polling` et `POST /api/polling/toggle` → supprimés. Le contrôle du polling passe par `POST /api/update_polling_config` avec le champ `enable_polling`.
 
 - Dépréciés (télécommande):
   - `GET /api/get_local_status`

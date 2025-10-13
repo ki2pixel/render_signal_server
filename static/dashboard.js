@@ -62,7 +62,7 @@ window.addEventListener('DOMContentLoaded', () => {
     loadProcessingPrefsFromServer();
     computeAndRenderMetrics();
     loadPollingConfig();
-    loadPollingStatus();
+    // loadPollingStatus removed with old toggle; kept only config-based control
     // New: runtime flags
     loadRuntimeFlags();
 
@@ -907,7 +907,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Charger les données initiales (protégées)
     try { console.log('[init] loadTimeWindow'); loadTimeWindow(); } catch (e) { console.error('[init] loadTimeWindow failed', e); }
-    try { console.log('[init] loadPollingStatus'); loadPollingStatus(); } catch (e) { console.error('[init] loadPollingStatus failed', e); }
+    // old loadPollingStatus removed
     try { console.log('[init] loadWebhookConfig'); loadWebhookConfig(); } catch (e) { console.error('[init] loadWebhookConfig failed', e); }
     try { console.log('[init] loadPollingConfig'); loadPollingConfig(); } catch (e) { console.error('[init] loadPollingConfig failed', e); }
     try { console.log('[init] loadWebhookLogs'); loadWebhookLogs(); } catch (e) { console.error('[init] loadWebhookLogs failed', e); }
@@ -915,8 +915,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Attacher les gestionnaires d'événements (avec garde)
     const elSaveTimeWindow = document.getElementById('saveTimeWindowBtn');
     elSaveTimeWindow && elSaveTimeWindow.addEventListener('click', saveTimeWindow);
-    const elTogglePolling = document.getElementById('togglePollingBtn');
-    elTogglePolling && elTogglePolling.addEventListener('click', togglePolling);
+    // old togglePollingBtn removed
     const elSaveConfig = document.getElementById('saveConfigBtn');
     elSaveConfig && elSaveConfig.addEventListener('click', saveWebhookConfig);
     const elRefreshLogs = document.getElementById('refreshLogsBtn');
