@@ -403,6 +403,13 @@ def background_email_poller():
 
 # --- Start Background Tasks (Email Poller) ---
 try:
+    # Log effective config before starting background tasks
+    try:
+        app.logger.info(
+            f"CFG BG: enable_polling(UI)={polling_config.get_enable_polling(True)}; ENABLE_BACKGROUND_TASKS(env)={getattr(settings, 'ENABLE_BACKGROUND_TASKS', False)}"
+        )
+    except Exception:
+        pass
     # Start background poller only if both the environment flag and the persisted
     # UI-controlled switch are enabled. This avoids unexpected background work
     # when the operator intentionally disabled polling from the dashboard.
