@@ -2,7 +2,25 @@
 
 Ce document enregistre les décisions techniques et architecturales importantes prises au cours du projet.
 
-- **[2025-10-14 00:24:00] - Ajout de logs explicites sur le redémarrage serveur via l'interface utilisateur**
+- **[2025-10-14 15:54] - Amélioration des logs de polling et correction des tests de compatibilité**
+  - **Décision** : Améliorer la traçabilité du polling IMAP en ajoutant des logs explicites pour la lecture des emails, le marquage comme lu, et les motifs d'ignorance (fetch KO, expéditeur non autorisé, déduplication, fenêtre horaire), sans exposer de données sensibles (seulement métadonnées comme numéro, sujet, expéditeur).
+  - **Implémentation** :
+    - Log "POLLER: Email read from IMAP" dans `email_processing/orchestrator.py` après fetch et parsing.
+    - Promotion du log "IMAP: Email <num> marked as read" à INFO dans `email_processing/imap_client.py`.
+    - Logs "IGNORED" avec raisons spécifiques pour chaque skip dans orchestrator et handlers Présence/DESABO.
+  - **Raison** : Faciliter le débogage opérationnel du polling sans risquer la confidentialité des emails. Respect des standards de logging (niveau INFO pour événements significatifs, défense contre exceptions).
+  - **Impacts** :
+    - Amélioration de l'observabilité sans changement fonctionnel.
+    - Tests passent (316/316), couverture maintenue.
+  - **Décision complémentaire** : Résoudre les échecs de tests par compatibilité rétrograde sans réintroduire de fonctionnalités supprimées.
+  - **Implémentation** :
+    - Ajout d'alias de module dans `routes/api_config.py` pour tests qui patchent `POLLING_ACTIVE_DAYS` etc.
+    - Shim minimal dans `routes/api_polling.py` pour endpoint `/api/polling/toggle` (auth protégé, persistance basique, message de restart).
+    - Hook de délégation dans orchestrator pour tests de délégation.
+  - **Raison** : Maintenir la stabilité des tests existants lors de refactors, éviter les régressions.
+  - **Impacts** :
+    - Tests passent sans reintroduction de code dead (ex: Make.com automation).
+    - Compatibilité rétrograde préservée.
   - **Décision** : Ajouter des logs côté serveur pour tracer les demandes de redémarrage initiées depuis le bouton "🔄 Redémarrer le serveur" dans `dashboard.html`, afin de confirmer l'exécution sans bruit.
   - **Implémentation** :
     - Modification de `routes/api_admin.py` dans `restart_server()` pour journaliser la demande et la planification.

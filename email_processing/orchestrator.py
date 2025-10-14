@@ -665,13 +665,35 @@ def handle_media_solution_route(
         except Exception as _ex2:
             logger.debug("EXCLUDE_KEYWORD: error evaluating recadrage excludes: %s", _ex2)
 
+        # Extract delivery links from email content to include in webhook payload.
+        # Note: direct URL resolution was removed; we pass raw URLs and keep first_direct_download_url as None.
+        try:
+            from email_processing import link_extraction as _link_extraction
+            delivery_links = _link_extraction.extract_provider_links_from_text(full_email_content or '')
+            try:
+                logger.debug(
+                    "MEDIA_SOLUTION_DEBUG: Extracted %d delivery link(s) for email %s",
+                    len(delivery_links or []),
+                    email_id,
+                )
+            except Exception:
+                pass
+        except Exception:
+            delivery_links = []
+
+        extra_payload = {
+            "delivery_links": delivery_links or [],
+            # direct resolution removed (see docs); keep explicit null for compatibility
+            "first_direct_download_url": None,
+        }
+
         makecom_success = send_makecom_webhook(
             subject=subject,
             delivery_time=pattern_result.get('delivery_time'),
             sender_email=sender_email,
             email_id=email_id,
             override_webhook_url=None,
-            extra_payload=None,
+            extra_payload=extra_payload,
         )
         if makecom_success:
             try:
