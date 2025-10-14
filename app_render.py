@@ -66,6 +66,7 @@ from routes import (
     api_admin_bp,
     api_utility_bp,
     api_config_bp,
+    api_make_bp,
 )
 from routes.api_processing import DEFAULT_PROCESSING_PREFS as _DEFAULT_PROCESSING_PREFS
 DEFAULT_PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS
@@ -116,6 +117,7 @@ app.register_blueprint(api_logs_bp)  # legacy URL: /api/webhook_logs
 app.register_blueprint(api_admin_bp)
 app.register_blueprint(api_utility_bp)
 app.register_blueprint(api_config_bp)
+app.register_blueprint(api_make_bp)
 
 # --- CORS (for test tools calling from another origin) ---
 # Allowlist origins, comma-separated in env CORS_ALLOWED_ORIGINS (e.g., "https://webhook.kidpixel.fr,https://example.com")
@@ -489,6 +491,49 @@ def background_email_poller():
     )
 
 
+# --- Make Scenarios Vacation Watcher ---
+def make_scenarios_vacation_watcher():
+    """Background watcher that enforces Make scenarios ON/OFF according to
+    - UI global toggle enable_polling (persisted via /api/update_polling_config)
+    - Vacation window in polling_config (POLLING_VACATION_START/END)
+
+    Logic:
+    - If enable_polling is False => ensure scenarios are OFF
+    - If enable_polling is True and in vacation => ensure scenarios are OFF
+    - If enable_polling is True and not in vacation => ensure scenarios are ON
+
+    To minimize API calls, apply only on state changes.
+    """
+    last_applied = None  # None|True|False meaning desired state last set
+    interval = max(60, int(POLLING_INACTIVE_CHECK_INTERVAL_SECONDS))
+    while True:
+        try:
+            enable_ui = polling_config.get_enable_polling(True)
+            in_vac = False
+            try:
+                in_vac = polling_config.is_in_vacation_period()
+            except Exception:
+                in_vac = False
+            desired = bool(enable_ui and not in_vac)
+            if last_applied is None or desired != last_applied:
+                try:
+                    from routes.api_make import toggle_all_scenarios  # local import to avoid cycles
+                    res = toggle_all_scenarios(desired, logger=app.logger)
+                    app.logger.info(
+                        "MAKE_WATCHER: applied desired=%s (enable_ui=%s, in_vacation=%s) results_keys=%s",
+                        desired, enable_ui, in_vac, list(res.keys()) if isinstance(res, dict) else 'n/a'
+                    )
+                except Exception as e:
+                    app.logger.error(f"MAKE_WATCHER: toggle_all_scenarios failed: {e}")
+                last_applied = desired
+        except Exception as e:
+            try:
+                app.logger.error(f"MAKE_WATCHER: loop error: {e}")
+            except Exception:
+                pass
+        time.sleep(interval)
+
+
 # --- Start Background Tasks (Email Poller) ---
 try:
     # Log effective config before starting background tasks
@@ -533,6 +578,26 @@ try:
 except Exception:
     # Defensive: never block app startup because of background thread wiring
     pass
+
+# --- Start Make Scenarios Vacation Watcher ---
+try:
+    if getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
+        _make_watcher_thread = threading.Thread(target=make_scenarios_vacation_watcher, daemon=True)
+        _make_watcher_thread.start()
+        try:
+            app.logger.info("MAKE_WATCHER: background thread started (vacation-aware ON/OFF)")
+        except Exception:
+            pass
+    else:
+        try:
+            app.logger.info("MAKE_WATCHER: not started because ENABLE_BACKGROUND_TASKS is false")
+        except Exception:
+            pass
+except Exception as e:
+    try:
+        app.logger.error(f"MAKE_WATCHER: failed to start thread: {e}")
+    except Exception:
+        pass
 
 # Routes /login, /logout et '/' déplacées vers routes/dashboard.py
 

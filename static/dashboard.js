@@ -795,7 +795,8 @@ function initTabs() {
     const mapHashToId = {
         '#overview': '#sec-overview',
         '#webhooks': '#sec-webhooks',
-        '#polling': '#sec-polling',
+        '#make': '#sec-polling',
+        '#polling': '#sec-polling', // legacy alias
         '#preferences': '#sec-preferences',
         '#tools': '#sec-tools',
     };
@@ -835,7 +836,6 @@ function initTabs() {
             loadWebhookConfig();
         } else if (targetSelector === '#sec-polling') {
             loadPollingConfig();
-            loadPollingStatus();
         }
     }
 
@@ -846,8 +846,13 @@ function initTabs() {
             console.log('[tabs] click on tab-btn, target=', target);
             if (target) {
                 // Update URL hash for deep-linking (without scrolling)
-                const entry = Object.entries(mapHashToId).find(([, sel]) => sel === target);
-                if (entry) history.replaceState(null, '', entry[0]);
+                // Prefer canonical hash for the target
+                const preferred = (target === '#sec-polling') ? '#make' :
+                                  (target === '#sec-overview') ? '#overview' :
+                                  (target === '#sec-webhooks') ? '#webhooks' :
+                                  (target === '#sec-preferences') ? '#preferences' :
+                                  (target === '#sec-tools') ? '#tools' : '';
+                if (preferred) history.replaceState(null, '', preferred);
                 activate(target);
             }
         });
@@ -1069,7 +1074,7 @@ document.addEventListener('DOMContentLoaded', () => {
             allBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             // Mettre à jour le hash pour deep-linking
-            const map = { '#sec-overview': '#overview', '#sec-webhooks': '#webhooks', '#sec-polling': '#polling', '#sec-preferences': '#preferences', '#sec-tools': '#tools' };
+            const map = { '#sec-overview': '#overview', '#sec-webhooks': '#webhooks', '#sec-polling': '#make', '#sec-preferences': '#preferences', '#sec-tools': '#tools' };
             const hash = map[target]; if (hash) history.replaceState(null, '', hash);
         } catch (e) {
             console.error('[tabs-fallback] activation failed:', e);
@@ -1085,16 +1090,15 @@ async function loadPollingConfig() {
         const data = await res.json();
         if (data.success) {
             const cfg = data.config || {};
-            const days = Array.isArray(cfg.active_days) ? cfg.active_days : [];
-            setDayCheckboxes(days);
-            document.getElementById('pollingStartHour').value = cfg.active_start_hour ?? '';
-            document.getElementById('pollingEndHour').value = cfg.active_end_hour ?? '';
-            document.getElementById('enableSubjectGroupDedup').checked = !!cfg.enable_subject_group_dedup;
+            const dedupEl = document.getElementById('enableSubjectGroupDedup');
+            if (dedupEl) dedupEl.checked = !!cfg.enable_subject_group_dedup;
             const senders = Array.isArray(cfg.sender_of_interest_for_polling) ? cfg.sender_of_interest_for_polling : [];
             renderSenderInputs(senders);
             // Dates vacances
-            if (cfg.vacation_start) document.getElementById('vacationStart').value = cfg.vacation_start;
-            if (cfg.vacation_end) document.getElementById('vacationEnd').value = cfg.vacation_end;
+            const vacStartEl = document.getElementById('vacationStart');
+            const vacEndEl = document.getElementById('vacationEnd');
+            if (vacStartEl && cfg.vacation_start) vacStartEl.value = cfg.vacation_start;
+            if (vacEndEl && cfg.vacation_end) vacEndEl.value = cfg.vacation_end;
             updateVacationStatus();
             // Global enable toggle
             const gp = document.getElementById('enableGlobalPolling');
@@ -1107,9 +1111,6 @@ async function loadPollingConfig() {
 
 async function savePollingConfig() {
     const btn = document.getElementById('savePollingCfgBtn');
-    const selectedDays = collectDayCheckboxes();
-    const startStr = document.getElementById('pollingStartHour').value.trim();
-    const endStr = document.getElementById('pollingEndHour').value.trim();
     const dedup = document.getElementById('enableSubjectGroupDedup').checked;
     const senders = collectSenderInputs();
     const vacStart = document.getElementById('vacationStart').value.trim();
@@ -1117,10 +1118,6 @@ async function savePollingConfig() {
     const enableGlobalPolling = !!document.getElementById('enableGlobalPolling')?.checked;
 
     const payload = {};
-    // Toujours envoyer la liste (éventuellement vide) pour refléter l'état exact des cases cochées
-    payload.active_days = selectedDays;
-    if (startStr !== '') payload.active_start_hour = parseInt(startStr, 10);
-    if (endStr !== '') payload.active_end_hour = parseInt(endStr, 10);
     payload.enable_subject_group_dedup = dedup;
 
     payload.sender_of_interest_for_polling = senders;
