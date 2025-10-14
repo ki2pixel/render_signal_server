@@ -705,6 +705,15 @@ def handle_media_solution_route(
                 from app_render import WEBHOOK_URL as _CUSTOM_URL
             except Exception:
                 _CUSTOM_URL = None
+            try:
+                logger.info(
+                    "MEDIA_SOLUTION: Mirror diagnostics — enabled=%s, url_configured=%s, links=%d",
+                    mirror_enabled,
+                    bool(_CUSTOM_URL),
+                    len(delivery_links or []),
+                )
+            except Exception:
+                pass
             if mirror_enabled and _CUSTOM_URL:
                 try:
                     import requests as _requests
@@ -715,7 +724,8 @@ def handle_media_solution_route(
                         "delivery_links": delivery_links or [],
                     }
                     logger.info(
-                        "MEDIA_SOLUTION: Mirroring payload with %d link(s) to custom endpoint",
+                        "MEDIA_SOLUTION: Starting mirror POST to custom endpoint (%s) with %d link(s)",
+                        _CUSTOM_URL,
                         len(delivery_links or []),
                     )
                     _resp = _requests.post(
@@ -735,12 +745,27 @@ def handle_media_solution_route(
                         logger.info("MEDIA_SOLUTION: Mirror call succeeded (status=200)")
                 except Exception as _m_ex:
                     logger.error("MEDIA_SOLUTION: Exception during mirror call: %s", _m_ex)
+            else:
+                # Explain why mirror was not attempted
+                try:
+                    if not mirror_enabled:
+                        logger.info("MEDIA_SOLUTION: Mirror skipped — mirror_media_to_custom disabled")
+                    elif not _CUSTOM_URL:
+                        logger.info("MEDIA_SOLUTION: Mirror skipped — WEBHOOK_URL not configured")
+                except Exception:
+                    pass
             try:
                 if subject_group_id:
                     mark_subject_group_processed(subject_group_id)
             except Exception:
                 pass
         return makecom_success
+        else:
+            # If Make send failed, we currently do not mirror (by design). Log explicitly.
+            try:
+                logger.error("MEDIA_SOLUTION: Make webhook failed; mirror not attempted")
+            except Exception:
+                pass
     except Exception as e:
         logger.error("MEDIA_SOLUTION: Exception during handling for email %s: %s", email_id, e)
         return False

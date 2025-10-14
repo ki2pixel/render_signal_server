@@ -645,6 +645,21 @@ def _save_processing_prefs(prefs: dict) -> bool:
 # Initialize with persisted values
 PROCESSING_PREFS = _load_processing_prefs()
 
+# Diagnostics: log effective custom webhook + mirroring configuration
+try:
+    app.logger.info(
+        "CFG CUSTOM_WEBHOOK: WEBHOOK_URL configured=%s value=%s",
+        bool(WEBHOOK_URL),
+        (WEBHOOK_URL[:80] if WEBHOOK_URL else ""),
+    )
+    app.logger.info(
+        "CFG PROCESSING_PREFS: mirror_media_to_custom=%s webhook_timeout_sec=%s",
+        bool(PROCESSING_PREFS.get("mirror_media_to_custom")),
+        PROCESSING_PREFS.get("webhook_timeout_sec"),
+    )
+except Exception:
+    pass
+
 # Rate limiting state (timestamps in epoch seconds of successful/attempted sends)
 WEBHOOK_SEND_EVENTS = deque()
 
