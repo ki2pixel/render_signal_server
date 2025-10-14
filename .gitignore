@@ -1,9 +1,35 @@
+# Python
 .venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
-*.log
-.env
+*.pyc
+*.pyo
+*.pyd
+
+# IDEs and editors
 .idea/
-htmlcov/
+.vscode/
+.windsurf/
+*.swp
+*.swo
+*~
+
+# Environment variables
+.env
+
+# Logs
+*.log
+
+# Build and distribution
+dist/
+build/
+*.egg-info/
+
+# Debug
 debug/
+
+# Testing
+htmlcov/
+.coverage
+.coverage.*
