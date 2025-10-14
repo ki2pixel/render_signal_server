@@ -47,6 +47,99 @@ class TestEmailProcessingE2E:
         assert payload['subject'] == subject
         assert payload['delivery_links'] == links
         assert len(payload['dropbox_urls']) == 1
+
+    def test_media_solution_make_payload_includes_links(self, mock_logger):
+        """Simule un email Média Solution avec lien SwissTransfer et vérifie que
+        le payload Make contient delivery_links et first_direct_download_url=None."""
+        from email_processing import orchestrator, pattern_matching
+        from zoneinfo import ZoneInfo
+
+        subject = "Média Solution - Missions Recadrage - Lot 99"
+        body = (
+            "Voici les éléments.\n"
+            "À faire pour 11h51.\n"
+            "Lien : https://www.swisstransfer.com/d/6bacf66b-9a4d-4df4-af3f-ccb96a444c12\n"
+        )
+
+        # Capture de l'extra_payload envoyé à Make
+        captured = {}
+
+        def fake_send_makecom_webhook(*, subject, delivery_time, sender_email, email_id, override_webhook_url=None, extra_payload=None):
+            captured["extra_payload"] = extra_payload
+            return True
+
+        ok = orchestrator.handle_media_solution_route(
+            subject=subject,
+            full_email_content=body,
+            email_id="email-test-1",
+            processing_prefs={},
+            tz_for_polling=ZoneInfo("Europe/Paris"),
+            check_media_solution_pattern=lambda s, b, tz, l: pattern_matching.check_media_solution_pattern(s, b, tz, mock_logger),
+            extract_sender_email=lambda raw: "achats@media-solution.fr",
+            sender_raw="Victor <achats@media-solution.fr>",
+            send_makecom_webhook=fake_send_makecom_webhook,
+            mark_subject_group_processed=lambda gid: None,
+            subject_group_id="group-99",
+            logger=mock_logger,
+        )
+
+        assert ok is True
+        assert "extra_payload" in captured
+        extra = captured["extra_payload"] or {}
+        assert "delivery_links" in extra
+        providers = [l.get("provider") for l in (extra["delivery_links"] or [])]
+        assert "swisstransfer" in providers
+        # La résolution directe est supprimée par conception; expliciter None
+        assert extra.get("first_direct_download_url") is None
+
+    @pytest.mark.parametrize(
+        "provider,url",
+        [
+            ("dropbox", "https://www.dropbox.com/scl/fo/abc123"),
+            ("fromsmash", "https://fromsmash.com/OPhYnnPgFM-ct"),
+        ],
+    )
+    def test_media_solution_make_payload_includes_links_for_providers(self, mock_logger, provider, url):
+        """Vérifie que, pour chaque fournisseur supporté (Dropbox, FromSmash),
+        le payload Make contient bien delivery_links avec le provider attendu
+        et first_direct_download_url=None."""
+        from email_processing import orchestrator, pattern_matching
+        from zoneinfo import ZoneInfo
+
+        subject = "Média Solution - Missions Recadrage - Lot 100"
+        body = (
+            "Voici.\n"
+            "À faire pour 09h05.\n"
+            f"Lien: {url}\n"
+        )
+
+        captured = {}
+
+        def fake_send_makecom_webhook(*, subject, delivery_time, sender_email, email_id, override_webhook_url=None, extra_payload=None):
+            captured["extra_payload"] = extra_payload
+            return True
+
+        ok = orchestrator.handle_media_solution_route(
+            subject=subject,
+            full_email_content=body,
+            email_id="email-test-providers-1",
+            processing_prefs={},
+            tz_for_polling=ZoneInfo("Europe/Paris"),
+            check_media_solution_pattern=lambda s, b, tz, l: pattern_matching.check_media_solution_pattern(s, b, tz, mock_logger),
+            extract_sender_email=lambda raw: "achats@media-solution.fr",
+            sender_raw="Victor <achats@media-solution.fr>",
+            send_makecom_webhook=fake_send_makecom_webhook,
+            mark_subject_group_processed=lambda gid: None,
+            subject_group_id="group-100",
+            logger=mock_logger,
+        )
+
+        assert ok is True
+        extra = captured.get("extra_payload") or {}
+        assert "delivery_links" in extra
+        providers = [l.get("provider") for l in (extra["delivery_links"] or [])]
+        assert provider in providers
+        assert extra.get("first_direct_download_url") is None
     
     def test_complete_desabo_flow(self, mock_logger):
         """Test du flux complet DESABO"""

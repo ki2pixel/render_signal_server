@@ -10,7 +10,7 @@ __pycache__/
 # IDEs and editors
 .idea/
 .vscode/
-.windsurf/
+# .windsurf/
 *.swp
 *.swo
 *~
@@ -27,7 +27,7 @@ build/
 *.egg-info/
 
 # Debug
-debug/
+# debug/
 
 # Testing
 htmlcov/

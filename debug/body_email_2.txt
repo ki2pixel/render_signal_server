@@ -1,0 +1,161 @@
+Return-Path: <camille.moine.pro+caf_=kidpixel=inbox.lt@gmail.com>
+Received: from eu-timmy3-clean.inbox.eu ([10.20.1.73])
+	 by eu-brat1.inbox.eu (Cyrus 2.5-135) with LMTPA;
+	 Tue, 14 Oct 2025 18:16:10 +0300
+Received: from eu-ham2.inbox.eu (eu-ham2 [10.20.1.102])
+	by eu-timmy3-clean.inbox.eu (Postfix) with ESMTP id 4cmHqG1SY3z1N7Hg
+	for <kidpixel@inbox.lt>; Tue, 14 Oct 2025 18:16:10 +0300 (EEST)
+Received: from eu-kas2.inbox.eu (eu-kas2 [10.20.1.92])
+	by eu-ham2.inbox.eu (Postfix) with ESMTP id AA6743180396
+	for <kidpixel@inbox.lt>; Tue, 14 Oct 2025 18:16:09 +0300 (EEST)
+Received: from 0.r1.unverified-forwarding.1e100.net (0.r1.unverified-forwarding.1e100.net [108.177.16.0])
+	by eu-timmy2-main.inbox.eu (Postfix) with ESMTPS id 4cmHqF2CrNzXdQ6
+	for <kidpixel@inbox.lt>; Tue, 14 Oct 2025 18:16:09 +0300 (EEST)
+Received: by 0.r1.unverified-forwarding.1e100.net with SMTP id 006d021491bc7-646f6ab9089so3647132eaf.0
+        for <kidpixel@inbox.lt>; Tue, 14 Oct 2025 08:16:09 -0700 (PDT)
+ARC-Seal: i=2; a=rsa-sha256; t=1760454968; cv=pass;
+        d=google.com; s=arc-20240605;
+        b=ViRF/7d8jmU0AxIOPIqRQFxBn/vpFS8sDWtOqPnIb0lbdgFZlpq14/KS2BSLRKM0Tc
+         TCQt6YO3rhLzfDD2f5fXKIUa438ajWUM1fwHb8wHoP/dcvo4mB6D8U9kvt26APwj4Ens
+         OTxnCAbeGdoLkX+iVlGZetINuSC2tfveAB2Wj7bIfPQAFJvJryHqCQFE0tj8NlOFWQVr
+         sJ1N9IojodQJ4w+tM9ev61Ar9CiR/Yj7gxwDNFS/HjkqdKEOmc0n/GkniNGGBOol01EW
+         76/lnyCjidwwORbOknslpK8XCXw5bMRzGUKTfGjaf0P1ux3vAZ1gstu5XXLMfGdtYSgY
+         tm7A==
+ARC-Message-Signature: i=2; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20240605;
+        h=content-transfer-encoding:content-language:subject:to:from
+         :user-agent:mime-version:date:message-id:dkim-signature:delivered-to;
+        bh=V8zrQI8+CWhIlNi9KrM3JrIkphF4aFFRal8YnOwlMkA=;
+        fh=3sNqopx3Egbk5yr7yNGP2v8xdxF99PHPHrWVBaX6E1c=;
+        b=GnBNqEM7W8oFykoIxfheAJGqBnI/tPQ55xLbLhX0/64ANdvqk6acvMn+lVeDQT7CDu
+         jTZZqm3kgdmahzMWhwjMOk4Y+njh41+MHnVkI2GzWF5yJsB8oMLj3nk3D5yvTcsCBsup
+         ieAgsJXEpgNTKCZAe4FHUhFdAiGPbE9+A6jDq5uvwxY1vbfAvPC+9tHBohiTENxhErAZ
+         SAeMEhJbQiw4wyk8fER4AucTEN1BEvS/j8u5ije+qVDnbLbgTKPkAHkOfHy6avXx4y64
+         HrxMwhUCHci9CxdpTpzViXk3bnsW1TaTtRVS2PBvN4CUVwT1GFIYG3ZOK+YVNR6C6YFB
+         iMMw==;
+        darn=inbox.lt
+ARC-Authentication-Results: i=2; mx.google.com;
+       dkim=pass header.i=@media-solution.fr header.s=google header.b=Dwe5uh+t;
+       spf=softfail (google.com: domain of transitioning achats@media-solution.fr does not designate 209.85.220.41 as permitted sender) smtp.mailfrom=achats@media-solution.fr;
+       dmarc=pass (p=NONE sp=NONE dis=NONE) header.from=media-solution.fr;
+       dara=pass header.i=@gmail.com
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=1e100.net; s=20230601; t=1760454968; x=1761059768;
+        h=content-transfer-encoding:content-language:subject:to:from
+         :user-agent:mime-version:date:message-id:dkim-signature:delivered-to
+         :x-forwarded-for:x-forwarded-to:x-gm-message-state:from:to:cc
+         :subject:date:message-id:reply-to;
+        bh=V8zrQI8+CWhIlNi9KrM3JrIkphF4aFFRal8YnOwlMkA=;
+        b=jfYLHnb9qd22jciOuyqyIX1akpri2SLcc+M2fROGr/5WwCbUxiJnBMC77Gefhmhlet
+         KxLUpG2NK5SbYkyf9ndkOJYe8BJn2t2TNHs+XSrhoz0W+wlDWVvq/HlHu1H8D0fLpohd
+         eHAPg7vvYKBiYyWJ1c6A+dqxUctdTOZ/7u05HEBKElnCN4jqpvcOqn24vMnMVTpr7csh
+         l1ruMnUJ6+IBa3Kq2pjkIdGw+EeGDYO0/DJlbi6sNy5Fktt2c7gifzwqJCe/X0dHXDQF
+         7iOV1Gt7AleRMyPE73hvSI9Yi8pVbPeBRbSYWf3zM4KAoizXPffia4orMshP+vdWFlDU
+         rnGA==
+X-Forwarded-Encrypted: i=2; AJvYcCVwbhWxwrG27T4uz/RtH17wzaXuY0yRcGtCB+8bgnzHky0f7+AlqkjinGLjApxnTIpdN//Pb2NVUg==@inbox.lt
+X-Gm-Message-State: AOJu0Yy5LABJqahuQbF9ZHsvMABzg1ADA9x0+F7jDr+o6Qr4yHstRhzm
+	Z8ywUpYFKZ+Q12rmmh5CErvQjgnQ/EKNWtvhP9VRIw2n2XaQjd+ALz+AN0lDzhMnYPNi8vRIgUy
+	nWQpck9+nY3GcRzIxtJ59veWDEXO6fB/x5Fuuf3Lrbs1DaSwxvnZyFvz2PP+jjw==
+X-Received: by 2002:a05:6808:50a7:b0:43f:99fb:fb0 with SMTP id 5614622812f47-4417b3bed05mr11273754b6e.36.1760454967741;
+        Tue, 14 Oct 2025 08:16:07 -0700 (PDT)
+X-Forwarded-To: kidpixel@inbox.lt
+X-Forwarded-For: camille.moine.pro@gmail.com kidpixel@inbox.lt
+Delivered-To: camille.moine.pro@gmail.com
+Received: by 2002:a17:505:1081:b0:1d87:3aa8:327 with SMTP id i1csp4696537njz;
+        Tue, 14 Oct 2025 08:16:06 -0700 (PDT)
+X-Received: by 2002:a05:600c:4584:b0:46f:b42e:e367 with SMTP id 5b1f17b1804b1-46fb42ee40cmr123550055e9.41.1760454966066;
+        Tue, 14 Oct 2025 08:16:06 -0700 (PDT)
+ARC-Seal: i=1; a=rsa-sha256; t=1760454966; cv=none;
+        d=google.com; s=arc-20240605;
+        b=F5sOqUir0MRAX3cMZKLQvwkNUCkTJkG2eLfRdn8N6aNUrgcOTD4bYyGBUF9IS2cPIy
+         kZTMmUSGDCcx4EsZnQaZD5Tdq6HJfznriOAVlyi6Zj13JpIfMT2Pr0jaQR13dg53kNwS
+         ZiUuqIIdGFsWGdrEBA8bfaetDOb7Bj54MigMt/IKjp4XzI+ZaZ7j2dScQG8gdU3wb0IR
+         7j0IYyZYbeTBGyif+n4nEMKkQee9c/F22Vz+VY6AQNgDq4CWtQTqq4hUzb/0t8IadhFD
+         mxqXwDZxdxel7sB7K2arxZoVLdeF5RIl7OnwHfsJGhbUE4NS8iKhllxgM1IKVsJkYtIw
+         1IpQ==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20240605;
+        h=content-transfer-encoding:content-language:subject:to:from
+         :user-agent:mime-version:date:message-id:dkim-signature;
+        bh=V8zrQI8+CWhIlNi9KrM3JrIkphF4aFFRal8YnOwlMkA=;
+        fh=bKS2xImuafAUzcg0upjfIdrTMmSthALKRq5qsbCvWzs=;
+        b=Oq5Occ0v21u1qcTw15LwM4qt6lZA6EAq24Hga2BITps0sriGpM+0Zfy4W0kv+GlIfA
+         LvNekgcLr4Bw8MQXhw4GuLWD8buYEbUWtrg2hwHIRdDULXNQs17TeG/3EioNDeYz+wmb
+         8R1sAQeOP1A8sv2pSnYFm7Rn44DKQbj3Yv37uys54wN4AyNBYHJtt26yEiFBA/DcKtJG
+         AKPrZLE6u2AWznuevHECkayaeNqeP6As1nVUoshLqNzr9KoQlGcx7ZQejLpHBnsR8u2H
+         bq6auXD7iw7emfNIz6L/qLyiYwMCi/kw/6nxy+AfBKzVH7RS/QfTWI5aM8btvkAAAKv/
+         svZg==;
+        dara=google.com
+ARC-Authentication-Results: i=1; mx.google.com;
+       dkim=pass header.i=@media-solution.fr header.s=google header.b=Dwe5uh+t;
+       spf=softfail (google.com: domain of transitioning achats@media-solution.fr does not designate 209.85.220.41 as permitted sender) smtp.mailfrom=achats@media-solution.fr;
+       dmarc=pass (p=NONE sp=NONE dis=NONE) header.from=media-solution.fr;
+       dara=pass header.i=@gmail.com
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41])
+        by mx.google.com with SMTPS id 5b1f17b1804b1-46fb4a5fe61sor19810205e9.12.2025.10.14.08.16.05
+        for <camille.moine.pro@gmail.com>
+        (Google Transport Security);
+        Tue, 14 Oct 2025 08:16:05 -0700 (PDT)
+Received-SPF: softfail (google.com: domain of transitioning achats@media-solution.fr does not designate 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@media-solution.fr header.s=google header.b=Dwe5uh+t;
+       spf=softfail (google.com: domain of transitioning achats@media-solution.fr does not designate 209.85.220.41 as permitted sender) smtp.mailfrom=achats@media-solution.fr;
+       dmarc=pass (p=NONE sp=NONE dis=NONE) header.from=media-solution.fr;
+       dara=pass header.i=@gmail.com
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=media-solution.fr; s=google; t=1760454965; x=1761059765; dara=google.com;
+        h=content-transfer-encoding:content-language:subject:to:from
+         :user-agent:mime-version:date:message-id:from:to:cc:subject:date
+         :message-id:reply-to;
+        bh=V8zrQI8+CWhIlNi9KrM3JrIkphF4aFFRal8YnOwlMkA=;
+        b=Dwe5uh+txVrEbGCZWr4h56uTLaEMljSxwxErFuF5BvMF4ihG1ud6yUwK+ktxmDNACz
+         Q1FZY7J8X+GydUrBj6O0tZEp9cj7GIYi/FuRcl1WK9KIuJ0SsawU62tgsUVt6qgpA/yx
+         n4l6gwei32n6NYud122GoUnya1rjL/vxfUR6zJma+uvD3yuK+Ob3m0yZeH7PeXx1BHpw
+         lCiIVQXyD+UWuMHehFwBFp4T8SutweunQnbWvEO4TyBlLQJ4JlVSOHjGl7lJ1eR9LsYY
+         2WyCV+k9FUhN5MqDpyW6rJ3/WzpZn8HT4NvCxcApENTBXgbA83r7IbcGATus3C6DA0Cz
+         VVMg==
+X-Gm-Gg: ASbGncvYPXxo3+LZSShuhi1dVYuz47cAlMwZ9PkJLUqNWYNW1hQp4145c3Q1rkTuhWe
+	5lLqTEe0WtS8SWU+/+dAUxLfbMhobaF+o9rKX6RsW97aDf3OWSgxKAYn53hPgoRyg5RHZPPZeta
+	BMOEE/350N6DNkVPwsQjWJsdyoYi2HUBdDK9VUpqDpOoBqFAn2yg5IRu7KHxxDiJUmzRIgiMWCj
+	5RkArLllqTe7iVwFRMQ4cv7jBtpqPNWb9d2XQVBWVgfL5PPUGNVeXfvq4/xoVjJIkQNYwMSghcg
+	6/mCO5T/LA+JaUd5esp3hoiQCXsZnJud3zetgqZ2vcXsJIKojQAa20OGMZ5EkadgGAuRcpzkTOD
+	vcEJ8cyyysz1jJPryhz71lfmQVVUF/mxVm8SihFk78s7kDoZDe+lcdB3MVgsWNz0SKrMaphX884
+	m69E0dE7z+GmQ5DjxfptVkPryVS0N4+SopgrXg3oU=
+X-Google-Smtp-Source: AGHT+IGdkJoYHgw7AyONsrE+7K0m2e16JSyLf/aQWg60Z/K+QnNDiwPfw8h0IVAM4YUpOpqJavF8eA==
+X-Received: by 2002:a05:600c:1e85:b0:46e:39e4:1721 with SMTP id 5b1f17b1804b1-46fa9aa261amr170140775e9.12.1760454965321;
+        Tue, 14 Oct 2025 08:16:05 -0700 (PDT)
+Received: from [192.168.0.104] (lfbn-ren-1-622-88.w81-53.abo.wanadoo.fr. [81.53.197.88])
+        by smtp.gmail.com with ESMTPSA id ffacd0b85a97d-426ce589a21sm24712398f8f.23.2025.10.14.08.16.04
+        for <camille.moine.pro@gmail.com>
+        (version=TLS1_3 cipher=TLS_AES_128_GCM_SHA256 bits=128/128);
+        Tue, 14 Oct 2025 08:16:04 -0700 (PDT)
+Message-ID: <acf7907e-8dbf-4da4-a0f1-9d1189e58a43@media-solution.fr>
+Date: Tue, 14 Oct 2025 17:16:03 +0200
+MIME-Version: 1.0
+User-Agent: Mozilla Thunderbird
+From: Victor Lorent <achats@media-solution.fr>
+To: Camille Moine <camille.moine.pro@gmail.com>
+Subject: =?UTF-8?Q?M=C3=A9dia_Solution_-_Missions_Recadrage_-_Lot_153?=
+Content-Language: fr
+Content-Type: text/plain; charset=UTF-8; format=flowed
+Content-Transfer-Encoding: 8bit
+X-KLMS-Message-Action: clean
+X-KLMS-AntiSpam-Lua-Profiles: 197066 [Oct 14 2025]
+X-KLMS-AntiSpam-Version: 6.1.1.11
+X-KLMS-AntiSpam-Rate: 0
+X-KLMS-AntiSpam-Status: not_detected
+X-KLMS-AntiSpam-Method: none
+X-KLMS-AntiSpam-Auth: dmarc=pass header.from=media-solution.fr policy=none;spf=softfail smtp.mailfrom=gmail.com;dkim=pass header.d=media-solution.fr
+X-KLMS-AntiSpam-Info: LuaCore: 71 0.3.71 ee78c3da48e828d2b9b16d6d0b31328b8b240a3c, {rep_avail}, {dkim_exist_silent}, {Tracking_smtp_not_equal_from}, {Tracking_one_url}, {Tracking_uf_ne_domains}, {Tracking_from_domain_doesnt_match_to}, {Tracking_smtp_domain_mismatch}, {Tracking_smtp_domain_2level_mismatch}, FromAlignment: n, ApMailHostAddress: 108.177.16.0
+X-MS-Exchange-Organization-SCL: -1
+X-KLMS-AntiVirus: Modern antivirus of Inbox, version 8.0.3.30, bases: 2025/10/14 10:40:00 #27912011
+X-KLMS-AntiVirus-Status: Clean, skipped
+
+Voici les missions pour le lot 153.
+
+
+Recadrage 9:16 standard أ  faire pour le 15/10/2025 أ  09h00 :
+- Gulli - Les Goonies - Scأ¨ne culte monstre.mp4 (Logos requis:
+gulliprime.png)
+
+Lien : https://www.swisstransfer.com/d/4338d103-fa17-46c1-9a7e-1606036d9787
+
+Merci !
