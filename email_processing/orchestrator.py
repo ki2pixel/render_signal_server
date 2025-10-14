@@ -697,14 +697,17 @@ def handle_media_solution_route(
         )
         if makecom_success:
             # Optional mirror to custom PHP endpoint (deployment/) to persist links
+            # Log mirror attempt or reason for skipping
             try:
                 mirror_enabled = bool(processing_prefs.get('mirror_media_to_custom'))
             except Exception:
                 mirror_enabled = False
+                
             try:
                 from app_render import WEBHOOK_URL as _CUSTOM_URL
             except Exception:
                 _CUSTOM_URL = None
+                
             try:
                 logger.info(
                     "MEDIA_SOLUTION: Mirror diagnostics — enabled=%s, url_configured=%s, links=%d",
@@ -714,7 +717,9 @@ def handle_media_solution_route(
                 )
             except Exception:
                 pass
-            if mirror_enabled and _CUSTOM_URL:
+                
+            # Only attempt mirror if Make.com webhook was successful
+            if makecom_success and mirror_enabled and _CUSTOM_URL:
                 try:
                     import requests as _requests
                     mirror_payload = {
@@ -746,26 +751,22 @@ def handle_media_solution_route(
                 except Exception as _m_ex:
                     logger.error("MEDIA_SOLUTION: Exception during mirror call: %s", _m_ex)
             else:
-                # Explain why mirror was not attempted
-                try:
-                    if not mirror_enabled:
-                        logger.info("MEDIA_SOLUTION: Mirror skipped — mirror_media_to_custom disabled")
-                    elif not _CUSTOM_URL:
-                        logger.info("MEDIA_SOLUTION: Mirror skipped — WEBHOOK_URL not configured")
-                except Exception:
-                    pass
+                # Log why mirror was not attempted
+                if not makecom_success:
+                    logger.error("MEDIA_SOLUTION: Make webhook failed; mirror not attempted")
+                elif not mirror_enabled:
+                    logger.info("MEDIA_SOLUTION: Mirror skipped — mirror_media_to_custom disabled")
+                elif not _CUSTOM_URL:
+                    logger.info("MEDIA_SOLUTION: Mirror skipped — WEBHOOK_URL not configured")
+            
+            # Mark as processed if needed
             try:
-                if subject_group_id:
+                if subject_group_id and makecom_success:
                     mark_subject_group_processed(subject_group_id)
-            except Exception:
-                pass
-        return makecom_success
-        else:
-            # If Make send failed, we currently do not mirror (by design). Log explicitly.
-            try:
-                logger.error("MEDIA_SOLUTION: Make webhook failed; mirror not attempted")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error("MEDIA_SOLUTION: Error marking subject group as processed: %s", e)
+            
+            return makecom_success
     except Exception as e:
         logger.error("MEDIA_SOLUTION: Exception during handling for email %s: %s", email_id, e)
         return False
