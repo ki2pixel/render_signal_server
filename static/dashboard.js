@@ -62,7 +62,7 @@ window.addEventListener('DOMContentLoaded', () => {
     loadProcessingPrefsFromServer();
     computeAndRenderMetrics();
     loadPollingConfig();
-    // loadPollingStatus removed with old toggle; kept only config-based control
+    // Note: global Make toggle and vacation controls removed from UI
     // New: runtime flags
     loadRuntimeFlags();
 
@@ -498,29 +498,7 @@ function collectSenderInputs() {
 }
 
 // Affiche le statut des vacances sous les sélecteurs de dates
-function updateVacationStatus() {
-    const el = document.getElementById('vacationStatus');
-    if (!el) return;
-    const vs = (document.getElementById('vacationStart')?.value || '').trim();
-    const ve = (document.getElementById('vacationEnd')?.value || '').trim();
-    if (!vs && !ve) {
-        el.textContent = 'Vacances désactivées';
-        return;
-    }
-    if (vs && ve && vs > ve) {
-        el.textContent = '⚠️ Plage invalide: la date de début doit être antérieure ou égale à la date de fin';
-        return;
-    }
-    const fr = (iso) => {
-        try {
-            const d = new Date(iso + 'T00:00:00');
-            return d.toLocaleDateString('fr-FR');
-        } catch { return iso; }
-    };
-    const left = vs ? fr(vs) : '—';
-    const right = ve ? fr(ve) : '—';
-    el.textContent = `Vacances: du ${left} au ${right}`;
-}
+// vacation helpers removed with UI
 
 function formatTimestamp(isoString) {
     try {
@@ -926,17 +904,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const elRefreshLogs = document.getElementById('refreshLogsBtn');
     elRefreshLogs && elRefreshLogs.addEventListener('click', loadWebhookLogs);
     const elSavePollingCfg = document.getElementById('savePollingCfgBtn');
+    // Removed from UI; keep guard in case of legacy DOM
     elSavePollingCfg && elSavePollingCfg.addEventListener('click', savePollingConfig);
     const addSenderBtn = document.getElementById('addSenderBtn');
     if (addSenderBtn) addSenderBtn.addEventListener('click', () => addEmailField(''));
     // Mettre à jour le statut vacances quand l'utilisateur change les dates
-    const vacStartEl = document.getElementById('vacationStart');
-    const vacEndEl = document.getElementById('vacationEnd');
-    if (vacStartEl && vacEndEl) {
-        const onChange = () => updateVacationStatus();
-        vacStartEl.addEventListener('change', onChange);
-        vacEndEl.addEventListener('change', onChange);
-    }
+    // vacation inputs removed
     
     // Auto-refresh des logs toutes les 30 secondes
     setInterval(loadWebhookLogs, 30000);
@@ -1094,15 +1067,7 @@ async function loadPollingConfig() {
             if (dedupEl) dedupEl.checked = !!cfg.enable_subject_group_dedup;
             const senders = Array.isArray(cfg.sender_of_interest_for_polling) ? cfg.sender_of_interest_for_polling : [];
             renderSenderInputs(senders);
-            // Dates vacances
-            const vacStartEl = document.getElementById('vacationStart');
-            const vacEndEl = document.getElementById('vacationEnd');
-            if (vacStartEl && cfg.vacation_start) vacStartEl.value = cfg.vacation_start;
-            if (vacEndEl && cfg.vacation_end) vacEndEl.value = cfg.vacation_end;
-            updateVacationStatus();
-            // Global enable toggle
-            const gp = document.getElementById('enableGlobalPolling');
-            if (gp) gp.checked = !!cfg.enable_polling;
+            // vacations and global enable removed from UI
         }
     } catch (e) {
         console.error('Erreur chargement config polling:', e);
@@ -1111,21 +1076,15 @@ async function loadPollingConfig() {
 
 async function savePollingConfig() {
     const btn = document.getElementById('savePollingCfgBtn');
-    const dedup = document.getElementById('enableSubjectGroupDedup').checked;
+    const dedup = document.getElementById('enableSubjectGroupDedup')?.checked;
     const senders = collectSenderInputs();
-    const vacStart = document.getElementById('vacationStart').value.trim();
-    const vacEnd = document.getElementById('vacationEnd').value.trim();
-    const enableGlobalPolling = !!document.getElementById('enableGlobalPolling')?.checked;
 
     const payload = {};
     payload.enable_subject_group_dedup = dedup;
 
     payload.sender_of_interest_for_polling = senders;
     // Dates ISO (ou null)
-    payload.vacation_start = vacStart || null;
-    payload.vacation_end = vacEnd || null;
-    // New global toggle persisted with polling config
-    payload.enable_polling = enableGlobalPolling;
+    // vacations and global enable removed
 
     try {
         btn.disabled = true;

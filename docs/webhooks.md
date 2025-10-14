@@ -270,42 +270,6 @@ async def receive_webhook(payload: WebhookPayload):
     ]
     preferred = payload.first_direct_download_url
  
-```
- 
-## Contrôle des scénarios Make via le Dashboard
+# Contrôle des scénarios Make
 
-Le tableau de bord propose un onglet « Make » (hash `/#make`, alias legacy `/#polling`) permettant:
-
-- **Toggle global**: activer/désactiver tous les scénarios Make en une fois.
-- **Vacances**: configurer une période pendant laquelle les scénarios sont automatiquement stoppés.
-
-### Endpoints backend utilisés
-
-- `POST /api/update_polling_config`
-  - Corps JSON: `{ enable_polling: bool, vacation_start?: 'YYYY-MM-DD' | null, vacation_end?: 'YYYY-MM-DD' | null, ... }`
-  - Effet: si `enable_polling` est fourni, synchronise immédiatement l'état ON/OFF de tous les scénarios via l'API Make.
-  - Réponse: contient un bloc `make_toggle` avec le résultat par scénario.
-
-- `POST /api/make/toggle_all`
-  - Corps JSON: `{ enable: bool }`
-  - Effet: start/stop de tous les scénarios Make côté serveur.
-
-### Watcher Vacances
-
-Un thread léger côté serveur applique en continu l'état souhaité en fonction de:
-
-- `enable_polling` (toggle UI) et
-- la période `POLLING_VACATION_START/END`.
-
-Règles:
-- Si vacances OU `enable_polling=false` ⇒ envoie `stop` à tous les scénarios
-- Si hors vacances ET `enable_polling=true` ⇒ envoie `start`
-
-Le watcher est idempotent (agit seulement sur changement d'état) et démarre si `ENABLE_BACKGROUND_TASKS=true`.
-
-### Variables d'environnement
-
-- `MAKECOM_API_KEY` (obligatoire)
-- `MAKE_API_HOST` (optionnel, ex: `eu1.make.com`)
-- `ENABLE_BACKGROUND_TASKS` (true pour activer le watcher)
-- IDs scénarios (optionnels pour override): `MAKE_SCENARIO_ID_AUTOREPONDEUR`, `MAKE_SCENARIO_ID_RECADRAGE`, `MAKE_SCENARIO_ID_PRESENCE_TRUE`, `MAKE_SCENARIO_ID_PRESENCE_FALSE`
+Note: le contrôle des scénarios Make (activation/désactivation) s'effectue désormais manuellement dans l'interface Make.com. Le tableau de bord de cette application n'expose plus de commandes pour piloter les scénarios.

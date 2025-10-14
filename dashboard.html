@@ -447,7 +447,7 @@
       <!-- Section: Make (config + contrôle via API Make) -->
       <div id="sec-polling" class="section-panel">
         <div class="card">
-          <div class="card-title">🧩 Contrôle des Scénarios Make (global, expéditeurs, dédup)</div>
+          <div class="card-title">🧩 Préférences Make (expéditeurs, dédup)</div>
           <div class="form-group">
             <label>SENDER_OF_INTEREST_FOR_POLLING</label>
             <div id="senderOfInterestContainer" class="stack" style="gap:8px;"></div>
@@ -461,32 +461,9 @@
             </label>
             <span style="margin-left: 10px;">ENABLE_SUBJECT_GROUP_DEDUP</span>
           </div>
-          <div class="inline-group" style="margin: 8px 0 12px 0;">
-            <label class="toggle-switch">
-              <input type="checkbox" id="enableGlobalPolling">
-              <span class="toggle-slider"></span>
-            </label>
-            <span style="margin-left: 10px;">Activer les scénarios Make (toggle global)</span>
-          </div>
-          <button id="savePollingCfgBtn" class="btn btn-primary">💾 Enregistrer (Make + Préférences)</button>
-          <div id="pollingCfgMsg" class="status-msg"></div>
-          <div class="small-text">Le toggle global synchronise immédiatement l'état ON/OFF des scénarios Make via l'API.</div>
+          
         </div>
-        <div class="card" style="margin-top: 20px;">
-          <div class="card-title">⚙️ Vacances (désactivation scenarios Make sur période)</div>
-          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-            <div class="form-group">
-              <label for="vacationStart">POLLING_VACATION_START</label>
-              <input id="vacationStart" type="date">
-            </div>
-            <div class="form-group">
-              <label for="vacationEnd">POLLING_VACATION_END</label>
-              <input id="vacationEnd" type="date">
-            </div>
-          </div>
-          <div id="vacationStatus" class="small-text" style="margin-bottom: 8px;"></div>
-          <div class="small-text">Les dates de vacances sont enregistrées via le bouton ci-dessus et seront appliquées côté serveur pour stopper/démarrer les scénarios.</div>
-        </div>
+        
       </div>
 
       <!-- Section: Préférences (filtres + fiabilité) -->

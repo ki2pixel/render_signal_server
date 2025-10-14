@@ -5,7 +5,7 @@
 
 ## Vue d'ensemble
 
-Le dashboard a été refactorisé pour se concentrer exclusivement sur la gestion et le contrôle des webhooks, avec une navigation par onglets pour améliorer l'ergonomie. Les onglets incluent: Vue d'ensemble, Webhooks, Polling, Préférences, Outils. Les anciennes fonctionnalités de télécommande à distance (déclenchement de workflow local) ont été supprimées. Migration de `trigger_page.html` vers `dashboard.html`.
+Le dashboard a été refactorisé pour se concentrer exclusivement sur la gestion et le contrôle des webhooks, avec une navigation par onglets pour améliorer l'ergonomie. Les onglets incluent: Vue d'ensemble, Webhooks, Make, Préférences, Outils. Les anciennes fonctionnalités de télécommande à distance (déclenchement de workflow local) ont été supprimées. Migration de `trigger_page.html` vers `dashboard.html`.
 
 ## Sections du Dashboard
 
@@ -22,17 +22,7 @@ Le dashboard a été refactorisé pour se concentrer exclusivement sur la gestio
 - **Persistance**: `debug/webhook_time_window.json`
 - **Effet**: Immédiat, sans redéploiement
 
-### 2. Contrôle du Polling IMAP
-
-- **Toggle**: `#pollingToggle` (switch on/off)
-- **Texte de statut**: `#pollingStatusText`
-- **Bouton**: `#togglePollingBtn`
-- **Message**: `#pollingMsg`
-- **Appels API**:
-  - `GET /api/get_webhook_config` pour charger l'état actuel du polling
-  - `POST /api/toggle_polling` pour changer l'état
-- **Note**: Nécessite un redémarrage du serveur pour prendre effet complètement
-- **Persistance**: État sauvegardé dans `debug/webhook_config.json`
+### 2. Préférences Make (Polling IMAP)
 
 #### 2.a Configuration du Polling (jours, heures, déduplication)
 
@@ -47,15 +37,18 @@ Le dashboard a été refactorisé pour se concentrer exclusivement sur la gestio
   - Conteneur: `#senderOfInterestContainer`
   - Bouton d'ajout: `#addSenderBtn` (inputs email individuels avec bouton « ❌ » par ligne)
   - Validation côté client: normalisation lowercase, regex email, déduplication
-- **Vacances (plage de dates)**: contrôles `#vacationStart` / `#vacationEnd` avec affichage de statut `#vacationStatus`
 
 **Appels API**:
-- `GET /api/get_polling_config` pour charger la configuration polling (jours, heures, expéditeurs, dédup, vacances)
+- `GET /api/get_polling_config` pour charger la configuration polling (jours, heures, expéditeurs, dédup)
 - `POST /api/update_polling_config` pour sauvegarder les modifications
 
 **Comportement**:
 - Les jours actifs sont désormais gérés exclusivement via cases à cocher; l'ancienne saisie texte n'est plus utilisée.
 - Un redémarrage du serveur peut être nécessaire pour appliquer totalement certains changements selon l'environnement.
+
+**Persistance**: `debug/polling_config.json`
+
+**Note**: L'onglet 'Make' permet uniquement la configuration manuelle des préférences de polling IMAP. Le contrôle automatisé des scénarios Make.com a été supprimé.
 
 ### 3. Configuration des URLs Webhooks
 

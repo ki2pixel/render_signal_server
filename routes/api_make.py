@@ -10,7 +10,6 @@ from flask_login import login_required
 from config.settings import MAKECOM_API_KEY
 
 bp = Blueprint("api_make", __name__, url_prefix="/api/make")
-
 # Scenario IDs: can be overridden by env vars, fallback to provided IDs
 # ENV overrides (optional): MAKE_SCENARIO_ID_AUTOREPONDEUR, MAKE_SCENARIO_ID_RECADRAGE, MAKE_SCENARIO_ID_PRESENCE_TRUE, MAKE_SCENARIO_ID_PRESENCE_FALSE
 SCENARIO_IDS = {
@@ -20,12 +19,30 @@ SCENARIO_IDS = {
     "presence_false": int(os.environ.get("MAKE_SCENARIO_ID_PRESENCE_FALSE", "7407408")),
 }
 
-# Region host: default EU
+# Configuration du webhook de contrôle (solution alternative)
+MAKE_WEBHOOK_CONTROL_URL = os.environ.get("MAKE_WEBHOOK_CONTROL_URL", "").strip()
+MAKE_WEBHOOK_API_KEY = os.environ.get("MAKE_WEBHOOK_API_KEY", "").strip()
+
+# Configuration API directe (si webhook non configuré)
 MAKE_HOST = os.environ.get("MAKE_API_HOST", "eu1.make.com").strip()
 API_BASE = f"https://{MAKE_HOST}/api/v2"
-HEADERS = {"Authorization": f"Token {MAKECOM_API_KEY}"}
+
+# Auth type: Token (default) or Bearer (for OAuth access tokens)
+MAKE_AUTH_TYPE = os.environ.get("MAKE_API_AUTH_TYPE", "Token").strip()
+MAKE_ORG_ID = os.environ.get("MAKE_API_ORG_ID", "").strip()
 
 TIMEOUT_SEC = 15
+
+
+def build_headers() -> dict:
+    headers = {}
+    if MAKE_AUTH_TYPE.lower() == "bearer":
+        headers["Authorization"] = f"Bearer {MAKECOM_API_KEY}"
+    else:
+        headers["Authorization"] = f"Token {MAKECOM_API_KEY}"
+    if MAKE_ORG_ID:
+        headers["X-Organization"] = MAKE_ORG_ID
+    return headers
 
 
 def _scenario_action_url(scenario_id: int, enable: bool) -> str:
@@ -34,9 +51,30 @@ def _scenario_action_url(scenario_id: int, enable: bool) -> str:
 
 
 def _call_make_scenario(scenario_id: int, enable: bool) -> Tuple[bool, str, int]:
+    """Appelle l'API Make soit directement, soit via webhook de contrôle"""
+    action = "start" if enable else "stop"
+    
+    # Si webhook de contrôle configuré, l'utiliser
+    if MAKE_WEBHOOK_CONTROL_URL and MAKE_WEBHOOK_API_KEY:
+        try:
+            response = requests.post(
+                MAKE_WEBHOOK_CONTROL_URL,
+                json={
+                    "action": action,
+                    "scenario_id": scenario_id,
+                    "api_key": MAKE_WEBHOOK_API_KEY
+                },
+                timeout=TIMEOUT_SEC
+            )
+            ok = response.status_code == 200
+            return ok, f"Webhook {action} for {scenario_id}", response.status_code
+        except Exception as e:
+            return False, f"Webhook error: {str(e)}", -1
+    
+    # Sinon, utiliser l'API directe
     url = _scenario_action_url(scenario_id, enable)
     try:
-        resp = requests.post(url, headers=HEADERS, timeout=TIMEOUT_SEC)
+        resp = requests.post(url, headers=build_headers(), timeout=TIMEOUT_SEC)
         ok = resp.ok
         return ok, url, resp.status_code
     except Exception as e:

@@ -308,16 +308,6 @@ def update_polling_config():
         except Exception:
             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
 
-        # Si le toggle global est précisé, déclencher l'API Make pour (dé)activer tous les scénarios
-        make_results = None
-        if new_enable_polling is not None:
-            try:
-                # Import local pour éviter les cycles d'import
-                from .api_make import toggle_all_scenarios  # type: ignore
-                make_results = toggle_all_scenarios(bool(new_enable_polling))
-            except Exception:
-                make_results = {"error": "toggle_all_scenarios failed"}
-
         return jsonify({
             "success": True,
             "config": {
@@ -330,8 +320,7 @@ def update_polling_config():
                 "vacation_end": merged.get('vacation_end'),
                 "enable_polling": merged.get('enable_polling', polling_config.get_enable_polling(True)),
             },
-            "make_toggle": make_results,
-            "message": "Configuration mise à jour. Les scénarios Make ont été synchronisés avec le toggle global." if new_enable_polling is not None else "Configuration polling mise à jour. Un redémarrage peut être nécessaire pour prise en compte complète."
+            "message": "Configuration polling mise à jour. Un redémarrage peut être nécessaire pour prise en compte complète."
         }), 200
     except Exception:
         return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour du polling."}), 500
