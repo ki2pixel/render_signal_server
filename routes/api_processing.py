@@ -13,23 +13,22 @@ legacy_bp = Blueprint("api_processing_legacy", __name__)
 PROCESSING_PREFS_FILE = (
     Path(__file__).resolve().parents[1] / "debug" / "processing_prefs.json"
 )
-
 DEFAULT_PROCESSING_PREFS = {
     "exclude_keywords": [],
     "require_attachments": False,
     "max_email_size_mb": None,
     "sender_priority": {},
-    "retry_count": 0,
-    "retry_delay_sec": 2,
+    "retry_count": 2,
+    "retry_delay_sec": 1,
     "webhook_timeout_sec": 30,
-    "rate_limit_per_hour": 0,
+    "rate_limit_per_hour": 5,
     "notify_on_failure": False,
+    "mirror_media_to_custom": True,  # Activer le miroir vers le webhook personnalisé par défaut
 }
 
 
 def _load_processing_prefs() -> dict:
     try:
-        if PROCESSING_PREFS_FILE.exists():
             with open(PROCESSING_PREFS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f) or {}
                 if isinstance(data, dict):
