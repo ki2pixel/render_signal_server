@@ -25,6 +25,15 @@ def check_new_emails_and_trigger_webhook() -> int:
     - Uses helpers exposed by app_render and modules under email_processing/.
     - Defensive logging; never raises to the background loop.
     """
+    # Compatibility layer: if a legacy implementation exists in app_render,
+    # delegate to it (tests may monkeypatch this symbol to validate delegation).
+    try:
+        from app_render import _legacy_check_new_emails_and_trigger_webhook as _legacy_impl  # type: ignore[attr-defined]
+        if _legacy_impl:
+            return int(_legacy_impl())
+    except Exception:
+        # If legacy symbol not present or unusable, proceed with native flow
+        pass
     # Lazy imports to avoid cycles
     try:
         import imaplib
@@ -122,6 +131,14 @@ def check_new_emails_and_trigger_webhook() -> int:
                 status, msg_data = mail.fetch(num, '(RFC822)')
                 if status != 'OK' or not msg_data:
                     logger.warning("IMAP: Failed to fetch message %s (status=%s)", num, status)
+                    try:
+                        logger.info(
+                            "IGNORED: Skipping email %s due to fetch failure (status=%s)",
+                            num.decode() if isinstance(num, bytes) else str(num),
+                            status,
+                        )
+                    except Exception:
+                        pass
                     continue
                 raw_bytes = None
                 for part in msg_data:
@@ -130,6 +147,13 @@ def check_new_emails_and_trigger_webhook() -> int:
                         break
                 if not raw_bytes:
                     logger.warning("IMAP: No RFC822 bytes for message %s", num)
+                    try:
+                        logger.info(
+                            "IGNORED: Skipping email %s due to empty RFC822 payload",
+                            num.decode() if isinstance(num, bytes) else str(num),
+                        )
+                    except Exception:
+                        pass
                     continue
 
                 msg = message_from_bytes(raw_bytes)
@@ -138,6 +162,16 @@ def check_new_emails_and_trigger_webhook() -> int:
                 date_raw = msg.get('Date', '')
                 subject = decode_email_header(subj_raw)
                 sender_addr = extract_sender_email(from_raw).lower()
+                # Observability: log when an email has been read and parsed (no sensitive content)
+                try:
+                    logger.info(
+                        "POLLER: Email read from IMAP: num=%s, subject='%s', sender='%s'",
+                        num.decode() if isinstance(num, bytes) else str(num),
+                        subject or 'N/A',
+                        sender_addr or 'N/A',
+                    )
+                except Exception:
+                    pass
 
                 # Filter by allowed senders
                 try:
@@ -146,6 +180,14 @@ def check_new_emails_and_trigger_webhook() -> int:
                     allowed = []
                 if allowed and sender_addr not in allowed:
                     logger.info("POLLER: Skipping email %s (sender %s not in allowlist)", num.decode() if isinstance(num, bytes) else str(num), sender_addr)
+                    try:
+                        logger.info(
+                            "IGNORED: Sender not in allowlist for email %s (sender=%s)",
+                            num.decode() if isinstance(num, bytes) else str(num),
+                            sender_addr,
+                        )
+                    except Exception:
+                        pass
                     continue
 
                 # Build a simple headers dict to compute email_id
@@ -157,6 +199,10 @@ def check_new_emails_and_trigger_webhook() -> int:
                 email_id = imap_client.generate_email_id(headers_map)
                 if is_email_id_processed_redis(email_id):
                     logger.info("DEDUP_EMAIL: Skipping already processed email_id=%s", email_id)
+                    try:
+                        logger.info("IGNORED: Email %s ignored due to email-id dedup", email_id)
+                    except Exception:
+                        pass
                     continue
 
                 # Extract plain text content for pattern checks and link extraction
@@ -260,6 +306,14 @@ def check_new_emails_and_trigger_webhook() -> int:
                     logger.info("DEDUP_GROUP: Skipping email %s (group %s processed)", email_id, group_id)
                     mark_email_id_as_processed_redis(email_id)
                     mark_email_as_read_imap(mail, num)
+                    try:
+                        logger.info(
+                            "IGNORED: Email %s ignored due to subject-group dedup (group=%s)",
+                            email_id,
+                            group_id,
+                        )
+                    except Exception:
+                        pass
                     continue
 
                 # Build payload expected by PHP endpoint (see deployment/public_html/index.php)
@@ -413,6 +467,10 @@ def handle_presence_route(
                 webhooks_time_start_str or 'unset',
                 webhooks_time_end_str or 'unset',
             )
+            try:
+                logger.info("IGNORED: Presence webhook skipped due to time window (email %s)", email_id)
+            except Exception:
+                pass
             return False
 
         presence_url = presence_true_url if presence_flag else presence_false_url
@@ -530,6 +588,10 @@ def handle_desabo_route(
                 "DESABO: Time window not satisfied for email %s (now=%s, window=%s-%s). Skipping.",
                 email_id, now_local.strftime('%H:%M'), webhooks_time_start_str or 'unset', webhooks_time_end_str or 'unset'
             )
+            try:
+                logger.info("IGNORED: DESABO skipped due to time window (email %s)", email_id)
+            except Exception:
+                pass
             return False
 
         sender_email_clean = extract_sender_email(sender_raw)

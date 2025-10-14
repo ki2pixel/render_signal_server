@@ -1,0 +1,116 @@
+{
+  "name": "Control Scenarios via Webhook (Two Routes, Exists, Token)",
+  "flow": [
+    {
+      "id": 1,
+      "module": "gateway:CustomWebHook",
+      "version": 1,
+      "parameters": {
+        "hook": 0,
+        "maxResults": 1
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": {"x": 0, "y": -40},
+        "restore": {
+          "parameters": {
+            "hook": {"label": "contrôle scénarios", "data": {"editable": "true"}}
+          }
+        },
+        "parameters": [
+          {"name": "hook", "type": "hook:gateway-webhook", "label": "Webhook", "required": true},
+          {"name": "maxResults", "type": "number", "label": "Maximum number of results"}
+        ],
+        "interface": [
+          {"name": "action", "label": "Action (start|stop)", "help": "start ou stop", "type": "text", "required": true, "multiline": false},
+          {"name": "scenario_id", "label": "Scenario ID", "help": "ID du scénario Make (entier)", "type": "integer", "required": true, "multiline": false},
+          {"name": "api_key", "label": "API Key", "help": "Clé d'authentification partagée", "type": "text", "required": true, "multiline": false}
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "module": "builtin:BasicRouter",
+      "version": 1,
+      "mapper": null,
+      "metadata": {"designer": {"x": 300, "y": -40}},
+      "routes": [
+        {
+          "flow": [
+            {
+              "id": 3,
+              "module": "http:ActionSendData",
+              "version": 3,
+              "parameters": {
+                "url": "https://eu2.make.com/api/v2/scenarios/{{1.scenario_id}}/start",
+                "method": "POST",
+                "headers": [
+                  {"key": "Authorization", "value": "Token YOUR_MAKE_API_TOKEN"},
+                  {"key": "Content-Type", "value": "application/json"}
+                ],
+                "body": "{}",
+                "parseResponse": false
+              },
+              "metadata": {"designer": {"x": 650, "y": -120}}
+            }
+          ],
+          "filter": {
+            "name": "start_route",
+            "conditions": [
+              [{"a": "{{1.api_key}}", "o": "text:equal", "b": "YOUR_SECURE_API_KEY_HERE"}],
+              [{"a": "{{lower(1.action)}}", "o": "text:equal", "b": "start"}],
+              [{"a": "{{1.scenario_id}}", "o": "exists"}]
+            ]
+          }
+        },
+        {
+          "flow": [
+            {
+              "id": 4,
+              "module": "http:ActionSendData",
+              "version": 3,
+              "parameters": {
+                "url": "https://eu2.make.com/api/v2/scenarios/{{1.scenario_id}}/stop",
+                "method": "POST",
+                "headers": [
+                  {"key": "Authorization", "value": "Token YOUR_MAKE_API_TOKEN"},
+                  {"key": "Content-Type", "value": "application/json"}
+                ],
+                "body": "{}",
+                "parseResponse": false
+              },
+              "metadata": {"designer": {"x": 650, "y": 80}}
+            }
+          ],
+          "filter": {
+            "name": "stop_route",
+            "conditions": [
+              [{"a": "{{1.api_key}}", "o": "text:equal", "b": "YOUR_SECURE_API_KEY_HERE"}],
+              [{"a": "{{lower(1.action)}}", "o": "text:equal", "b": "stop"}],
+              [{"a": "{{1.scenario_id}}", "o": "exists"}]
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "instant": true,
+    "version": 1,
+    "scenario": {
+      "roundtrips": 1,
+      "maxErrors": 3,
+      "autoCommit": true,
+      "autoCommitTriggerLast": true,
+      "sequential": false,
+      "slots": null,
+      "confidential": false,
+      "dataloss": false,
+      "dlq": false,
+      "freshVariables": false
+    },
+    "designer": {"orphans": []},
+    "zone": "eu2.make.com",
+    "notes": []
+  }
+}

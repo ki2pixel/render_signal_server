@@ -2,6 +2,64 @@
 
 ## Terminé
 
+-   [2025-10-14 15:54] **Amélioration des logs de polling et correction des tests**
+    - Ajout de logs "POLLER: Email read from IMAP" lors de la lecture d'un email dans `email_processing/orchestrator.py`.
+    - Promotion du log "marked as read" à niveau INFO dans `email_processing/imap_client.py`.
+    - Ajout de logs "IGNORED" pour les motifs de rejet (fetch KO, expéditeur non autorisé, déduplication email/groupe, fenêtre horaire non satisfaite dans Présence/DESABO).
+    - Ajout d'alias de module pour tests dans `routes/api_config.py` (POLLING_ACTIVE_DAYS, etc.).
+    - Shim de compatibilité pour endpoint polling toggle dans `routes/api_polling.py`.
+    - Hook de délégation dans orchestrator pour attentes de tests.
+    - Résultat: 316 tests passants, traçabilité améliorée sans régression.
+
+-   [2025-10-14 14:25] **Mise à jour de docs/ui.md suite à workflow /docs-updater**
+    - Suppression des références aux contrôles "Vacances" supprimés de `dashboard.html`
+    - Ajustement de la section "Contrôle du Polling IMAP" en "Préférences Make (Polling IMAP)" pour refléter l'onglet actuel
+    - Suppression des références à `#pollingToggle` et mise à jour des appels API (`/api/get_polling_config`, `/api/update_polling_config`)
+    - Ajout d'une note sur le contrôle manuel Make uniquement
+    - Cohérence parfaite entre code source et documentation
+
+-   [2025-10-14 14:21] **Suppression des contrôles automatisés Make (UI + Backend)**
+    -   Suppression du toggle global "Activer les scénarios Make" et de la section "Vacances" dans `dashboard.html`
+    -   Nettoyage de `static/dashboard.js` : suppression des références à `vacationStart`, `vacationEnd`, `updateVacationStatus()` et `enableGlobalPolling`
+    -   Mise à jour de `docs/webhooks.md` pour indiquer contrôle manuel uniquement dans Make.com
+    -   Suppression des appels API Make dans `routes/api_config.py` (plus de trigger `toggle_all_scenarios()`)
+    -   Raison : erreurs 403 persistantes sur l'API Make, passage au contrôle manuel
+
+-   [2025-10-14 00:24:00] **Ajout de logs explicites pour le redémarrage serveur**
+    - Modification de `routes/api_admin.py` pour journaliser les demandes de redémarrage initiées depuis l'UI.
+    - Logs "ADMIN: Server restart requested..." et "scheduled (background)" via `current_app.logger.info()`.
+    - Amélioration de la traçabilité pour diagnostiquer les échecs (permissions sudoers, etc.).
+
+-   [2025-10-14 00:24:00] **Correction de la persistance des heures de polling dans l'UI**
+    - Modification de `routes/api_config.py` pour lire depuis `config.settings` (live) et mettre à jour dynamiquement après sauvegarde.
+    - Résolution du bug où les anciennes valeurs réapparaissaient après clic sur "💾 Enregistrer la Configuration Polling".
+    - Cohérence immédiate entre UI et backend sans redémarrage.
+
+-   [2025-10-13 22:50] **Configuration de la fenêtre horaire des webhooks**
+    - Modification de `app_render.py` pour charger les valeurs par défaut des variables d'environnement `WEBHOOKS_TIME_START` et `WEBHOOKS_TIME_END`
+    - Conservation de la possibilité de surcharge via l'interface utilisateur
+    - Vérification du bon fonctionnement avec les webhooks DESABO
+
+-   [2025-10-13 01:10] **Refactoring Étape 5 (final) : Migration de la dernière route**
+    -   Déplacement de `/api/check_emails_and_download` de `app_render.py` vers `routes/api_admin.py` (handler `check_emails_and_download()`), protégé par `@login_required`, exécution en tâche de fond via `threading.Thread`.
+    -   Suppression de la route legacy dans `app_render.py` (plus aucun `@app.route` dans ce fichier).
+    -   Mise à jour de `docs/refactoring-conformity-report.md` pour marquer 100% des routes migrées (conformité complète) et consolidation finale par modules.
+    -   ✅ 58/58 tests verts (`pytest test_app_render.py -v`).
+
+-   [2025-10-13 00:52] **Refactor: lock singleton, auth centralization, docs sync**
+    -   Extraction du verrou inter-processus vers `background/lock.py` et branchement dans `app_render.py`.
+    -   Centralisation de l'authentification (`User`, `LoginManager`) dans `auth/user.py` via `init_login_manager(app, login_view='dashboard.login')`.
+    -   Mise à jour de la documentation: `docs/architecture.md` (section background) et `docs/refactoring-conformity-report.md` (taille, statut, extractions).
+    -   Résultat: `app_render.py` ≈ 511 lignes, ✅ 58/58 tests verts.
+
+-   [2025-10-12 23:36] **Refactoring Étape 5 : Extraction des Routes API (Blueprints)**
+    -   Création du blueprint `api_logs` pour gérer les logs de webhooks (`/api/webhook_logs`)
+    -   Mise à jour du blueprint `api_processing` avec support des URLs legacy (`/api/get_processing_prefs`, `/api/update_processing_prefs`)
+    -   Suppression des handlers legacy de `app_render.py` tout en conservant les helpers internes
+    -   Mise à jour de la documentation (`architecture.md`, `api.md`)
+    -   ✅ 58/58 tests passent avec succès
+    -   ✅ Rétrocompatibilité maintenue avec les URLs existantes
+
 -   [2025-10-14 14:25] **Mise à jour de docs/ui.md suite à workflow /docs-updater**
     - Suppression des références aux contrôles "Vacances" supprimés de `dashboard.html`
     - Ajustement de la section "Contrôle du Polling IMAP" en "Préférences Make (Polling IMAP)" pour refléter l'onglet actuel

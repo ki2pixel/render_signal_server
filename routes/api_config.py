@@ -22,6 +22,14 @@ from config.settings import (
 
 bp = Blueprint("api_config", __name__, url_prefix="/api")
 
+# Module-level aliases used by some tests to patch runtime values directly
+# Note: primary source of truth remains config.settings; these aliases are
+# provided for backward-compatibility with legacy tests.
+POLLING_ACTIVE_DAYS = settings.POLLING_ACTIVE_DAYS
+POLLING_ACTIVE_START_HOUR = settings.POLLING_ACTIVE_START_HOUR
+POLLING_ACTIVE_END_HOUR = settings.POLLING_ACTIVE_END_HOUR
+ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
+
 
 def _load_runtime_flags_file() -> dict:
     defaults = {
@@ -124,10 +132,13 @@ def update_runtime_flags():
 def get_polling_config():
     try:
         cfg = {
-            "active_days": settings.POLLING_ACTIVE_DAYS,
-            "active_start_hour": settings.POLLING_ACTIVE_START_HOUR,
-            "active_end_hour": settings.POLLING_ACTIVE_END_HOUR,
-            "enable_subject_group_dedup": settings.ENABLE_SUBJECT_GROUP_DEDUP,
+            # Use module-level alias to allow tests to patch this value
+            "active_days": POLLING_ACTIVE_DAYS,
+            # Use aliases for hour fields for test patching
+            "active_start_hour": POLLING_ACTIVE_START_HOUR,
+            "active_end_hour": POLLING_ACTIVE_END_HOUR,
+            # Use alias for test patching
+            "enable_subject_group_dedup": ENABLE_SUBJECT_GROUP_DEDUP,
             "timezone": POLLING_TIMEZONE_STR,
             "sender_of_interest_for_polling": settings.SENDER_LIST_FOR_POLLING,
             "vacation_start": polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None,

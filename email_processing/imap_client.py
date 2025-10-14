@@ -118,7 +118,7 @@ def mark_email_as_read_imap(logger, mail, email_num) -> bool:
     try:
         mail.store(email_num, '+FLAGS', '\\Seen')
         if logger:
-            logger.debug(f"IMAP: Email {email_num} marked as read")
+            logger.info(f"IMAP: Email {email_num} marked as read")
         return True
     except Exception as e:
         if logger:
