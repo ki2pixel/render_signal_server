@@ -39,6 +39,20 @@ function handleWebhookRequest()
     try {
         // Get POST data
         $input = file_get_contents('php://input');
+        // Debug: request metadata
+        $method = $_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN';
+        $uri = $_SERVER['REQUEST_URI'] ?? '';
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+        $len = isset($_SERVER['CONTENT_LENGTH']) ? intval($_SERVER['CONTENT_LENGTH']) : strlen((string)$input);
+        $headers = function_exists('apache_request_headers') ? @apache_request_headers() : [];
+        error_log(sprintf("Webhook request meta: method=%s uri=%s ip=%s content_length=%d", $method, $uri, $ip, $len));
+        if (!empty($headers)) {
+            // Avoid logging sensitive headers; log keys only
+            error_log("Webhook request headers: " . implode(',', array_keys($headers)));
+        }
+        if ($len === 0 || $input === false || $input === '') {
+            error_log("Webhook received empty body");
+        }
         $webhookData = json_decode($input, true);
         
         if (json_last_error() !== JSON_ERROR_NONE) {
@@ -48,7 +62,11 @@ function handleWebhookRequest()
         }
         
         // Log incoming webhook
-        error_log("Webhook received: " . $input);
+        error_log("Webhook received (json ok). Keys: " . implode(',', array_keys((array)$webhookData)));
+        if (isset($webhookData['delivery_links'])) {
+            $dlCount = is_array($webhookData['delivery_links']) ? count($webhookData['delivery_links']) : 0;
+            error_log("Webhook payload contains delivery_links count=" . $dlCount);
+        }
         
         // Process webhook
         $handler = new WebhookHandler();

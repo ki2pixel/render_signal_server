@@ -50,8 +50,9 @@ class WebhookHandler
                 return $result;
             }
 
-            // Extract sender email from webhook data
-            $senderEmail = $this->emailProcessor->extractSenderEmail($webhookData['sender_address']);
+            // Extract sender email from webhook data (support sender_address or sender_email)
+            $senderField = isset($webhookData['sender_address']) ? $webhookData['sender_address'] : (isset($webhookData['sender_email']) ? $webhookData['sender_email'] : '');
+            $senderEmail = $this->emailProcessor->extractSenderEmail($senderField);
             
             if (!$senderEmail) {
                 $result['message'] = 'Could not extract sender email';
@@ -65,44 +66,58 @@ class WebhookHandler
                 return $result;
             }
 
-            // Check if email content is provided in webhook data
-            if (isset($webhookData['email_content']) && !empty($webhookData['email_content'])) {
-                // Use email content from webhook payload
-                $emailData = [
-                    'text' => $webhookData['email_content'],
-                    'html' => $webhookData['email_content'],
-                    'subject' => $webhookData['subject'],
-                    'from' => $webhookData['sender_address']
-                ];
-            } else {
-                // Fallback: Search for the email using IMAP
-                $emailData = $this->searchEmailFromWebhook($webhookData);
-
-                if (!$emailData) {
-                    $result['message'] = 'Email not found in IMAP and no email content provided in webhook';
-                    return $result;
+            // If delivery_links are provided (Make webhook), use them directly
+            $processedUrls = [];
+            if (isset($webhookData['delivery_links']) && is_array($webhookData['delivery_links']) && count($webhookData['delivery_links']) > 0) {
+                foreach ($webhookData['delivery_links'] as $item) {
+                    // Accept either dict { provider, raw_url } or raw string
+                    if (is_array($item) && isset($item['raw_url'])) {
+                        $processedUrls[] = $item['raw_url'];
+                    } elseif (is_string($item)) {
+                        $processedUrls[] = $item;
+                    }
                 }
+                // Deduplicate
+                $processedUrls = array_values(array_unique(array_filter($processedUrls)));
+            } else {
+                // Fallback: use provided email_content or search IMAP, then extract links server-side
+                if (isset($webhookData['email_content']) && !empty($webhookData['email_content'])) {
+                    // Use email content from webhook payload
+                    $emailData = [
+                        'text' => $webhookData['email_content'],
+                        'html' => $webhookData['email_content'],
+                        'subject' => $webhookData['subject'],
+                        'from' => $senderField
+                    ];
+                } else {
+                    // Fallback: Search for the email using IMAP
+                    $emailData = $this->searchEmailFromWebhook($webhookData);
+
+                    if (!$emailData) {
+                        $result['message'] = 'Email not found in IMAP and no email content provided in webhook';
+                        return $result;
+                    }
+                }
+
+                // Process email content for URLs from supported providers
+                $processedUrls = $this->processEmailForDropboxUrls($emailData);
             }
 
-            // Process email content for Dropbox URLs
-            $processedUrls = $this->processEmailForDropboxUrls($emailData);
-            
             if (empty($processedUrls)) {
-                $result['message'] = 'No Dropbox URLs found in email';
+                $result['message'] = 'No delivery links found';
                 return $result;
             }
 
             // Log URLs to database
             $loggedCount = $this->databaseLogger->logMultipleDropboxUrls($processedUrls);
-            
+
             $result['success'] = true;
-            $result['message'] = "Successfully processed {$loggedCount} Dropbox URLs";
+            $result['message'] = "Successfully processed {$loggedCount} delivery link(s)";
             $result['processed_urls'] = $processedUrls;
             
             error_log("Webhook processed successfully: {$loggedCount} URLs logged");
             
         } catch (Exception $e) {
-            $result['message'] = 'Processing error: ' . $e->getMessage();
             $result['errors'][] = $e->getMessage();
             error_log("Webhook processing error: " . $e->getMessage());
         }
@@ -118,16 +133,33 @@ class WebhookHandler
      */
     private function validateWebhookData($data)
     {
-        $requiredFields = ['sender_address', 'subject', 'receivedDateTime'];
-        
-        foreach ($requiredFields as $field) {
-            if (!isset($data[$field]) || empty($data[$field])) {
-                error_log("Missing required webhook field: {$field}");
-                return false;
-            }
+        // Allow two shapes:
+        // A) Legacy/custom webhook: requires sender_address, subject, receivedDateTime
+        // B) Make webhook (Media Solution): may provide sender_email and delivery_links (and may omit receivedDateTime)
+
+        $hasSubject = isset($data['subject']) && !empty($data['subject']);
+        $hasSender = (isset($data['sender_address']) && !empty($data['sender_address'])) || (isset($data['sender_email']) && !empty($data['sender_email']));
+        $hasReceived = isset($data['receivedDateTime']) && !empty($data['receivedDateTime']);
+        $hasDeliveryLinks = isset($data['delivery_links']) && is_array($data['delivery_links']) && count($data['delivery_links']) > 0;
+
+        // Accept if legacy required fields present
+        if ($hasSubject && $hasSender && $hasReceived) {
+            return true;
         }
-        
-        return true;
+
+        // Accept Make-style payload if it has at least subject, sender (any form), and delivery_links
+        if ($hasSubject && $hasSender && $hasDeliveryLinks) {
+            return true;
+        }
+
+        // As a fallback, accept if subject + sender present and email_content provided
+        if ($hasSubject && $hasSender && isset($data['email_content']) && !empty($data['email_content'])) {
+            return true;
+        }
+
+        // Otherwise, invalid
+        error_log("Invalid webhook payload: missing required fields (subject/sender and either receivedDateTime, delivery_links, or email_content)");
+        return false;
     }
 
     /**

@@ -696,6 +696,45 @@ def handle_media_solution_route(
             extra_payload=extra_payload,
         )
         if makecom_success:
+            # Optional mirror to custom PHP endpoint (deployment/) to persist links
+            try:
+                mirror_enabled = bool(processing_prefs.get('mirror_media_to_custom'))
+            except Exception:
+                mirror_enabled = False
+            try:
+                from app_render import WEBHOOK_URL as _CUSTOM_URL
+            except Exception:
+                _CUSTOM_URL = None
+            if mirror_enabled and _CUSTOM_URL:
+                try:
+                    import requests as _requests
+                    mirror_payload = {
+                        # Use simple shape accepted by deployment receiver
+                        "subject": subject or "",
+                        "sender_email": sender_email or None,
+                        "delivery_links": delivery_links or [],
+                    }
+                    logger.info(
+                        "MEDIA_SOLUTION: Mirroring payload with %d link(s) to custom endpoint",
+                        len(delivery_links or []),
+                    )
+                    _resp = _requests.post(
+                        _CUSTOM_URL,
+                        json=mirror_payload,
+                        headers={"Content-Type": "application/json"},
+                        timeout=int(processing_prefs.get('webhook_timeout_sec') or 30),
+                        verify=True,
+                    )
+                    if getattr(_resp, "status_code", None) != 200:
+                        logger.error(
+                            "MEDIA_SOLUTION: Mirror call failed (status=%s): %s",
+                            getattr(_resp, "status_code", "n/a"),
+                            (getattr(_resp, "text", "") or "")[:200],
+                        )
+                    else:
+                        logger.info("MEDIA_SOLUTION: Mirror call succeeded (status=200)")
+                except Exception as _m_ex:
+                    logger.error("MEDIA_SOLUTION: Exception during mirror call: %s", _m_ex)
             try:
                 if subject_group_id:
                     mark_subject_group_processed(subject_group_id)
