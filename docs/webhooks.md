@@ -6,12 +6,10 @@
 
 # Webhooks
 
-Cette application n'expose pas d'endpoint public de webhook entrant côté Flask. Elle envoie des payloads (webhooks sortants) vers une URL cible (`WEBHOOK_URL`) et, optionnellement, vers Make.com via plusieurs webhooks spécialisés :
-- `RECADRAGE_MAKE_WEBHOOK_URL` : pour les emails "Média Solution - Missions Recadrage"
-- `AUTOREPONDEUR_MAKE_WEBHOOK_URL` : pour les emails d'autorépondeur (désabonnement/journée/tarifs)
-- `PRESENCE_TRUE_MAKE_WEBHOOK_URL` et `PRESENCE_FALSE_MAKE_WEBHOOK_URL` : pour la détection "samedi" avec présence true/false
+Cette application n'expose pas d'endpoint public de webhook entrant côté Flask. Elle envoie des payloads (webhooks sortants) vers une URL cible unique : `WEBHOOK_URL`.
 
-**Note :** Les anciens noms `MAKECOM_WEBHOOK_URL` (maintenant `RECADRAGE_MAKE_WEBHOOK_URL`) et `DESABO_MAKE_WEBHOOK_URL` (maintenant `AUTOREPONDEUR_MAKE_WEBHOOK_URL`) sont toujours supportés pour rétrocompatibilité.
+Les anciens webhooks spécifiques Make.com (Recadrage/Autorépondeur) sont désormais **dépréciés** et **non utilisés**. La logique est unifiée dans un seul flux basé sur `WEBHOOK_URL`.
+Les webhooks de présence « samedi » (`PRESENCE_TRUE_MAKE_WEBHOOK_URL` / `PRESENCE_FALSE_MAKE_WEBHOOK_URL`) restent optionnels si vous utilisez encore Make.com pour cette fonctionnalité.
 
 Selon votre usage, vous pouvez adapter la forme du payload. Ci-dessous, un format recommandé et cohérent avec la logique du projet.
 
@@ -94,71 +92,10 @@ Notes:
 
 Le serveur cible peut renvoyer `2xx` pour signaler le succès. Des `4xx/5xx` doivent être traqués dans les logs de cette application.
 
-## Webhooks Make.com – Types disponibles
+## Webhooks Make.com – Statut
 
-L'application supporte plusieurs webhooks Make.com spécialisés, chacun avec un rôle spécifique :
-
-### 1. Webhook Recadrage (`RECADRAGE_MAKE_WEBHOOK_URL`)
-**Rôle :** Traitement des emails "Média Solution - Missions Recadrage"  
-**Anciennement :** `MAKECOM_WEBHOOK_URL`  
-**Déclenchement :** Emails correspondant au motif "Média Solution - Missions Recadrage - Lot X" avec au moins une URL de livraison (Dropbox, FromSmash, SwissTransfer)
-
-**Payload envoyé :**
-```json
-{
-  "subject": "Média Solution - Missions Recadrage - Lot 123",
-  "sender_email": "expediteur@example.com",
-  "delivery_time": "le 03/09/2025 à 09h00",
-  "delivery_links": [
-    {"provider": "dropbox", "raw_url": "https://www.dropbox.com/s/.../file1?dl=1", "direct_url": "https://www.dropbox.com/s/.../file1?dl=1"}
-  ],
-  "first_direct_download_url": "https://www.dropbox.com/s/.../file1?dl=1",
-  "webhooks_time_start": "11h30",
-  "webhooks_time_end": "17h30"
-}
-```
-
-### 2. Webhook Autorépondeur (`AUTOREPONDEUR_MAKE_WEBHOOK_URL`)
-**Rôle :** Traitement des emails d'autorépondeur (désabonnement/journée/tarifs habituels)  
-**Anciennement :** `DESABO_MAKE_WEBHOOK_URL`  
-**Déclenchement :** Emails contenant "Se désabonner" + "journée" + "tarifs habituels" (sans termes interdits) et un lien Dropbox `/request/`
-
-**Payload envoyé :**
-```json
-{
-  "subject": "Sujet de l'email",
-  "sender_email": "expediteur@example.com",
-  "delivery_time": null,
-  "detector": "desabonnement_journee_tarifs",
-  "email_content": "[contenu complet de l'email]",
-  "Text": "[contenu complet de l'email]",
-  "Subject": "Sujet de l'email",
-  "Sender": {"email": "expediteur@example.com"},
-  "webhooks_time_start": "maintenant",  
-  // Remarque: si l'email est reçu avant l'heure de début globale, le serveur enverra "maintenant".
-  "webhooks_time_end": "19h00"
-}
-```
-
-### 3. Webhooks Présence Samedi (`PRESENCE_TRUE_MAKE_WEBHOOK_URL` / `PRESENCE_FALSE_MAKE_WEBHOOK_URL`)
-**Rôle :** Gestion de la présence/absence pour les emails contenant "samedi" dans sujet et corps  
-**Déclenchement :** Uniquement les jeudis et vendredis, selon la valeur de `PRESENCE` (true/false)
-**Contraintes horaires :** Respecte la fenêtre horaire globale des webhooks (`WEBHOOKS_TIME_START` à `WEBHOOKS_TIME_END`) configurée via l'UI ou env vars.
-
-**Payload envoyé :**
-```json
-{
-  "subject": "Sujet contenant samedi",
-  "sender_email": "expediteur@example.com",
-  "delivery_time": null,
-  "presence": true,
-  "detector": "samedi_presence",
-  "webhooks_time_start": "11h30",
-  "webhooks_time_end": "17h30"
-}
-```
-
-**Note :** Ces webhooks sont exclusifs : si un webhook présence est déclenché, le webhook recadrage classique est ignoré pour cet email.
+- Les webhooks Make.com « Recadrage » et « Autorépondeur » sont dépréciés et ne sont plus déclenchés par l'application.
+- Les webhooks de présence « samedi » (`PRESENCE_TRUE_MAKE_WEBHOOK_URL` / `PRESENCE_FALSE_MAKE_WEBHOOK_URL`) restent optionnels si vous les utilisez encore. Sinon, laissez-les non définis.
 
 ---
 

@@ -34,8 +34,7 @@ REF_IMAP_USE_SSL = True
 
 # --- URLs Webhooks ---
 REF_WEBHOOK_URL = "https://webhook.kidpixel.fr/index.php"
-REF_RECADRAGE_MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/s98s0s735h23qakb9pp0id8c8hbhfqph"
-REF_AUTOREPONDEUR_MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/2g65argnpyzgk3lz9t0xzt8tpuylcc8x"
+# Deprecated: legacy Make.com webhook defaults removed; unified flow now uses WEBHOOK_URL only.
 REF_MAKECOM_API_KEY = "12e8b61d-a78e-47f5-9f87-359af19f46cb"
 
 # --- Configuration Polling Email ---
@@ -67,8 +66,10 @@ EXPECTED_API_TOKEN = os.environ.get("PROCESS_API_TOKEN", REF_PROCESS_API_TOKEN)
 
 # --- Configuration Webhooks ---
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL", REF_WEBHOOK_URL)
-RECADRAGE_MAKE_WEBHOOK_URL = os.environ.get("RECADRAGE_MAKE_WEBHOOK_URL", REF_RECADRAGE_MAKE_WEBHOOK_URL)
-AUTOREPONDEUR_MAKE_WEBHOOK_URL = os.environ.get("AUTOREPONDEUR_MAKE_WEBHOOK_URL", REF_AUTOREPONDEUR_MAKE_WEBHOOK_URL)
+# Deprecated: these legacy Make.com webhooks are no longer used by the application.
+# They are intentionally set to empty strings to avoid accidental use.
+RECADRAGE_MAKE_WEBHOOK_URL = ""
+AUTOREPONDEUR_MAKE_WEBHOOK_URL = ""
 MAKECOM_API_KEY = os.environ.get("MAKECOM_API_KEY", REF_MAKECOM_API_KEY)
 WEBHOOK_SSL_VERIFY = env_bool("WEBHOOK_SSL_VERIFY", default=True)
 
@@ -172,7 +173,6 @@ def log_configuration(logger):
         logger: Instance de logger Flask (app.logger)
     """
     logger.info(f"CFG WEBHOOK: Custom webhook URL configured to: {WEBHOOK_URL}")
-    logger.info(f"CFG MAKECOM: Make.com webhook URL configured to: {RECADRAGE_MAKE_WEBHOOK_URL}")
     logger.info(f"CFG WEBHOOK: SSL verification = {WEBHOOK_SSL_VERIFY}")
     
     if SENDER_LIST_FOR_POLLING:

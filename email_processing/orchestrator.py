@@ -205,26 +205,45 @@ def check_new_emails_and_trigger_webhook() -> int:
                         pass
                     continue
 
-                # Extract plain text content for pattern checks and link extraction
+                # Extract text/plain and text/html content for pattern checks and link extraction
                 full_text = ""
+                html_text = ""
                 try:
                     if msg.is_multipart():
                         for part in msg.walk():
                             ctype = part.get_content_type()
                             disp = (part.get('Content-Disposition') or '').lower()
-                            if ctype == 'text/plain' and 'attachment' not in disp:
-                                payload = part.get_payload(decode=True) or b''
-                                full_text += payload.decode(part.get_content_charset() or 'utf-8', errors='ignore')
+                            if 'attachment' in disp:
+                                continue
+                            payload = part.get_payload(decode=True) or b''
+                            decoded = payload.decode(part.get_content_charset() or 'utf-8', errors='ignore')
+                            if ctype == 'text/plain':
+                                full_text += decoded
+                            elif ctype == 'text/html':
+                                html_text += decoded
                     else:
                         payload = msg.get_payload(decode=True) or b''
-                        full_text = payload.decode(msg.get_content_charset() or 'utf-8', errors='ignore')
+                        decoded = payload.decode(msg.get_content_charset() or 'utf-8', errors='ignore')
+                        # Fallback: if single-part, treat as plain, but keep HTML if content-type hints it
+                        ctype_single = msg.get_content_type() or 'text/plain'
+                        if ctype_single == 'text/html':
+                            html_text = decoded
+                        else:
+                            full_text = decoded
                 except Exception:
                     full_text = full_text or ''
+                    html_text = html_text or ''
+
+                # Combine plain + HTML for detectors that scan raw text (regex catches URLs in HTML too)
+                try:
+                    combined_text_for_detection = (full_text or '') + "\n" + (html_text or '')
+                except Exception:
+                    combined_text_for_detection = full_text or ''
 
                 # 1) Presence "samedi" route (exclusive if matched)
                 routed_presence = handle_presence_route(
                     subject=subject or '',
-                    full_email_content=full_text or '',
+                    full_email_content=combined_text_for_detection or '',
                     email_id=email_id,
                     sender_raw=from_raw,
                     tz_for_polling=TZ_FOR_POLLING,
@@ -245,61 +264,24 @@ def check_new_emails_and_trigger_webhook() -> int:
                     triggered_count += 1
                     continue
 
-                # 2) DESABO route (Make webhook - AUTOREPONDEUR)
-                desabo_ok = handle_desabo_route(
-                    subject=subject or '',
-                    full_email_content=full_text or '',
-                    html_email_content=None,
-                    email_id=email_id,
-                    sender_raw=from_raw,
-                    tz_for_polling=TZ_FOR_POLLING,
-                    webhooks_time_start=_w_tw.WEBHOOKS_TIME_START,
-                    webhooks_time_start_str=_w_tw.WEBHOOKS_TIME_START_STR or None,
-                    webhooks_time_end_str=_w_tw.WEBHOOKS_TIME_END_STR or None,
-                    processing_prefs=PROCESSING_PREFS,
-                    extract_sender_email=extract_sender_email,
-                    check_desabo_conditions=pattern_matching.check_desabo_conditions,
-                    build_desabo_make_payload=payloads.build_desabo_make_payload,
-                    send_makecom_webhook=send_makecom_webhook,
-                    override_webhook_url=AUTOREPONDEUR_MAKE_WEBHOOK_URL,
-                    mark_subject_group_processed=mark_subject_group_processed,
-                    subject_group_id=generate_subject_group_id(subject or ''),
-                    is_within_time_window_local=_is_within_time_window_local,
-                    logger=logger,
-                )
-                if desabo_ok:
-                    mark_email_id_as_processed_redis(email_id)
-                    mark_email_as_read_imap(mail, num)
-                    triggered_count += 1
-                    continue
+                # 2) DESABO route — disabled (legacy Make.com path). Unified flow via WEBHOOK_URL only.
+                try:
+                    logger.info("ROUTES: DESABO route disabled — using unified custom webhook flow (WEBHOOK_URL)")
+                except Exception:
+                    pass
 
-                # 3) Media Solution route (Make webhook)
-                media_ok = handle_media_solution_route(
-                    subject=subject or '',
-                    full_email_content=full_text or '',
-                    email_id=email_id,
-                    processing_prefs=PROCESSING_PREFS,
-                    tz_for_polling=TZ_FOR_POLLING,
-                    check_media_solution_pattern=lambda s, b, tz, l: pattern_matching.check_media_solution_pattern(s, b, tz, logger),
-                    extract_sender_email=extract_sender_email,
-                    sender_raw=from_raw,
-                    send_makecom_webhook=send_makecom_webhook,
-                    mark_subject_group_processed=mark_subject_group_processed,
-                    subject_group_id=generate_subject_group_id(subject or ''),
-                    logger=logger,
-                )
-                if media_ok:
-                    mark_email_id_as_processed_redis(email_id)
-                    mark_email_as_read_imap(mail, num)
-                    triggered_count += 1
-                    continue
+                # 3) Media Solution route — disabled (legacy Make.com path). Unified flow via WEBHOOK_URL only.
+                try:
+                    logger.info("ROUTES: Media Solution route disabled — using unified custom webhook flow (WEBHOOK_URL)")
+                except Exception:
+                    pass
 
                 # 4) Custom webhook flow (if WEBHOOK_URL configured)
                 if not WEBHOOK_URL:
                     logger.info("POLLER: WEBHOOK_URL not configured; skipping custom webhook for %s", email_id)
                     continue
 
-                delivery_links = link_extraction.extract_provider_links_from_text(full_text or '')
+                delivery_links = link_extraction.extract_provider_links_from_text(combined_text_for_detection or '')
                 # Group dedup check for custom webhook
                 group_id = generate_subject_group_id(subject or '')
                 if is_subject_group_processed(group_id):
@@ -319,14 +301,14 @@ def check_new_emails_and_trigger_webhook() -> int:
                 # Build payload expected by PHP endpoint (see deployment/public_html/index.php)
                 # Required by validator: sender_address, subject, receivedDateTime
                 # Provide email_content to avoid server-side IMAP search and allow URL extraction.
-                preview = (full_text or "")[:200]
+                preview = (combined_text_for_detection or "")[:200]
                 payload_for_webhook = {
                     "microsoft_graph_email_id": email_id,  # reuse our ID for compatibility
                     "subject": subject or "",
                     "receivedDateTime": date_raw or "",  # raw Date header (RFC 2822)
                     "sender_address": from_raw or sender_addr,
                     "bodyPreview": preview,
-                    "email_content": full_text or "",
+                    "email_content": combined_text_for_detection or "",
                 }
 
                 # Execute custom webhook flow (handles retries, logging, read marking on success)

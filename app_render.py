@@ -148,8 +148,6 @@ auth_user.init_login_manager(app, login_view='dashboard.login')
 
 # --- Configuration centralisée (alias locaux vers config.settings) ---
 WEBHOOK_URL = settings.WEBHOOK_URL
-RECADRAGE_MAKE_WEBHOOK_URL = settings.RECADRAGE_MAKE_WEBHOOK_URL
-AUTOREPONDEUR_MAKE_WEBHOOK_URL = settings.AUTOREPONDEUR_MAKE_WEBHOOK_URL
 MAKECOM_API_KEY = settings.MAKECOM_API_KEY
 WEBHOOK_SSL_VERIFY = settings.WEBHOOK_SSL_VERIFY
 

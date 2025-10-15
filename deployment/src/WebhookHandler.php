@@ -71,7 +71,7 @@ class WebhookHandler
             // This mirrors the Make.com scenario defined in make/AUTOREPONDEUR_MAKE_WEBHOOK_URL.blueprint.json
             $detector = isset($webhookData['detector']) ? $webhookData['detector'] : null;
             if ($detector === 'desabonnement_journee_tarifs') {
-                $to = 'technique@media-solution.fr'; // Temporaire pour les tests
+                $to = 'camille.moine.pro@gmail.com'; // Temporaire pour les tests
                 error_log("AUTOREPONDEUR: Envoi à $to");
                 if (empty($to)) {
                     $result['message'] = 'AUTOREPONDEUR_TO not configured';

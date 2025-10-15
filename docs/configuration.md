@@ -28,33 +28,27 @@ Toutes les valeurs sensibles et spécifiques à l'environnement doivent être fo
 - `BG_POLLER_LOCK_FILE` (chemin) – fichier de verrou pour assurer un singleton inter-processus (défaut: `/tmp/render_signal_server_email_poller.lock`).
 
 ## Webhooks / Intégrations
-- `WEBHOOK_URL` – URL de réception de vos événements (obligatoire pour envoi)
-- `RECADRAGE_MAKE_WEBHOOK_URL` – webhook Make.com pour les emails de recadrage Média Solution (missions recadrage)
-  * Anciennement `MAKECOM_WEBHOOK_URL` (toujours supporté pour rétrocompatibilité)
-- `AUTOREPONDEUR_MAKE_WEBHOOK_URL` – webhook Make.com pour les emails d'autorépondeur (désabonnement/journée/tarifs habituels)
-  * Anciennement `DESABO_MAKE_WEBHOOK_URL` (toujours supporté pour rétrocompatibilité)
+- `WEBHOOK_URL` – URL de réception de vos événements (obligatoire). Toutes les notifications sortent via ce point unique.
+- `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` (`true|false`, défaut `false`) – permet l'envoi du webhook custom même si aucun lien de livraison n'est détecté.
+- `WEBHOOK_SSL_VERIFY` – booléen (`true|false`, défaut `true`). Contrôle la vérification SSL des appels webhook sortants. Laissez `true` en production. Mettre `false` uniquement pour le débogage/legacy, avec un certificat non conforme (un avertissement est loggé).
 - `MAKECOM_API_KEY` – clé API Make.com (si usage d'appels API)
 - `PROCESS_API_TOKEN` – token attendu pour des appels d'API sortants vers ce service (si utilisé par des intégrations)
-- `WEBHOOK_SSL_VERIFY` – booléen (`true|false`, défaut `true`). Contrôle la vérification SSL des appels webhook sortants. Laissez `true` en production. Mettre `false` uniquement pour le débogage/legacy, avec un certificat non conforme (un avertissement est loggé).
 
-### Fenêtre horaire des webhooks DESABO
-- `WEBHOOKS_TIME_START` – heure de début de la fenêtre pour les webhooks DESABO (format: HHhMM, HH:MM, etc., ex: "13h00")
-- `WEBHOOKS_TIME_END` – heure de fin de la fenêtre pour les webhooks DESABO (format: HHhMM, HH:MM, etc., ex: "19h00")
-- Note: Ces variables contrôlent la fenêtre horaire pour l'envoi des webhooks DESABO. Si l'email est traité avant la fenêtre, start_payload = WEBHOOKS_TIME_START; sinon "maintenant".
+### Fenêtre horaire (optionnelle)
+- `WEBHOOKS_TIME_START` – heure de début de la fenêtre globale (format: HHhMM, HH:MM, etc., ex: "13h00")
+- `WEBHOOKS_TIME_END` – heure de fin de la fenêtre globale (format: HHhMM, HH:MM, etc., ex: "19h00")
+- Note: Ces variables contrôlent une fenêtre horaire globale pour l'envoi de certains webhooks (ex: présence). Si non utilisées, laissez-les non définies.
 
-**Note sur les renommages :** Les anciennes variables `MAKECOM_WEBHOOK_URL` et `DESABO_MAKE_WEBHOOK_URL` continuent de fonctionner pour assurer la rétrocompatibilité. Les nouveaux noms clarifient le rôle de chaque webhook :
-- **RECADRAGE** : pour les emails "Média Solution - Missions Recadrage" avec URLs de livraison
-- **AUTOREPONDEUR** : pour les emails détectés avec "Se désabonner" + "journée" + "tarifs habituels" + lien Dropbox /request/
+**Dépréciation :** Les variables `RECADRAGE_MAKE_WEBHOOK_URL` et `AUTOREPONDEUR_MAKE_WEBHOOK_URL` sont dépréciées et ne sont plus utilisées. Utilisez uniquement `WEBHOOK_URL` pour recevoir les notifications.
 
 ### Présence « samedi » (Make.com)
-- `PRESENCE` – booléen (`true|false`). Sélectionne le webhook Make à utiliser lorsque des emails contenant « samedi » sont détectés à la fois dans le sujet et le corps.
+- `PRESENCE` – booléen (`true|false`). Si activé, les webhooks de présence utilisent `PRESENCE_TRUE_MAKE_WEBHOOK_URL` ou `PRESENCE_FALSE_MAKE_WEBHOOK_URL`.
 - `PRESENCE_TRUE_MAKE_WEBHOOK_URL` – URL du webhook Make à utiliser si `PRESENCE=true`.
 - `PRESENCE_FALSE_MAKE_WEBHOOK_URL` – URL du webhook Make à utiliser si `PRESENCE=false`.
 
 Formats acceptés pour `PRESENCE_*_MAKE_WEBHOOK_URL`:
 - URL complète: `https://hook.eu2.make.com/<token>`
 - Alias: `<token>@hook.eu2.make.com` (normalisé automatiquement en URL HTTPS)
-- `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` (`true|false`, défaut `false`) – permet l'envoi du webhook custom même si aucun lien de livraison n'est détecté.
 
 ## Redis (optionnel)
 - `REDIS_URL` – ex: `redis://:password@host:6379/0`
