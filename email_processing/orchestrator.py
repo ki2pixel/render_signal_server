@@ -335,7 +335,7 @@ def check_new_emails_and_trigger_webhook() -> int:
                 # Required by validator: sender_address, subject, receivedDateTime
                 # Provide email_content to avoid server-side IMAP search and allow URL extraction.
                 preview = (combined_text_for_detection or "")[:200]
-                # Load current global time window strings (for email body rendering on PHP side)
+                # Load current global time window strings and compute start payload logic
                 try:
                     tw_info = _w_tw.get_time_window_info()
                     tw_start_str = (tw_info.get('start') or '').strip() or None
@@ -343,6 +343,26 @@ def check_new_emails_and_trigger_webhook() -> int:
                 except Exception:
                     tw_start_str = None
                     tw_end_str = None
+                # Determine start payload:
+                # - If within window: "maintenant"
+                # - If before window start: configured start string
+                # - Else (after window end or window inactive): leave unset (PHP defaults to 'maintenant')
+                start_payload_val = None
+                try:
+                    if tw_start_str and tw_end_str:
+                        from utils.time_helpers import parse_time_hhmm as _parse_hhmm
+                        start_t = _parse_hhmm(tw_start_str)
+                        end_t = _parse_hhmm(tw_end_str)
+                        if start_t and end_t:
+                            now_local = datetime.now(TZ_FOR_POLLING)
+                            now_t = now_local.timetz().replace(tzinfo=None)
+                            # Compare naive times (same local TZ day context)
+                            if start_t <= now_t <= end_t:
+                                start_payload_val = "maintenant"
+                            elif now_t < start_t:
+                                start_payload_val = tw_start_str
+                except Exception:
+                    start_payload_val = None
                 payload_for_webhook = {
                     "microsoft_graph_email_id": email_id,  # reuse our ID for compatibility
                     "subject": subject or "",
@@ -353,8 +373,8 @@ def check_new_emails_and_trigger_webhook() -> int:
                 }
                 # Attach window strings if configured
                 try:
-                    if tw_start_str is not None:
-                        payload_for_webhook["webhooks_time_start"] = tw_start_str
+                    if start_payload_val is not None:
+                        payload_for_webhook["webhooks_time_start"] = start_payload_val
                     if tw_end_str is not None:
                         payload_for_webhook["webhooks_time_end"] = tw_end_str
                 except Exception:
