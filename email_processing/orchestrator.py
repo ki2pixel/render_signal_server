@@ -310,6 +310,35 @@ def check_new_emails_and_trigger_webhook() -> int:
                         pass
                     continue
 
+                # Enforce global time window only when sending is enabled
+                try:
+                    now_local = datetime.now(TZ_FOR_POLLING)
+                except Exception:
+                    now_local = datetime.now(timezone.utc)
+                try:
+                    within = _w_tw.check_within_time_window(now_local)
+                except Exception:
+                    within = True
+                if not within:
+                    try:
+                        tw_info = _w_tw.get_time_window_info()
+                        tw_start_str = (tw_info.get('start') or 'unset')
+                        tw_end_str = (tw_info.get('end') or 'unset')
+                    except Exception:
+                        tw_start_str, tw_end_str = 'unset', 'unset'
+                    logger.info(
+                        "WEBHOOKS_TIME_WINDOW: Outside global window for email %s (now=%s, window=%s-%s). Skipping.",
+                        email_id,
+                        now_local.strftime('%H:%M'),
+                        tw_start_str,
+                        tw_end_str,
+                    )
+                    try:
+                        logger.info("IGNORED: Webhook skipped due to time window (email %s)", email_id)
+                    except Exception:
+                        pass
+                    continue
+
                 delivery_links = link_extraction.extract_provider_links_from_text(combined_text_for_detection or '')
                 # Group dedup check for custom webhook
                 group_id = generate_subject_group_id(subject or '')
