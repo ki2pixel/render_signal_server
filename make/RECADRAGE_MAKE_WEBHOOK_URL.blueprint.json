@@ -1,0 +1,549 @@
+{
+    "name": "Confirmation mission recadrage",
+    "flow": [
+        {
+            "id": 2,
+            "module": "gateway:CustomWebHook",
+            "version": 1,
+            "parameters": {
+                "hook": 2949608,
+                "maxResults": 1
+            },
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 300
+                },
+                "restore": {
+                    "parameters": {
+                        "hook": {
+                            "data": {
+                                "editable": "true"
+                            },
+                            "label": "Autorépondeur-recadrage"
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "hook",
+                        "type": "hook:gateway-webhook",
+                        "label": "Webhook",
+                        "required": true
+                    },
+                    {
+                        "name": "maxResults",
+                        "type": "number",
+                        "label": "Maximum number of results"
+                    }
+                ],
+                "interface": [
+                    {
+                        "name": "subject",
+                        "type": "text"
+                    },
+                    {
+                        "name": "delivery_time",
+                        "type": "text"
+                    },
+                    {
+                        "name": "sender_email",
+                        "type": "text"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 5,
+            "module": "builtin:BasicRouter",
+            "version": 1,
+            "mapper": null,
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 300
+                }
+            },
+            "routes": [
+                {
+                    "flow": [
+                        {
+                            "id": 4,
+                            "module": "google-email:ActionSendEmail",
+                            "version": 2,
+                            "parameters": {
+                                "account": 726170
+                            },
+                            "filter": {
+                                "name": "pas urgent",
+                                "conditions": [
+                                    [
+                                        {
+                                            "a": "{{2.subject}}",
+                                            "b": "urgence",
+                                            "o": "text:notcontain:ci"
+                                        }
+                                    ]
+                                ]
+                            },
+                            "mapper": {
+                                "cc": [],
+                                "to": [
+                                    "camille.moine.pro@gmail.com"
+                                ],
+                                "bcc": [],
+                                "from": "",
+                                "html": "OK merci, je m'en occupe pour {{2.delivery_time}}.",
+                                "subject": "Confirmation : {{2.subject}}",
+                                "attachments": []
+                            },
+                            "metadata": {
+                                "designer": {
+                                    "x": 600,
+                                    "y": 0
+                                },
+                                "restore": {
+                                    "expect": {
+                                        "cc": {
+                                            "mode": "chose"
+                                        },
+                                        "to": {
+                                            "mode": "chose",
+                                            "items": [
+                                                null
+                                            ]
+                                        },
+                                        "bcc": {
+                                            "mode": "chose"
+                                        },
+                                        "attachments": {
+                                            "mode": "chose"
+                                        }
+                                    },
+                                    "parameters": {
+                                        "account": {
+                                            "data": {
+                                                "scoped": "true",
+                                                "connection": "google-restricted"
+                                            },
+                                            "label": "Gmail (camille.moine.pro@gmail.com)"
+                                        }
+                                    }
+                                },
+                                "parameters": [
+                                    {
+                                        "name": "account",
+                                        "type": "account:google-restricted",
+                                        "label": "Connection",
+                                        "required": true
+                                    }
+                                ],
+                                "expect": [
+                                    {
+                                        "name": "from",
+                                        "type": "text",
+                                        "label": "From"
+                                    },
+                                    {
+                                        "name": "to",
+                                        "spec": {
+                                            "name": "value",
+                                            "type": "email",
+                                            "label": "Email address",
+                                            "required": true
+                                        },
+                                        "type": "array",
+                                        "label": "To",
+                                        "required": true
+                                    },
+                                    {
+                                        "name": "subject",
+                                        "type": "text",
+                                        "label": "Subject"
+                                    },
+                                    {
+                                        "name": "html",
+                                        "type": "text",
+                                        "label": "Content"
+                                    },
+                                    {
+                                        "name": "attachments",
+                                        "spec": [
+                                            {
+                                                "name": "fileName",
+                                                "type": "filename",
+                                                "label": "File name",
+                                                "required": true,
+                                                "semantic": "file:name"
+                                            },
+                                            {
+                                                "name": "data",
+                                                "type": "buffer",
+                                                "label": "Data",
+                                                "required": true,
+                                                "semantic": "file:data"
+                                            },
+                                            {
+                                                "name": "cid",
+                                                "type": "text",
+                                                "label": "Content-ID"
+                                            }
+                                        ],
+                                        "type": "array",
+                                        "label": "Attachments"
+                                    },
+                                    {
+                                        "name": "cc",
+                                        "spec": {
+                                            "name": "value",
+                                            "type": "email",
+                                            "label": "Email address"
+                                        },
+                                        "type": "array",
+                                        "label": "Copy recipient"
+                                    },
+                                    {
+                                        "name": "bcc",
+                                        "spec": {
+                                            "name": "value",
+                                            "type": "email",
+                                            "label": "Email address"
+                                        },
+                                        "type": "array",
+                                        "label": "Blind copy recipient"
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "flow": [
+                        {
+                            "id": 6,
+                            "module": "google-email:ActionSendEmail",
+                            "version": 2,
+                            "parameters": {
+                                "account": 726170
+                            },
+                            "filter": {
+                                "name": "urgent",
+                                "conditions": [
+                                    [
+                                        {
+                                            "a": "{{2.subject}}",
+                                            "b": "urgence",
+                                            "o": "text:contain:ci"
+                                        }
+                                    ]
+                                ]
+                            },
+                            "mapper": {
+                                "cc": [],
+                                "to": [
+                                    "camille.moine.pro@gmail.com"
+                                ],
+                                "bcc": [],
+                                "from": "",
+                                "html": "OK merci, je m'en occupe.",
+                                "subject": "Confirmation : {{2.subject}}",
+                                "attachments": []
+                            },
+                            "metadata": {
+                                "designer": {
+                                    "x": 600,
+                                    "y": 300
+                                },
+                                "restore": {
+                                    "expect": {
+                                        "cc": {
+                                            "mode": "chose"
+                                        },
+                                        "to": {
+                                            "mode": "chose",
+                                            "items": [
+                                                null
+                                            ]
+                                        },
+                                        "bcc": {
+                                            "mode": "chose"
+                                        },
+                                        "attachments": {
+                                            "mode": "chose"
+                                        }
+                                    },
+                                    "parameters": {
+                                        "account": {
+                                            "data": {
+                                                "scoped": "true",
+                                                "connection": "google-restricted"
+                                            },
+                                            "label": "Gmail (camille.moine.pro@gmail.com)"
+                                        }
+                                    }
+                                },
+                                "parameters": [
+                                    {
+                                        "name": "account",
+                                        "type": "account:google-restricted",
+                                        "label": "Connection",
+                                        "required": true
+                                    }
+                                ],
+                                "expect": [
+                                    {
+                                        "name": "from",
+                                        "type": "text",
+                                        "label": "From"
+                                    },
+                                    {
+                                        "name": "to",
+                                        "spec": {
+                                            "name": "value",
+                                            "type": "email",
+                                            "label": "Email address",
+                                            "required": true
+                                        },
+                                        "type": "array",
+                                        "label": "To",
+                                        "required": true
+                                    },
+                                    {
+                                        "name": "subject",
+                                        "type": "text",
+                                        "label": "Subject"
+                                    },
+                                    {
+                                        "name": "html",
+                                        "type": "text",
+                                        "label": "Content"
+                                    },
+                                    {
+                                        "name": "attachments",
+                                        "spec": [
+                                            {
+                                                "name": "fileName",
+                                                "type": "filename",
+                                                "label": "File name",
+                                                "required": true,
+                                                "semantic": "file:name"
+                                            },
+                                            {
+                                                "name": "data",
+                                                "type": "buffer",
+                                                "label": "Data",
+                                                "required": true,
+                                                "semantic": "file:data"
+                                            },
+                                            {
+                                                "name": "cid",
+                                                "type": "text",
+                                                "label": "Content-ID"
+                                            }
+                                        ],
+                                        "type": "array",
+                                        "label": "Attachments"
+                                    },
+                                    {
+                                        "name": "cc",
+                                        "spec": {
+                                            "name": "value",
+                                            "type": "email",
+                                            "label": "Email address"
+                                        },
+                                        "type": "array",
+                                        "label": "Copy recipient"
+                                    },
+                                    {
+                                        "name": "bcc",
+                                        "spec": {
+                                            "name": "value",
+                                            "type": "email",
+                                            "label": "Email address"
+                                        },
+                                        "type": "array",
+                                        "label": "Blind copy recipient"
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "flow": [
+                        {
+                            "id": 8,
+                            "module": "google-email:ActionSendEmail",
+                            "version": 2,
+                            "parameters": {
+                                "account": 726170
+                            },
+                            "filter": {
+                                "name": "cas particulier n°1",
+                                "conditions": [
+                                    [
+                                        {
+                                            "a": "{{2.subject}}",
+                                            "b": "Re:",
+                                            "o": "text:contain:ci"
+                                        }
+                                    ]
+                                ]
+                            },
+                            "mapper": {
+                                "cc": [],
+                                "to": [
+                                    "camille.moine.pro@gmail.com"
+                                ],
+                                "bcc": [],
+                                "from": "",
+                                "html": "OK merci, je m'en occupe.",
+                                "subject": "Confirmation : {{2.subject}}",
+                                "attachments": []
+                            },
+                            "metadata": {
+                                "designer": {
+                                    "x": 600,
+                                    "y": 600
+                                },
+                                "restore": {
+                                    "expect": {
+                                        "cc": {
+                                            "mode": "chose"
+                                        },
+                                        "to": {
+                                            "mode": "chose",
+                                            "items": [
+                                                null
+                                            ]
+                                        },
+                                        "bcc": {
+                                            "mode": "chose"
+                                        },
+                                        "attachments": {
+                                            "mode": "chose"
+                                        }
+                                    },
+                                    "parameters": {
+                                        "account": {
+                                            "data": {
+                                                "scoped": "true",
+                                                "connection": "google-restricted"
+                                            },
+                                            "label": "Gmail (camille.moine.pro@gmail.com)"
+                                        }
+                                    }
+                                },
+                                "parameters": [
+                                    {
+                                        "name": "account",
+                                        "type": "account:google-restricted",
+                                        "label": "Connection",
+                                        "required": true
+                                    }
+                                ],
+                                "expect": [
+                                    {
+                                        "name": "from",
+                                        "type": "text",
+                                        "label": "From"
+                                    },
+                                    {
+                                        "name": "to",
+                                        "spec": {
+                                            "name": "value",
+                                            "type": "email",
+                                            "label": "Email address",
+                                            "required": true
+                                        },
+                                        "type": "array",
+                                        "label": "To",
+                                        "required": true
+                                    },
+                                    {
+                                        "name": "subject",
+                                        "type": "text",
+                                        "label": "Subject"
+                                    },
+                                    {
+                                        "name": "html",
+                                        "type": "text",
+                                        "label": "Content"
+                                    },
+                                    {
+                                        "name": "attachments",
+                                        "spec": [
+                                            {
+                                                "name": "fileName",
+                                                "type": "filename",
+                                                "label": "File name",
+                                                "required": true,
+                                                "semantic": "file:name"
+                                            },
+                                            {
+                                                "name": "data",
+                                                "type": "buffer",
+                                                "label": "Data",
+                                                "required": true,
+                                                "semantic": "file:data"
+                                            },
+                                            {
+                                                "name": "cid",
+                                                "type": "text",
+                                                "label": "Content-ID"
+                                            }
+                                        ],
+                                        "type": "array",
+                                        "label": "Attachments"
+                                    },
+                                    {
+                                        "name": "cc",
+                                        "spec": {
+                                            "name": "value",
+                                            "type": "email",
+                                            "label": "Email address"
+                                        },
+                                        "type": "array",
+                                        "label": "Copy recipient"
+                                    },
+                                    {
+                                        "name": "bcc",
+                                        "spec": {
+                                            "name": "value",
+                                            "type": "email",
+                                            "label": "Email address"
+                                        },
+                                        "type": "array",
+                                        "label": "Blind copy recipient"
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "metadata": {
+        "instant": true,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": false,
+            "slots": null,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "eu2.make.com",
+        "notes": []
+    }
+}

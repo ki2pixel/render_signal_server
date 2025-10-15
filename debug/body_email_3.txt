@@ -1,0 +1,25 @@
+Return-Path: <camille.moine.pro@gmail.com>
+Received: from imt-engine-scheduling-engine-774884b478-7tc7q.mail-private.make.com (ec2-52-50-32-186.eu-west-1.compute.amazonaws.com. [52.50.32.186])
+        by smtp.gmail.com with ESMTPSA id 4fb4d7f45d1cf-63a52b7164dsm11523469a12.21.2025.10.14.11.38.05
+        for <camille.moine.pro@gmail.com>
+        (version=TLS1_3 cipher=TLS_AES_256_GCM_SHA384 bits=256/256);
+        Tue, 14 Oct 2025 11:38:05 -0700 (PDT)
+From: camille.moine.pro@gmail.com
+To: camille.moine.pro@gmail.com
+Subject: Confirmation :
+Message-ID: <b4617a70-975d-adc5-4cd2-57462c95896d@gmail.com>
+Date: Tue, 14 Oct 2025 18:38:05 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="--_NmP-8bf0ce428309b644-Part_1"
+
+----_NmP-8bf0ce428309b644-Part_1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+OK merci, je m'en occupe pour .
+----_NmP-8bf0ce428309b644-Part_1
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+OK merci, je m'en occupe pour .
+----_NmP-8bf0ce428309b644-Part_1--
