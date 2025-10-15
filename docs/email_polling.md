@@ -1,30 +1,46 @@
-# Polling Email IMAP
+{{ ... }}
 
 La logique de polling est orchestrée par `email_processing/orchestrator.py`.
 
-## Planification
+## Planification et Configuration
 
-- Fuseau: `POLLING_TIMEZONE` (ZoneInfo si dispo, sinon UTC)
-- Jours actifs: `POLLING_ACTIVE_DAYS` (0=Mon … 6=Sun)
-- Heures actives: de `POLLING_ACTIVE_START_HOUR` (inclus) à `POLLING_ACTIVE_END_HOUR` (exclus)
-- Intervalle actif: `EMAIL_POLLING_INTERVAL_SECONDS`
-- Intervalle inactif: `POLLING_INACTIVE_CHECK_INTERVAL_SECONDS`
+Le polling des emails est géré par le thread `background_email_poller()` qui exécute en boucle les opérations de vérification et de traitement des emails.
 
-Le thread `background_email_poller()`:
-- Boucle tant que l'application tourne.
-- Pendant les périodes actives, exécute `email_processing.orchestrator.check_new_emails_and_trigger_webhook()`.
-- Backoff exponentiel en cas d'erreurs consécutives.
+### Paramètres de Configuration
 
-### Mode vacances (suspension du polling)
+- **Fuseau horaire** : `POLLING_TIMEZONE` (ZoneInfo si disponible, sinon UTC)
+- **Jours actifs** : `POLLING_ACTIVE_DAYS` (0=Lundi à 6=Dimanche)
+- **Heures actives** : 
+  - Début : `POLLING_ACTIVE_START_HOUR` (inclus)
+  - Fin : `POLLING_ACTIVE_END_HOUR` (exclus)
+- **Intervalles** :
+  - Actif : `EMAIL_POLLING_INTERVAL_SECONDS` (entre les vérifications)
+  - Inactif : `POLLING_INACTIVE_CHECK_INTERVAL_SECONDS` (vérification périodique)
 
-- Deux dates optionnelles permettent de suspendre le polling pendant une période définie:
-  - `vacation_start`: date ISO `YYYY-MM-DD`
-  - `vacation_end`: date ISO `YYYY-MM-DD`
-- Configuration via API/UI (persistée dans `debug/polling_config.json`) et non via variables d'environnement.
-- Validation côté serveur: formats ISO et contrainte `start <= end`.
-- Comportement:
-  - Si la date courante (dans `POLLING_TIMEZONE`) est comprise entre `vacation_start` et `vacation_end` (incluses), `background_email_poller()` n'exécute pas de traitement (sleep) et journalise le statut "vacances actives".
-  - Hors période, le fonctionnement normal reprend automatiquement.
+### Comportement du Polling
+
+1. **Pendant les heures actives** :
+   - Exécution de `email_processing.orchestrator.check_new_emails_and_trigger_webhook()`
+   - Vérification des nouveaux emails à intervalle régulier
+   - Traitement des emails selon les règles configurées
+
+2. **Hors des heures actives** :
+   - Mise en veille prolongée pour économiser les ressources
+   - Vérification périodique de l'arrivée de la prochaine période active
+
+3. **Gestion des erreurs** :
+   - Backoff exponentiel en cas d'erreurs consécutives
+   - Journalisation détaillée des incidents
+   - Relevage d'alertes pour les problèmes critiques
+
+### Désactivation du Polling
+
+Pour arrêter complètement le polling :
+1. Arrêtez le service
+2. Définissez `ENABLE_BACKGROUND_TASKS=false` dans les variables d'environnement
+3. Redémarrez l'application
+
+> **Note** : L'ancienne fonctionnalité de "mode vacances" a été supprimée. Utilisez les paramètres de planification ou arrêtez le service selon les besoins.
 
 ## Connexion IMAP
 
@@ -40,14 +56,123 @@ Le thread `background_email_poller()`:
 - Logs détaillés: Préfixe `DEDUP_EMAIL` pour tracer la déduplication, avec indication de bypass si `DISABLE_EMAIL_ID_DEDUP=true`.
 - Endpoint de débogage: `/api/test/clear_email_dedup` (X-API-Key) permet l'effacement manuel d'un email ID du set Redis pour re-traitement.
 
-### Journalisation et traçabilité du polling
+## Journalisation et Traçabilité
 
-Le système journalise chaque étape du traitement des emails pour améliorer la traçabilité et faciliter le débogage opérationnel :
+### Niveaux de Log
 
-- **Lecture des emails** : Log `POLLER: Email read from IMAP` avec numéro, sujet, expéditeur (sans contenu sensible).
-- **Marquage comme lu** : Log `IMAP: Email <num> marked as read` promu à niveau INFO dans `imap_client.py`.
-- **Motifs d'ignorance** : Logs `IGNORED` avec raison spécifique pour chaque skip (fetch KO, expéditeur non autorisé, déduplication email/groupe, fenêtre horaire non satisfaite pour DESABO/Présence).
-- **Déduplication** : Logs `DEDUP_EMAIL` et `DEDUP_GROUP` pour tracer les skips.
+- **DEBUG** : Détails fins pour le débogage (contenu des emails, étapes intermédiaires)
+- **INFO** : Événements importants du cycle de vie (démarrage/arrêt, connexion IMAP)
+- **WARNING** : Problèmes non bloquants (échec de déduplication, configuration manquante)
+- **ERROR** : Échecs critiques nécessitant une intervention
+
+### Journalisation du Polling
+
+#### Cycle de Vie
+- `POLLER: Starting email polling thread` - Démarrage du thread de polling
+- `POLLER: Polling loop active (interval: Xs)` - Début d'un cycle de polling
+- `POLLER: Sleeping for X seconds` - Mise en veille entre les cycles
+- `POLLER: Shutting down` - Arrêt propre du polling
+
+#### Connexion IMAP
+- `IMAP: Connecting to server...` - Tentative de connexion
+- `IMAP: Successfully connected` - Connexion établie
+- `IMAP: Email <num> marked as read` - Marquage d'un email comme lu
+- `IMAP: Error connecting to server` - Échec de connexion (avec détails)
+
+#### Traitement des Emails
+- `POLLER: Email read from IMAP` - Email récupéré (sujet, expéditeur)
+- `POLLER: Processing email: <sujet>` - Début du traitement d'un email
+- `POLLER: Email processed successfully` - Traitement réussi
+
+#### Filtrage et Déduplication
+- `DEDUP_EMAIL: Skipping duplicate email ID` - Email déjà traité
+- `DEDUP_GROUP: Skipping duplicate subject group` - Groupe de sujets déjà traité
+- `IGNORED: Sender not in allowed list` - Expéditeur non autorisé
+- `IGNORED: Outside active time window` - En dehors de la plage horaire active
+
+### Fichiers de Logs
+
+Les logs sont enregistrés dans les fichiers suivants :
+
+1. **Logs d'Application** :
+   - `logs/app.log` - Tous les logs de l'application
+   - `logs/error.log` - Uniquement les erreurs critiques
+
+2. **Logs de Webhooks** :
+   - `logs/webhooks.log` - Toutes les tentatives d'envoi de webhooks
+   - `logs/webhook_errors.log` - Échecs d'envoi de webhooks
+
+3. **Logs de Débogage** :
+   - `logs/debug.log` - Informations détaillées pour le débogage
+
+### Format des Logs
+
+Chaque entrée de log suit le format :
+```
+[YYYY-MM-DD HH:MM:SS,SSS] [NIVEAU] [FICHIER:LIGNE] - MESSAGE [CONTEXTE]
+```
+
+Où :
+- `NIVEAU` : DEBUG, INFO, WARNING, ERROR
+- `FICHIER:LIGNE` : Fichier et ligne d'origine du log
+- `MESSAGE` : Description de l'événement
+- `CONTEXTE` : Informations supplémentaires (optionnel)
+
+### Surveillance et Alertes
+
+#### Métriques Clés
+1. **Taux de Réussite des Webhooks**
+   - Suivre les codes de statut HTTP
+   - Alerter si le taux de succès < 95%
+
+2. **Latence du Polling**
+   - Temps entre les cycles de polling
+   - Alerter si > 2x l'intervalle configuré
+
+3. **Taux de Déduplication**
+   - Nombre d'emails ignorés vs traités
+   - Détecter les pics anormaux
+
+#### Intégration avec des Outils Externes
+- **Sentry** : Pour le suivi des erreurs en production
+- **Prometheus/Grafana** : Pour la surveillance des métriques
+- **PagerDuty** : Pour les alertes critiques
+
+### Bonnes Pratiques
+
+1. **Rotation des Logs**
+   - Configurer la rotation quotidienne
+   - Conserver 7 jours de logs
+   - Compresser les fichiers de plus de 3 jours
+
+2. **Nettoyage**
+   - Supprimer les logs de plus de 30 jours
+   - Surveiller l'espace disque utilisé par les logs
+
+3. **Sécurité**
+   - Ne pas logger d'informations sensibles
+   - Limiter l'accès aux fichiers de logs
+   - Chiffrer les logs contenant des données sensibles
+
+### Dépannage Courant
+
+#### Problèmes de Connexion IMAP
+```
+IMAP: Error connecting to server - [Errno 110] Connection timed out
+```
+**Solution** : Vérifier la connectivité réseau et les paramètres du serveur IMAP.
+
+#### Échecs de Webhook
+```
+WEBHOOK: Failed to send (500) - Retry 1/3 in 5s
+```
+**Solution** : Vérifier que le serveur cible est opérationnel et accepte les requêtes.
+
+#### Problèmes de Déduplication
+```
+DEDUP_EMAIL: Error checking email ID - Redis connection error
+```
+**Solution** : Vérifier la connexion à Redis ou le fallback en mémoire.
 
 Ces logs utilisent des métadonnées uniquement (pas de contenu d'email) pour respecter la confidentialité.
 
@@ -369,44 +494,3 @@ Bonjour,
 Fichiers disponibles : https://fromsmash.com/AbCdEfGh
 À faire pour 9:30.
 
-Merci,
-L'équipe
-```
-→ `{ "matches": true, "delivery_time": "09h30" }` (format d'heure avec deux-points)
-
-## Mode Vacances (suspension du polling)
-
-Le système supporte un mode « vacances » permettant de suspendre le polling IMAP pendant une période définie.
-
-### Configuration (UI)
-
-- Champs date: `#vacationStart` (YYYY-MM-DD) et `#vacationEnd` (YYYY-MM-DD)
-- Affichage d'état: `#vacationStatus` (texte informatif lorsque les dates sont modifiées)
-- Bouton d'application via la section « Contrôle du Polling »
-
-### API
-
-- `GET /api/get_polling_config` → champs `vacation_start`, `vacation_end`
-- `POST /api/update_polling_config` → accepter `vacation_start` / `vacation_end` (`YYYY-MM-DD` ou `null`)
-
-### Validation & Normalisation
-
-- Formats ISO (YYYY-MM-DD) requis côté serveur
-- Si une seule date est fournie, l'autre peut être `null` (aucune plage active)
-- Si les deux sont fournies: `start <= end` sinon 400
-
-### Comportement
-
-- Lorsque la date actuelle est dans `[vacation_start, vacation_end]` (inclusif), le poller IMAP ne traite aucun email
-- Un message de log explicite indique la suspension
-- Hors période, le comportement normal s'applique (y compris les autres contraintes jour/heure)
-
-### Persistance
-
-- Les valeurs sont stockées avec le reste de la configuration dans `debug/polling_config.json`
-- Rechargement dynamique via les endpoints; certaines plateformes peuvent nécessiter un redémarrage pour réappliquer complètement
-
-### Notes
-
-- Le mode vacances est indépendant de la fenêtre horaire Make-webhooks
-- En cas d'environnement multi-workers, assurez-vous que `ENABLE_BACKGROUND_TASKS` n'est activé que sur un seul process (voir `memory-bank/systemPatterns.md`)

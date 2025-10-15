@@ -375,7 +375,7 @@
       <div class="nav-tabs" role="tablist">
         <button class="tab-btn active" data-target="#sec-overview" type="button">Vue d’ensemble</button>
         <button class="tab-btn" data-target="#sec-webhooks" type="button">Webhooks</button>
-        <button class="tab-btn" data-target="#sec-polling" type="button">Make</button>
+        <button class="tab-btn" data-target="#sec-polling" type="button">Email</button>
         <button class="tab-btn" data-target="#sec-preferences" type="button">Préférences</button>
         <button class="tab-btn" data-target="#sec-tools" type="button">Outils</button>
       </div>
@@ -440,7 +440,7 @@
               <label for="globalWebhookTimeEnd">Heure de fin (HHhMM)</label>
               <input id="globalWebhookTimeEnd" type="text" placeholder="ex: 19h00" style="width: 100%; max-width: 100px;">
             </div>
-            <button id="saveGlobalWebhookTimeBtn" class="btn btn-secondary" style="margin-top: 5px;">💾 Enregistrer la fenêtre horaire</button>
+            <button id="saveGlobalWebhookTimeBtn" class="btn btn-primary" style="margin-top: 10px; width: 100%; max-width: 280px; display: block;">💾 Enregistrer la fenêtre horaire</button>
             <div id="globalWebhookTimeMsg" class="status-msg" style="margin-top: 8px;"></div>
             <div class="small-text">Définissez quand les webhooks peuvent être envoyés (laissez vide pour désactiver).</div>
           </div>
@@ -454,7 +454,7 @@
       <!-- Section: Make (config + contrôle via API Make) -->
       <div id="sec-polling" class="section-panel">
         <div class="card">
-          <div class="card-title">🧩 Préférences Make (expéditeurs, dédup)</div>
+          <div class="card-title">🧩 Préférences Email (expéditeurs, dédup)</div>
           <div class="form-group">
             <label>SENDER_OF_INTEREST_FOR_POLLING</label>
             <div id="senderOfInterestContainer" class="stack" style="gap:8px;"></div>

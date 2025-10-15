@@ -1,23 +1,24 @@
 # Contexte Actif
 
-## Objectif Atteint
+## Objectif Actuel
+- En attente de la prochaine tâche
+
+## Réalisations Récentes
+- Séparation des fenêtres horaires emails et webhooks
 - Correction de l'affichage des heures dans les emails
 - Injection de l'heure de livraison pour les emails Recadrage
-- Amélioration de la gestion des fenêtres horaires
-
-## Réalisations Majeures
-- Ajout de `webhooks_time_end` dans le payload du webhook
-- Mise à jour du template PHP pour afficher l'heure de fin de manière conditionnelle
-- Correction de la logique de `webhooks_time_start` pour utiliser "maintenant" quand dans la fenêtre horaire
-- Extraction et injection de `delivery_time` pour les emails de type Recadrage
-- Ajout de logs de diagnostic pour le suivi
 
 ## Architecture Actuelle
-- Le module `email_processing/orchestrator.py` gère la construction du payload du webhook
-- Le template PHP dans `deployment/src/WebhookHandler.php` gère l'affichage conditionnel
-- Les logs sont utilisés pour le débogage et la traçabilité
+- Deux fenêtres horaires indépendantes :
+  - Fenêtre emails : gérée via `/api/get_webhook_time_window`
+  - Fenêtre webhooks : gérée via `/api/webhooks/time-window`
+- Persistance dans `debug/webhook_config.json`
+- Logique de vérification dans `email_processing/orchestrator.py`
 
 ## Prochaines Étapes Potentielles
+- Tests de charge des nouveaux endpoints
+- Documentation des nouvelles fonctionnalités
+- Revue de la cohérence des logs entre les deux fenêtres horaires
 - Tester l'envoi d'emails avec différentes configurations de fenêtres horaires
 - Vérifier la réception des emails avec les heures correctement formatées
 - Améliorer la documentation pour les nouveaux développeurs

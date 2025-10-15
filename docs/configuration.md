@@ -22,20 +22,16 @@ Toutes les valeurs sensibles et spécifiques à l'environnement doivent être fo
 - `EMAIL_POLLING_INTERVAL_SECONDS` (ex: `30`)
 - `POLLING_INACTIVE_CHECK_INTERVAL_SECONDS` (ex: `600`)
 - `DISABLE_EMAIL_ID_DEDUP` (`true|false`, défaut `false`) – bypass la déduplication par email ID pour débogage.
-
 ### Contrôle d'exécution des tâches de fond (sécurité opérationnelle)
 - `ENABLE_BACKGROUND_TASKS` (`true|false`) – doit être `true` pour démarrer `background_email_poller()`. Laissez `false` sur les workers secondaires.
 - `BG_POLLER_LOCK_FILE` (chemin) – fichier de verrou pour assurer un singleton inter-processus (défaut: `/tmp/render_signal_server_email_poller.lock`).
 
 ## Webhooks / Intégrations
-- `WEBHOOK_URL` – URL de réception de vos événements (obligatoire). Toutes les notifications sortent via ce point unique.
-- `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` (`true|false`, défaut `false`) – permet l'envoi du webhook même si aucun lien de livraison n'est détecté.
-- `WEBHOOK_SSL_VERIFY` – booléen (`true|false`, défaut `true`). Contrôle la vérification SSL des appels webhook sortants. Laissez `true` en production. Mettre `false` uniquement pour le débogage avec un certificat auto-signé (un avertissement est loggé).
-- `PROCESS_API_TOKEN` – token attendu pour des appels d'API sortants vers ce service (si utilisé par des intégrations)
 
-### Fenêtre horaire (optionnelle)
-- `WEBHOOKS_TIME_START` – heure de début de la fenêtre globale (format: HHhMM, HH:MM, etc., ex: "13h00")
-- `WEBHOOKS_TIME_END` – heure de fin de la fenêtre globale (format: HHhMM, HH:MM, etc., ex: "19h00")
+### Configuration de Base
+- `WEBHOOK_URL` : URL cible pour les webhooks sortants. Si non défini, aucun webhook ne sera envoyé.
+- `WEBHOOK_SSL_VERIFY` : Vérification SSL (désactivez uniquement en développement).
+- `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` : Si `true`, envoie les webhooks même sans liens détectés (défaut: `false`).
 - Note: Ces variables contrôlent une fenêtre horaire globale pour l'envoi des webhooks. Si non utilisées, laissez-les non définies.
 
 ### Gestion des webhooks

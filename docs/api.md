@@ -156,8 +156,6 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
     - `active_end_hour`: int 0..23
     - `enable_subject_group_dedup`: bool
     - `sender_of_interest_for_polling`: array d'emails (validés/normalisés)
-    - `vacation_start`: `YYYY-MM-DD` | null
-    - `vacation_end`: `YYYY-MM-DD` | null
     - `enable_polling`: bool
   - Réponses:
     - 200: `{ "success": true, "message": "Configuration polling enregistrée.", "config": { ..., "enable_polling": bool } }`
@@ -165,19 +163,24 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
     - Le thread de polling au démarrage est conditionné par: `ENABLE_BACKGROUND_TASKS` (env) ET `enable_polling` (config persistée).
     - Un redémarrage du service est nécessaire pour (dés)activer effectivement le thread de fond.
 
-### Configuration du Polling (jours/heures/déduplication + vacances)
+### Configuration du Polling (jours/heures/déduplication)
 
 - `GET /api/get_polling_config` (protégé)
   - Retourne la configuration persistée côté serveur (`debug/polling_config.json`)
-  - Réponse: `{ "success": true, "config": {
-      "active_days": [0..6],
-      "active_start_hour": 9,
-      "active_end_hour": 23,
-      "enable_subject_group_dedup": true,
-      "sender_of_interest_for_polling": ["email1@example.com", ...],
-      "vacation_start": "YYYY-MM-DD|null",
-      "vacation_end": "YYYY-MM-DD|null"
-    } }`
+  - Réponse: 
+    ```json
+    {
+      "success": true, 
+      "config": {
+        "active_days": [0..6],
+        "active_start_hour": 9,
+        "active_end_hour": 23,
+        "enable_subject_group_dedup": true,
+        "sender_of_interest_for_polling": ["email1@example.com", ...],
+        "enable_polling": true
+      }
+    }
+    ```
 
 - `POST /api/update_polling_config` (protégé)
   - Met à jour la configuration de polling. Les champs sont optionnels (merge partiel) :
@@ -186,12 +189,14 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
     - `active_end_hour`: int 0..23
     - `enable_subject_group_dedup`: bool
     - `sender_of_interest_for_polling`: array d'emails (validés/normalisés)
-    - `vacation_start`: `YYYY-MM-DD` | null
-    - `vacation_end`: `YYYY-MM-DD` | null
+    - `enable_polling`: bool (active/désactive le polling au redémarrage)
   - Réponses:
     - 200: `{ "success": true, "message": "Configuration polling enregistrée." }`
     - 400: `{ "success": false, "message": "..." }` (validation échouée)
     - 500: `{ "success": false, "message": "..." }`
+  - Notes:
+    - Le thread de polling au démarrage est conditionné par: `ENABLE_BACKGROUND_TASKS` (env) ET `enable_polling` (config persistée).
+    - Un redémarrage du service est nécessaire pour (dés)activer effectivement le thread de fond.
 
 ## Endpoints legacy (dépréciés ou supprimés)
 
@@ -242,6 +247,7 @@ curl -b cookies.txt -s http://localhost:10000/logout -o /dev/null -w '\nHTTP %{h
 
 ## Fenêtre horaire des webhooks (endpoints protégés)
 
+### Anciens endpoints (maintenus pour compatibilité)
 - `GET /api/get_webhook_time_window`
   - Réponse: `{ "success": true, "webhooks_time_start": "HHhMM|null|''", "webhooks_time_end": "HHhMM|null|''", "timezone": "Europe/Paris|UTC|..." }`
   - Remarques: les champs vides/absents signifient « pas de contrainte ».
@@ -255,6 +261,32 @@ curl -b cookies.txt -s http://localhost:10000/logout -o /dev/null -w '\nHTTP %{h
     - 200: `{ "success": true, "webhooks_time_start": "HHhMM|null", "webhooks_time_end": "HHhMM|null" }`
     - 400: `{ "success": false, "message": string }` (paramètre manquant ou URL non configurée)
     - 500: `{ "success": false, "message": string }` (échec d'envoi)
+
+### Nouveaux endpoints (recommandés)
+- `GET /api/webhooks/time-window`
+  - Récupère la fenêtre horaire actuelle pour l'envoi des webhooks
+  - Réponse: `{ 
+    "success": true, 
+    "time_window": {
+      "start": "HHhMM"|null, 
+      "end": "HHhMM"|null,
+      "timezone": "Europe/Paris"
+    }
+  }`
+
+- `POST /api/webhooks/time-window`
+  - Définit la fenêtre horaire pour l'envoi des webhooks
+  - Corps JSON: `{ 
+    "start": "11h30"|null, 
+    "end": "17h30"|null 
+  }`
+  - Réponses:
+    - 200: `{ "success": true, "time_window": { "start": "HHhMM"|null, "end": "HHhMM"|null } }`
+    - 400: `{ "success": false, "error": "message d'erreur" }`
+  - Notes:
+    - Si start et end sont null, la fenêtre horaire est désactivée
+    - Le format d'heure doit être HHhMM (ex: "09h30", "17h00")
+    - La timezone est déterminée par `POLLING_TIMEZONE`
 
 ## Statut du worker local (télécommande) — Déprécié
 

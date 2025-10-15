@@ -2,6 +2,14 @@
 
 ## Terminé
 
+-   [2025-10-15 18:00] **Séparation des fenêtres horaires emails et webhooks**
+    -   Création d'une fenêtre horaire dédiée pour le toggle global des webhooks
+    -   Nouveaux endpoints API : `GET/POST /api/webhooks/time-window`
+    -   Persistance dans `debug/webhook_config.json`
+    -   Mise à jour de l'interface utilisateur avec une section dédiée
+    -   Gestion indépendante de la fenêtre horaire des emails existante
+
+
 -   [2025-10-15 15:54] **Correction de l'affichage de l'heure de fin dans les emails**
     -   Ajout de `webhooks_time_end` dans le payload du webhook personnalisé
     -   Mise à jour du template PHP pour afficher l'heure de fin de manière conditionnelle

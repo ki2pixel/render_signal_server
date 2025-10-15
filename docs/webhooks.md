@@ -6,12 +6,37 @@
 
 # Webhooks
 
-Cette application n'expose pas d'endpoint public de webhook entrant côté Flask. Elle envoie des payloads (webhooks sortants) vers une URL cible unique : `WEBHOOK_URL`.
+## Architecture du Flux de Webhooks
 
-Les anciens webhooks spécifiques Make.com (Recadrage/Autorépondeur) sont désormais **dépréciés** et **non utilisés**. La logique est unifiée dans un seul flux basé sur `WEBHOOK_URL`.
-Les webhooks de présence « samedi » (`PRESENCE_TRUE_MAKE_WEBHOOK_URL` / `PRESENCE_FALSE_MAKE_WEBHOOK_URL`) restent optionnels si vous utilisez encore Make.com pour cette fonctionnalité.
+### Flux Unifié
 
-Selon votre usage, vous pouvez adapter la forme du payload. Ci-dessous, un format recommandé et cohérent avec la logique du projet.
+Cette application utilise un flux de webhooks unifié avec les caractéristiques suivantes :
+
+1. **Point d'entrée unique** : Tous les webhooks sortants sont envoyés vers l'URL configurée dans `WEBHOOK_URL`
+2. **Contrôle de fenêtre horaire** : Possibilité de restreindre l'envoi des webhooks à des plages horaires spécifiques
+3. **Dépréciation des endpoints Make.com** : Les anciens webhooks spécifiques (Recadrage/Autorépondeur) sont désormais **dépréciés** et **non utilisés**
+4. **Contrôle manuel de Make** : Le contrôle des scénarios Make s'effectue directement dans l'interface Make.com
+
+### Configuration Requise
+
+- `WEBHOOK_URL` : URL cible pour tous les webhooks sortants
+- `WEBHOOK_SSL_VERIFY` : Vérification SSL pour les appels sortants (désactiver uniquement pour le débogage)
+- `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` : Autoriser l'envoi même sans liens détectés
+
+### Gestion du Temps
+
+- **Fenêtre Horaire Globale** : Restreint l'envoi des webhooks à une plage horaire spécifique
+  - Configurable via l'interface utilisateur ou l'API
+  - Persistée dans `debug/webhook_config.json`
+  - Format : `HHhMM` (ex: "09h30", "17h00")
+  - Désactivable en laissant les champs vides
+
+### Compatibilité
+
+Pour assurer la rétrocompatibilité :
+- Les anciens endpoints Make.com sont redirigés vers le flux unifié
+- Les champs hérités (`dropbox_urls`, `dropbox_first_url`) sont maintenus
+- Les anciens noms de variables d'environnement sont toujours supportés mais dépréciés
 
 ## Webhooks sortants – Format recommandé
 
@@ -92,21 +117,88 @@ Notes:
 
 Le serveur cible peut renvoyer `2xx` pour signaler le succès. Des `4xx/5xx` doivent être traqués dans les logs de cette application.
 
-## Webhooks Make.com – Statut
+## Intégration avec Make.com
 
-- Les webhooks Make.com « Recadrage » et « Autorépondeur » sont dépréciés et ne sont plus déclenchés par l'application.
-- Les webhooks de présence « samedi » (`PRESENCE_TRUE_MAKE_WEBHOOK_URL` / `PRESENCE_FALSE_MAKE_WEBHOOK_URL`) restent optionnels si vous les utilisez encore. Sinon, laissez-les non définis.
+### Statut Actuel
 
----
+- **Webhooks dépréciés** : Les webhooks spécifiques « Recadrage » et « Autorépondeur » ne sont plus utilisés
+- **Contrôle manuel requis** : Les scénarios Make doivent être contrôlés directement dans l'interface Make.com
+- **Webhooks de présence** : Optionnels, utilisent `PRESENCE_TRUE_MAKE_WEBHOOK_URL` / `PRESENCE_FALSE_MAKE_WEBHOOK_URL`
 
-Make.com peut ensuite transformer/diffuser ces données dans ses scénarios.
+### Configuration Recommandée
+
+1. **Dans Make.com** :
+   - Créez un scénario avec un déclencheur Webhook
+   - Utilisez l'URL fournie par Make comme `WEBHOOK_URL`
+   - Configurez le traitement des données dans Make
+
+2. **Dans le Dashboard** :
+   - Accédez à l'onglet "Webhooks"
+   - Collez l'URL de votre webhook Make.com
+   - Configurez la fenêtre horaire si nécessaire
+
+### Migration depuis l'Ancien Système
+
+1. **Ancien Flux** :
+   ```
+   Email → Filtrage → Webhook spécifique (Recadrage/Autorépondeur) → Make.com
+   ```
+
+2. **Nouveau Flux** :
+   ```
+   Email → Filtrage → Webhook unifié (WEBHOOK_URL) → Make.com → Routage basé sur le contenu
+   ```
+
+### Dépannage
+
+- **Erreur 403** : Vérifiez que vous utilisez la nouvelle URL de webhook
+- **Données manquantes** : Assurez-vous que votre scénario Make attend le format de payload unifié
+- **Délais** : Les webhooks sont soumis à la fenêtre horaire configurée
+
+## Bonnes Pratiques
+
+### Gestion des Erreurs
+- Implémentez une logique de relecture (retry) côté récepteur
+- Validez toujours les données reçues avant traitement
+- Logguez les échecs pour analyse ultérieure
+
+### Surveillance
+- Activez les notifications d'échec dans les préférences
+- Vérifiez régulièrement les logs d'erreur
+- Surveillez le taux d'échec des webhooks
 
 ## Sécurité
 
 - Évitez d'envoyer des secrets dans le body. Utilisez si besoin un header `Authorization` ou un paramètre signé (HMAC).
 - En production, activez la vérification TLS/SSL côté client (voir `docs/securite.md`) et renforcez la validation des réponses.
 
-## Exemples de tests (curl)
+## Gestion des Fenêtres Horaire
+
+### Configuration via API
+
+1. **Récupérer la configuration actuelle** :
+   ```bash
+   curl -X GET "http://localhost:5000/api/webhooks/time-window" \
+     -H "Authorization: Bearer VOTRE_TOKEN"
+   ```
+
+2. **Définir une fenêtre horaire** :
+   ```bash
+   curl -X POST "http://localhost:5000/api/webhooks/time-window" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer VOTRE_TOKEN" \
+     -d '{"start": "09h00", "end": "18h00"}'
+   ```
+
+3. **Désactiver la fenêtre horaire** :
+   ```bash
+   curl -X POST "http://localhost:5000/api/webhooks/time-window" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer VOTRE_TOKEN" \
+     -d '{"start": null, "end": null}'
+   ```
+
+### Exemples de tests (curl)
 
 Simuler un envoi de webhook (comme le ferait l'application) vers un endpoint de test:
 
