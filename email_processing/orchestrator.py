@@ -335,6 +335,14 @@ def check_new_emails_and_trigger_webhook() -> int:
                 # Required by validator: sender_address, subject, receivedDateTime
                 # Provide email_content to avoid server-side IMAP search and allow URL extraction.
                 preview = (combined_text_for_detection or "")[:200]
+                # Load current global time window strings (for email body rendering on PHP side)
+                try:
+                    tw_info = _w_tw.get_time_window_info()
+                    tw_start_str = (tw_info.get('start') or '').strip() or None
+                    tw_end_str = (tw_info.get('end') or '').strip() or None
+                except Exception:
+                    tw_start_str = None
+                    tw_end_str = None
                 payload_for_webhook = {
                     "microsoft_graph_email_id": email_id,  # reuse our ID for compatibility
                     "subject": subject or "",
@@ -343,6 +351,14 @@ def check_new_emails_and_trigger_webhook() -> int:
                     "bodyPreview": preview,
                     "email_content": combined_text_for_detection or "",
                 }
+                # Attach window strings if configured
+                try:
+                    if tw_start_str is not None:
+                        payload_for_webhook["webhooks_time_start"] = tw_start_str
+                    if tw_end_str is not None:
+                        payload_for_webhook["webhooks_time_end"] = tw_end_str
+                except Exception:
+                    pass
                 # Add fields used by PHP handler for detector-based Gmail sending
                 try:
                     if detector_val:

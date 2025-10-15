@@ -98,7 +98,11 @@ class WebhookHandler
                     $subjectOut = 'Acception : ' . $incomingSubject;
                     $timeWindow = htmlspecialchars($start, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
                     $timeEnd = htmlspecialchars($end, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-                    $html = "Hello !<br><br>\nJe peux prendre en charge les vidéos aujourd'hui de {$timeWindow} jusqu'à {$timeEnd}.<br><br>\nCamille";
+                    if (!empty($end)) {
+                        $html = "Hello !<br><br>\nJe peux prendre en charge les vidéos aujourd'hui de {$timeWindow} jusqu'à {$timeEnd}.<br><br>\nCamille";
+                    } else {
+                        $html = "Hello !<br><br>\nJe peux prendre en charge les vidéos aujourd'hui à partir de {$timeWindow}.<br><br>\nCamille";
+                    }
                 }
 
                 $mailer = new GmailMailer();
