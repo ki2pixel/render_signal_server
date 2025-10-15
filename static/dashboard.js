@@ -1145,6 +1145,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+// --- Gestionnaire du bouton d'enregistrement des préférences email ---
+document.addEventListener('DOMContentLoaded', () => {
+    const saveEmailPrefsBtn = document.getElementById('saveEmailPrefsBtn');
+    if (saveEmailPrefsBtn) {
+        saveEmailPrefsBtn.addEventListener('click', savePollingConfig);
+    }
+});
+
 // --- Polling Config (jours, heures, dédup) ---
 
 async function loadPollingConfig() {
@@ -1188,6 +1196,8 @@ async function savePollingConfig() {
             showMessage('pollingCfgMsg', data.message || 'Configuration polling enregistrée.', 'success');
             // Recharger pour refléter la normalisation côté serveur
             loadPollingConfig();
+            // Mettre à jour le message de statut
+            showMessage('emailPrefsSaveStatus', data.message || 'Préférences enregistrées avec succès !', 'success');
         } else {
             showMessage('pollingCfgMsg', data.message || 'Erreur lors de la sauvegarde.', 'error');
         }

@@ -375,7 +375,7 @@
       <div class="nav-tabs" role="tablist">
         <button class="tab-btn active" data-target="#sec-overview" type="button">Vue d’ensemble</button>
         <button class="tab-btn" data-target="#sec-webhooks" type="button">Webhooks</button>
-        <button class="tab-btn" data-target="#sec-polling" type="button">Email</button>
+        <button class="tab-btn" data-target="#sec-email" type="button">Email</button>
         <button class="tab-btn" data-target="#sec-preferences" type="button">Préférences</button>
         <button class="tab-btn" data-target="#sec-tools" type="button">Outils</button>
       </div>
@@ -451,8 +451,8 @@
         </div>
       </div>
 
-      <!-- Section: Make (config + contrôle via API Make) -->
-      <div id="sec-polling" class="section-panel">
+      <!-- Section: Préférences Email (expéditeurs, dédup) -->
+      <div id="sec-email" class="section-panel">
         <div class="card">
           <div class="card-title">🧩 Préférences Email (expéditeurs, dédup)</div>
           <div class="form-group">
@@ -468,7 +468,8 @@
             </label>
             <span style="margin-left: 10px;">ENABLE_SUBJECT_GROUP_DEDUP</span>
           </div>
-          
+          <button id="saveEmailPrefsBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer les préférences</button>
+          <div id="emailPrefsSaveStatus" class="status-msg" style="margin-top: 10px;"></div>
         </div>
         
       </div>
