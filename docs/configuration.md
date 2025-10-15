@@ -88,6 +88,37 @@ Formats acceptés pour `PRESENCE_*_MAKE_WEBHOOK_URL`:
 Notes:
 - Ces variables sont obsolètes et sans effet depuis la suppression de la fonctionnalité. Conservez-les non définies.
 
+## Préférences de Traitement (processing_prefs.json)
+
+Le fichier `debug/processing_prefs.json` contient des paramètres de traitement des e-mails qui peuvent être modifiés sans redémarrage du serveur. Voici les paramètres disponibles :
+
+- `exclude_keywords` (array) : Liste de mots-clés pour filtrer les e-mails (ne pas traiter si présents dans l'objet ou le corps)
+- `require_attachments` (bool) : Si `true`, n'envoie le webhook que pour les e-mails avec pièces jointes
+- `max_email_size_mb` (int|null) : Taille maximale des e-mails en Mo (`null` pour désactiver la limite)
+- `retry_count` (int) : Nombre de tentatives en cas d'échec d'envoi du webhook
+- `retry_delay_sec` (int) : Délai en secondes entre les tentatives
+- `webhook_timeout_sec` (int) : Délai d'expiration pour les appels webhook
+- `rate_limit_per_hour` (int) : Limite de taux d'appels webhook par heure
+- `notify_on_failure` (bool) : Activer les notifications en cas d'échec
+- `mirror_media_to_custom` (bool) : **Paramètre critique** - Active l'envoi des liens de téléchargement (SwissTransfer, Dropbox, FromSmash) vers le webhook personnalisé configuré dans `WEBHOOK_URL`
+  - `true` : Active le miroir vers le webhook personnalisé (recommandé pour la production)
+  - `false` : Désactive l'envoi des liens au webhook personnalisé
+
+### Exemple de configuration :
+```json
+{
+  "exclude_keywords": ["SPAM", "PUBLICITÉ"],
+  "require_attachments": false,
+  "max_email_size_mb": 25,
+  "retry_count": 2,
+  "retry_delay_sec": 5,
+  "webhook_timeout_sec": 30,
+  "rate_limit_per_hour": 10,
+  "notify_on_failure": true,
+  "mirror_media_to_custom": true
+}
+```
+
 ## CORS et Endpoints de Test
 - `TEST_API_KEY` – clé API utilisée pour authentifier les endpoints de test sous `/api/test/*` via le header `X-API-Key`.
 - `CORS_ALLOWED_ORIGINS` – liste CSV d'origines autorisées pour CORS (ex: `https://webhook.kidpixel.fr,http://localhost:8080`).

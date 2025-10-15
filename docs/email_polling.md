@@ -40,6 +40,17 @@ Le thread `background_email_poller()`:
 - Logs détaillés: Préfixe `DEDUP_EMAIL` pour tracer la déduplication, avec indication de bypass si `DISABLE_EMAIL_ID_DEDUP=true`.
 - Endpoint de débogage: `/api/test/clear_email_dedup` (X-API-Key) permet l'effacement manuel d'un email ID du set Redis pour re-traitement.
 
+### Journalisation et traçabilité du polling
+
+Le système journalise chaque étape du traitement des emails pour améliorer la traçabilité et faciliter le débogage opérationnel :
+
+- **Lecture des emails** : Log `POLLER: Email read from IMAP` avec numéro, sujet, expéditeur (sans contenu sensible).
+- **Marquage comme lu** : Log `IMAP: Email <num> marked as read` promu à niveau INFO dans `imap_client.py`.
+- **Motifs d'ignorance** : Logs `IGNORED` avec raison spécifique pour chaque skip (fetch KO, expéditeur non autorisé, déduplication email/groupe, fenêtre horaire non satisfaite pour DESABO/Présence).
+- **Déduplication** : Logs `DEDUP_EMAIL` et `DEDUP_GROUP` pour tracer les skips.
+
+Ces logs utilisent des métadonnées uniquement (pas de contenu d'email) pour respecter la confidentialité.
+
 ### Déduplication par groupe de sujet (webhooks)
 
 Objectif: n'envoyer qu'un seul webhook par « série » d'emails portant un sujet similaire (ex: réponses « Re: », « Confirmation : », etc.) pour éviter les doublons.

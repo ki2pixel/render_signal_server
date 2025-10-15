@@ -2,6 +2,45 @@
 
 Ce document enregistre les décisions techniques et architecturales importantes prises au cours du projet.
 
+- **[2025-10-15 00:50:00] - Intégration d'un envoi d'email Gmail OAuth côté PHP (deployment/)**
+    - **Décision** : Implémenter l'envoi d'emails via l'API Gmail avec OAuth2 directement dans la couche PHP de `deployment/` afin de répliquer les scénarios Make.com côté serveur.
+    - **Implémentation** : Création/renforcement de `deployment/src/GmailMailer.php` (OAuth refresh_token → access_token via cURL, envoi message RFC822 encodé Base64URL), intégration dans `deployment/src/WebhookHandler.php`.
+    - **Sécurité** : Passage futur recommandé vers variables d'environnement (`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `GMAIL_FROM_EMAIL`) au lieu de valeurs hardcodées.
+    - **Notes** : Résolution d'une erreur 401 liée à OAuth en cochant « Use your own OAuth credentials » dans OAuth Playground et régénération d'un refresh token valide.
+
+- **[2025-10-15 00:54:00] - Nouveau flux webhook "recadrage" (Make blueprint RECADRAGE_MAKE_WEBHOOK_URL)**
+    - **Décision** : Reproduire le scénario Make.com "Confirmation mission recadrage" dans `WebhookHandler.processWebhook()`.
+    - **Implémentation** : Ajout d'une branche `detector === 'recadrage'` qui compose l'email selon la présence du mot-clé « urgence » dans le sujet. Utilisation de `delivery_time` pour le cas non urgent. Envoi via `GmailMailer`.
+    - **Validation** : Deux tests cURL (urgent et non-urgent) → succès, emails envoyés.
+    - **Compat** : Le destinataire est temporairement hardcodé pour les tests; prévoir `RECADRAGE_TO` en ENV.
+
+- **[2025-10-15 00:56:00] - Assouplissement de la validation des payloads webhook pour les détecteurs**
+    - **Décision** : Accepter les payloads avec `detector` + `subject` + `sender_email` sans exiger `receivedDateTime`, `delivery_links` ou `email_content`.
+    - **Implémentation** : Mise à jour de `validateWebhookData()` dans `deployment/src/WebhookHandler.php` pour inclure un chemin "detector-based" (recadrage, desabonnement_journee_tarifs).
+    - **Impact** : Permet les flux d'autorepondeur/gmail sans imposer les champs spécifiques aux webhooks Media Solution.
+
+- **[2025-10-14 20:33] - Mise à jour de la documentation suite au workflow /docs-updater**
+  - **Décision** : Synchroniser la documentation avec les changements récents (miroir des liens, logs de polling, suppression contrôles Make).
+  - **Implémentation** :
+    - Ajout dans `docs/architecture.md` de la mention du miroir optionnel vers le webhook personnalisé dans `handle_media_solution_route()`.
+    - Ajout dans `docs/email_polling.md` d'une section « Journalisation et traçabilité du polling » décrivant les logs explicites pour lecture emails, marquage lu, motifs d'ignorance.
+    - Vérification de `docs/api.md` : pas de références aux endpoints Make supprimés.
+  - **Raison** : Assurer que la documentation reflète fidèlement l'état actuel du code après les mises à jour.
+  - **Impacts** :
+    - Documentation cohérente et à jour.
+    - Amélioration de la maintenabilité et de l'onboarding.
+
+- **[2025-10-14 20:30] - Correction et documentation du miroir des liens SwissTransfer**
+  - **Décision** : Activer et documenter la fonctionnalité de miroir des liens SwissTransfer/Dropbox/FromSmash vers un webhook personnalisé via le paramètre `mirror_media_to_custom`.
+  - **Implémentation** :
+    - Correction d'une erreur d'indentation dans `email_processing/orchestrator.py`
+    - Activation de `mirror_media_to_custom: true` dans `debug/processing_prefs.json`
+    - Ajout dans `DEFAULT_PROCESSING_PREFS` de `routes/api_processing.py`
+    - Documentation complète dans `docs/configuration.md`
+    - Ajout de logs de diagnostic dans `app_render.py`
+  - **Validation** : Les liens sont maintenant correctement transmis au webhook PHP avec réponse HTTP 200
+  - **Impact** : Améliore la fiabilité de la transmission des liens vers le système externe
+
 - **[2025-10-14 15:54] - Amélioration des logs de polling et correction des tests de compatibilité**
   - **Décision** : Améliorer la traçabilité du polling IMAP en ajoutant des logs explicites pour la lecture des emails, le marquage comme lu, et les motifs d'ignorance (fetch KO, expéditeur non autorisé, déduplication, fenêtre horaire), sans exposer de données sensibles (seulement métadonnées comme numéro, sujet, expéditeur).
   - **Implémentation** :

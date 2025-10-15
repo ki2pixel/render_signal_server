@@ -2,6 +2,35 @@
 
 ## Terminé
 
+-   [2025-10-15 00:58] **Intégration Gmail OAuth (PHP) pour envoi d'emails et flux détecteurs**
+    -   Ajout/renforcement de `deployment/src/GmailMailer.php` (OAuth2 refresh→access + envoi RFC822 via Gmail API)
+    -   Débogage 401 résolu (OAuth Playground « Use your own OAuth credentials » + nouveau refresh token)
+    -   Intégration côté `deployment/src/WebhookHandler.php`
+
+-   [2025-10-15 00:59] **Nouveau flux webhook « recadrage » (Make blueprint RECADRAGE_MAKE_WEBHOOK_URL)**
+    -   Branche `detector === 'recadrage'` implémentée: détection « urgence » dans le sujet; usage de `delivery_time` pour le cas non urgent
+    -   Envoi via `GmailMailer` avec logs et gestion d’erreurs cohérentes
+    -   Tests cURL urgent/non urgent: succès, emails envoyés
+
+-   [2025-10-15 01:00] **Assouplissement de la validation des payloads pour détecteurs**
+    -   `validateWebhookData()` accepte `detector` + `subject` + `sender_email` sans `receivedDateTime`/`delivery_links`/`email_content`
+    -   Permet les flux d’autorépondeur Gmail sans contraintes Media Solution
+
+-   [2025-10-14 20:33] **Mise à jour de la documentation suite au workflow /docs-updater**
+    - Vérification et mise à jour de `docs/architecture.md` : ajout de la mention du miroir optionnel dans `handle_media_solution_route()`
+    - Ajout dans `docs/email_polling.md` d'une section sur la journalisation et traçabilité du polling
+    - Vérification de `docs/api.md` : confirmation absence de références aux endpoints Make supprimés
+    - Mise à jour de la Memory Bank (decisionLog.md et progress.md)
+    - Cohérence parfaite entre code source et documentation assurée
+
+-   [2025-10-14 20:30] **Correction du miroir des liens SwissTransfer**
+    - Correction de l'indentation dans `orchestrator.py`
+    - Activation de `mirror_media_to_custom: true` dans `debug/processing_prefs.json`
+    - Ajout dans `DEFAULT_PROCESSING_PREFS` de `api_processing.py`
+    - Documentation complète dans `docs/configuration.md`
+    - Ajout de logs de diagnostic dans `app_render.py`
+    - Validation : Les liens SwissTransfer/Dropbox/FromSmash sont maintenant correctement transmis au webhook PHP avec réponse HTTP 200
+
 -   [2025-10-14 15:54] **Amélioration des logs de polling et correction des tests**
     -   Ajout de logs "POLLER: Email read from IMAP" lors de la lecture d'un email dans `email_processing/orchestrator.py`.
     -   Promotion du log "marked as read" à niveau INFO dans `email_processing/imap_client.py`.

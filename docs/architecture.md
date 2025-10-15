@@ -84,7 +84,8 @@ Cette application fournit une télécommande web sécurisée (Flask + Flask-Logi
       - Paramètres: subject, full_email_content, html_email_content, email_id, etc.
       - Gestion des fenêtres horaires et construction du payload spécifique
     - `handle_media_solution_route()`: Gère les emails de type Média Solution
-      - Extraction des liens de livraison et envoi des webhooks
+      - Extraction des liens de livraison et envoi des webhooks Make.com
+      - Miroir optionnel vers le webhook personnalisé si `mirror_media_to_custom` activé (pour persister les liens)
     - `compute_desabo_time_window()`: Calcule la fenêtre temporelle pour les webhooks DESABO
       - Gère les cas "early_ok" et les contraintes horaires
     - `send_custom_webhook_flow()`: Flux complet d'envoi de webhook avec gestion des erreurs
@@ -155,7 +156,13 @@ Objectifs: séparation des responsabilités, testabilité améliorée, réductio
 - `dashboard.html` – interface Dashboard Webhooks.
 - `static/dashboard.js` – logique UI centralisée du dashboard.
 - `requirements.txt` – dépendances Python.
- - `deployment/` – ancien/alternative: application PHP reproduisant une partie du scénario Make.com (documentation incluse). Ce dossier est indépendant du serveur Flask. Note: par compatibilité avec des systèmes existants, toutes les URLs détectées (Dropbox, FromSmash, SwissTransfer) sont enregistrées dans la table `logs_dropbox` via la colonne `url_dropbox`.
+ - `deployment/` – application PHP reproduisant les scénarios Make.com, incluant :
+   - Envoi d'emails via Gmail OAuth pour les flux `autorepondeur` et `recadrage`
+   - Gestion des webhooks entrants avec détecteurs (`recadrage`, `desabonnement_journee_tarifs`)
+   - Persistance des liens (Dropbox, FromSmash, SwissTransfer) dans la table `logs_dropbox`
+   - Configuration via variables d'environnement (`GMAIL_CLIENT_*`, `GMAIL_REFRESH_TOKEN`, etc.)
+   
+   > **Note** : Cette couche PHP est autonome et s'exécute indépendamment du serveur Flask principal, offrant une redondance pour les fonctionnalités critiques.
 
 ## Décisions techniques
 

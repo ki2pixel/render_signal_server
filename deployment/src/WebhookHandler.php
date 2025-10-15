@@ -10,6 +10,7 @@ require_once __DIR__ . '/DropboxUrlProcessor.php';
 require_once __DIR__ . '/FromSmashUrlProcessor.php';
 require_once __DIR__ . '/SwissTransferUrlProcessor.php';
 require_once __DIR__ . '/DatabaseLogger.php';
+require_once __DIR__ . '/GmailMailer.php';
 
 class WebhookHandler
 {
@@ -64,6 +65,110 @@ class WebhookHandler
                 $result['message'] = "Sender not authorized: {$senderEmail}";
                 error_log("Unauthorized sender: {$senderEmail}");
                 return $result;
+            }
+
+            // If detector indicates AUTOREPONDEUR flow, send an email via Gmail OAuth and return.
+            // This mirrors the Make.com scenario defined in make/AUTOREPONDEUR_MAKE_WEBHOOK_URL.blueprint.json
+            $detector = isset($webhookData['detector']) ? $webhookData['detector'] : null;
+            if ($detector === 'desabonnement_journee_tarifs') {
+                $to = 'technique@media-solution.fr'; // Temporaire pour les tests
+                error_log("AUTOREPONDEUR: Envoi à $to");
+                if (empty($to)) {
+                    $result['message'] = 'AUTOREPONDEUR_TO not configured';
+                    $result['errors'][] = 'Missing env AUTOREPONDEUR_TO';
+                    return $result;
+                }
+
+                $emailContent = '';
+                if (isset($webhookData['email_content'])) {
+                    $emailContent = (string)$webhookData['email_content'];
+                } elseif (isset($webhookData['Text'])) {
+                    $emailContent = (string)$webhookData['Text'];
+                }
+
+                $incomingSubject = isset($webhookData['Subject']) ? (string)$webhookData['Subject'] : ((isset($webhookData['subject']) ? (string)$webhookData['subject'] : ''));
+                $start = isset($webhookData['webhooks_time_start']) ? (string)$webhookData['webhooks_time_start'] : 'maintenant';
+                $end = isset($webhookData['webhooks_time_end']) ? (string)$webhookData['webhooks_time_end'] : '';
+
+                $isUrgent = stripos($emailContent, 'urgent') !== false;
+                if ($isUrgent) {
+                    $subjectOut = 'Acceptation lot urgent : ' . $incomingSubject;
+                    $html = "Hello !<br><br>\nJe peux prendre en charge ce lot urgent dès maintenant.<br><br>\nCamille";
+                } else {
+                    $subjectOut = 'Acception : ' . $incomingSubject;
+                    $timeWindow = htmlspecialchars($start, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                    $timeEnd = htmlspecialchars($end, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                    $html = "Hello !<br><br>\nJe peux prendre en charge les vidéos aujourd'hui de {$timeWindow} jusqu'à {$timeEnd}.<br><br>\nCamille";
+                }
+
+                $mailer = new GmailMailer();
+                error_log("GmailMailer configuré: " . ($mailer->isConfigured() ? 'oui' : 'non'));
+                if (!$mailer->isConfigured()) {
+                    $result['message'] = 'Gmail OAuth not configured';
+                    $result['errors'][] = 'Missing GMAIL_CLIENT_* or GMAIL_FROM_* env variables';
+                    return $result;
+                }
+
+                error_log("Envoi email: $subjectOut à $to");
+                $sendRes = $mailer->send($to, $subjectOut, $html);
+                error_log("Résultat envoi: " . json_encode($sendRes));
+                if ($sendRes['success']) {
+                    $result['success'] = true;
+                    $result['message'] = 'AUTOREPONDEUR email sent successfully';
+                    return $result;
+                } else {
+                    $result['message'] = 'Failed to send AUTOREPONDEUR email';
+                    $result['errors'][] = $sendRes['error'] ?? ('status=' . ($sendRes['status'] ?? 'unknown'));
+                    return $result;
+                }
+            } elseif ($detector === 'recadrage') {
+                // Confirmation mission recadrage (Make blueprint: RECADRAGE_MAKE_WEBHOOK_URL)
+                $to = 'camille.moine.pro@gmail.com'; // Temporaire pour les tests (configurable via ENV à terme)
+                error_log("RECADRAGE: Envoi à $to");
+                if (empty($to)) {
+                    $result['message'] = 'RECADRAGE_TO not configured';
+                    $result['errors'][] = 'Missing env RECADRAGE_TO';
+                    return $result;
+                }
+
+                // Inputs from webhook (per Make blueprint interface): subject, delivery_time, sender_email
+                $incomingSubject = isset($webhookData['Subject']) ? (string)$webhookData['Subject'] : ((isset($webhookData['subject']) ? (string)$webhookData['subject'] : ''));
+                $deliveryTime = isset($webhookData['delivery_time']) ? (string)$webhookData['delivery_time'] : '';
+
+                // Urgency detection is based on SUBJECT containing 'urgence' (case-insensitive)
+                $isUrgent = stripos($incomingSubject, 'urgence') !== false;
+
+                // Compose email mirroring the Make.com modules
+                $safeSubject = $incomingSubject; // kept raw in subject line as in Make; can be sanitized by Gmail API
+                if ($isUrgent) {
+                    $subjectOut = 'Confirmation : ' . $safeSubject;
+                    $html = "OK merci, je m'en occupe.";
+                } else {
+                    $subjectOut = 'Confirmation : ' . $safeSubject;
+                    $safeDelivery = htmlspecialchars($deliveryTime, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                    $html = "OK merci, je m'en occupe pour {$safeDelivery}.";
+                }
+
+                $mailer = new GmailMailer();
+                error_log("GmailMailer configuré (recadrage): " . ($mailer->isConfigured() ? 'oui' : 'non'));
+                if (!$mailer->isConfigured()) {
+                    $result['message'] = 'Gmail OAuth not configured';
+                    $result['errors'][] = 'Missing GMAIL_CLIENT_* or GMAIL_FROM_* env variables';
+                    return $result;
+                }
+
+                error_log("Envoi email (recadrage): $subjectOut à $to");
+                $sendRes = $mailer->send($to, $subjectOut, $html);
+                error_log("Résultat envoi (recadrage): " . json_encode($sendRes));
+                if ($sendRes['success']) {
+                    $result['success'] = true;
+                    $result['message'] = 'RECADRAGE email sent successfully';
+                    return $result;
+                } else {
+                    $result['message'] = 'Failed to send RECADRAGE email';
+                    $result['errors'][] = $sendRes['error'] ?? ('status=' . ($sendRes['status'] ?? 'unknown'));
+                    return $result;
+                }
             }
 
             // If delivery_links are provided (Make webhook), use them directly
@@ -133,14 +238,16 @@ class WebhookHandler
      */
     private function validateWebhookData($data)
     {
-        // Allow two shapes:
+        // Allow several shapes:
         // A) Legacy/custom webhook: requires sender_address, subject, receivedDateTime
         // B) Make webhook (Media Solution): may provide sender_email and delivery_links (and may omit receivedDateTime)
+        // C) Detector webhook (e.g., recadrage, desabonnement_journee_tarifs): requires detector, subject, sender_email
 
         $hasSubject = isset($data['subject']) && !empty($data['subject']);
         $hasSender = (isset($data['sender_address']) && !empty($data['sender_address'])) || (isset($data['sender_email']) && !empty($data['sender_email']));
         $hasReceived = isset($data['receivedDateTime']) && !empty($data['receivedDateTime']);
         $hasDeliveryLinks = isset($data['delivery_links']) && is_array($data['delivery_links']) && count($data['delivery_links']) > 0;
+        $hasValidDetector = isset($data['detector']) && in_array($data['detector'], ['recadrage', 'desabonnement_journee_tarifs']);
 
         // Accept if legacy required fields present
         if ($hasSubject && $hasSender && $hasReceived) {
@@ -157,8 +264,13 @@ class WebhookHandler
             return true;
         }
 
+        // Accept detector-based webhook (e.g., recadrage, desabonnement_journee_tarifs)
+        if ($hasValidDetector && $hasSubject && $hasSender) {
+            return true;
+        }
+
         // Otherwise, invalid
-        error_log("Invalid webhook payload: missing required fields (subject/sender and either receivedDateTime, delivery_links, or email_content)");
+        error_log("Invalid webhook payload: missing required fields (subject/sender and either receivedDateTime, delivery_links, email_content, or valid detector)");
         return false;
     }
 
