@@ -33,3 +33,19 @@ debug/
 htmlcov/
 .coverage
 .coverage.*
+
+# Apache configuration
+.htaccess
+
+# Sensitive files
+*.pem
+*.key
+*.crt
+*.p12
+*.p8
+*.pem
+*.cert
+*_rsa
+*_dsa
+*_ed25519
+*_ecdsa
