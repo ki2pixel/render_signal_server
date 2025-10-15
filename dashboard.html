@@ -470,6 +470,8 @@
           </div>
           <button id="saveEmailPrefsBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer les préférences</button>
           <div id="emailPrefsSaveStatus" class="status-msg" style="margin-top: 10px;"></div>
+          <!-- Fallback status container (legacy ID used by JS as a fallback) -->
+          <div id="pollingCfgMsg" class="status-msg" style="margin-top: 6px;"></div>
         </div>
         
       </div>
@@ -655,6 +657,6 @@
       </div>
     </div>
     <!-- Chargement du script JavaScript -->
-    <script src="{{ url_for('static', filename='dashboard.js') }}?v=20251005-1529"></script>
+    <script src="{{ url_for('static', filename='dashboard.js') }}?v=20251015-1858"></script>
   </body>
 </html>

@@ -6,9 +6,11 @@ console.log('[build] static/dashboard.js loaded:', window.DASHBOARD_BUILD);
 // Utilitaires
 function showMessage(elementId, message, type) {
     const el = document.getElementById(elementId);
+    if (!el) return; // Safe-guard: element may be absent in some contexts
     el.textContent = message;
     el.className = 'status-msg ' + type;
     setTimeout(() => {
+        if (!el) return;
         el.className = 'status-msg';
     }, 5000);
 }
@@ -844,8 +846,9 @@ function initTabs() {
     const mapHashToId = {
         '#overview': '#sec-overview',
         '#webhooks': '#sec-webhooks',
-        '#make': '#sec-polling',
-        '#polling': '#sec-polling', // legacy alias
+        '#email': '#sec-email',
+        '#make': '#sec-email',      // legacy alias kept for backward compatibility
+        '#polling': '#sec-email',   // legacy alias kept
         '#preferences': '#sec-preferences',
         '#tools': '#sec-tools',
     };
@@ -883,7 +886,7 @@ function initTabs() {
         } else if (targetSelector === '#sec-webhooks') {
             loadTimeWindow();
             loadWebhookConfig();
-        } else if (targetSelector === '#sec-polling') {
+        } else if (targetSelector === '#sec-email') {
             loadPollingConfig();
         }
     }
@@ -896,7 +899,7 @@ function initTabs() {
             if (target) {
                 // Update URL hash for deep-linking (without scrolling)
                 // Prefer canonical hash for the target
-                const preferred = (target === '#sec-polling') ? '#make' :
+                const preferred = (target === '#sec-email') ? '#email' :
                                   (target === '#sec-overview') ? '#overview' :
                                   (target === '#sec-webhooks') ? '#webhooks' :
                                   (target === '#sec-preferences') ? '#preferences' :
@@ -1137,7 +1140,7 @@ document.addEventListener('DOMContentLoaded', () => {
             allBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             // Mettre à jour le hash pour deep-linking
-            const map = { '#sec-overview': '#overview', '#sec-webhooks': '#webhooks', '#sec-polling': '#make', '#sec-preferences': '#preferences', '#sec-tools': '#tools' };
+            const map = { '#sec-overview': '#overview', '#sec-webhooks': '#webhooks', '#sec-email': '#email', '#sec-preferences': '#preferences', '#sec-tools': '#tools' };
             const hash = map[target]; if (hash) history.replaceState(null, '', hash);
         } catch (e) {
             console.error('[tabs-fallback] activation failed:', e);
@@ -1194,18 +1197,18 @@ async function savePollingConfig(event) {
             body: JSON.stringify(payload)
         });
         const data = await res.json();
+        const statusId = document.getElementById('emailPrefsSaveStatus') ? 'emailPrefsSaveStatus' : 'pollingCfgMsg';
         if (data.success) {
-            showMessage('pollingCfgMsg', data.message || 'Configuration polling enregistrée.', 'success');
+            showMessage(statusId, data.message || 'Préférences enregistrées avec succès !', 'success');
             // Recharger pour refléter la normalisation côté serveur
             loadPollingConfig();
-            // Mettre à jour le message de statut
-            showMessage('emailPrefsSaveStatus', data.message || 'Préférences enregistrées avec succès !', 'success');
         } else {
-            showMessage('pollingCfgMsg', data.message || 'Erreur lors de la sauvegarde.', 'error');
+            showMessage(statusId, data.message || 'Erreur lors de la sauvegarde.', 'error');
         }
     } catch (e) {
-        showMessage('pollingCfgMsg', 'Erreur de communication avec le serveur.', 'error');
+        const statusId = document.getElementById('emailPrefsSaveStatus') ? 'emailPrefsSaveStatus' : 'pollingCfgMsg';
+        showMessage(statusId, 'Erreur de communication avec le serveur.', 'error');
     } finally {
-        btn.disabled = false;
+        if (btn) btn.disabled = false;
     }
 }
