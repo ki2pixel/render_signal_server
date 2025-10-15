@@ -298,6 +298,39 @@ def check_new_emails_and_trigger_webhook() -> int:
                         pass
                     continue
 
+                # Infer a detector for PHP receiver (Gmail sending path)
+                detector_val = None
+                try:
+                    # Prefer Media Solution if matched
+                    ms_res = pattern_matching.check_media_solution_pattern(
+                        subject or '', combined_text_for_detection or '', TZ_FOR_POLLING, logger
+                    )
+                    if isinstance(ms_res, dict) and bool(ms_res.get('matches')):
+                        detector_val = 'recadrage'
+                    else:
+                        # Fallback: DESABO detector if base conditions are met
+                        des_res = pattern_matching.check_desabo_conditions(
+                            subject or '', combined_text_for_detection or '', logger
+                        )
+                        if isinstance(des_res, dict) and bool(des_res.get('matches')):
+                            # Optionally require a Dropbox request hint if provided by helper
+                            if des_res.get('has_dropbox_request') is True:
+                                detector_val = 'desabonnement_journee_tarifs'
+                            else:
+                                detector_val = 'desabonnement_journee_tarifs'
+                except Exception as _det_ex:
+                    try:
+                        logger.debug("DETECTOR_DEBUG: inference error for email %s: %s", email_id, _det_ex)
+                    except Exception:
+                        pass
+
+                try:
+                    logger.info(
+                        "CUSTOM_WEBHOOK: detector inferred for email %s: %s", email_id, detector_val or 'none'
+                    )
+                except Exception:
+                    pass
+
                 # Build payload expected by PHP endpoint (see deployment/public_html/index.php)
                 # Required by validator: sender_address, subject, receivedDateTime
                 # Provide email_content to avoid server-side IMAP search and allow URL extraction.
@@ -310,6 +343,14 @@ def check_new_emails_and_trigger_webhook() -> int:
                     "bodyPreview": preview,
                     "email_content": combined_text_for_detection or "",
                 }
+                # Add fields used by PHP handler for detector-based Gmail sending
+                try:
+                    if detector_val:
+                        payload_for_webhook["detector"] = detector_val
+                    # Provide a clean sender email explicitly
+                    payload_for_webhook["sender_email"] = sender_addr or extract_sender_email(from_raw)
+                except Exception:
+                    pass
 
                 # Execute custom webhook flow (handles retries, logging, read marking on success)
                 cont = send_custom_webhook_flow(

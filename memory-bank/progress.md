@@ -2,15 +2,28 @@
 
 ## Terminé
 
+-   [2025-10-15 12:34] **Correction du formulaire de test d'envoi Gmail**
+    -   Correction des erreurs de syntaxe JavaScript dans `index.php`
+    -   Amélioration de la gestion des erreurs et des logs côté client
+    -   Validation des entrées utilisateur et gestion des cas d'erreur
+    -   Affichage des logs de débogage directement dans l'interface
+
+-   [2025-10-15 11:45] **Unification du flux de webhooks**
+    -   Désactivation des routes spécifiques à Make.com (DESABO et Media Solution) dans `email_processing/orchestrator.py`
+    -   Suppression des variables d'environnement obsolètes (`RECADRAGE_MAKE_WEBHOOK_URL`, `AUTOREPONDEUR_MAKE_WEBHOOK_URL`)
+    -   Amélioration de la détection des liens pour inclure le contenu HTML
+    -   Mise à jour de la documentation dans `docs/webhooks.md` et `docs/configuration.md`
+    -   Tous les flux passent désormais par `WEBHOOK_URL`
+
+-   [2025-10-15 00:59] **Nouveau flux webhook « recadrage » (Make blueprint RECADRAGE_MAKE_WEBHOOK_URL)**
+    -   Branche `detector === 'recadrage'` implémentée: détection « urgence » dans le sujet; usage de `delivery_time` pour le cas non urgent
+    -   Envoi via `GmailMailer` avec logs et gestion d'erreurs cohérentes
+    -   Tests cURL urgent/non urgent: succès, emails envoyés
+
 -   [2025-10-15 00:58] **Intégration Gmail OAuth (PHP) pour envoi d'emails et flux détecteurs**
     -   Ajout/renforcement de `deployment/src/GmailMailer.php` (OAuth2 refresh→access + envoi RFC822 via Gmail API)
     -   Débogage 401 résolu (OAuth Playground « Use your own OAuth credentials » + nouveau refresh token)
     -   Intégration côté `deployment/src/WebhookHandler.php`
-
--   [2025-10-15 00:59] **Nouveau flux webhook « recadrage » (Make blueprint RECADRAGE_MAKE_WEBHOOK_URL)**
-    -   Branche `detector === 'recadrage'` implémentée: détection « urgence » dans le sujet; usage de `delivery_time` pour le cas non urgent
-    -   Envoi via `GmailMailer` avec logs et gestion d’erreurs cohérentes
-    -   Tests cURL urgent/non urgent: succès, emails envoyés
 
 -   [2025-10-15 01:00] **Assouplissement de la validation des payloads pour détecteurs**
     -   `validateWebhookData()` accepte `detector` + `subject` + `sender_email` sans `receivedDateTime`/`delivery_links`/`email_content`

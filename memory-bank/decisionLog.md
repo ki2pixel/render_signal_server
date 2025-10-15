@@ -2,6 +2,33 @@
 
 Ce document enregistre les décisions techniques et architecturales importantes prises au cours du projet.
 
+- **[2025-10-15 12:34:00] - Amélioration du formulaire de test d'envoi Gmail**
+    - **Décision** : Corriger les erreurs de syntaxe et améliorer la robustesse du formulaire de test d'envoi d'e-mails Gmail.
+    - **Implémentation** :
+        - Correction des erreurs de syntaxe JavaScript dans `index.php`
+        - Amélioration de la gestion des erreurs côté client avec des messages plus clairs
+        - Validation des entrées utilisateur avant envoi
+        - Affichage des logs de débogage directement dans l'interface
+        - Vérification de l'existence des éléments DOM avant manipulation
+    - **Raisons** :
+        - Amélioration de l'expérience utilisateur avec un retour d'information clair
+        - Facilité de débogage avec les logs directement visibles
+        - Réduction des risques d'erreurs JavaScript
+        - Meilleure gestion des cas limites
+
+- **[2025-10-15 11:45:00] - Unification du flux de webhooks et suppression des variables obsolètes**
+    - **Décision** : Unifier tous les flux de webhooks vers une seule URL (`WEBHOOK_URL`) et supprimer les variables obsolètes liées à Make.com.
+    - **Implémentation** :
+        - Désactivation des routes spécifiques à Make.com (DESABO et Media Solution) dans `email_processing/orchestrator.py`
+        - Suppression des variables d'environnement obsolètes (`RECADRAGE_MAKE_WEBHOOK_URL`, `AUTOREPONDEUR_MAKE_WEBHOOK_URL`) de `config/settings.py` et `app_render.py`
+        - Amélioration de la détection des liens pour inclure le contenu HTML
+        - Mise à jour de la documentation dans `docs/webhooks.md` et `docs/configuration.md`
+    - **Raisons** :
+        - Simplification de la configuration
+        - Réduction de la complexité du code
+        - Meilleure maintenabilité
+        - Élimination du code mort
+
 - **[2025-10-15 00:50:00] - Intégration d'un envoi d'email Gmail OAuth côté PHP (deployment/)**
     - **Décision** : Implémenter l'envoi d'emails via l'API Gmail avec OAuth2 directement dans la couche PHP de `deployment/` afin de répliquer les scénarios Make.com côté serveur.
     - **Implémentation** : Création/renforcement de `deployment/src/GmailMailer.php` (OAuth refresh_token → access_token via cURL, envoi message RFC822 encodé Base64URL), intégration dans `deployment/src/WebhookHandler.php`.

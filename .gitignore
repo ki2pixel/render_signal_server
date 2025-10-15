@@ -10,7 +10,7 @@ __pycache__/
 # IDEs and editors
 .idea/
 .vscode/
-.windsurf/
+# .windsurf/
 *.swp
 *.swo
 *~
