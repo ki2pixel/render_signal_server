@@ -1172,8 +1172,11 @@ async function loadPollingConfig() {
     }
 }
 
-async function savePollingConfig() {
-    const btn = document.getElementById('savePollingCfgBtn');
+async function savePollingConfig(event) {
+    // Désactiver le bouton qui a déclenché l'événement
+    const btn = event?.target || document.getElementById('savePollingCfgBtn');
+    if (btn) btn.disabled = true;
+    
     const dedup = document.getElementById('enableSubjectGroupDedup')?.checked;
     const senders = collectSenderInputs();
 
@@ -1185,7 +1188,6 @@ async function savePollingConfig() {
     // vacations and global enable removed
 
     try {
-        btn.disabled = true;
         const res = await fetch('/api/update_polling_config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
