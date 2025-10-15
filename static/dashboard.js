@@ -290,7 +290,7 @@ async function exportFullConfiguration() {
         const [webhookCfgRes, pollingCfgRes, timeWinRes] = await Promise.all([
             fetch('/api/webhooks/config'),
             fetch('/api/get_polling_config'),
-            fetch('/api/get_webhook_time_window')
+            fetch('/api/webhooks/time-window')
         ]);
         const [webhookCfg, pollingCfg, timeWin] = await Promise.all([
             webhookCfgRes.json(), pollingCfgRes.json(), timeWinRes.json()
@@ -376,7 +376,7 @@ async function applyImportedServerConfig(obj) {
     if (obj?.time_window) {
         const start = obj.time_window.webhooks_time_start ?? '';
         const end = obj.time_window.webhooks_time_end ?? '';
-        await fetch('/api/set_webhook_time_window', {
+        await fetch('/api/webhooks/time-window', {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start, end })
         });
         await loadTimeWindow();
@@ -530,7 +530,7 @@ function renderTimeWindowDisplay(start, end) {
 // Section 1: Fenêtre horaire
 async function loadTimeWindow() {
     try {
-        const res = await fetch('/api/get_webhook_time_window');
+        const res = await fetch('/api/webhooks/time-window');
         const data = await res.json();
         
         if (data.success) {
@@ -553,7 +553,7 @@ async function saveTimeWindow() {
     const end = document.getElementById('webhooksTimeEnd').value.trim();
     
     try {
-        const res = await fetch('/api/set_webhook_time_window', {
+        const res = await fetch('/api/webhooks/time-window', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ start, end })

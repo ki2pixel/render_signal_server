@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
 
 from utils.validators import normalize_make_webhook_url as _normalize_make_webhook_url
+from utils.time_helpers import parse_time_hhmm
 
 bp = Blueprint("api_webhooks", __name__, url_prefix="/api/webhooks")
 
@@ -125,3 +126,60 @@ def update_webhook_config():
         )
 
     return jsonify({"success": True, "message": "Configuration mise à jour avec succès."}), 200
+
+
+# ---- Dedicated time window for global webhook toggle ----
+
+@bp.route("/time-window", methods=["GET"])  # GET /api/webhooks/time-window
+@login_required
+def get_webhook_global_time_window():
+    cfg = _load_webhook_config()
+    start = (cfg.get("webhook_time_start") or "").strip()
+    end = (cfg.get("webhook_time_end") or "").strip()
+    return jsonify({
+        "success": True,
+        "webhooks_time_start": start or None,
+        "webhooks_time_end": end or None,
+    }), 200
+
+
+@bp.route("/time-window", methods=["POST"])  # POST /api/webhooks/time-window
+@login_required
+def set_webhook_global_time_window():
+    payload = request.get_json(silent=True) or {}
+    start = (payload.get("start") or "").strip()
+    end = (payload.get("end") or "").strip()
+
+    # Clear both -> disable constraint
+    if start == "" and end == "":
+        cfg = _load_webhook_config()
+        cfg["webhook_time_start"] = ""
+        cfg["webhook_time_end"] = ""
+        if not _save_webhook_config(cfg):
+            return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
+        return jsonify({
+            "success": True,
+            "message": "Time window cleared (no constraints).",
+            "webhooks_time_start": None,
+            "webhooks_time_end": None,
+        }), 200
+
+    # Require both values when not clearing
+    if not start or not end:
+        return jsonify({"success": False, "message": "Both start and end are required (or both empty to clear)."}), 400
+
+    # Validate format using parse_time_hhmm
+    if parse_time_hhmm(start) is None or parse_time_hhmm(end) is None:
+        return jsonify({"success": False, "message": "Invalid time format. Use HHhMM or HH:MM (e.g., 11h30, 17:45)."}), 400
+
+    cfg = _load_webhook_config()
+    cfg["webhook_time_start"] = start
+    cfg["webhook_time_end"] = end
+    if not _save_webhook_config(cfg):
+        return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
+    return jsonify({
+        "success": True,
+        "message": "Time window updated.",
+        "webhooks_time_start": start,
+        "webhooks_time_end": end,
+    }), 200

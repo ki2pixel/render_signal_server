@@ -2,5 +2,7 @@
   "webhook_url": "",
   "presence_flag": false,
   "webhook_ssl_verify": true,
-  "webhook_sending_enabled": true
+  "webhook_sending_enabled": true,
+  "webhook_time_start": "9h00",
+  "webhook_time_end": "19h00"
 }

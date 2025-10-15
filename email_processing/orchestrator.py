@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import os
 import json
 from pathlib import Path
+from utils.time_helpers import parse_time_hhmm, is_within_time_window_local
 
 # NOTE: We import lazily inside functions to avoid circular imports at module load
 
@@ -310,31 +311,49 @@ def check_new_emails_and_trigger_webhook() -> int:
                         pass
                     continue
 
-                # Enforce global time window only when sending is enabled
+                # Enforce dedicated webhook-global time window only when sending is enabled
+                def _load_webhook_global_time_window():
+                    # Returns (start_str or '', end_str or '')
+                    try:
+                        cfg_path = Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
+                        if cfg_path.exists():
+                            with open(cfg_path, "r", encoding="utf-8") as f:
+                                data = json.load(f) or {}
+                                s = (data.get("webhook_time_start") or "").strip()
+                                e = (data.get("webhook_time_end") or "").strip()
+                                if s or e:
+                                    return s, e
+                    except Exception:
+                        pass
+                    # ENV fallbacks
+                    try:
+                        s = (os.environ.get("WEBHOOK_TIME_START") or "").strip()
+                        e = (os.environ.get("WEBHOOK_TIME_END") or "").strip()
+                        return s, e
+                    except Exception:
+                        return "", ""
+
                 try:
                     now_local = datetime.now(TZ_FOR_POLLING)
                 except Exception:
                     now_local = datetime.now(timezone.utc)
-                try:
-                    within = _w_tw.check_within_time_window(now_local)
-                except Exception:
-                    within = True
+
+                s_str, e_str = _load_webhook_global_time_window()
+                s_t = parse_time_hhmm(s_str) if s_str else None
+                e_t = parse_time_hhmm(e_str) if e_str else None
+                within = is_within_time_window_local(now_local, s_t, e_t)
                 if not within:
-                    try:
-                        tw_info = _w_tw.get_time_window_info()
-                        tw_start_str = (tw_info.get('start') or 'unset')
-                        tw_end_str = (tw_info.get('end') or 'unset')
-                    except Exception:
-                        tw_start_str, tw_end_str = 'unset', 'unset'
+                    tw_start_str = s_str or 'unset'
+                    tw_end_str = e_str or 'unset'
                     logger.info(
-                        "WEBHOOKS_TIME_WINDOW: Outside global window for email %s (now=%s, window=%s-%s). Skipping.",
+                        "WEBHOOK_GLOBAL_TIME_WINDOW: Outside dedicated window for email %s (now=%s, window=%s-%s). Skipping.",
                         email_id,
                         now_local.strftime('%H:%M'),
                         tw_start_str,
                         tw_end_str,
                     )
                     try:
-                        logger.info("IGNORED: Webhook skipped due to time window (email %s)", email_id)
+                        logger.info("IGNORED: Webhook skipped due to dedicated time window (email %s)", email_id)
                     except Exception:
                         pass
                     continue
