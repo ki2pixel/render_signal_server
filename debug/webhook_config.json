@@ -1,0 +1,6 @@
+{
+  "webhook_url": "",
+  "presence_flag": false,
+  "webhook_ssl_verify": true,
+  "webhook_sending_enabled": true
+}
