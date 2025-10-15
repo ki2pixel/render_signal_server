@@ -639,10 +639,96 @@ async function loadWebhookConfig() {
             if (ssl) ssl.checked = !!config.webhook_ssl_verify;
             const sending = document.getElementById('webhookSendingToggle');
             if (sending) sending.checked = !!config.webhook_sending_enabled;
+            
+            // Charger la fenêtre horaire dédiée
+            await loadGlobalWebhookTimeWindow();
         }
     } catch (e) {
         console.error('Erreur chargement config webhooks:', e);
     }
+}
+
+// Charge la fenêtre horaire dédiée aux webhooks
+async function loadGlobalWebhookTimeWindow() {
+    try {
+        const res = await fetch('/api/webhooks/time-window');
+        const data = await res.json();
+        if (!data.success) return;
+
+        const startEl = document.getElementById('globalWebhookTimeStart');
+        const endEl = document.getElementById('globalWebhookTimeEnd');
+        
+        if (startEl) startEl.value = data.webhooks_time_start || '';
+        if (endEl) endEl.value = data.webhooks_time_end || '';
+        
+        // Mettre à jour l'affichage
+        renderGlobalWebhookTimeWindowDisplay(data.webhooks_time_start, data.webhooks_time_end);
+    } catch (e) {
+        console.error('Erreur chargement fenêtre horaire webhooks:', e);
+    }
+}
+
+// Enregistre la fenêtre horaire dédiée aux webhooks
+async function saveGlobalWebhookTimeWindow() {
+    const start = document.getElementById('globalWebhookTimeStart').value.trim();
+    const end = document.getElementById('globalWebhookTimeEnd').value.trim();
+    const msgEl = document.getElementById('globalWebhookTimeMsg');
+    const btn = document.getElementById('saveGlobalWebhookTimeBtn');
+    
+    if (!msgEl || !btn) return;
+    
+    try {
+        btn.disabled = true;
+        msgEl.textContent = 'Enregistrement en cours...';
+        msgEl.className = 'status-msg info';
+        
+        const res = await fetch('/api/webhooks/time-window', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ start, end })
+        });
+        
+        const data = await res.json();
+        if (data.success) {
+            msgEl.textContent = 'Fenêtre horaire enregistrée avec succès !';
+            msgEl.className = 'status-msg success';
+            // Mettre à jour l'affichage avec les valeurs normalisées
+            renderGlobalWebhookTimeWindowDisplay(
+                data.webhooks_time_start || start,
+                data.webhooks_time_end || end
+            );
+        } else {
+            msgEl.textContent = data.message || 'Erreur lors de la sauvegarde';
+            msgEl.className = 'status-msg error';
+        }
+    } catch (e) {
+        console.error('Erreur sauvegarde fenêtre horaire webhooks:', e);
+        msgEl.textContent = 'Erreur de communication avec le serveur';
+        msgEl.className = 'status-msg error';
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => {
+            msgEl.className = 'status-msg';
+        }, 5000);
+    }
+}
+
+// Affiche la fenêtre horaire dédiée
+function renderGlobalWebhookTimeWindowDisplay(start, end) {
+    const displayEl = document.getElementById('globalWebhookTimeMsg');
+    if (!displayEl) return;
+    
+    const hasStart = start && start.trim();
+    const hasEnd = end && end.trim();
+    
+    if (!hasStart && !hasEnd) {
+        displayEl.textContent = 'Aucune contrainte horaire définie';
+        return;
+    }
+    
+    const startText = hasStart ? String(start) : '—';
+    const endText = hasEnd ? String(end) : '—';
+    displayEl.textContent = `Fenêtre active : ${startText} → ${endText}`;
 }
 
 async function saveWebhookConfig() {
@@ -835,6 +921,25 @@ function initTabs() {
     });
     console.log('[tabs] initTabs: ready');
 }
+
+// Gestionnaire pour le bouton de sauvegarde de la fenêtre horaire webhook
+document.addEventListener('DOMContentLoaded', () => {
+    const saveGlobalTimeBtn = document.getElementById('saveGlobalWebhookTimeBtn');
+    if (saveGlobalTimeBtn) {
+        saveGlobalTimeBtn.addEventListener('click', saveGlobalWebhookTimeWindow);
+    }
+    
+    // Raccourci Entrée dans les champs de la fenêtre horaire
+    const timeInputs = ['globalWebhookTimeStart', 'globalWebhookTimeEnd'];
+    timeInputs.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') saveGlobalWebhookTimeWindow();
+            });
+        }
+    });
+});
 
 // Initialisation au chargement de la page
 document.addEventListener('DOMContentLoaded', () => {

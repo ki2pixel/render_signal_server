@@ -429,6 +429,22 @@
             </label>
             <span style="margin-left: 10px; vertical-align: middle;">Activer l'envoi des webhooks (global)</span>
           </div>
+          
+          <!-- Fenêtre Horaire pour le Toggle Global -->
+          <div style="margin: 15px 0 0 30px; padding: 12px; background: rgba(67, 97, 238, 0.1); border-radius: 6px; border-left: 3px solid var(--cork-primary-accent);">
+            <div class="form-group" style="margin-bottom: 10px;">
+              <label for="globalWebhookTimeStart">Heure de début (HHhMM)</label>
+              <input id="globalWebhookTimeStart" type="text" placeholder="ex: 9h00" style="width: 100%; max-width: 100px;">
+            </div>
+            <div class="form-group" style="margin-bottom: 10px;">
+              <label for="globalWebhookTimeEnd">Heure de fin (HHhMM)</label>
+              <input id="globalWebhookTimeEnd" type="text" placeholder="ex: 19h00" style="width: 100%; max-width: 100px;">
+            </div>
+            <button id="saveGlobalWebhookTimeBtn" class="btn btn-secondary" style="margin-top: 5px;">💾 Enregistrer la fenêtre horaire</button>
+            <div id="globalWebhookTimeMsg" class="status-msg" style="margin-top: 8px;"></div>
+            <div class="small-text">Définissez quand les webhooks peuvent être envoyés (laissez vide pour désactiver).</div>
+          </div>
+          
           <button id="saveConfigBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer la Configuration</button>
           <div id="configMsg" class="status-msg"></div>
           <div class="small-text">⚠️ Les URLs masquées partiellement par sécurité. Saisissez l'URL complète pour modifier.</div>
