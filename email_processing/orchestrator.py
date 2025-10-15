@@ -300,6 +300,7 @@ def check_new_emails_and_trigger_webhook() -> int:
 
                 # Infer a detector for PHP receiver (Gmail sending path)
                 detector_val = None
+                delivery_time_val = None  # for recadrage
                 try:
                     # Prefer Media Solution if matched
                     ms_res = pattern_matching.check_media_solution_pattern(
@@ -307,6 +308,10 @@ def check_new_emails_and_trigger_webhook() -> int:
                     )
                     if isinstance(ms_res, dict) and bool(ms_res.get('matches')):
                         detector_val = 'recadrage'
+                        try:
+                            delivery_time_val = ms_res.get('delivery_time')
+                        except Exception:
+                            delivery_time_val = None
                     else:
                         # Fallback: DESABO detector if base conditions are met
                         des_res = pattern_matching.check_desabo_conditions(
@@ -328,6 +333,10 @@ def check_new_emails_and_trigger_webhook() -> int:
                     logger.info(
                         "CUSTOM_WEBHOOK: detector inferred for email %s: %s", email_id, detector_val or 'none'
                     )
+                    if detector_val == 'recadrage':
+                        logger.info(
+                            "CUSTOM_WEBHOOK: recadrage delivery_time for email %s: %s", email_id, delivery_time_val or 'none'
+                        )
                 except Exception:
                     pass
 
@@ -383,6 +392,9 @@ def check_new_emails_and_trigger_webhook() -> int:
                 try:
                     if detector_val:
                         payload_for_webhook["detector"] = detector_val
+                    # Provide delivery_time for recadrage flow if available
+                    if detector_val == 'recadrage' and delivery_time_val:
+                        payload_for_webhook["delivery_time"] = delivery_time_val
                     # Provide a clean sender email explicitly
                     payload_for_webhook["sender_email"] = sender_addr or extract_sender_email(from_raw)
                 except Exception:
