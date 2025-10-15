@@ -11,6 +11,9 @@ from __future__ import annotations
 
 from typing import Optional
 from datetime import datetime, timezone
+import os
+import json
+from pathlib import Path
 
 # NOTE: We import lazily inside functions to avoid circular imports at module load
 
@@ -87,6 +90,24 @@ def check_new_emails_and_trigger_webhook() -> int:
     logger = getattr(_app, 'logger', None)
     if not logger:
         return 0
+
+    # Helper: load global enable/disable for webhook sending (persisted JSON + ENV fallback)
+    def _is_webhook_sending_enabled() -> bool:
+        try:
+            cfg_path = Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
+            if cfg_path.exists():
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    data = json.load(f) or {}
+                    if isinstance(data, dict) and "webhook_sending_enabled" in data:
+                        return bool(data.get("webhook_sending_enabled"))
+        except Exception:
+            # fall back to ENV
+            pass
+        try:
+            env_val = os.environ.get("WEBHOOK_SENDING_ENABLED", "true").strip().lower()
+            return env_val in ("1", "true", "yes", "on")
+        except Exception:
+            return True
 
     # Establish IMAP connection
     mail = create_imap_connection()
@@ -276,9 +297,17 @@ def check_new_emails_and_trigger_webhook() -> int:
                 except Exception:
                     pass
 
-                # 4) Custom webhook flow (if WEBHOOK_URL configured)
+                # 4) Custom webhook flow (if WEBHOOK_URL configured and sending enabled)
                 if not WEBHOOK_URL:
                     logger.info("POLLER: WEBHOOK_URL not configured; skipping custom webhook for %s", email_id)
+                    continue
+                # Global kill-switch for webhook sending
+                if not _is_webhook_sending_enabled():
+                    try:
+                        logger.info("WEBHOOKS_DISABLED: Global switch is OFF; skipping webhook for email %s (subject='%s')", email_id, subject or 'N/A')
+                        logger.info("IGNORED: Webhook sending disabled globally (email %s)", email_id)
+                    except Exception:
+                        pass
                     continue
 
                 delivery_links = link_extraction.extract_provider_links_from_text(combined_text_for_detection or '')

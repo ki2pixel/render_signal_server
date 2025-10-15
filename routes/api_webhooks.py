@@ -55,35 +55,26 @@ def get_webhook_config():
 
     # Defaults from environment to mirror legacy behavior in app_render
     webhook_url = persisted.get("webhook_url") or os.environ.get("WEBHOOK_URL")
-    recadrage_url = persisted.get("recadrage_webhook_url") or os.environ.get(
-        "RECADRAGE_MAKE_WEBHOOK_URL"
-    )
-    autorepondeur_url = persisted.get("autorepondeur_webhook_url") or os.environ.get(
-        "AUTOREPONDEUR_MAKE_WEBHOOK_URL"
-    )
     presence_flag = persisted.get(
         "presence_flag",
         os.environ.get("PRESENCE", "false").strip().lower() in ("1", "true", "yes", "on"),
-    )
-    presence_true_url = persisted.get("presence_true_url") or os.environ.get(
-        "PRESENCE_TRUE_MAKE_WEBHOOK_URL"
-    )
-    presence_false_url = persisted.get("presence_false_url") or os.environ.get(
-        "PRESENCE_FALSE_MAKE_WEBHOOK_URL"
     )
     webhook_ssl_verify = persisted.get(
         "webhook_ssl_verify",
         os.environ.get("WEBHOOK_SSL_VERIFY", "true").strip().lower()
         in ("1", "true", "yes", "on"),
     )
+    # New: global enable/disable for sending webhooks (default: true)
+    webhook_sending_enabled = persisted.get(
+        "webhook_sending_enabled",
+        os.environ.get("WEBHOOK_SENDING_ENABLED", "true").strip().lower()
+        in ("1", "true", "yes", "on"),
+    )
     config = {
         "webhook_url": webhook_url or _mask_url(webhook_url),
-        "recadrage_webhook_url": recadrage_url or _mask_url(recadrage_url),
         "presence_flag": presence_flag,
-        "presence_true_url": presence_true_url or _mask_url(presence_true_url),
-        "presence_false_url": presence_false_url or _mask_url(presence_false_url),
-        "autorepondeur_webhook_url": autorepondeur_url or _mask_url(autorepondeur_url),
         "webhook_ssl_verify": webhook_ssl_verify,
+        "webhook_sending_enabled": bool(webhook_sending_enabled),
     }
     return jsonify({"success": True, "config": config}), 200
 
@@ -105,46 +96,27 @@ def update_webhook_config():
             )
         config["webhook_url"] = val
 
-    if "recadrage_webhook_url" in payload:
-        val = payload["recadrage_webhook_url"].strip() if payload["recadrage_webhook_url"] else None
-        # Exiger HTTPS strict
-        if val and not val.startswith("https://"):
-            return (
-                jsonify({"success": False, "message": "recadrage_webhook_url doit être une URL HTTPS valide."}),
-                400,
-            )
-        config["recadrage_webhook_url"] = val
-
     if "presence_flag" in payload:
         config["presence_flag"] = bool(payload["presence_flag"])
-
-    if "presence_true_url" in payload:
-        val = payload["presence_true_url"].strip() if payload["presence_true_url"] else None
-        if val:
-            val = _normalize_make_webhook_url(val)
-        config["presence_true_url"] = val
-
-    if "presence_false_url" in payload:
-        val = payload["presence_false_url"].strip() if payload["presence_false_url"] else None
-        if val:
-            val = _normalize_make_webhook_url(val)
-        config["presence_false_url"] = val
-
-    if "autorepondeur_webhook_url" in payload:
-        val = payload["autorepondeur_webhook_url"].strip() if payload["autorepondeur_webhook_url"] else None
-        if val:
-            val = _normalize_make_webhook_url(val)
-        config["autorepondeur_webhook_url"] = val
 
     if "webhook_ssl_verify" in payload:
         config["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
 
-    # Sanitize: drop deprecated field no longer used by the UI/backend
-    if "polling_enabled" in config:
-        try:
-            del config["polling_enabled"]
-        except Exception:
-            pass
+    # New flag: webhook_sending_enabled
+    if "webhook_sending_enabled" in payload:
+        config["webhook_sending_enabled"] = bool(payload["webhook_sending_enabled"])
+
+    # Nettoyer les champs obsolètes s'ils existent
+    obsolete_fields = [
+        "recadrage_webhook_url", "presence_true_url", "presence_false_url", 
+        "autorepondeur_webhook_url", "polling_enabled"
+    ]
+    for field in obsolete_fields:
+        if field in config:
+            try:
+                del config[field]
+            except Exception:
+                pass
 
     if not _save_webhook_config(config):
         return (

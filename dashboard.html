@@ -402,26 +402,10 @@
         </div>
         <div class="card" style="margin: 20px 0;">
           <div class="card-title">🔗 Configuration des URLs Webhooks</div>
-          <div class="grid" style="grid-template-columns: 1fr 1fr;">
+          <div class="grid" style="grid-template-columns: 1fr;">
             <div class="form-group">
               <label for="webhookUrl">Webhook Personnalisé (WEBHOOK_URL)</label>
               <input id="webhookUrl" type="text" placeholder="https://...">
-            </div>
-            <div class="form-group">
-              <label for="recadrageUrl">Recadrage Make.com (Média Solution)</label>
-              <input id="recadrageUrl" type="text" placeholder="https://hook.eu2.make.com/...">
-            </div>
-            <div class="form-group">
-              <label for="presenceTrueUrl">Présence TRUE (samedi)</label>
-              <input id="presenceTrueUrl" type="text" placeholder="https://hook.eu2.make.com/... ou token">
-            </div>
-            <div class="form-group">
-              <label for="presenceFalseUrl">Présence FALSE (samedi)</label>
-              <input id="presenceFalseUrl" type="text" placeholder="https://hook.eu2.make.com/... ou token">
-            </div>
-            <div class="form-group">
-              <label for="autorepondeurUrl">Autorépondeur Make.com</label>
-              <input id="autorepondeurUrl" type="text" placeholder="https://hook.eu2.make.com/... ou token">
             </div>
             <div class="form-group">
               <label for="presenceFlag">Flag PRESENCE</label>
@@ -437,6 +421,13 @@
               <span class="toggle-slider"></span>
             </label>
             <span style="margin-left: 10px; vertical-align: middle;">Vérification SSL (WEBHOOK_SSL_VERIFY)</span>
+          </div>
+          <div style="margin-top: 12px;">
+            <label class="toggle-switch" style="vertical-align: middle;">
+              <input type="checkbox" id="webhookSendingToggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <span style="margin-left: 10px; vertical-align: middle;">Activer l'envoi des webhooks (global)</span>
           </div>
           <button id="saveConfigBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer la Configuration</button>
           <div id="configMsg" class="status-msg"></div>

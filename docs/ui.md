@@ -52,15 +52,13 @@ Le dashboard a été refactorisé pour se concentrer exclusivement sur la gestio
 
 ### 3. Configuration des URLs Webhooks
 
-Permet de configurer dynamiquement toutes les URLs de webhooks:
+Permet de configurer l'URL de webhook principale et les options associées :
 
-- **Webhook personnalisé**: `#webhookUrl` (WEBHOOK_URL)
-- **Recadrage Make.com (Média Solution)**: `#recadrageUrl` (`RECADRAGE_MAKE_WEBHOOK_URL`, alias possible `<token>@hook.eu2.make.com`)
-- **Présence TRUE**: `#presenceTrueUrl` (samedi)
-- **Présence FALSE**: `#presenceFalseUrl` (samedi)
-- **Autorépondeur Make.com**: `#autorepondeurUrl` (`AUTOREPONDEUR_MAKE_WEBHOOK_URL`, alias possible `<token>@hook.eu2.make.com`)
-- **Flag PRESENCE**: `#presenceFlag` (select true/false)
-- **Vérification SSL**: `#sslVerifyToggle` (WEBHOOK_SSL_VERIFY)
+- **Webhook personnalisé (obligatoire)**: `#webhookUrl` (WEBHOOK_URL)
+- **Flag PRESENCE** (contrôle le comportement le samedi) : `#presenceFlag` (select true/false)
+- **Vérification SSL** (active/désactive la vérification des certificats) : `#sslVerifyToggle` (WEBHOOK_SSL_VERIFY)
+
+**Note** : Les webhooks spécifiques à Make.com (Recadrage, Autorépondeur, Présence) ont été dépréciés. Tous les appels sont maintenant dirigés vers l'URL de webhook principale configurée ci-dessus.
 
 **Appels API**:
 - `GET /api/get_webhook_config` pour charger la configuration actuelle (URLs masquées partiellement)

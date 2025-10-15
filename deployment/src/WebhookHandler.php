@@ -71,7 +71,7 @@ class WebhookHandler
             // This mirrors the Make.com scenario defined in make/AUTOREPONDEUR_MAKE_WEBHOOK_URL.blueprint.json
             $detector = isset($webhookData['detector']) ? $webhookData['detector'] : null;
             if ($detector === 'desabonnement_journee_tarifs') {
-                $to = 'camille.moine.pro@gmail.com'; // Temporaire pour les tests
+                $to = 'technique@media-solution.fr'; // Temporaire pour les tests
                 error_log("AUTOREPONDEUR: Envoi à $to");
                 if (empty($to)) {
                     $result['message'] = 'AUTOREPONDEUR_TO not configured';
@@ -127,7 +127,7 @@ class WebhookHandler
                 }
             } elseif ($detector === 'recadrage') {
                 // Confirmation mission recadrage (Make blueprint: RECADRAGE_MAKE_WEBHOOK_URL)
-                $to = 'camille.moine.pro@gmail.com'; // Temporaire pour les tests (configurable via ENV à terme)
+                $to = 'technique@media-solution.fr'; // Temporaire pour les tests (configurable via ENV à terme)
                 error_log("RECADRAGE: Envoi à $to");
                 if (empty($to)) {
                     $result['message'] = 'RECADRAGE_TO not configured';

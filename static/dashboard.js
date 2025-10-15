@@ -345,10 +345,6 @@ async function applyImportedServerConfig(obj) {
         const cfg = obj.webhook_config.config;
         const payload = {};
         if (cfg.webhook_url) payload.webhook_url = cfg.webhook_url;
-        if (cfg.recadrage_webhook_url) payload.recadrage_webhook_url = cfg.recadrage_webhook_url;
-        if (cfg.autorepondeur_webhook_url) payload.autorepondeur_webhook_url = cfg.autorepondeur_webhook_url;
-        if (cfg.presence_true_url) payload.presence_true_url = cfg.presence_true_url;
-        if (cfg.presence_false_url) payload.presence_false_url = cfg.presence_false_url;
         if (typeof cfg.presence_flag === 'boolean') payload.presence_flag = cfg.presence_flag;
         if (typeof cfg.webhook_ssl_verify === 'boolean') payload.webhook_ssl_verify = cfg.webhook_ssl_verify;
         if (Object.keys(payload).length) {
@@ -634,14 +630,15 @@ async function loadWebhookConfig() {
             const config = data.config;
             
             // Afficher les valeurs (masquées partiellement pour sécurité)
-            document.getElementById('webhookUrl').placeholder = config.webhook_url || 'Non configuré';
-            document.getElementById('recadrageUrl').placeholder = config.recadrage_webhook_url || 'Non configuré';
-            document.getElementById('presenceTrueUrl').placeholder = config.presence_true_url || 'Non configuré';
-            document.getElementById('presenceFalseUrl').placeholder = config.presence_false_url || 'Non configuré';
-            document.getElementById('autorepondeurUrl').placeholder = config.autorepondeur_webhook_url || 'Non configuré';
+            const wh = document.getElementById('webhookUrl');
+            if (wh) wh.placeholder = config.webhook_url || 'Non configuré';
             
-            document.getElementById('presenceFlag').value = config.presence_flag ? 'true' : 'false';
-            document.getElementById('sslVerifyToggle').checked = config.webhook_ssl_verify;
+            const pf = document.getElementById('presenceFlag');
+            if (pf) pf.value = config.presence_flag ? 'true' : 'false';
+            const ssl = document.getElementById('sslVerifyToggle');
+            if (ssl) ssl.checked = !!config.webhook_ssl_verify;
+            const sending = document.getElementById('webhookSendingToggle');
+            if (sending) sending.checked = !!config.webhook_sending_enabled;
         }
     } catch (e) {
         console.error('Erreur chargement config webhooks:', e);
@@ -650,25 +647,16 @@ async function loadWebhookConfig() {
 
 async function saveWebhookConfig() {
     const payload = {};
-    
-    // Collecter seulement les champs modifiés (non vides)
-    const webhookUrl = document.getElementById('webhookUrl').value.trim();
+    // Collecter seulement les champs pertinents
+    const webhookUrlEl = document.getElementById('webhookUrl');
+    const presenceFlagEl = document.getElementById('presenceFlag');
+    const sslEl = document.getElementById('sslVerifyToggle');
+    const sendingEl = document.getElementById('webhookSendingToggle');
+    const webhookUrl = (webhookUrlEl?.value || '').trim();
     if (webhookUrl) payload.webhook_url = webhookUrl;
-    
-    const recadrageUrl = document.getElementById('recadrageUrl').value.trim();
-    if (recadrageUrl) payload.recadrage_webhook_url = recadrageUrl;
-    
-    const presenceTrueUrl = document.getElementById('presenceTrueUrl').value.trim();
-    if (presenceTrueUrl) payload.presence_true_url = presenceTrueUrl;
-    
-    const presenceFalseUrl = document.getElementById('presenceFalseUrl').value.trim();
-    if (presenceFalseUrl) payload.presence_false_url = presenceFalseUrl;
-    
-    const autorepondeurUrl = document.getElementById('autorepondeurUrl').value.trim();
-    if (autorepondeurUrl) payload.autorepondeur_webhook_url = autorepondeurUrl;
-    
-    payload.presence_flag = document.getElementById('presenceFlag').value === 'true';
-    payload.webhook_ssl_verify = document.getElementById('sslVerifyToggle').checked;
+    if (presenceFlagEl) payload.presence_flag = presenceFlagEl.value === 'true';
+    if (sslEl) payload.webhook_ssl_verify = !!sslEl.checked;
+    if (sendingEl) payload.webhook_sending_enabled = !!sendingEl.checked;
     
     try {
         const res = await fetch('/api/webhooks/config', {
@@ -682,12 +670,9 @@ async function saveWebhookConfig() {
             showMessage('configMsg', 'Configuration sauvegardée avec succès !', 'success');
             // Recharger pour afficher les nouvelles valeurs masquées
             setTimeout(() => {
-                // Vider les champs pour montrer les placeholders masqués
-                document.getElementById('webhookUrl').value = '';
-                document.getElementById('recadrageUrl').value = '';
-                document.getElementById('presenceTrueUrl').value = '';
-                document.getElementById('presenceFalseUrl').value = '';
-                document.getElementById('autorepondeurUrl').value = '';
+                // Vider le champ pour montrer le placeholder masqué
+                const wh2 = document.getElementById('webhookUrl');
+                if (wh2) wh2.value = '';
                 loadWebhookConfig();
             }, 1000);
         } else {

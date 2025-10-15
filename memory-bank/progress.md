@@ -2,6 +2,16 @@
 
 ## Terminé
 
+-   [2025-10-15 15:54] **Correction de l'affichage de l'heure de fin dans les emails**
+    -   Ajout de `webhooks_time_end` dans le payload du webhook personnalisé
+    -   Mise à jour du template PHP pour afficher l'heure de fin de manière conditionnelle
+    -   Correction de la logique de `webhooks_time_start` pour utiliser "maintenant" quand dans la fenêtre horaire
+
+-   [2025-10-15 15:54] **Injection de l'heure de livraison pour les emails Recadrage**
+    -   Extraction de `delivery_time` depuis `pattern_matching.check_media_solution_pattern()`
+    -   Ajout de `delivery_time` dans le payload du webhook pour le détecteur 'recadrage'
+    -   Ajout de logs de diagnostic pour le suivi
+
 -   [2025-10-15 12:34] **Correction du formulaire de test d'envoi Gmail**
     -   Correction des erreurs de syntaxe JavaScript dans `index.php`
     -   Amélioration de la gestion des erreurs et des logs côté client

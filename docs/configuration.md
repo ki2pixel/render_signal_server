@@ -29,26 +29,17 @@ Toutes les valeurs sensibles et spécifiques à l'environnement doivent être fo
 
 ## Webhooks / Intégrations
 - `WEBHOOK_URL` – URL de réception de vos événements (obligatoire). Toutes les notifications sortent via ce point unique.
-- `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` (`true|false`, défaut `false`) – permet l'envoi du webhook custom même si aucun lien de livraison n'est détecté.
-- `WEBHOOK_SSL_VERIFY` – booléen (`true|false`, défaut `true`). Contrôle la vérification SSL des appels webhook sortants. Laissez `true` en production. Mettre `false` uniquement pour le débogage/legacy, avec un certificat non conforme (un avertissement est loggé).
-- `MAKECOM_API_KEY` – clé API Make.com (si usage d'appels API)
+- `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` (`true|false`, défaut `false`) – permet l'envoi du webhook même si aucun lien de livraison n'est détecté.
+- `WEBHOOK_SSL_VERIFY` – booléen (`true|false`, défaut `true`). Contrôle la vérification SSL des appels webhook sortants. Laissez `true` en production. Mettre `false` uniquement pour le débogage avec un certificat auto-signé (un avertissement est loggé).
 - `PROCESS_API_TOKEN` – token attendu pour des appels d'API sortants vers ce service (si utilisé par des intégrations)
 
 ### Fenêtre horaire (optionnelle)
 - `WEBHOOKS_TIME_START` – heure de début de la fenêtre globale (format: HHhMM, HH:MM, etc., ex: "13h00")
 - `WEBHOOKS_TIME_END` – heure de fin de la fenêtre globale (format: HHhMM, HH:MM, etc., ex: "19h00")
-- Note: Ces variables contrôlent une fenêtre horaire globale pour l'envoi de certains webhooks (ex: présence). Si non utilisées, laissez-les non définies.
+- Note: Ces variables contrôlent une fenêtre horaire globale pour l'envoi des webhooks. Si non utilisées, laissez-les non définies.
 
-**Dépréciation :** Les variables `RECADRAGE_MAKE_WEBHOOK_URL` et `AUTOREPONDEUR_MAKE_WEBHOOK_URL` sont dépréciées et ne sont plus utilisées. Utilisez uniquement `WEBHOOK_URL` pour recevoir les notifications.
-
-### Présence « samedi » (Make.com)
-- `PRESENCE` – booléen (`true|false`). Si activé, les webhooks de présence utilisent `PRESENCE_TRUE_MAKE_WEBHOOK_URL` ou `PRESENCE_FALSE_MAKE_WEBHOOK_URL`.
-- `PRESENCE_TRUE_MAKE_WEBHOOK_URL` – URL du webhook Make à utiliser si `PRESENCE=true`.
-- `PRESENCE_FALSE_MAKE_WEBHOOK_URL` – URL du webhook Make à utiliser si `PRESENCE=false`.
-
-Formats acceptés pour `PRESENCE_*_MAKE_WEBHOOK_URL`:
-- URL complète: `https://hook.eu2.make.com/<token>`
-- Alias: `<token>@hook.eu2.make.com` (normalisé automatiquement en URL HTTPS)
+### Gestion des webhooks
+Toutes les notifications sont envoyées à l'URL configurée dans `WEBHOOK_URL`. Le paramètre `PRESENCE` (configurable via l'interface) est inclus dans le payload pour permettre un traitement conditionnel côté récepteur.
 
 ## Redis (optionnel)
 - `REDIS_URL` – ex: `redis://:password@host:6379/0`

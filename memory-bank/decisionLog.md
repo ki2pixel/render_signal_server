@@ -2,6 +2,28 @@
 
 Ce document enregistre les décisions techniques et architecturales importantes prises au cours du projet.
 
+- **[2025-10-15 15:54:00] - Correction de l'affichage de l'heure de fin dans les emails**
+    - **Décision** : Améliorer la gestion des fenêtres horaires dans les emails en incluant systématiquement l'heure de fin (`webhooks_time_end`) et en ajustant dynamiquement l'heure de début (`webhooks_time_start`).
+    - **Implémentation** :
+        - Ajout de `webhooks_time_end` dans le payload du webhook personnalisé
+        - Mise à jour du template PHP pour afficher l'heure de fin de manière conditionnelle
+        - Modification de la logique de `webhooks_time_start` pour utiliser "maintenant" lorsque l'heure actuelle est dans la fenêtre horaire
+    - **Raisons** :
+        - Amélioration de la clarté des informations de disponibilité dans les emails
+        - Meilleure expérience utilisateur avec des informations temporelles précises
+        - Cohérence avec le comportement attendu du système
+
+- **[2025-10-15 15:54:00] - Injection de l'heure de livraison pour les emails Recadrage**
+    - **Décision** : S'assurer que l'heure de livraison extraite des emails de type "Recadrage" est correctement transmise au template d'email.
+    - **Implémentation** :
+        - Extraction de `delivery_time` depuis `pattern_matching.check_media_solution_pattern()`
+        - Ajout de `delivery_time` dans le payload du webhook pour le détecteur 'recadrage'
+        - Ajout de logs de diagnostic pour faciliter le débogage
+    - **Raisons** :
+        - Correction d'un bug où l'heure de livraison n'était pas affichée dans les emails de confirmation
+        - Amélioration de la traçabilité avec des logs détaillés
+        - Maintien de la cohérence des données entre l'email d'origine et la confirmation
+
 - **[2025-10-15 12:34:00] - Amélioration du formulaire de test d'envoi Gmail**
     - **Décision** : Corriger les erreurs de syntaxe et améliorer la robustesse du formulaire de test d'envoi d'e-mails Gmail.
     - **Implémentation** :
