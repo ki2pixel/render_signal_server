@@ -299,17 +299,28 @@ def test_mysql_connectivity():
         "table_exists": False,
         "app_config_count": None,
         "driver": "mysql-connector-python",
+        "missing_envs": [],
     }
 
     try:
-        host = os.environ.get("MYSQL_HOST")
-        user = os.environ.get("MYSQL_USER")
-        password = os.environ.get("MYSQL_PASSWORD")  # not returned
-        database = os.environ.get("MYSQL_DATABASE")
-        port = int(os.environ.get("MYSQL_PORT", 3306))
+        host = (os.environ.get("MYSQL_HOST") or '').strip() or None
+        user = (os.environ.get("MYSQL_USER") or '').strip() or None
+        password = (os.environ.get("MYSQL_PASSWORD") or '').strip() or None  # not returned
+        database = (os.environ.get("MYSQL_DATABASE") or '').strip() or None
+        port_raw = os.environ.get("MYSQL_PORT")
+        try:
+            port = int(port_raw) if port_raw and str(port_raw).strip() else 3306
+        except Exception:
+            port = 3306
 
         details.update({"host": host, "port": port, "database": database})
-        configured = bool(host and user and password and database)
+        missing = []
+        if not host: missing.append("MYSQL_HOST")
+        if not user: missing.append("MYSQL_USER")
+        if not password: missing.append("MYSQL_PASSWORD")
+        if not database: missing.append("MYSQL_DATABASE")
+        details["missing_envs"] = missing
+        configured = len(missing) == 0
         details["configured"] = configured
 
         if not configured:
