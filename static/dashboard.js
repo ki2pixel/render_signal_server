@@ -1249,8 +1249,8 @@ async function savePollingConfig(event) {
         if (btn) btn.disabled = false;
         return;
     }
-    if (startHour >= endHour) {
-        showMessage(statusId, 'L\'heure de début doit être strictement inférieure à l\'heure de fin.', 'error');
+    if (startHour === endHour) {
+        showMessage(statusId, 'L\'heure de début et de fin ne peuvent pas être identiques.', 'error');
         if (btn) btn.disabled = false;
         return;
     }
