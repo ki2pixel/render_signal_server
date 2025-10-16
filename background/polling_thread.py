@@ -63,7 +63,19 @@ def background_email_poller_loop(
             end_hour = get_active_end_hour()
 
             is_active_day = now_in_tz.weekday() in active_days
-            is_active_time = start_hour <= now_in_tz.hour < end_hour
+            # Support windows that cross midnight
+            h = now_in_tz.hour
+            if 0 <= start_hour <= 23 and 0 <= end_hour <= 23:
+                if start_hour < end_hour:
+                    is_active_time = (start_hour <= h < end_hour)
+                elif start_hour > end_hour:
+                    # Wrap-around (e.g., 23 -> 0 or 22 -> 6)
+                    is_active_time = (h >= start_hour) or (h < end_hour)
+                else:
+                    # start == end => empty window
+                    is_active_time = False
+            else:
+                is_active_time = False
 
             if is_active_day and is_active_time:
                 logger.info("BG_POLLER: In active period. Starting poll cycle.")
