@@ -368,3 +368,10 @@ def test_mysql_connectivity():
                 conn.close()
             except Exception:
                 pass
+    except Exception as e:
+        # Catch-all to avoid leaking unhandled exceptions
+        try:
+            current_app.logger.error("MYSQL TEST: Unexpected error: %s", e)
+        except Exception:
+            pass
+        return jsonify({"success": False, "message": f"Erreur inattendue: {e}", "details": details}), 500
