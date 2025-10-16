@@ -56,6 +56,53 @@ def restart_server():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
+@bp.route("/deploy_application", methods=["POST"])  # POST /api/deploy_application
+@login_required
+def deploy_application():
+    """Déclenche un déploiement applicatif côté serveur.
+
+    La commande est définie via la variable d'environnement DEPLOY_CMD.
+    Par défaut, on effectue un reload-or-restart du service applicatif et un reload de Nginx.
+    L'exécution est asynchrone (arrière-plan) pour ne pas bloquer la requête HTTP.
+    """
+    try:
+        default_cmd = (
+            "sudo systemctl reload-or-restart render-signal-server; "
+            "sudo nginx -s reload || sudo systemctl reload nginx"
+        )
+        deploy_cmd = os.environ.get("DEPLOY_CMD", default_cmd)
+
+        # Journalisation
+        try:
+            current_app.logger.info(
+                "ADMIN: Deploy requested by '%s' with command: %s",
+                getattr(current_user, "id", "unknown"),
+                deploy_cmd,
+            )
+        except Exception:
+            pass
+
+        # Exécution en tâche de fond
+        subprocess.Popen(
+            ["/bin/bash", "-lc", f"sleep 1; {deploy_cmd}"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+        try:
+            current_app.logger.info("ADMIN: Deploy command scheduled (background).")
+        except Exception:
+            pass
+
+        return jsonify({
+            "success": True,
+            "message": "Déploiement planifié. L'application peut être indisponible pendant quelques secondes."
+        }), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
 @bp.route("/test_presence_webhook", methods=["POST"])  # POST /api/test_presence_webhook
 @login_required
 def test_presence_webhook():

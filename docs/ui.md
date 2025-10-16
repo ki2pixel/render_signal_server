@@ -205,13 +205,24 @@ Le dashboard utilise le thème Cork (dark mode) avec les variables CSS:
 - **Outil "Ouvrir une page de téléchargement"**: permet d'ouvrir manuellement une URL de fournisseur (Dropbox/FromSmash/SwissTransfer) dans un nouvel onglet.
 - **Simplification de la gestion des liens**: remplace la logique d'extraction automatique de liens directs, désormais supprimée pour stabilité.
 
-### 11. Redémarrage Serveur - Onglet Outils
+### 11. Déploiement de l'application - Onglet Outils
 
-- **Bouton**: `#restartServerBtn` (avec icône 🔄)
+- **Bouton**: `#restartServerBtn` (libellé: « 🚀 Déployer l'application »)
 - **Message**: `#restartServerMsg`
-- **Appel API**: `POST /api/restart_server`
-- **Comportement**: Confirme avant envoi, affiche statut, reload automatique après succès
-- **Gestion erreurs**: Messages d'erreur si échec
+- **Appel API**: `POST /api/deploy_application`
+- **Comportement**: confirmation utilisateur, lancement du déploiement côté serveur puis vérification de disponibilité via `/health` avant rechargement automatique de la page.
+- **Gestion erreurs**: Messages d'erreur si échec de la commande ou si le service n'est pas encore disponible après un nombre d'essais.
+
+**Détails backend**:
+- Endpoint: défini dans `routes/api_admin.py` (`deploy_application()`).
+- Variable d'environnement: `DEPLOY_CMD` pour surcharger la commande par défaut.
+- Commande par défaut:
+  - `sudo systemctl reload-or-restart render-signal-server; sudo nginx -s reload || sudo systemctl reload nginx`
+- Exécution asynchrone en arrière-plan (non bloquant).
+
+**Health-check côté client**:
+- Après succès d'`/api/deploy_application`, le front appelle périodiquement `GET /health` (10 tentatives max, intervalle ~1,5s). Au premier `200 OK`, la page est rechargée.
+- Si les tentatives échouent, un message invite à recharger manuellement plus tard.
 
 **Fonctionnalités conservées**:
 - Fenêtre horaire des webhooks (étendue)

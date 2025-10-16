@@ -1095,25 +1095,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const processingPrefsSaveBtn = document.getElementById('processingPrefsSaveBtn');
     processingPrefsSaveBtn && processingPrefsSaveBtn.addEventListener('click', saveProcessingPrefsToServer);
 
-    // --- Redémarrage serveur ---
+    // --- Déploiement application ---
     const restartBtn = document.getElementById('restartServerBtn');
     if (restartBtn) {
         restartBtn.addEventListener('click', async () => {
             const msgId = 'restartMsg';
             try {
-                if (!confirm('Confirmez-vous le redémarrage du serveur ? L\'application sera indisponible quelques secondes.')) return;
+                if (!confirm('Confirmez-vous le déploiement de l\'application ? Elle peut être indisponible quelques secondes.')) return;
                 restartBtn.disabled = true;
-                showMessage(msgId, 'Redémarrage en cours...', 'info');
-                const res = await fetch('/api/restart_server', { method: 'POST' });
+                showMessage(msgId, 'Déploiement en cours...', 'info');
+                const res = await fetch('/api/deploy_application', { method: 'POST' });
                 const data = await res.json().catch(() => ({}));
                 if (res.ok && data.success) {
-                    showMessage(msgId, data.message || 'Redémarrage planifié.', 'success');
-                    // Attendre un court délai puis tenter un reload
-                    setTimeout(() => {
+                    showMessage(msgId, data.message || 'Déploiement planifié. Vérification de disponibilité…', 'success');
+                    // Poll health endpoint jusqu'à disponibilité puis recharger
+                    try {
+                        await pollHealthCheck({ attempts: 10, intervalMs: 1500, timeoutMs: 25000 });
                         try { location.reload(); } catch {}
-                    }, 3000);
+                    } catch (e) {
+                        // Si la vérification échoue, proposer un rechargement manuel
+                        showMessage(msgId, 'Le service ne répond pas encore. Réessayez plus tard ou rechargez la page.', 'error');
+                    }
                 } else {
-                    showMessage(msgId, data.message || 'Échec du redémarrage (vérifiez permissions sudoers).', 'error');
+                    showMessage(msgId, data.message || 'Échec du déploiement (vérifiez permissions sudoers).', 'error');
                 }
             } catch (e) {
                 showMessage(msgId, 'Erreur de communication avec le serveur.', 'error');
@@ -1121,6 +1125,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 restartBtn.disabled = false;
             }
         });
+    }
+
+    /**
+     * Vérifie la disponibilité du serveur en appelant /health à intervalles réguliers.
+     * @param {{attempts:number, intervalMs:number, timeoutMs:number}} opts
+     */
+    async function pollHealthCheck(opts) {
+        const attempts = Math.max(1, Number(opts?.attempts || 8));
+        const intervalMs = Math.max(250, Number(opts?.intervalMs || 1000));
+        const timeoutMs = Math.max(intervalMs, Number(opts?.timeoutMs || 15000));
+
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            for (let i = 0; i < attempts; i++) {
+                try {
+                    const res = await fetch('/health', { signal: controller.signal, cache: 'no-store' });
+                    if (res.ok) {
+                        clearTimeout(id);
+                        return true;
+                    }
+                } catch (_) { /* service peut être indisponible pendant le reload */ }
+                await new Promise(r => setTimeout(r, intervalMs));
+            }
+            throw new Error('healthcheck failed');
+        } finally {
+            clearTimeout(id);
+        }
     }
 
     // --- Délégation de clic (fallback) pour .tab-btn ---
