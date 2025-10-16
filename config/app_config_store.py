@@ -2,10 +2,10 @@
 config.app_config_store
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-Key-Value configuration store with optional MySQL backend and JSON file fallback.
+Key-Value configuration store with External JSON backend and file fallback.
 - Provides get_config_json()/set_config_json() for dict payloads.
-- Uses env vars: MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE
-- If MySQL is unavailable or not configured, falls back to per-key JSON files provided by callers.
+- External backend configured via env vars: EXTERNAL_CONFIG_BASE_URL, CONFIG_API_TOKEN.
+- If external backend is unavailable, falls back to per-key JSON files provided by callers.
 
 Security: no secrets are logged; errors are swallowed and caller can fallback.
 """
@@ -16,84 +16,27 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-
-def _mysql_configured() -> bool:
-    return bool(
-        os.environ.get("MYSQL_HOST")
-        and os.environ.get("MYSQL_USER")
-        and os.environ.get("MYSQL_PASSWORD")
-        and os.environ.get("MYSQL_DATABASE")
-    )
-
-
-def _get_mysql_connection():
-    """Return a mysql-connector connection or None if not available/configured."""
-    if not _mysql_configured():
-        return None
-    try:
-        import mysql.connector  # type: ignore
-
-        return mysql.connector.connect(
-            host=os.environ.get("MYSQL_HOST"),
-            user=os.environ.get("MYSQL_USER"),
-            password=os.environ.get("MYSQL_PASSWORD"),
-            database=os.environ.get("MYSQL_DATABASE"),
-            port=int(os.environ.get("MYSQL_PORT" or 3306)),
-            autocommit=True,
-        )
-    except Exception:
-        return None
-
-
-def _ensure_table_exists(conn) -> bool:
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS app_config (
-                  config_key VARCHAR(191) PRIMARY KEY,
-                  config_value JSON,
-                  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-                """
-            )
-        return True
-    except Exception:
-        return False
-
+try:
+    import requests  # type: ignore
+except Exception:  # requests may be unavailable in some test contexts
+    requests = None  # type: ignore
 
 def get_config_json(key: str, *, file_fallback: Optional[Path] = None) -> Dict[str, Any]:
-    """Fetch config dict for a key from MySQL, with optional file fallback.
+    """Fetch config dict for a key from External JSON backend, with file fallback.
     Returns empty dict on any error.
     """
-    # Try MySQL first
-    conn = _get_mysql_connection()
-    if conn is not None:
+    # External backend (PHP)
+    base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
+    api_token = os.environ.get("CONFIG_API_TOKEN")
+    if base_url and api_token and requests is not None:
         try:
-            _ensure_table_exists(conn)
-            with conn.cursor() as cur:
-                cur.execute("SELECT config_value FROM app_config WHERE config_key=%s", (key,))
-                row = cur.fetchone()
-                if row and row[0] is not None:
-                    # mysql-connector returns str for JSON by default
-                    val = row[0]
-                    if isinstance(val, (bytes, bytearray)):
-                        val = val.decode("utf-8", errors="ignore")
-                    if isinstance(val, str):
-                        data = json.loads(val)
-                    else:
-                        data = val  # already decoded by driver
-                    if isinstance(data, dict):
-                        return data
+            data = _external_config_get(base_url, api_token, key)
+            if isinstance(data, dict):
+                return data
         except Exception:
             pass
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
 
-    # Fallback to file
+    # File fallback
     if file_fallback and file_fallback.exists():
         try:
             with open(file_fallback, "r", encoding="utf-8") as f:
@@ -101,36 +44,24 @@ def get_config_json(key: str, *, file_fallback: Optional[Path] = None) -> Dict[s
                 if isinstance(data, dict):
                     return data
         except Exception:
-            return {}
+            pass
     return {}
 
 
 def set_config_json(key: str, value: Dict[str, Any], *, file_fallback: Optional[Path] = None) -> bool:
-    """Persist config dict for a key into MySQL, fallback to file if needed."""
-    # Try MySQL
-    conn = _get_mysql_connection()
-    if conn is not None:
+    """Persist config dict for a key into External backend, fallback to file if needed."""
+    # External backend (PHP)
+    base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
+    api_token = os.environ.get("CONFIG_API_TOKEN")
+    if base_url and api_token and requests is not None:
         try:
-            _ensure_table_exists(conn)
-            payload = json.dumps(value, ensure_ascii=False)
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO app_config (config_key, config_value) VALUES (%s, %s)\n                     ON DUPLICATE KEY UPDATE config_value=VALUES(config_value)",
-                    (key, payload),
-                )
-            return True
+            ok = _external_config_set(base_url, api_token, key, value)
+            if ok:
+                return True
         except Exception:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
+            pass
 
-    # Fallback to file
+    # File fallback
     if file_fallback is not None:
         try:
             file_fallback.parent.mkdir(parents=True, exist_ok=True)
@@ -140,3 +71,37 @@ def set_config_json(key: str, value: Dict[str, Any], *, file_fallback: Optional[
         except Exception:
             return False
     return False
+
+
+# ---------------------------------------------------------------------------
+# External JSON backend helpers
+# ---------------------------------------------------------------------------
+def _external_config_get(base_url: str, token: str, key: str) -> Dict[str, Any]:
+    """GET config JSON from external PHP service. Raises on error."""
+    url = base_url.rstrip('/') + '/config_api.php'
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    params = {"key": key}
+    # Small timeout for robustness
+    resp = requests.get(url, headers=headers, params=params, timeout=6)  # type: ignore
+    if resp.status_code != 200:
+        raise RuntimeError(f"external get http={resp.status_code}")
+    data = resp.json()
+    if not isinstance(data, dict) or not data.get("success"):
+        raise RuntimeError("external get failed")
+    cfg = data.get("config") or {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _external_config_set(base_url: str, token: str, key: str, value: Dict[str, Any]) -> bool:
+    """POST config JSON to external PHP service. Returns True on success."""
+    url = base_url.rstrip('/') + '/config_api.php'
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json"}
+    body = {"key": key, "config": value}
+    resp = requests.post(url, headers=headers, data=json.dumps(body), timeout=8)  # type: ignore
+    if resp.status_code != 200:
+        return False
+    try:
+        data = resp.json()
+    except Exception:
+        return False
+    return bool(isinstance(data, dict) and data.get("success"))

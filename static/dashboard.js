@@ -423,35 +423,6 @@ function buildPayloadPreview() {
     if (pre) pre.textContent = JSON.stringify(payload, null, 2);
 }
 
-// --- Test de connectivité MySQL (Render) ---
-async function testMysqlConnectivity() {
-    const msgId = 'testMysqlMsg';
-    const outEl = document.getElementById('testMysqlOutput');
-    const btn = document.getElementById('testMysqlBtn');
-    try {
-        btn && (btn.disabled = true);
-        showMessage(msgId, 'Test de connexion en cours…', 'info');
-        if (outEl) outEl.textContent = '';
-        const res = await fetch('/api/test_mysql', { method: 'GET', cache: 'no-store' });
-        const data = await res.json().catch(() => ({}));
-        const ok = res.ok && !!data && (data.success === true);
-        if (ok) {
-            showMessage(msgId, data.message || 'Connexion MySQL OK', 'success');
-        } else {
-            showMessage(msgId, (data && data.message) || 'Échec du test MySQL', 'error');
-        }
-        if (outEl) {
-            try { outEl.textContent = JSON.stringify(data, null, 2); }
-            catch { outEl.textContent = String(data); }
-        }
-    } catch (e) {
-        showMessage(msgId, 'Erreur de communication avec le serveur.', 'error');
-    } finally {
-        btn && (btn.disabled = false);
-        // auto-clear status class after a while (keep JSON output visible)
-        setTimeout(() => { const el = document.getElementById(msgId); if (el) el.className = 'status-msg'; }, 6000);
-    }
-}
 
 // Nouvelle approche: gestion via cases à cocher (0=Mon .. 6=Sun)
 function setDayCheckboxes(days) {
@@ -1086,9 +1057,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const buildPayloadPreviewBtn = document.getElementById('buildPayloadPreviewBtn');
     buildPayloadPreviewBtn && buildPayloadPreviewBtn.addEventListener('click', buildPayloadPreview);
 
-    // --- Test MySQL ---
-    const testMysqlBtn = document.getElementById('testMysqlBtn');
-    testMysqlBtn && testMysqlBtn.addEventListener('click', testMysqlConnectivity);
 
     // --- Ouvrir une page de téléchargement (manuel) ---
     const openDownloadPageBtn = document.getElementById('openDownloadPageBtn');
