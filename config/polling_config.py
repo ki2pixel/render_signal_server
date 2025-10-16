@@ -126,9 +126,22 @@ def is_polling_active(now_dt: datetime, active_days: list[int],
     # Vérifier le jour de la semaine
     is_active_day = now_dt.weekday() in active_days
     
-    # Vérifier l'heure
-    is_active_time = start_hour <= now_dt.hour < end_hour
-    
+    # Vérifier l'heure (support des plages qui traversent minuit)
+    h = now_dt.hour
+    if 0 <= start_hour <= 23 and 0 <= end_hour <= 23:
+        if start_hour < end_hour:
+            # Fenêtre standard dans la même journée
+            is_active_time = (start_hour <= h < end_hour)
+        elif start_hour > end_hour:
+            # Fenêtre qui traverse minuit (ex: 23 -> 0 ou 22 -> 6)
+            is_active_time = (h >= start_hour) or (h < end_hour)
+        else:
+            # start == end : fenêtre vide (aucune heure active)
+            is_active_time = False
+    else:
+        # Valeurs hors bornes: considérer inactif par sécurité
+        is_active_time = False
+
     return is_active_day and is_active_time
 
 

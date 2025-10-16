@@ -28,6 +28,7 @@ from utils.validators import normalize_make_webhook_url as _normalize_make_webho
 from config import settings
 from config import polling_config
 from config import webhook_time_window
+from config.app_config_store import get_config_json as _config_get
 
 # --- Import des modules d'authentification extraits dans auth/ ---
 from auth import user as auth_user
@@ -222,7 +223,7 @@ try:
 except Exception:
     pass
 
-# --- Polling config overrides (optional UI overrides from disk) ---
+# --- Polling config overrides (optional UI overrides from external store with file fallback) ---
 try:
     _poll_cfg_path = settings.POLLING_CONFIG_FILE
     # TEMP DIAG: log path and existence for polling_config.json
@@ -232,80 +233,83 @@ try:
         )
     except Exception:
         pass
-    if _poll_cfg_path.exists():
-        with open(_poll_cfg_path, "r", encoding="utf-8") as _f:
-            _pc = json.load(_f) or {}
-        # TEMP DIAG: show relevant keys loaded
+    _pc = {}
+    try:
+        # Fetch from external store with file fallback
+        _pc = _config_get("polling_config", file_fallback=_poll_cfg_path) or {}
+    except Exception:
+        _pc = {}
+    # TEMP DIAG: show relevant keys loaded
+    try:
+        app.logger.info(
+            "CFG POLL(loaded): keys=%s; snippet={active_days=%s,start=%s,end=%s,enable_polling=%s}",
+            list(_pc.keys()),
+            _pc.get("active_days"),
+            _pc.get("active_start_hour"),
+            _pc.get("active_end_hour"),
+            _pc.get("enable_polling"),
+        )
+    except Exception:
+        pass
+    # Apply if present
+    if isinstance(_pc.get("active_days"), list) and _pc.get("active_days"):
+        settings.POLLING_ACTIVE_DAYS = [int(d) for d in _pc["active_days"] if isinstance(d, (int, str))]
+    if "active_start_hour" in _pc:
         try:
-            app.logger.info(
-                "CFG POLL(loaded): keys=%s; snippet={active_days=%s,start=%s,end=%s,enable_polling=%s}",
-                list(_pc.keys()),
-                _pc.get("active_days"),
-                _pc.get("active_start_hour"),
-                _pc.get("active_end_hour"),
-                _pc.get("enable_polling"),
-            )
+            v = int(_pc["active_start_hour"]) ;
+            if 0 <= v <= 23:
+                settings.POLLING_ACTIVE_START_HOUR = v
         except Exception:
             pass
-        # Apply if present
-        if isinstance(_pc.get("active_days"), list) and _pc.get("active_days"):
-            settings.POLLING_ACTIVE_DAYS = [int(d) for d in _pc["active_days"] if isinstance(d, (int, str))]
-        if "active_start_hour" in _pc:
-            try:
-                v = int(_pc["active_start_hour"]) ;
-                if 0 <= v <= 23:
-                    settings.POLLING_ACTIVE_START_HOUR = v
-            except Exception:
-                pass
-        if "active_end_hour" in _pc:
-            try:
-                v = int(_pc["active_end_hour"]) ;
-                if 0 <= v <= 23:
-                    settings.POLLING_ACTIVE_END_HOUR = v
-            except Exception:
-                pass
-        if "enable_subject_group_dedup" in _pc:
-            try:
-                settings.ENABLE_SUBJECT_GROUP_DEDUP = bool(_pc["enable_subject_group_dedup"])
-            except Exception:
-                pass
-        if isinstance(_pc.get("sender_of_interest_for_polling"), list):
-            try:
-                settings.SENDER_LIST_FOR_POLLING = [str(e).strip().lower() for e in _pc["sender_of_interest_for_polling"] if str(e).strip()]
-            except Exception:
-                pass
-        # Vacation dates
-        if "vacation_start" in _pc:
-            try:
-                vs = _pc.get("vacation_start")
-                polling_config.POLLING_VACATION_START_DATE = None if not vs else datetime.fromisoformat(str(vs)).date()
-            except Exception:
-                polling_config.POLLING_VACATION_START_DATE = None
-        if "vacation_end" in _pc:
-            try:
-                ve = _pc.get("vacation_end")
-                polling_config.POLLING_VACATION_END_DATE = None if not ve else datetime.fromisoformat(str(ve)).date()
-            except Exception:
-                polling_config.POLLING_VACATION_END_DATE = None
-        # Log effective schedule after overrides
+    if "active_end_hour" in _pc:
         try:
-            app.logger.info(
-                f"CFG POLL(override): days={settings.POLLING_ACTIVE_DAYS}; start={settings.POLLING_ACTIVE_START_HOUR}; end={settings.POLLING_ACTIVE_END_HOUR}; dedup_monthly_scope={settings.ENABLE_SUBJECT_GROUP_DEDUP}"
-            )
+            v = int(_pc["active_end_hour"]) ;
+            if 0 <= v <= 23:
+                settings.POLLING_ACTIVE_END_HOUR = v
         except Exception:
             pass
-        # IMPORTANT: refresh module-level aliases so the polling thread uses updated values
+    if "enable_subject_group_dedup" in _pc:
         try:
-            POLLING_ACTIVE_DAYS = settings.POLLING_ACTIVE_DAYS
-            POLLING_ACTIVE_START_HOUR = settings.POLLING_ACTIVE_START_HOUR
-            POLLING_ACTIVE_END_HOUR = settings.POLLING_ACTIVE_END_HOUR
-            SENDER_LIST_FOR_POLLING = settings.SENDER_LIST_FOR_POLLING
-            ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
-            app.logger.info(
-                f"CFG POLL(effective): days={POLLING_ACTIVE_DAYS}; start={POLLING_ACTIVE_START_HOUR}; end={POLLING_ACTIVE_END_HOUR}; senders={len(SENDER_LIST_FOR_POLLING)}; dedup_monthly_scope={ENABLE_SUBJECT_GROUP_DEDUP}"
-            )
+            settings.ENABLE_SUBJECT_GROUP_DEDUP = bool(_pc["enable_subject_group_dedup"])
         except Exception:
             pass
+    if isinstance(_pc.get("sender_of_interest_for_polling"), list):
+        try:
+            settings.SENDER_LIST_FOR_POLLING = [str(e).strip().lower() for e in _pc["sender_of_interest_for_polling"] if str(e).strip()]
+        except Exception:
+            pass
+    # Vacation dates
+    if "vacation_start" in _pc:
+        try:
+            vs = _pc.get("vacation_start")
+            polling_config.POLLING_VACATION_START_DATE = None if not vs else datetime.fromisoformat(str(vs)).date()
+        except Exception:
+            polling_config.POLLING_VACATION_START_DATE = None
+    if "vacation_end" in _pc:
+        try:
+            ve = _pc.get("vacation_end")
+            polling_config.POLLING_VACATION_END_DATE = None if not ve else datetime.fromisoformat(str(ve)).date()
+        except Exception:
+            polling_config.POLLING_VACATION_END_DATE = None
+    # Log effective schedule after overrides
+    try:
+        app.logger.info(
+            f"CFG POLL(override): days={settings.POLLING_ACTIVE_DAYS}; start={settings.POLLING_ACTIVE_START_HOUR}; end={settings.POLLING_ACTIVE_END_HOUR}; dedup_monthly_scope={settings.ENABLE_SUBJECT_GROUP_DEDUP}"
+        )
+    except Exception:
+        pass
+    # IMPORTANT: refresh module-level aliases so the polling thread uses updated values
+    try:
+        POLLING_ACTIVE_DAYS = settings.POLLING_ACTIVE_DAYS
+        POLLING_ACTIVE_START_HOUR = settings.POLLING_ACTIVE_START_HOUR
+        POLLING_ACTIVE_END_HOUR = settings.POLLING_ACTIVE_END_HOUR
+        SENDER_LIST_FOR_POLLING = settings.SENDER_LIST_FOR_POLLING
+        ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
+        app.logger.info(
+            f"CFG POLL(effective): days={POLLING_ACTIVE_DAYS}; start={POLLING_ACTIVE_START_HOUR}; end={POLLING_ACTIVE_END_HOUR}; senders={len(SENDER_LIST_FOR_POLLING)}; dedup_monthly_scope={ENABLE_SUBJECT_GROUP_DEDUP}"
+        )
+    except Exception:
+        pass
 except Exception:
     # Non-blocking if file missing or invalid
     pass
