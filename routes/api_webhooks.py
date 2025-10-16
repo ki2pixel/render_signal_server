@@ -68,11 +68,18 @@ def get_webhook_config():
         os.environ.get("WEBHOOK_SENDING_ENABLED", "true").strip().lower()
         in ("1", "true", "yes", "on"),
     )
+    # Time window for global webhook toggle (may be empty strings)
+    webhook_time_start = (persisted.get("webhook_time_start") or "").strip()
+    webhook_time_end = (persisted.get("webhook_time_end") or "").strip()
+
     config = {
         "webhook_url": webhook_url or _mask_url(webhook_url),
         "presence_flag": presence_flag,
         "webhook_ssl_verify": webhook_ssl_verify,
         "webhook_sending_enabled": bool(webhook_sending_enabled),
+        # Expose as None when empty to be explicit in API response
+        "webhook_time_start": webhook_time_start or None,
+        "webhook_time_end": webhook_time_end or None,
     }
     return jsonify({"success": True, "config": config}), 200
 
@@ -103,6 +110,24 @@ def update_webhook_config():
     # New flag: webhook_sending_enabled
     if "webhook_sending_enabled" in payload:
         config["webhook_sending_enabled"] = bool(payload["webhook_sending_enabled"])
+
+    # Optional: accept time window fields here too, for convenience
+    # Validate format using parse_time_hhmm when provided and non-empty
+    if "webhook_time_start" in payload or "webhook_time_end" in payload:
+        start = (str(payload.get("webhook_time_start", "")) or "").strip()
+        end = (str(payload.get("webhook_time_end", "")) or "").strip()
+        # If both empty -> clear
+        if start == "" and end == "":
+            config["webhook_time_start"] = ""
+            config["webhook_time_end"] = ""
+        else:
+            # Require both if one is provided
+            if not start or not end:
+                return jsonify({"success": False, "message": "Both webhook_time_start and webhook_time_end are required (or both empty to clear)."}), 400
+            if parse_time_hhmm(start) is None or parse_time_hhmm(end) is None:
+                return jsonify({"success": False, "message": "Invalid time format. Use HHhMM or HH:MM (e.g., 11h30, 17:45)."}), 400
+            config["webhook_time_start"] = start
+            config["webhook_time_end"] = end
 
     # Nettoyer les champs obsolètes s'ils existent
     obsolete_fields = [
