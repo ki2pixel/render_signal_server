@@ -2,6 +2,13 @@
 
 ## Terminé
 
+-   [2025-10-16 19:20] **Ajout du support des déploiements Render**
+    -   Implémentation de 3 méthodes de déploiement : Webhook Render, API Render, et méthode locale de secours
+    -   Documentation complète de l'API Render
+    -   Gestion robuste des erreurs et journalisation sécurisée
+
+-   [2025-10-15 18:00] **Séparation des fenêtres horaires emails et webhooks**
+
 -   [2025-10-15 18:00] **Séparation des fenêtres horaires emails et webhooks**
     -   Création d'une fenêtre horaire dédiée pour le toggle global des webhooks
     -   Nouveaux endpoints API : `GET/POST /api/webhooks/time-window`
