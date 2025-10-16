@@ -73,6 +73,21 @@ AUTOREPONDEUR_MAKE_WEBHOOK_URL = ""
 MAKECOM_API_KEY = os.environ.get("MAKECOM_API_KEY", REF_MAKECOM_API_KEY)
 WEBHOOK_SSL_VERIFY = env_bool("WEBHOOK_SSL_VERIFY", default=True)
 
+# --- Render API (déploiement via plateforme Render) ---
+# Si ces variables sont positionnées, l'endpoint /api/deploy_application utilisera l'API Render
+# plutôt qu'une commande système locale (fallback via DEPLOY_CMD sinon).
+RENDER_API_KEY = os.environ.get("RENDER_API_KEY", "")
+RENDER_SERVICE_ID = os.environ.get("RENDER_SERVICE_ID", "")
+# clear | do_not_clear
+_CLEAR_DEFAULT = "do_not_clear"
+RENDER_DEPLOY_CLEAR_CACHE = os.environ.get("RENDER_DEPLOY_CLEAR_CACHE", _CLEAR_DEFAULT)
+if RENDER_DEPLOY_CLEAR_CACHE not in ("clear", "do_not_clear"):
+    RENDER_DEPLOY_CLEAR_CACHE = _CLEAR_DEFAULT
+
+# Hook de déploiement Render (alternative simple à l'API complète)
+# Exemple: https://api.render.com/deploy/<serviceId>?key=<secret>
+RENDER_DEPLOY_HOOK_URL = os.environ.get("RENDER_DEPLOY_HOOK_URL", "")
+
 # --- Webhooks de Présence ---
 PRESENCE_FLAG = env_bool("PRESENCE", False)
 PRESENCE_TRUE_MAKE_WEBHOOK_URL = normalize_make_webhook_url(os.environ.get("PRESENCE_TRUE_MAKE_WEBHOOK_URL"))
