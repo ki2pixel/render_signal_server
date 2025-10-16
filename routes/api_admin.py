@@ -277,3 +277,94 @@ def check_emails_and_download():
         return jsonify({"status": "success", "message": "Vérification en arrière-plan lancée."}), 202
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics: Test MySQL connectivity
+# ---------------------------------------------------------------------------
+@bp.route("/test_mysql", methods=["GET"])  # GET /api/test_mysql
+@login_required
+def test_mysql_connectivity():
+    """
+    Teste la connectivité MySQL côté serveur (Render) et renvoie des diagnostics.
+    - N'expose jamais les secrets.
+    - Indique si la table app_config existe et le nombre de lignes.
+    """
+    details = {
+        "configured": False,
+        "connected": False,
+        "host": None,
+        "port": None,
+        "database": None,
+        "table_exists": False,
+        "app_config_count": None,
+        "driver": "mysql-connector-python",
+    }
+
+    try:
+        host = os.environ.get("MYSQL_HOST")
+        user = os.environ.get("MYSQL_USER")
+        password = os.environ.get("MYSQL_PASSWORD")  # not returned
+        database = os.environ.get("MYSQL_DATABASE")
+        port = int(os.environ.get("MYSQL_PORT", 3306))
+
+        details.update({"host": host, "port": port, "database": database})
+        configured = bool(host and user and password and database)
+        details["configured"] = configured
+
+        if not configured:
+            msg = "Variables d'environnement MySQL incomplètes (MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE)."
+            try:
+                current_app.logger.warning("MYSQL TEST: %s", msg)
+            except Exception:
+                pass
+            return jsonify({"success": False, "message": msg, "details": details}), 200
+
+        # Connexion
+        try:
+            import mysql.connector  # type: ignore
+
+            conn = mysql.connector.connect(
+                host=host,
+                user=user,
+                password=password,
+                database=database,
+                port=port,
+                autocommit=True,
+            )
+        except Exception as e:
+            try:
+                current_app.logger.error("MYSQL TEST: Connection failed: %s", e)
+            except Exception:
+                pass
+            return jsonify({"success": False, "message": f"Connexion échouée: {e}", "details": details}), 200
+
+        try:
+            details["connected"] = True
+            with conn.cursor() as cur:
+                # Vérifier existence table
+                cur.execute("SHOW TABLES LIKE 'app_config'")
+                exists = cur.fetchone() is not None
+                details["table_exists"] = exists
+
+                if exists:
+                    # Compter lignes
+                    cur.execute("SELECT COUNT(*) FROM app_config")
+                    row = cur.fetchone()
+                    if row:
+                        details["app_config_count"] = int(row[0])
+
+            try:
+                current_app.logger.info(
+                    "MYSQL TEST: ok host=%s db=%s port=%s exists=%s count=%s",
+                    details["host"], details["database"], details["port"], details["table_exists"], details["app_config_count"],
+                )
+            except Exception:
+                pass
+
+            return jsonify({"success": True, "message": "Connexion MySQL OK", "details": details}), 200
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass

@@ -601,6 +601,17 @@
           <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
         </div>
         <div class="card" style="margin-top: 20px;">
+          <div class="card-title">🧪 Test Connexion MySQL</div>
+          <div class="form-group">
+            <p class="small-text">Teste la connectivité MySQL côté serveur (Render) en utilisant les variables d'environnement (sans exposer les secrets).</p>
+          </div>
+          <div class="inline-group" style="margin-bottom: 10px;">
+            <button id="testMysqlBtn" class="btn btn-primary">Tester la connexion</button>
+          </div>
+          <div id="testMysqlMsg" class="status-msg"></div>
+          <pre id="testMysqlOutput" style="margin-top:8px; background: rgba(0,0,0,0.2); border:1px solid var(--cork-border-color); padding:10px; border-radius:4px; max-height:220px; overflow:auto; color: var(--cork-text-primary);"></pre>
+        </div>
+        <div class="card" style="margin-top: 20px;">
           <div class="card-title">🧪 Outils de Test</div>
           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
             <div class="form-group">
