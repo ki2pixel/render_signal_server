@@ -9,6 +9,7 @@ from flask import Blueprint, jsonify, request
 from flask_login import login_required
 
 from config import webhook_time_window, polling_config, settings
+from config import app_config_store as _store
 from config.runtime_flags import load_runtime_flags, save_runtime_flags
 from config.settings import (
     RUNTIME_FLAGS_FILE,
@@ -75,6 +76,17 @@ def set_webhook_time_window():
         ok, msg = webhook_time_window.update_time_window(start, end)
         status = 200 if ok else 400
         info = webhook_time_window.get_time_window_info()
+        # Best-effort: mirror the global time window to external config store under
+        # webhook_config as global_time_start/global_time_end so that
+        # https://webhook.kidpixel.fr/data/app_config/webhook_config.json reflects it too.
+        try:
+            cfg = _store.get_config_json("webhook_config") or {}
+            cfg["global_time_start"] = (info.get("start") or "") or None
+            cfg["global_time_end"] = (info.get("end") or "") or None
+            # Do not fail the request if external store is unavailable
+            _store.set_config_json("webhook_config", cfg)
+        except Exception:
+            pass
         return (
             jsonify(
                 {
