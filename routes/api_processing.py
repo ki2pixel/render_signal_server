@@ -5,6 +5,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
+from config import app_config_store as _store
 
 bp = Blueprint("api_processing", __name__, url_prefix="/api/processing_prefs")
 legacy_bp = Blueprint("api_processing_legacy", __name__)
@@ -28,24 +29,20 @@ DEFAULT_PROCESSING_PREFS = {
 
 
 def _load_processing_prefs() -> dict:
-    try:
-            with open(PROCESSING_PREFS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f) or {}
-                if isinstance(data, dict):
-                    return {**DEFAULT_PROCESSING_PREFS, **data}
-    except Exception:
-        pass
+    """Load prefs from DB if available, else file; merge with defaults."""
+    data = _store.get_config_json(
+        "processing_prefs", file_fallback=PROCESSING_PREFS_FILE
+    ) or {}
+    if isinstance(data, dict):
+        return {**DEFAULT_PROCESSING_PREFS, **data}
     return DEFAULT_PROCESSING_PREFS.copy()
 
 
 def _save_processing_prefs(prefs: dict) -> bool:
-    try:
-        PROCESSING_PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(PROCESSING_PREFS_FILE, "w", encoding="utf-8") as f:
-            json.dump(prefs, f, ensure_ascii=False, indent=2)
-        return True
-    except Exception:
-        return False
+    """Persist prefs to DB with file fallback."""
+    return _store.set_config_json(
+        "processing_prefs", prefs, file_fallback=PROCESSING_PREFS_FILE
+    )
 
 
 def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:

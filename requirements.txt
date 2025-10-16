@@ -6,4 +6,4 @@ requests
 redis>=4.0
 email-validator
 pytest>=7.0
- 
+mysql-connector-python>=9.0

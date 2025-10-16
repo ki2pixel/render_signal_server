@@ -92,17 +92,16 @@ def check_new_emails_and_trigger_webhook() -> int:
     if not logger:
         return 0
 
-    # Helper: load global enable/disable for webhook sending (persisted JSON + ENV fallback)
+    # Helper: load global enable/disable for webhook sending (DB+JSON fallback + ENV)
     def _is_webhook_sending_enabled() -> bool:
+        # Prefer DB via app_config_store; fallback to file, then ENV
         try:
+            from config import app_config_store as _store  # local import to avoid cycles
             cfg_path = Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
-            if cfg_path.exists():
-                with open(cfg_path, "r", encoding="utf-8") as f:
-                    data = json.load(f) or {}
-                    if isinstance(data, dict) and "webhook_sending_enabled" in data:
-                        return bool(data.get("webhook_sending_enabled"))
+            data = _store.get_config_json("webhook_config", file_fallback=cfg_path) or {}
+            if isinstance(data, dict) and "webhook_sending_enabled" in data:
+                return bool(data.get("webhook_sending_enabled"))
         except Exception:
-            # fall back to ENV
             pass
         try:
             env_val = os.environ.get("WEBHOOK_SENDING_ENABLED", "true").strip().lower()
@@ -315,14 +314,13 @@ def check_new_emails_and_trigger_webhook() -> int:
                 def _load_webhook_global_time_window():
                     # Returns (start_str or '', end_str or '')
                     try:
+                        from config import app_config_store as _store  # local import to avoid cycles
                         cfg_path = Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
-                        if cfg_path.exists():
-                            with open(cfg_path, "r", encoding="utf-8") as f:
-                                data = json.load(f) or {}
-                                s = (data.get("webhook_time_start") or "").strip()
-                                e = (data.get("webhook_time_end") or "").strip()
-                                if s or e:
-                                    return s, e
+                        data = _store.get_config_json("webhook_config", file_fallback=cfg_path) or {}
+                        s = (data.get("webhook_time_start") or "").strip()
+                        e = (data.get("webhook_time_end") or "").strip()
+                        if s or e:
+                            return s, e
                     except Exception:
                         pass
                     # ENV fallbacks

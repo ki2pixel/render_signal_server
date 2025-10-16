@@ -9,6 +9,7 @@ from flask_login import login_required, current_user
 
 from utils.validators import normalize_make_webhook_url as _normalize_make_webhook_url
 from utils.time_helpers import parse_time_hhmm
+from config import app_config_store as _store
 
 bp = Blueprint("api_webhooks", __name__, url_prefix="/api/webhooks")
 
@@ -19,23 +20,19 @@ WEBHOOK_CONFIG_FILE = (
 
 
 def _load_webhook_config() -> dict:
-    if not WEBHOOK_CONFIG_FILE.exists():
-        return {}
-    try:
-        with open(WEBHOOK_CONFIG_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    """Load persisted config from DB if available, else file fallback.
+    Returns an empty dict if nothing persisted.
+    """
+    return _store.get_config_json(
+        "webhook_config", file_fallback=WEBHOOK_CONFIG_FILE
+    ) or {}
 
 
 def _save_webhook_config(config: dict) -> bool:
-    try:
-        WEBHOOK_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(WEBHOOK_CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
-        return True
-    except Exception:
-        return False
+    """Persist config to DB with file fallback."""
+    return _store.set_config_json(
+        "webhook_config", config, file_fallback=WEBHOOK_CONFIG_FILE
+    )
 
 
 def _mask_url(url: str | None) -> str | None:
