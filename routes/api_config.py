@@ -50,6 +50,16 @@ def _save_runtime_flags_file(data: dict) -> bool:
 @login_required
 def get_webhook_time_window():
     try:
+        # Best-effort: pull latest values from external store to reflect remote edits
+        try:
+            cfg = _store.get_config_json("webhook_config") or {}
+            gs = (cfg.get("global_time_start") or "").strip()
+            ge = (cfg.get("global_time_end") or "").strip()
+            # If both provided (or both empty), sync into in-app state to keep orchestrator aligned
+            if (gs != "" and ge != "") or (gs == "" and ge == ""):
+                webhook_time_window.update_time_window(gs, ge)
+        except Exception:
+            pass
         info = webhook_time_window.get_time_window_info()
         return (
             jsonify(
