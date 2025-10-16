@@ -153,20 +153,21 @@ def update_runtime_flags():
 @login_required
 def get_polling_config():
     try:
+        # Prefer values from external store/file if available to reflect persisted UI choices
+        persisted = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
         cfg = {
-            # Use module-level alias to allow tests to patch this value
-            "active_days": POLLING_ACTIVE_DAYS,
-            # Use aliases for hour fields for test patching
-            "active_start_hour": POLLING_ACTIVE_START_HOUR,
-            "active_end_hour": POLLING_ACTIVE_END_HOUR,
-            # Use alias for test patching
-            "enable_subject_group_dedup": ENABLE_SUBJECT_GROUP_DEDUP,
+            # Days and hours: prefer persisted values, else aliases for test patching
+            "active_days": persisted.get("active_days", POLLING_ACTIVE_DAYS),
+            "active_start_hour": persisted.get("active_start_hour", POLLING_ACTIVE_START_HOUR),
+            "active_end_hour": persisted.get("active_end_hour", POLLING_ACTIVE_END_HOUR),
+            # Dedup flag: prefer persisted
+            "enable_subject_group_dedup": persisted.get("enable_subject_group_dedup", ENABLE_SUBJECT_GROUP_DEDUP),
             "timezone": POLLING_TIMEZONE_STR,
-            "sender_of_interest_for_polling": settings.SENDER_LIST_FOR_POLLING,
-            "vacation_start": polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None,
-            "vacation_end": polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None,
-            # New global toggle (persisted)
-            "enable_polling": polling_config.get_enable_polling(True),
+            "sender_of_interest_for_polling": persisted.get("sender_of_interest_for_polling", settings.SENDER_LIST_FOR_POLLING),
+            "vacation_start": persisted.get("vacation_start", polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None),
+            "vacation_end": persisted.get("vacation_end", polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None),
+            # Global enable toggle: prefer persisted, fallback helper
+            "enable_polling": persisted.get("enable_polling", polling_config.get_enable_polling(True)),
         }
         return jsonify({"success": True, "config": cfg}), 200
     except Exception:
@@ -178,15 +179,8 @@ def get_polling_config():
 def update_polling_config():
     try:
         payload = request.get_json(silent=True) or {}
-
-        # Charger l'existant (si le fichier n'existe pas, partir d'un dict vide)
-        existing: dict = {}
-        try:
-            if POLLING_CONFIG_FILE.exists():
-                with open(POLLING_CONFIG_FILE, 'r', encoding='utf-8') as f:
-                    existing = json.load(f) or {}
-        except Exception:
-            existing = {}
+        # Charger l'existant depuis le store (fallback fichier)
+        existing: dict = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
 
         # Normalisation des champs
         new_days = None
@@ -315,7 +309,7 @@ def update_polling_config():
         if new_senders is not None:
             settings.SENDER_LIST_FOR_POLLING = new_senders
 
-        # Persistance fichier
+        # Persistance via store (avec fallback fichier)
         merged = dict(existing)
         if new_days is not None:
             merged['active_days'] = new_days
@@ -335,9 +329,9 @@ def update_polling_config():
             merged['enable_polling'] = new_enable_polling
 
         try:
-            POLLING_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-            with open(POLLING_CONFIG_FILE, 'w', encoding='utf-8') as f:
-                json.dump(merged, f, indent=2, ensure_ascii=False)
+            ok = _store.set_config_json("polling_config", merged, file_fallback=POLLING_CONFIG_FILE)
+            if not ok:
+                return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
         except Exception:
             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
 

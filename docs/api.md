@@ -16,8 +16,28 @@ L'API est structurée en blueprints Flask pour une meilleure organisation et mai
 | `api_logs` | `routes/api_logs.py` | Consultation des logs | `GET /api/webhook_logs` |
 | `api_test` | `routes/api_test.py` | Endpoints de test (CORS) | `GET /api/test/*` |
 | `api_utility` | `routes/api_utility.py` | Utilitaires (ping, trigger, statut local) | `GET /api/ping`, `GET /api/check_trigger`, `GET /api/get_local_status` |
-| `api_admin` | `routes/api_admin.py` | Admin (présence, redémarrage, déclenchement manuel) | `POST /api/test_presence_webhook`, `POST /api/restart_server`, `POST /api/check_emails_and_download` |
-| `api_config` | `routes/api_config.py` | Config protégée (fenêtre horaire, flags, polling) | `GET/POST /api/get|set_webhook_time_window`, `GET/POST /api/get|update_runtime_flags`, `GET/POST /api/get|update_polling_config` |
+| `api_admin` | `routes/api_admin.py` | Admin (redémarrage, déclenchement manuel) | `POST /api/restart_server`, `POST /api/check_emails_and_download` |
+| `api_config` | `routes/api_config.py` | Configuration (fenêtres horaires, flags, polling) | `GET/POST /api/webhooks/time-window`, `GET/POST /api/runtime-flags`, `GET/POST /api/polling-config` |
+
+## Authentification
+
+Toutes les routes de l'API (sauf `/health` et `/login`) nécessitent une authentification. L'authentification se fait via des sessions Flask avec Flask-Login.
+
+### Connexion
+
+- `POST /login`
+  - Paramètres : `username`, `password` (form-data ou JSON)
+  - Réponse en cas de succès : Redirection vers `/`
+  - Réponse en cas d'échec : Page de login avec message d'erreur
+
+### Déconnexion
+
+- `GET /logout`
+  - Déconnecte l'utilisateur et redirige vers `/login`
+
+## Stockage des données
+
+Les configurations sont stockées dans un backend JSON externe avec fallback sur des fichiers locaux. Voir [storage.md](storage.md) pour plus de détails.
 
 ### Compatibilité Ascendante
 
@@ -54,20 +74,40 @@ Pour assurer la rétrocompatibilité, les anciennes URLs sont maintenues via des
   - Lit puis consomme le fichier `signal_data_app_render/local_workflow_trigger_signal.json` s'il existe.
   - Réponse: `{ "command_pending": bool, "payload": object|null }`
 
-### Test manuel des webhooks Make (présence)
+### Configuration des flags runtime
 
-- `POST /api/test_presence_webhook` (protégé)
-  - Déclenche manuellement un webhook Make vers l'URL de présence configurée.
-  - Paramètres acceptés (JSON ou form):
-    - `presence`: `"true"|"false"` (obligatoire) — choisit l'URL `PRESENCE_TRUE_MAKE_WEBHOOK_URL` ou `PRESENCE_FALSE_MAKE_WEBHOOK_URL`.
-  - Réponses:
-    - 200: `{ "success": true, "presence": bool, "used_url": string }`
-    - 400: `{ "success": false, "message": string }` (paramètre manquant ou URL non configurée)
-    - 500: `{ "success": false, "message": string }` (échec d'envoi)
-  - Notes:
-    - Nécessite une session (voir Auth plus haut). Identifiants via env: `TRIGGER_PAGE_USER`, `TRIGGER_PAGE_PASSWORD`.
-    - Les URLs de destination doivent être configurées: `PRESENCE_TRUE_MAKE_WEBHOOK_URL`, `PRESENCE_FALSE_MAKE_WEBHOOK_URL`.
-    - Le payload inclut `subject`, `sender_email`, `email_id` de test et `extra_payload` `{ presence, detector: "manual_test" }`.
+### Récupération des flags
+
+- `GET /api/runtime-flags` (protégé)
+  - Retourne les flags runtime actuels
+  - Réponse :
+    ```json
+    {
+      "success": true,
+      "flags": {
+        "debug_mode": false,
+        "enable_verbose_logging": false,
+        "force_processing": false
+      }
+    }
+    ```
+
+### Mise à jour des flags
+
+- `POST /api/runtime-flags` (protégé)
+  - Met à jour les flags runtime
+  - Corps JSON (tous les champs sont optionnels) :
+    ```json
+    {
+      "debug_mode": false,
+      "enable_verbose_logging": false,
+      "force_processing": false
+    }
+    ```
+  - Réponses :
+    - 200 : `{ "success": true, "message": "Flags runtime mis à jour avec succès" }`
+    - 400 : `{ "success": false, "message": "..." }` (erreur de validation)
+    - 500 : `{ "success": false, "message": "..." }` (erreur serveur)
 
 Exemples curl:
 
@@ -100,48 +140,214 @@ curl -sS -X POST \
 Remplacez `DOMAIN` par l'URL Render, et `<USERNAME>/<PASSWORD>` par vos identifiants.
 
 ## Polling e-mail (déclenchement manuel)
+
 - `POST /api/check_emails_and_download` (protégé)
   - Lance `check_new_emails_and_trigger_webhook()` dans un thread.
   - Codes de réponse:
     - `202` si lancé: `{ "status": "success", "message": "Vérification en arrière-plan lancée." }`
     - `503` si configuration manquante.
+  - Note: le backend extrait des URLs de livraison multi-fournisseurs (Dropbox, FromSmash, SwissTransfer) lors du traitement des e-mails via `check_media_solution_pattern()`.
 
-  Note: le backend extrait des URLs de livraison multi-fournisseurs (Dropbox, FromSmash, SwissTransfer) lors du traitement des e-mails via `check_media_solution_pattern()` (voir `email_polling.md` pour les détails, exemples, et règles d'extraction/normalisation).
-  Note (payload simplifié): lorsque des e-mails valides sont traités, le payload de webhook inclut `delivery_links` comme liste d'objets `{ provider, raw_url }` (lien vers la page d'atterrissage du fournisseur). Les champs `direct_url`, `first_direct_download_url`, `dropbox_urls` et `dropbox_first_url` ne sont plus envoyés.
+## Format des webhooks
+
+### Webhook principal
+
+```json
+{
+  "event_type": "email_received",
+  "timestamp": "2025-10-16T14:30:00Z",
+  "email": {
+    "id": "<email_id>",
+    "subject": "Sujet de l'email",
+    "from": "expediteur@example.com",
+    "to": ["destinataire@example.com"],
+    "date": "2025-10-16T14:25:00Z",
+    "text": "Contenu texte de l'email",
+    "html": "<p>Contenu HTML de l'email</p>",
+    "attachments": [
+      {
+        "filename": "piece-jointe.pdf",
+        "content_type": "application/pdf",
+        "size": 12345,
+        "content_id": "<content_id>"
+      }
+    ]
+  },
+  "metadata": {
+    "processing_time_ms": 123,
+    "detected_media": [
+      {
+        "provider": "swisstransfer",
+        "raw_url": "https://www.swisstransfer.com/d/...",
+        "direct_url": "https://www.swisstransfer.com/d/.../download"
+      }
+    ]
+  }
+}
+```
+
+### Webhook personnalisé (si activé)
+
+```json
+{
+  "event_type": "email_processed",
+  "timestamp": "2025-10-16T14:30:00Z",
+  "email_id": "<email_id>",
+  "subject": "Sujet de l'email",
+  "from": "expediteur@example.com",
+  "to": ["destinataire@example.com"],
+  "date": "2025-10-16T14:25:00Z",
+  "media_links": [
+    {
+      "provider": "swisstransfer",
+      "url": "https://www.swisstransfer.com/d/..."
+    }
+  ]
+}
+```
+
+## Gestion des erreurs
+
+### Format des réponses d'erreur
+
+Toutes les erreurs d'API suivent le format suivant :
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "error_code",
+    "message": "Message d'erreur détaillé",
+    "details": {
+      "field1": "Détail supplémentaire 1",
+      "field2": "Détail supplémentaire 2"
+    }
+  }
+}
+```
+
+### Codes d'erreur courants
+
+| Code HTTP | Code erreur | Description |
+|-----------|-------------|-------------|
+| 400 | `validation_error` | Erreur de validation des données d'entrée |
+| 401 | `unauthorized` | Authentification requise ou session expirée |
+| 403 | `forbidden` | Permissions insuffisantes |
+| 404 | `not_found` | Ressource non trouvée |
+| 500 | `internal_error` | Erreur interne du serveur |
+| 503 | `service_unavailable` | Service temporairement indisponible |
+
+## Sécurité
+
+### Authentification
+
+- Toutes les requêtes doivent inclure un jeton d'authentification valide
+- Les jetons sont gérés via des sessions sécurisées
+- Les mots de passe sont stockés de manière sécurisée (hash + sel)
+
+### Protection CSRF
+
+- Toutes les requêtes POST doivent inclure un jeton CSRF valide
+- Le jeton est disponible dans le cookie `csrftoken` et doit être inclus dans l'en-tête `X-CSRFToken`
+
+### En-têtes de sécurité
+
+L'application inclut les en-têtes de sécurité HTTP suivants :
+
+- `Content-Security-Policy` : Restreint les sources de contenu autorisées
+- `X-Content-Type-Options: nosniff` : Empêche le MIME-sniffing
+- `X-Frame-Options: DENY` : Empêche le clickjacking
+- `X-XSS-Protection: 1; mode=block` : Active la protection XSS des navigateurs
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains` : Force l'utilisation de HTTPS
+- `Referrer-Policy: strict-origin-when-cross-origin` : Contrôle les informations de référent envoyées
+
+## Journalisation
+
+Toutes les requêtes API sont journalisées avec les informations suivantes :
+
+- Date et heure
+- Adresse IP du client
+- Méthode HTTP et URL
+- Code de statut HTTP
+- Temps de réponse
+- Identifiant utilisateur (si authentifié)
+- Données de la requête (sans les informations sensibles)
+
+Les journaux sont disponibles via l'interface d'administration et peuvent être exportés au format JSON.
 
 ## Dashboard Webhooks (endpoints via Blueprints)
 
 Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organisés via des Blueprints Flask.
 
+### Gestion des webhooks
+
 ### Configuration des webhooks
 
 - `GET /api/webhooks/config` (protégé)
-  - Retourne la configuration actuelle des webhooks (URLs masquées partiellement pour sécurité)
-  - Réponse: `{ "success": true, "config": {
+  - Retourne la configuration actuelle des webhooks
+  - Réponse:
+    ```json
+    {
+      "success": true,
+      "config": {
         "webhook_url": "https://...",
-        "recadrage_webhook_url": "https://...",
-        "autorepondeur_webhook_url": "https://...",
-        "presence_true_url": "https://...|alias",
-        "presence_false_url": "https://...|alias",
-        "presence_flag": bool,
-        "webhook_ssl_verify": bool,
-        "polling_enabled": bool
-    } }`
+        "webhook_enabled": true,
+        "webhook_ssl_verify": true,
+        "custom_webhook_url": "https://...",
+        "custom_webhook_enabled": true,
+        "mirror_media_to_custom": false
+      }
+    }
+    ```
 
 - `POST /api/webhooks/config` (protégé)
-  - Met à jour la configuration des webhooks de manière dynamique
-  - Corps JSON (champs optionnels, seuls les fournis sont pris en compte):
-    - `webhook_url`: string (HTTPS conseillé)
-    - `recadrage_webhook_url`: string | alias `<token>@hook.eu2.make.com`
-    - `autorepondeur_webhook_url`: string | alias `<token>@hook.eu2.make.com`
-    - `presence_true_url`: string | alias `<token>@hook.eu2.make.com`
-    - `presence_false_url`: string | alias `<token>@hook.eu2.make.com`
-    - `presence_flag`: bool
-    - `webhook_ssl_verify`: bool
-  - Réponses:
-    - 200: `{ "success": true, "message": "Configuration mise à jour avec succès." }`
-    - 400: `{ "success": false, "message": "..." }` (validation échouée)
-    - 500: `{ "success": false, "message": "..." }` (erreur interne)
+  - Met à jour la configuration des webhooks
+  - Corps JSON (tous les champs sont optionnels) :
+    ```json
+    {
+      "webhook_url": "https://...",
+      "webhook_enabled": true,
+      "webhook_ssl_verify": true,
+      "custom_webhook_url": "https://...",
+      "custom_webhook_enabled": true,
+      "mirror_media_to_custom": false
+    }
+    ```
+  - Réponses :
+    - 200 : `{ "success": true, "message": "Configuration des webhooks mise à jour avec succès" }`
+    - 400 : `{ "success": false, "message": "..." }` (erreur de validation)
+    - 500 : `{ "success": false, "message": "..." }` (erreur serveur)
+
+### Gestion des fenêtres horaires
+
+- `GET /api/webhooks/time-window` (protégé)
+  - Récupère la fenêtre horaire des webhooks
+  - Réponse :
+    ```json
+    {
+      "success": true,
+      "time_window": {
+        "start_hour": 8,
+        "end_hour": 20,
+        "active_days": [1, 2, 3, 4, 5]
+      }
+    }
+    ```
+
+- `POST /api/webhooks/time-window` (protégé)
+  - Met à jour la fenêtre horaire des webhooks
+  - Corps JSON :
+    ```json
+    {
+      "start_hour": 8,
+      "end_hour": 20,
+      "active_days": [1, 2, 3, 4, 5]
+    }
+    ```
+  - Réponses :
+    - 200 : `{ "success": true, "message": "Fenêtre horaire mise à jour avec succès" }`
+    - 400 : `{ "success": false, "message": "..." }` (erreur de validation)
+    - 500 : `{ "success": false, "message": "..." }` (erreur serveur)
 
 ### Contrôle du polling (via configuration)
 
@@ -163,40 +369,77 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
     - Le thread de polling au démarrage est conditionné par: `ENABLE_BACKGROUND_TASKS` (env) ET `enable_polling` (config persistée).
     - Un redémarrage du service est nécessaire pour (dés)activer effectivement le thread de fond.
 
-### Configuration du Polling (jours/heures/déduplication)
+### Configuration du Polling
 
-- `GET /api/get_polling_config` (protégé)
-  - Retourne la configuration persistée côté serveur (`debug/polling_config.json`)
-  - Réponse: 
+### Récupération de la configuration
+
+- `GET /api/polling-config` (protégé)
+  - Retourne la configuration actuelle du polling
+  - Réponse :
     ```json
     {
-      "success": true, 
+      "success": true,
       "config": {
-        "active_days": [0..6],
+        "active_days": [1, 2, 3, 4, 5],
         "active_start_hour": 9,
-        "active_end_hour": 23,
+        "active_end_hour": 18,
         "enable_subject_group_dedup": true,
-        "sender_of_interest_for_polling": ["email1@example.com", ...],
+        "sender_of_interest_for_polling": ["contact@example.com"],
         "enable_polling": true
       }
     }
     ```
 
-- `POST /api/update_polling_config` (protégé)
-  - Met à jour la configuration de polling. Les champs sont optionnels (merge partiel) :
-    - `active_days`: array d'entiers 0..6 (0=lundi)
-    - `active_start_hour`: int 0..23
-    - `active_end_hour`: int 0..23
-    - `enable_subject_group_dedup`: bool
-    - `sender_of_interest_for_polling`: array d'emails (validés/normalisés)
-    - `enable_polling`: bool (active/désactive le polling au redémarrage)
-  - Réponses:
-    - 200: `{ "success": true, "message": "Configuration polling enregistrée." }`
-    - 400: `{ "success": false, "message": "..." }` (validation échouée)
-    - 500: `{ "success": false, "message": "..." }`
-  - Notes:
-    - Le thread de polling au démarrage est conditionné par: `ENABLE_BACKGROUND_TASKS` (env) ET `enable_polling` (config persistée).
-    - Un redémarrage du service est nécessaire pour (dés)activer effectivement le thread de fond.
+### Mise à jour de la configuration
+
+- `POST /api/polling-config` (protégé)
+  - Met à jour la configuration du polling
+  - Corps JSON (tous les champs sont optionnels) :
+    ```json
+    {
+      "active_days": [1, 2, 3, 4, 5],
+      "active_start_hour": 9,
+      "active_end_hour": 18,
+      "enable_subject_group_dedup": true,
+      "sender_of_interest_for_polling": ["contact@example.com"],
+      "enable_polling": true
+    }
+    ```
+  - Réponses :
+    - 200 : `{ "success": true, "message": "Configuration du polling mise à jour avec succès" }`
+    - 400 : `{ "success": false, "message": "..." }` (erreur de validation)
+    - 500 : `{ "success": false, "message": "..." }` (erreur serveur)
+
+### Fenêtre horaire du polling
+
+- `GET /api/polling-time-window` (protégé)
+  - Récupère la fenêtre horaire du polling
+  - Réponse :
+    ```json
+    {
+      "success": true,
+      "time_window": {
+        "start_hour": 8,
+        "end_hour": 20,
+        "active_days": [1, 2, 3, 4, 5]
+      }
+    }
+    ```
+
+- `POST /api/polling-time-window` (protégé)
+  - Met à jour la fenêtre horaire du polling
+  - Corps JSON :
+    ```json
+    {
+      "start_hour": 8,
+      "end_hour": 20,
+      "active_days": [1, 2, 3, 4, 5]
+    }
+    ```
+  - Réponses :
+    - 200 : `{ "success": true, "message": "Fenêtre horaire du polling mise à jour avec succès" }`
+    - 400 : `{ "success": false, "message": "..." }` (erreur de validation)
+    - 500 : `{ "success": false, "message": "..." }` (erreur serveur)
 
 ## Endpoints legacy (dépréciés ou supprimés)
 

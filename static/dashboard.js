@@ -1202,6 +1202,16 @@ async function loadPollingConfig() {
             if (dedupEl) dedupEl.checked = !!cfg.enable_subject_group_dedup;
             const senders = Array.isArray(cfg.sender_of_interest_for_polling) ? cfg.sender_of_interest_for_polling : [];
             renderSenderInputs(senders);
+            // New: populate active days and hours if present
+            try {
+                if (Array.isArray(cfg.active_days)) setDayCheckboxes(cfg.active_days);
+                const sh = document.getElementById('pollingStartHour');
+                const eh = document.getElementById('pollingEndHour');
+                if (sh && Number.isInteger(cfg.active_start_hour)) sh.value = String(cfg.active_start_hour);
+                if (eh && Number.isInteger(cfg.active_end_hour)) eh.value = String(cfg.active_end_hour);
+            } catch (e) {
+                console.warn('loadPollingConfig: applying days/hours failed', e);
+            }
             // vacations and global enable removed from UI
         }
     } catch (e) {
@@ -1216,11 +1226,42 @@ async function savePollingConfig(event) {
     
     const dedup = document.getElementById('enableSubjectGroupDedup')?.checked;
     const senders = collectSenderInputs();
+    const activeDays = collectDayCheckboxes();
+    const startHourStr = document.getElementById('pollingStartHour')?.value?.trim() ?? '';
+    const endHourStr = document.getElementById('pollingEndHour')?.value?.trim() ?? '';
+    const statusId = document.getElementById('emailPrefsSaveStatus') ? 'emailPrefsSaveStatus' : 'pollingCfgMsg';
+
+    // Basic validation
+    const startHour = startHourStr === '' ? null : Number.parseInt(startHourStr, 10);
+    const endHour = endHourStr === '' ? null : Number.parseInt(endHourStr, 10);
+    if (!activeDays || activeDays.length === 0) {
+        showMessage(statusId, 'Veuillez sélectionner au moins un jour actif.', 'error');
+        if (btn) btn.disabled = false;
+        return;
+    }
+    if (startHour === null || Number.isNaN(startHour) || startHour < 0 || startHour > 23) {
+        showMessage(statusId, 'Heure de début invalide (0-23).', 'error');
+        if (btn) btn.disabled = false;
+        return;
+    }
+    if (endHour === null || Number.isNaN(endHour) || endHour < 0 || endHour > 23) {
+        showMessage(statusId, 'Heure de fin invalide (0-23).', 'error');
+        if (btn) btn.disabled = false;
+        return;
+    }
+    if (startHour >= endHour) {
+        showMessage(statusId, 'L\'heure de début doit être strictement inférieure à l\'heure de fin.', 'error');
+        if (btn) btn.disabled = false;
+        return;
+    }
 
     const payload = {};
     payload.enable_subject_group_dedup = dedup;
 
     payload.sender_of_interest_for_polling = senders;
+    payload.active_days = activeDays;
+    payload.active_start_hour = startHour;
+    payload.active_end_hour = endHour;
     // Dates ISO (ou null)
     // vacations and global enable removed
 
@@ -1231,7 +1272,6 @@ async function savePollingConfig(event) {
             body: JSON.stringify(payload)
         });
         const data = await res.json();
-        const statusId = document.getElementById('emailPrefsSaveStatus') ? 'emailPrefsSaveStatus' : 'pollingCfgMsg';
         if (data.success) {
             showMessage(statusId, data.message || 'Préférences enregistrées avec succès !', 'success');
             // Recharger pour refléter la normalisation côté serveur
@@ -1240,7 +1280,6 @@ async function savePollingConfig(event) {
             showMessage(statusId, data.message || 'Erreur lors de la sauvegarde.', 'error');
         }
     } catch (e) {
-        const statusId = document.getElementById('emailPrefsSaveStatus') ? 'emailPrefsSaveStatus' : 'pollingCfgMsg';
         showMessage(statusId, 'Erreur de communication avec le serveur.', 'error');
     } finally {
         if (btn) btn.disabled = false;

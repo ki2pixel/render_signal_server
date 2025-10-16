@@ -2,12 +2,23 @@
 
 ## Terminé
 
--   [2025-10-16 19:20] **Ajout du support des déploiements Render**
+-   [2025-10-16 22:41] **Synchronisation de la fenêtre horaire globale**
+    - Mise à jour de `GET /api/get_webhook_time_window` pour lire depuis le stockage externe
+    - Synchronisation automatique de l'état interne au chargement du tableau de bord
+    - Maintien de la rétrocompatibilité avec les fichiers locaux
+    - Documentation mise à jour dans la Memory Bank
+
+-   [2025-10-16 22:24] **Migration de MySQL vers le stockage JSON externe**
+    - Suppression complète du support MySQL et de ses dépendances
+    - Implémentation d'un backend PHP sécurisé pour le stockage des configurations
+    - Mise en place d'un système de fallback sur fichiers JSON locaux
+    - Mise à jour de la documentation complète (configuration.md, storage.md)
+    - Suppression des endpoints et de l'interface utilisateur liés à MySQL
+
+-   [2025-10-16 19:20] **Ajout du support des déploiements Render"
     -   Implémentation de 3 méthodes de déploiement : Webhook Render, API Render, et méthode locale de secours
     -   Documentation complète de l'API Render
     -   Gestion robuste des erreurs et journalisation sécurisée
-
--   [2025-10-15 18:00] **Séparation des fenêtres horaires emails et webhooks**
 
 -   [2025-10-15 18:00] **Séparation des fenêtres horaires emails et webhooks**
     -   Création d'une fenêtre horaire dédiée pour le toggle global des webhooks
@@ -15,7 +26,6 @@
     -   Persistance dans `debug/webhook_config.json`
     -   Mise à jour de l'interface utilisateur avec une section dédiée
     -   Gestion indépendante de la fenêtre horaire des emails existante
-
 
 -   [2025-10-15 15:54] **Correction de l'affichage de l'heure de fin dans les emails**
     -   Ajout de `webhooks_time_end` dans le payload du webhook personnalisé

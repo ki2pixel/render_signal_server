@@ -2,6 +2,34 @@
 
 Ce document enregistre les décisions techniques et architecturales importantes prises au cours du projet.
 
+- **[2025-10-16 22:41:00] - Synchronisation de la fenêtre horaire globale avec le stockage externe**
+    - **Décision** : Permettre la mise à jour de la fenêtre horaire globale via des modifications directes dans le fichier JSON externe, avec synchronisation automatique au chargement du tableau de bord.
+    - **Implémentation** :
+        - Modification de `GET /api/get_webhook_time_window` pour récupérer `global_time_start/global_time_end` depuis le stockage externe
+        - Mise à jour de l'état interne via `webhook_time_window.update_time_window()`
+        - Conservation de la rétrocompatibilité avec les fichiers locaux
+    - **Raison** :
+        - Permettre des mises à jour distantes de la fenêtre horaire sans passer par l'interface web
+        - Maintenir la cohérence entre les différentes instances du service
+        - Faciliter l'automatisation des mises à jour de configuration
+
+
+- **[2025-10-16 22:24:00] - Migration de MySQL vers un stockage JSON externe**
+    - **Décision** : Remplacer la base de données MySQL par une solution de stockage JSON externe via une API PHP pour simplifier l'architecture et améliorer la maintenabilité.
+    - **Implémentation** :
+        - Suppression complète du code lié à MySQL (connecteur, requêtes, schéma)
+        - Création d'une API PHP sécurisée pour le stockage des configurations
+        - Implémentation d'un système de fallback sur fichiers JSON locaux
+        - Mise à jour de la documentation (`configuration.md`, `storage.md`)
+        - Suppression de l'interface utilisateur et des endpoints liés à MySQL
+    - **Raisons** :
+        - Simplification de l'architecture en éliminant la dépendance à MySQL
+        - Réduction de la surface d'attaque en supprimant un composant critique
+        - Amélioration de la portabilité avec une solution basée sur des fichiers
+        - Facilité de sauvegarde et de restauration des configurations
+        - Meilleure intégration avec l'infrastructure existante
+
+
 - **[2025-10-15 15:54:00] - Correction de l'affichage de l'heure de fin dans les emails**
     - **Décision** : Améliorer la gestion des fenêtres horaires dans les emails en incluant systématiquement l'heure de fin (`webhooks_time_end`) et en ajustant dynamiquement l'heure de début (`webhooks_time_start`).
     - **Implémentation** :

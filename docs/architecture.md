@@ -4,6 +4,28 @@ Cette application fournit une télécommande web sécurisée (Flask + Flask-Logi
 
 ## Structure modulaire (refactor 2025-10)
 
+### Dernières évolutions (2025-10-16)
+
+#### Migration vers le Stockage Externe
+- **Remplacement de MySQL** : Passage à une solution de stockage externe via API PHP avec fallback sur fichiers JSON locaux
+- **Fichiers de configuration** :
+  - `debug/webhook_config.json` : Configuration des webhooks et fenêtres horaires
+  - `debug/processing_prefs.json` : Préférences de traitement
+  - `debug/webhook_time_window.json` : Configuration de la fenêtre horaire des webhooks
+- **Avantages** :
+  - Simplification de l'infrastructure (plus besoin de base de données dédiée)
+  - Meilleure portabilité entre environnements
+  - Facilité de sauvegarde et de restauration
+
+#### Séparation des Fenêtres Horaire
+- **Deux fenêtres indépendantes** :
+  - **Fenêtre des e-mails** : Contrôle quand les e-mails sont récupérés du serveur IMAP
+  - **Fenêtre des webhooks** : Contrôle quand les notifications sont envoyées aux webhooks
+- **Gestion via API** :
+  - Endpoints dédiés pour la configuration (`/api/webhooks/time-window`)
+  - Persistance dans `webhook_time_window.json`
+  - Rechargement dynamique sans redémarrage
+
 ### Extractions de modules récentes (2025-10-12)
 
 #### Pipeline de Traitement des Emails
@@ -42,6 +64,7 @@ Cette application fournit une télécommande web sécurisée (Flask + Flask-Logi
   - `webhook_time_window.py` - Gestion des fenêtres horaires des webhooks
   - `runtime_flags.py` - Helpers de persistance des flags runtime (`load_runtime_flags()/save_runtime_flags()`)
   - `webhook_config.py` - Helpers de persistance de la configuration webhooks (`load_webhook_config()/save_webhook_config()`)
+  - `app_config_store.py` - Gestion unifiée de la configuration avec fallback sur stockage externe ou fichiers locaux
 
 #### Routes API
   - `api_webhooks.py` - Gestion de la configuration des webhooks
@@ -125,25 +148,69 @@ Objectifs: séparation des responsabilités, testabilité améliorée, réductio
 
 2) Dashboard Webhooks
 - La page permet de configurer et superviser:
-  - Fenêtre horaire globale des webhooks
-  - Polling IMAP (jours/heures, liste d'expéditeurs, déduplication sujet, vacances)
-  - Activation/désactivation du polling
-  - URLs Make.com et webhook custom
-  - Historique des webhooks (logs)
+  - **Fenêtre horaire des webhooks** : Configuration indépendante des horaires d'envoi
+  - **Fenêtre horaire des e-mails** : Configuration des horaires de récupération IMAP
+  - **Préférences de traitement** :
+    - Mots-clés d'exclusion (globaux et par webhook)
+    - Taille maximale des e-mails
+    - Paramètres de nouvelle tentative
+    - Miroir des médias vers le webhook personnalisé
+  - **Statut du système** :
+    - État du service de polling
+    - Dernière exécution
+    - Prochaine exécution planifiée
+  - **Journaux** : Consultation des logs et des webhooks récents
 
 3) Polling IMAP et webhook
-- Le thread `background_email_poller()` s'exécute pendant la plage horaire active définie.
+- Le thread `background_email_poller()` s'exécute pendant la plage horaire active des e-mails.
 - Orchestration (entrée unique): `email_processing/orchestrator.check_new_emails_and_trigger_webhook()`
-  - Se connecte via IMAP.
-  - Filtre les e-mails selon une liste d'expéditeurs autorisés (`SENDER_LIST_FOR_POLLING`).
-  - Déduplication via Redis (si configuré) sinon fallback mémoire/process simplifié, et déduplication par groupe de sujet.
-  - Routage métier via helpers orchestrateur:
-    - Présence « samedi »: `handle_presence_route()` -> Make présence (exclusif)
-    - Désabonnement (DESABO): `handle_desabo_route()` -> Make Autorepondeur (start_payload: « début » si early; sinon « maintenant »)
-    - Média Solution: `handle_media_solution_route()` -> Make Recadrage
-  - Extraction des liens: `link_extraction.extract_provider_links_from_text()` (landing pages uniquement)
-  - Payload webhook custom: `payloads.build_custom_webhook_payload()`
-  - Envoi Make.com centralisé: `webhook_sender.send_makecom_webhook()`
+  - **Connexion IMAP** : Établissement de la connexion avec reconnexion automatique en cas d'échec
+  - **Filtrage** :
+    - Filtrage par expéditeurs autorisés (`SENDER_LIST_FOR_POLLING`)
+    - Vérification de la taille maximale des e-mails
+    - Filtrage par mots-clés d'exclusion (globaux et spécifiques au webhook)
+  - **Déduplication** :
+    - Par ID d'e-mail (via Redis ou en mémoire)
+    - Par groupe de sujet (regroupement des e-mails similaires)
+  - **Traitement** :
+    - Vérification de la fenêtre horaire des webhooks
+    - Extraction des liens de médias (SwissTransfer, Dropbox, FromSmash)
+    - Construction du payload selon le type d'e-mail détecté
+  - **Notification** :
+    - Envoi du webhook personnalisé (si configuré)
+    - Miroir des médias vers le webhook personnalisé (si activé)
+    - Journalisation complète des actions et des erreurs
+  - **Gestion des erreurs** :
+    - Nouvelles tentatives en cas d'échec
+    - Délai entre les tentatives configurable
+    - Journalisation détaillée des erreurs
+
+## Gestion de la Configuration
+
+### Chargement de la Configuration
+1. **Stockage Externe** (prioritaire) :
+   - Requête HTTP vers l'API de configuration externe
+   - Authentification via `CONFIG_API_TOKEN`
+   - Timeout et gestion des erreurs
+2. **Fallback Local** :
+   - Lecture des fichiers JSON locaux (`debug/*.json`)
+   - Création avec valeurs par défaut si inexistants
+   - Validation des données lues
+
+### Mise à Jour de la Configuration
+1. **Via l'API** :
+   - Validation des données reçues
+   - Sauvegarde vers le stockage externe
+   - Mise à jour du fichier local en cas de succès
+2. **Via l'Interface Utilisateur** :
+   - Validation côté client et serveur
+   - Appel à l'API de configuration
+   - Mise à jour de l'interface en temps réel
+
+### Synchronisation
+- **Au Démarrage** : Chargement de la configuration depuis le stockage externe ou les fichiers locaux
+- **Pendant l'Exécution** : Rechargement dynamique lors des modifications via l'API/UI
+- **En Cas d'Erreur** : Utilisation de la dernière configuration valide avec notification de l'erreur
 
 ## Structure des fichiers clefs
 
@@ -166,18 +233,64 @@ Objectifs: séparation des responsabilités, testabilité améliorée, réductio
 
 ## Décisions techniques
 
-- Flask-Login pour simplicité des sessions et décorateurs `@login_required`.
-- Thread Python pour le polling IMAP: évite un scheduler externe, suffisant pour des volumétries modestes.
-- Redis optionnel: robuste pour éviter les retraitements multi-processus/instances.
-- Variables d'environnement pour toutes les informations sensibles ou spécifiques à l'environnement.
+- **Authentification** : Flask-Login pour la simplicité des sessions et décorateurs `@login_required`
+- **Polling IMAP** : Thread Python natif pour éviter la dépendance à un planificateur externe
+- **Stockage** :
+  - Migration de MySQL vers une solution externe avec fallback JSON local
+  - Redis optionnel pour la déduplication en environnement multi-instances
+  - Fichiers JSON pour la persistance locale des configurations
+- **Sécurité** :
+  - Variables d'environnement pour les informations sensibles
+  - Validation stricte des entrées utilisateur
+  - Journalisation détaillée des actions sensibles
+- **Évolutivité** :
+  - Architecture modulaire facilitant l'ajout de nouveaux fournisseurs de stockage
+  - API RESTful pour une intégration avec d'autres services
+  - Configuration dynamique sans redémarrage
+- **Maintenabilité** :
+  - Documentation complète et à jour
+  - Tests automatisés pour les composants critiques
+  - Journalisation structurée pour le débogage
 
-## Flags Runtime Persistés
+## Gestion des Fonctionnalités
 
-Pour faciliter le débogage en production sans redémarrage, un système de flags runtime permet l'activation/désactivation dynamique de fonctionnalités critiques.
-- Fichier de persistance: `debug/runtime_flags.json` (via `config/runtime_flags.py`).
-- Flags disponibles: `DISABLE_EMAIL_ID_DEDUP` (bypass déduplication par email ID), `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` (skip webhook custom si aucun lien détecté).
-- Chargés au démarrage et surchargeables via variables d'environnement; modifiables via API/UI.
-- Persistés pour survivre aux restarts.
+### Flags Runtime Persistés
+
+Pour faciliter le débogage en production sans redémarrage, un système de flags runtime permet l'activation/désactivation dynamique de fonctionnalités critiques :
+- **Stockage** : `debug/runtime_flags.json` (via `config/runtime_flags.py`)
+- **Flags disponibles** :
+  - `DISABLE_EMAIL_ID_DEDUP` : Désactive la déduplication par ID d'e-mail
+  - `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` : Autorise l'envoi de webhooks même sans liens détectés
+  - `MIRROR_MEDIA_TO_CUSTOM` : Active l'envoi des liens de médias au webhook personnalisé
+- **Gestion** :
+  - Chargement au démarrage
+  - Surcharge possible via variables d'environnement
+  - Modification via API/UI
+  - Persistance entre les redémarrages
+
+### Préférences de Traitement
+
+Configuration avancée du comportement du système :
+- **Stockage** : `debug/processing_prefs.json`
+- **Paramètres** :
+  - Mots-clés d'exclusion (globaux et par webhook)
+  - Taille maximale des e-mails
+  - Paramètres de nouvelle tentative
+  - Configuration du miroir des médias
+- **Validation** : Vérification des valeurs avant application
+- **API** : Endpoints pour la lecture et la mise à jour
+
+### Fenêtres Horaire
+
+Deux fenêtres horaires indépendantes :
+1. **E-mails** : Contrôle quand les e-mails sont récupérés du serveur IMAP
+   - Configuration via variables d'environnement
+   - Priorité sur la configuration du polling
+
+2. **Webhooks** : Contrôle quand les notifications sont envoyées
+   - Configuration via l'interface ou l'API
+   - Persistée dans `debug/webhook_time_window.json`
+   - Rechargement dynamique sans redémarrage
 
 ## Parsing Email Multi-Part
 
@@ -190,11 +303,35 @@ L'extraction d'informations des emails traite désormais les parties text/plain 
   - Chemin du lock configuré via `BG_POLLER_LOCK_FILE` (défaut: `/tmp/render_signal_server_email_poller.lock`).
   - Recommandation: n'activer le poller que sur un seul worker/process (ou service dédié) dans les déploiements Gunicorn multi-workers.
 
-## Fenêtre horaire des webhooks (override UI)
+## Fenêtres Horaire
 
-- Indépendante de la planification IMAP. Configure une contrainte horaire pour l'envoi des webhooks (incluant Make présence/désabonnement).
-- Configurable depuis l'UI (`dashboard.html`), persistée dans `debug/webhook_time_window.json` et rechargée dynamiquement via `config/webhook_time_window.py`.
-- Les champs `webhooks_time_start` / `webhooks_time_end` peuvent être ajoutés aux payloads (voir `docs/webhooks.md`).
+### Fenêtre Horaire des E-mails
+- **Objectif** : Contrôler quand les e-mails sont récupérés du serveur IMAP
+- **Configuration** :
+  - Variables d'environnement : `POLLING_ACTIVE_START_HOUR`, `POLLING_ACTIVE_END_HOUR`, `POLLING_ACTIVE_DAYS`
+  - Priorité sur la configuration du polling
+- **Comportement** :
+  - Aucun e-mail n'est récupéré en dehors de la fenêtre horaire
+  - La planification est gérée par le thread de polling
+
+### Fenêtre Horaire des Webhooks
+- **Objectif** : Contrôler quand les notifications sont envoyées aux webhooks
+- **Configuration** :
+  - Interface utilisateur (`dashboard.html`) ou API (`/api/webhooks/time-window`)
+  - Persistée dans `debug/webhook_time_window.json`
+  - Rechargement dynamique sans redémarrage
+- **Comportement** :
+  - Les webhooks sont mis en file d'attente en dehors de la fenêtre horaire
+  - Exécution différée jusqu'à la prochaine fenêtre active
+  - Désactivable pour un envoi immédiat
+
+### Intégration dans les Payloads
+Les champs suivants sont ajoutés aux payloads des webhooks :
+- `webhooks_time_start` : Heure de début de la fenêtre horaire (format `HHhMM`)
+- `webhooks_time_end` : Heure de fin de la fenêtre horaire (format `HHhMM`)
+- `webhook_window_enabled` : Indique si la fenêtre horaire est activée
+
+Ces champs permettent aux systèmes distants d'adapter leur comportement en fonction des contraintes horaires configurées.
 
 ## Limitations connues
 

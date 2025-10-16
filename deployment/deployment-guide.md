@@ -24,6 +24,7 @@ mkdir -p public_html
 - `public/test.php` → `public_html/test.php`
 
 **Upload to `/home/kidpixel/webhook.kidpixel.fr/config/`:**
+- `config/config_api.php` - Configuration de l'API (à personnaliser avec un token sécurisé)
 - `config/database.php`
 - `config/email.php`
 
@@ -41,15 +42,34 @@ mkdir -p public_html
 - `database/schema.sql` → `database/schema.sql`
 - `database/enhanced-schema.sql` → `database/enhanced-schema.sql`
 
-### Step 3: Set File Permissions
+### Step 3: Configure API
+Edit `/home/kidpixel/webhook.kidpixel.fr/config/config_api.php` and update:
+- `CONFIG_API_TOKEN` - Generate a strong random token
+- `CONFIG_API_STORAGE_DIR` - Set a secure directory for JSON storage (outside web root)
+
+Example:
+```php
+define('CONFIG_API_TOKEN', 'generate_a_strong_random_token_here');
+define('CONFIG_API_STORAGE_DIR', '/home/kidpixel/webhook.kidpixel.fr/data/app_config/');
+```
+
+### Step 4: Set File Permissions
 ```bash
+# Create storage directory if it doesn't exist
+mkdir -p /home/kidpixel/webhook.kidpixel.fr/data/app_config
+
 # Set directory permissions
-chmod 755 /home/kidpixel/webhook.kidpixel.fr
-chmod 755 /home/kidpixel/webhook.kidpixel.fr/public_html
-chmod 755 /home/kidpixel/webhook.kidpixel.fr/config
-chmod 755 /home/kidpixel/webhook.kidpixel.fr/src
-chmod 755 /home/kidpixel/webhook.kidpixel.fr/database
-chmod 755 /home/kidpixel/webhook.kidpixel.fr/logs
+chmod 750 /home/kidpixel/webhook.kidpixel.fr
+chmod 750 /home/kidpixel/webhook.kidpixel.fr/public_html
+chmod 750 /home/kidpixel/webhook.kidpixel.fr/config
+chmod 750 /home/kidpixel/webhook.kidpixel.fr/src
+chmod 750 /home/kidpixel/webhook.kidpixel.fr/database
+chmod 770 /home/kidpixel/webhook.kidpixel.fr/logs
+chmod 770 /home/kidpixel/webhook.kidpixel.fr/data/app_config
+
+# Set ownership (adjust user:group as needed)
+chown -R kidpixel:www-data /home/kidpixel/webhook.kidpixel.fr
+```
 
 # Set file permissions
 chmod 644 /home/kidpixel/webhook.kidpixel.fr/public_html/*.php

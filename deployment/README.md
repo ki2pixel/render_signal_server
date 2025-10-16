@@ -25,14 +25,19 @@ Note: For backward compatibility with existing external systems, ALL detected UR
 - **MySQL Logging** - Stores processed URLs with timestamps
 - **Web Dashboard** - Monitor processing activity and logs
 - **Manual Testing** - Test functionality without webhooks
-- **Error Logging** - Comprehensive error tracking and debugging
+- **Secure Configuration API** - Manages application settings via secure API
 
 ## 📁 Project Structure
 
 ```
 ├── config/
+│   ├── config_api.php    # Configuration de l'API (jeton, répertoire de stockage)
 │   ├── database.php      # Database configuration
 │   └── email.php         # Email/IMAP configuration
+├── public_html/
+│   ├── config_api.php    # Point d'entrée de l'API (endpoint HTTP)
+│   ├── dashboard.php     # Monitoring dashboard
+│   └── index.php         # Main entry point
 ├── src/
 │   ├── WebhookHandler.php      # Main webhook processing logic
 │   ├── EmailProcessor.php      # IMAP email retrieval
@@ -52,6 +57,72 @@ Note: For backward compatibility with existing external systems, ALL detected UR
 ```
 
 ## ⚙️ Configuration
+
+### API Configuration
+
+The application includes a secure JSON storage API with two main components:
+
+1. **Configuration File** (`config/config_api.php`):
+   - Définit le jeton d'API et le répertoire de stockage
+   - Doit être sécurisé et ne jamais être commit avec des valeurs de production
+
+2. **API Endpoint** (`public_html/config_api.php`):
+   - Point d'entrée HTTP pour l'API
+   - Gère les requêtes GET/POST pour la configuration
+   - Vérifie l'authentification via le jeton
+
+#### Security
+- Utilise l'authentification Bearer token
+- Toutes les requêtes doivent inclure: `Authorization: Bearer <TOKEN>`
+- Les fichiers de configuration sont stockés en dehors de la racine web
+- Le jeton est défini dans `config/config_api.php`
+
+#### Endpoints
+
+**GET /config_api.php**
+```
+GET /config_api.php?key=webhook_config
+Authorization: Bearer YOUR_API_TOKEN
+```
+
+**POST /config_api.php**
+```
+POST /config_api.php
+Authorization: Bearer YOUR_API_TOKEN
+Content-Type: application/json
+
+{
+  "key": "webhook_config",
+  "config": { ... }
+}
+```
+
+#### Configuration
+
+1. **Configuration File** (`config/config_api.php`):
+   ```php
+   // Token d'accès API (à changer impérativement en prod)
+   if (!defined('CONFIG_API_TOKEN')) {
+       define('CONFIG_API_TOKEN', 'generate_secure_token_here');
+   }
+
+   // Répertoire de stockage des fichiers JSON (en dehors de public_html)
+   if (!defined('CONFIG_API_STORAGE_DIR')) {
+       $base = realpath(__DIR__ . '/../');
+       $dir = $base . '/data/app_config';
+       define('CONFIG_API_STORAGE_DIR', $dir);
+   }
+   ```
+
+2. **API Endpoint** (`public_html/config_api.php`):
+   - Point d'entrée HTTP pour les requêtes d'API
+   - Inclut la logique de gestion des requêtes et de validation
+
+> **Important** :
+> - Ne jamais committer de vrais tokens dans le dépôt
+> - Le répertoire de stockage doit être en dehors de la racine web
+> - Les permissions doivent être correctement définies (750 pour les dossiers, 640 pour les fichiers)
+> - Utiliser des variables d'environnement en production
 
 ### Database Configuration
 Edit `config/database.php`:

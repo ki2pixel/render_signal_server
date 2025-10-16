@@ -1,9 +1,3 @@
-## Notes sur la fenêtre horaire (UI)
-
-- Les champs `webhooks_time_start` et `webhooks_time_end` sont ajoutés par le serveur lorsque une fenêtre horaire est configurée via l'UI (`dashboard.html`).
-- Si aucune contrainte n'est active, ils peuvent être absents ou `null`.
-- Ils s'appliquent également aux webhooks Make spécifiques à la présence.
-
 # Webhooks
 
 ## Architecture du Flux de Webhooks
@@ -13,30 +7,50 @@
 Cette application utilise un flux de webhooks unifié avec les caractéristiques suivantes :
 
 1. **Point d'entrée unique** : Tous les webhooks sortants sont envoyés vers l'URL configurée dans `WEBHOOK_URL`
-2. **Contrôle de fenêtre horaire** : Possibilité de restreindre l'envoi des webhooks à des plages horaires spécifiques
-3. **Dépréciation des endpoints Make.com** : Les anciens webhooks spécifiques (Recadrage/Autorépondeur) sont désormais **dépréciés** et **non utilisés**
-4. **Contrôle manuel de Make** : Le contrôle des scénarios Make s'effectue directement dans l'interface Make.com
+2. **Contrôle de fenêtre horaire** : Possibilité de restreindre l'envoi des webhooks à des plages horaires spécifiques, indépendamment de la réception des e-mails
+3. **Suppression des contrôles Make.com** : Les contrôles automatisés des scénarios Make ont été retirés en raison de problèmes d'authentification (erreurs 403)
+4. **Gestion manuelle requise** : Les scénarios Make doivent être contrôlés manuellement depuis l'interface Make.com
+5. **Miroir des médias** : Option pour envoyer automatiquement les liens de médias (SwissTransfer, Dropbox, FromSmash) vers le webhook configuré
 
 ### Configuration Requise
 
 - `WEBHOOK_URL` : URL cible pour tous les webhooks sortants
-- `WEBHOOK_SSL_VERIFY` : Vérification SSL pour les appels sortants (désactiver uniquement pour le débogage)
-- `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` : Autoriser l'envoi même sans liens détectés
+- `WEBHOOK_SSL_VERIFY` : Vérification SSL pour les appels sortants (désactiver uniquement pour le débogage, défaut: `true`)
+- `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` : Si `true`, envoie les webhooks même sans liens détectés (défaut: `false`)
+- `MIRROR_MEDIA_TO_CUSTOM` : Si `true`, envoie automatiquement les liens de médias (SwissTransfer, Dropbox, FromSmash) vers le webhook configuré (défaut: `false`)
 
 ### Gestion du Temps
 
-- **Fenêtre Horaire Globale** : Restreint l'envoi des webhooks à une plage horaire spécifique
-  - Configurable via l'interface utilisateur ou l'API
-  - Persistée dans `debug/webhook_config.json`
+- **Fenêtre Horaire des Webhooks** : Restreint l'envoi des webhooks à une plage horaire spécifique
+  - Totalement indépendante de la fenêtre horaire des e-mails
+  - Configurable via l'interface utilisateur ou l'API (`/api/webhooks/time-window`)
+  - Persistée dans `debug/webhook_time_window.json`
   - Format : `HHhMM` (ex: "09h30", "17h00")
-  - Désactivable en laissant les champs vides
+  - Désactivable via l'interface ou en définissant `start_hour` et `end_hour` à `null` via l'API
+  - Rechargée dynamiquement sans redémarrage du serveur
+
+- **Fenêtre Horaire des E-mails** : Contrôle quand les e-mails sont récupérés du serveur IMAP
+  - Configurable via les variables d'environnement `POLLING_ACTIVE_START_HOUR`, `POLLING_ACTIVE_END_HOUR` et `POLLING_ACTIVE_DAYS`
+  - Si un e-mail est reçu en dehors de cette fenêtre, il ne sera pas traité avant le prochain cycle de polling dans la fenêtre active
 
 ### Compatibilité
 
 Pour assurer la rétrocompatibilité :
-- Les anciens endpoints Make.com sont redirigés vers le flux unifié
-- Les champs hérités (`dropbox_urls`, `dropbox_first_url`) sont maintenus
+- Les champs hérités (`dropbox_urls`, `dropbox_first_url`) sont maintenus dans le payload
 - Les anciens noms de variables d'environnement sont toujours supportés mais dépréciés
+- Les anciens endpoints Make.com ont été supprimés et ne sont plus disponibles
+
+### Miroir des Médias
+
+La fonctionnalité de miroir des médias permet d'envoyer automatiquement les liens de téléchargement vers le webhook configuré :
+
+- **Activation** : Définir `mirror_media_to_custom: true` dans `processing_prefs.json` ou via l'interface
+- **Format** : Les liens sont envoyés dans le champ `delivery_links` du payload webhook
+- **Fournisseurs supportés** :
+  - SwissTransfer
+  - Dropbox
+  - FromSmash
+- **Journalisation** : Toutes les tentatives d'envoi sont journalisées dans les logs du serveur
 
 ## Webhooks sortants – Format recommandé
 
@@ -117,43 +131,43 @@ Notes:
 
 Le serveur cible peut renvoyer `2xx` pour signaler le succès. Des `4xx/5xx` doivent être traqués dans les logs de cette application.
 
-## Intégration avec Make.com
+## Gestion des Webhooks
 
-### Statut Actuel
+### Configuration du Webhook Principal
 
-- **Webhooks dépréciés** : Les webhooks spécifiques « Recadrage » et « Autorépondeur » ne sont plus utilisés
-- **Contrôle manuel requis** : Les scénarios Make doivent être contrôlés directement dans l'interface Make.com
-- **Webhooks de présence** : Optionnels, utilisent `PRESENCE_TRUE_MAKE_WEBHOOK_URL` / `PRESENCE_FALSE_MAKE_WEBHOOK_URL`
+1. **Variables d'environnement** :
+   - `WEBHOOK_URL` : URL cible pour tous les webhooks sortants
+   - `WEBHOOK_SSL_VERIFY` : Vérification SSL (désactiver uniquement en développement)
+   - `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` : Autoriser l'envoi même sans liens détectés
 
-### Configuration Recommandée
-
-1. **Dans Make.com** :
-   - Créez un scénario avec un déclencheur Webhook
-   - Utilisez l'URL fournie par Make comme `WEBHOOK_URL`
-   - Configurez le traitement des données dans Make
-
-2. **Dans le Dashboard** :
+2. **Via l'interface utilisateur** :
    - Accédez à l'onglet "Webhooks"
-   - Collez l'URL de votre webhook Make.com
-   - Configurez la fenêtre horaire si nécessaire
+   - Saisissez l'URL de votre webhook
+   - Activez/désactivez la vérification SSL si nécessaire
+   - Activez l'option pour autoriser les webhooks sans liens
+   - Cliquez sur "Enregistrer"
 
-### Migration depuis l'Ancien Système
+### Gestion des Erreurs
 
-1. **Ancien Flux** :
-   ```
-   Email → Filtrage → Webhook spécifique (Recadrage/Autorépondeur) → Make.com
-   ```
-
-2. **Nouveau Flux** :
-   ```
-   Email → Filtrage → Webhook unifié (WEBHOOK_URL) → Make.com → Routage basé sur le contenu
-   ```
+- **Journalisation** : Toutes les tentatives d'envoi sont journalisées avec le statut HTTP
+- **Nouvelle tentative** : Jusqu'à 3 tentatives en cas d'échec (configurable)
+- **Délai entre les tentatives** : 5 secondes par défaut (configurable)
+- **Notification** : Les échecs sont signalés dans l'interface utilisateur
 
 ### Dépannage
 
-- **Erreur 403** : Vérifiez que vous utilisez la nouvelle URL de webhook
-- **Données manquantes** : Assurez-vous que votre scénario Make attend le format de payload unifié
-- **Délais** : Les webhooks sont soumis à la fenêtre horaire configurée
+- **Aucun webhook reçu** :
+  - Vérifiez que la fenêtre horaire des webhooks est correctement configurée
+  - Vérifiez que le serveur peut accéder à l'URL du webhook
+  - Consultez les logs du serveur pour les erreurs
+
+- **Erreurs 403/404** :
+  - Vérifiez que l'URL du webhook est correcte
+  - Vérifiez les éventuelles restrictions d'accès sur le serveur cible
+
+- **Données manquantes** :
+  - Assurez-vous que votre récepteur attend le format de payload documenté
+  - Vérifiez que les champs obligatoires sont présents dans l'e-mail source
 
 ## Bonnes Pratiques
 
