@@ -15,6 +15,7 @@ import os
 import json
 from pathlib import Path
 from utils.time_helpers import parse_time_hhmm, is_within_time_window_local
+from utils.text_helpers import strip_leading_reply_prefixes
 
 # NOTE: We import lazily inside functions to avoid circular imports at module load
 
@@ -225,6 +226,24 @@ def check_new_emails_and_trigger_webhook() -> int:
                     except Exception:
                         pass
                     continue
+
+                # Skip replies/forwards: if subject starts with reply/forward prefixes (Re:, Fw:, etc.)
+                try:
+                    original_subject = subject or ''
+                    core_subject = strip_leading_reply_prefixes(original_subject)
+                    if core_subject != original_subject:
+                        # Treat as processed without sending any webhook
+                        logger.info(
+                            "IGNORED: Skipping webhook because subject is a reply/forward (email_id=%s, subject='%s')",
+                            email_id,
+                            original_subject,
+                        )
+                        mark_email_id_as_processed_redis(email_id)
+                        mark_email_as_read_imap(mail, num)
+                        continue
+                except Exception:
+                    # Defensive: never break the loop due to subject filtering errors
+                    pass
 
                 # Extract text/plain and text/html content for pattern checks and link extraction
                 full_text = ""

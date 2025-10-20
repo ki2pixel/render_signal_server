@@ -181,6 +181,13 @@ Le serveur cible peut renvoyer `2xx` pour signaler le succès. Des `4xx/5xx` doi
 - Vérifiez régulièrement les logs d'erreur
 - Surveillez le taux d'échec des webhooks
 
+### Règles d'Ignorance Automatique (anti-bruit)
+
+- Les e-mails dont le sujet commence par un préfixe de réponse ou transfert sont ignorés pour l'envoi de webhooks.
+- Préfixes supportés (insensibles à la casse) : `Re:`, `Fw:`, `Fwd:`, `TR:`, `RV:`, `confirmation:`.
+- Raison : éviter les envois redondants lorsque des échanges se poursuivent sur le même sujet.
+- Implémentation : la fonction `check_new_emails_and_trigger_webhook()` dans `email_processing/orchestrator.py` utilise `utils/text_helpers.strip_leading_reply_prefixes()` pour détecter ces préfixes, marque l'e-mail comme traité/lu et passe au suivant (log `IGNORED: Skipping webhook because subject is a reply/forward ...`).
+
 ## Sécurité
 
 - Évitez d'envoyer des secrets dans le body. Utilisez si besoin un header `Authorization` ou un paramètre signé (HMAC).
