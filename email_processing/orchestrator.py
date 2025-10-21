@@ -1028,9 +1028,20 @@ def send_custom_webhook_flow(
 
     for attempt in range(retries + 1):
         try:
+            # Build payload to send; include delivery_links if available so receiver can consume directly
+            payload_to_send = dict(payload_for_webhook) if isinstance(payload_for_webhook, dict) else {
+                "microsoft_graph_email_id": email_id,
+                "subject": subject or "",
+            }
+            if delivery_links:
+                try:
+                    payload_to_send["delivery_links"] = delivery_links
+                except Exception:
+                    # Defensive: do not fail send due to payload mutation
+                    pass
             webhook_response = requests.post(
                 webhook_url,
-                json=payload_for_webhook,
+                json=payload_to_send,
                 headers={'Content-Type': 'application/json'},
                 timeout=timeout_sec,
                 verify=webhook_ssl_verify,
