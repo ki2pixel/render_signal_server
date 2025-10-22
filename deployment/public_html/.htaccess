@@ -1,0 +1,107 @@
+# Security and Configuration for webhook.kidpixel.fr
+# Place this file in the public_html directory
+
+# Enable rewrite engine
+RewriteEngine On
+
+# ------------------------------------------------------------
+# Environment variables (Apache SetEnv) for secure credentials
+# ------------------------------------------------------------
+# Define sensitive values as environment variables so PHP can read them
+# via getenv()/$_SERVER. Do NOT commit real secrets to version control.
+# Uncomment and set on the server (or configure via hosting panel):
+#
+# SetEnv GMAIL_CLIENT_ID "your_client_id_here"
+# SetEnv GMAIL_CLIENT_SECRET "your_client_secret_here"
+# SetEnv GMAIL_REFRESH_TOKEN "your_refresh_token_here"
+# SetEnv GMAIL_FROM_EMAIL "your_email_here"
+# SetEnv GMAIL_FROM_NAME "Your Name"
+# SetEnv APP_TZ "Europe/Paris"
+# SetEnv AUTOREPONDEUR_TO "technique@media-solution.fr"
+# SetEnv RECADRAGE_TO "technique@media-solution.fr"
+#
+# Note: Some hosts require using a control panel to define environment
+# variables instead of .htaccess. In that case, leave these lines commented
+# and set the variables in the hosting configuration UI.
+
+# Security Headers
+<IfModule mod_headers.c>
+    # Prevent clickjacking
+    Header always append X-Frame-Options SAMEORIGIN
+    
+    # Prevent MIME type sniffing
+    Header always set X-Content-Type-Options nosniff
+    
+    # Enable XSS protection
+    Header always set X-XSS-Protection "1; mode=block"
+    
+    # Referrer policy
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Prevent access to sensitive files
+<FilesMatch "\.(log|sql|md|json|txt)$">
+    Require all denied
+</FilesMatch>
+
+# Prevent access to hidden files
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+# Custom error pages (optional)
+ErrorDocument 404 /index.php
+ErrorDocument 403 /index.php
+
+# PHP Configuration
+<IfModule mod_php7.c>
+    # Hide PHP version
+    php_flag expose_php off
+    
+    # Set memory limit
+    php_value memory_limit 128M
+    
+    # Set execution time
+    php_value max_execution_time 60
+    
+    # File upload settings
+    php_value upload_max_filesize 10M
+    php_value post_max_size 10M
+</IfModule>
+
+# Compression (if mod_deflate is available)
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/plain
+    AddOutputFilterByType DEFLATE text/html
+    AddOutputFilterByType DEFLATE text/xml
+    AddOutputFilterByType DEFLATE text/css
+    AddOutputFilterByType DEFLATE application/xml
+    AddOutputFilterByType DEFLATE application/xhtml+xml
+    AddOutputFilterByType DEFLATE application/rss+xml
+    AddOutputFilterByType DEFLATE application/javascript
+    AddOutputFilterByType DEFLATE application/x-javascript
+    AddOutputFilterByType DEFLATE application/json
+</IfModule>
+
+# Cache control for static files
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType image/png "access plus 1 month"
+    ExpiresByType image/jpg "access plus 1 month"
+    ExpiresByType image/jpeg "access plus 1 month"
+    ExpiresByType image/gif "access plus 1 month"
+</IfModule>
+
+# Force HTTPS (uncomment if you want to force SSL)
+# RewriteCond %{HTTPS} off
+# RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Webhook endpoint routing
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^webhook/?$ index.php [L,QSA]
+
+# API endpoint routing (alternative webhook path)
+RewriteRule ^api/?$ index.php [L,QSA]
