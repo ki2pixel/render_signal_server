@@ -211,15 +211,17 @@ start htmlcov/index.html  # Windows
 
 ### Couverture actuelle et objectifs
 
+- **Suite complète** : **322 tests verts** (statut 2025-10-22)
 - **Couverture globale actuelle** : **82.94%** (dernière mise à jour : 2025-10-13)
 - **Modules critiques** (`email_processing/`, `auth/`, `utils/`)
-  - `email_processing/orchestrator.py` : **80.9%** (tests unitaires complets pour les helpers d'orchestration)
+  - `email_processing/orchestrator.py` : **80.9%** (tests unitaires pour les helpers d'orchestration + validations des détecteurs)
   - Autres modules critiques : **≥ 80%**
-- **Routes** (`routes/`) : **≥ 70%** (atteint).
-  - Points saillants après amélioration ciblée:
+- **Routes** (`routes/`) : **≥ 70%** (atteint)
+  - Points saillants après amélioration ciblée :
     - `routes/api_processing.py` : **84.30%**
     - `routes/api_utility.py` : **96.43%**
     - `routes/dashboard.py` : **96.15%**
+- **Robustesse `routes/api_logs.py`** : tri déterministe et priorité fichier (lignes 76-84) testés pour garantir les diagnostics sous charge et éviter les flakiness.
 - **Objectif global** : **≥ 80%** (actuellement atteint)
 
 ### Fichiers exclus de la couverture

@@ -99,21 +99,16 @@ Cette application fournit une télécommande web sécurisée (Flask + Flask-Logi
   - `imap_client.py` : création de la connexion IMAP
   - `pattern_matching.py` : détection des patterns e-mail (Média Solution, DESABO), constante `URL_PROVIDERS_PATTERN`
   - `orchestrator.py` : point d'entrée unique pour le cycle de polling et helpers d'orchestration
-    - `check_new_emails_and_trigger_webhook()`: Point d'entrée principal qui délègue à l'implémentation legacy
-    - `handle_presence_route()`: Gère la détection et le routage des emails de présence "samedi"
-      - Paramètres: subject, full_email_content, email_id, sender_raw, tz_for_polling, etc.
-      - Retourne: bool (True si routé avec succès)
-    - `handle_desabo_route()`: Traite les demandes de désabonnement (DESABO)
-      - Paramètres: subject, full_email_content, html_email_content, email_id, etc.
-      - Gestion des fenêtres horaires et construction du payload spécifique
-    - `handle_media_solution_route()`: Gère les emails de type Média Solution
-      - Extraction des liens de livraison et envoi des webhooks Make.com
-      - Miroir optionnel vers le webhook personnalisé si `mirror_media_to_custom` activé (pour persister les liens)
-    - `compute_desabo_time_window()`: Calcule la fenêtre temporelle pour les webhooks DESABO
-      - Gère les cas "early_ok" et les contraintes horaires
-    - `send_custom_webhook_flow()`: Flux complet d'envoi de webhook avec gestion des erreurs
-      - Gestion des retries, timeouts, et journalisation
-      - Validation des liens de livraison
+    - `check_new_emails_and_trigger_webhook()` : Flux natif complet (plus de délégation legacy) qui gère
+      - la connexion IMAP, la déduplication, l'extraction des contenus plain/HTML
+      - l'inférence de `detector` (`recadrage` via `check_media_solution_pattern`, `desabonnement_journee_tarifs` via `check_desabo_conditions`)
+      - le contrôle de la fenêtre horaire globale avec exceptions par détecteur :
+        - `desabonnement_journee_tarifs` contourne la fenêtre et force l'envoi
+        - `recadrage` est marqué lu/traité hors fenêtre pour éviter les retraits
+      - le déclenchement du flux webhook personnalisé `send_custom_webhook_flow()` (payloads unifiés + miroir médias)
+    - `handle_presence_route()` : Gère la détection et le routage des emails de présence "samedi"
+    - `compute_desabo_time_window()` : Calcule la fenêtre temporelle pour les webhooks DESABO (`early_ok`, start=`maintenant`)
+    - `send_custom_webhook_flow()` : Flux complet d'envoi de webhook avec gestion des erreurs
   - `link_extraction.py` : extraction des URLs fournisseurs (Dropbox, FromSmash, SwissTransfer)
   - `payloads.py` : constructeurs de payloads (webhook custom, DESABO Make)
   - `webhook_sender.py` : envoi Make.com avec injection `logger`/`log_hook`

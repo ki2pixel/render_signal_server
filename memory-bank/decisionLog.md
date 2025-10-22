@@ -2,6 +2,15 @@
 
 Ce document enregistre les décisions techniques et architecturales importantes prises au cours du projet.
 
+**[2025-10-22 19:16:00] - Règles hors fenêtre (détecteur) et limites d'infrastructure de tests**
+- **Décision** : Implémenter dans `email_processing/orchestrator.py` des règles spécifiques hors fenêtre horaire des webhooks:
+  - `detector=recadrage` → ne pas envoyer, marquer l'email comme lu + traité.
+  - `detector=desabonnement_journee_tarifs` → ignorer la fenêtre et envoyer immédiatement.
+- **Contexte** : Séparation des fenêtres horaires emails vs webhooks confirmée (voir sessions précédentes).
+- **Implémentation** : Logique ajoutée lignes 411-453 de `email_processing/orchestrator.py`, avec logs explicites. Docs mises à jour (`docs/webhooks.md`, `docs/email_polling.md`).
+- **Tests** : Tentatives de stabilisation des tests d’intégration en patchant l’ordre d’imports (env vars avant imports), forçage de réimport (`sys.modules.pop()`), et ajustements de monkeypatch (namespaces `app_render` vs orchestrator). Les tests ciblés restent non verts car la logique n’est pas atteinte (sorties précoces + couplage module-level).
+- **Suivi** : Prévoir un refactor de l’infrastructure de tests (imports tardifs, DI des dépendances, fixtures d’env, tests d’intégration E2E IMAP) pour valider la logique en bout-en-bout.
+
 - **[2025-10-16 22:41:00] - Synchronisation de la fenêtre horaire globale avec le stockage externe**
     - **Décision** : Permettre la mise à jour de la fenêtre horaire globale via des modifications directes dans le fichier JSON externe, avec synchronisation automatique au chargement du tableau de bord.
     - **Implémentation** :

@@ -132,7 +132,7 @@ Le fichier `debug/processing_prefs.json` contient des paramètres de traitement 
 
 - `require_attachments` (bool) : 
   - Si `true`, n'envoie le webhook que pour les e-mails avec pièces jointes
-  - Par défaut: `false`
+  - Par défaut: `true`
 
 - `max_email_size_mb` (int|null) : 
   - Taille maximale des e-mails en Mo 
@@ -160,10 +160,10 @@ Le fichier `debug/processing_prefs.json` contient des paramètres de traitement 
   - Par défaut: `true`
 
 - `mirror_media_to_custom` (bool) : 
-  - **Paramètre critique** - Active l'envoi des liens de téléchargement (SwissTransfer, Dropbox, FromSmash) vers le webhook personnalisé configuré dans `WEBHOOK_URL`
-  - `true` : Active le miroir vers le webhook personnalisé (recommandé pour la production)
-  - `false` : Désactive l'envoi des liens au webhook personnalisé
-  - Par défaut: `false`
+  - **Paramètre critique** - Active l'envoi des liens de téléchargement (SwissTransfer, Dropbox, FromSmash) vers le webhook personnalisé configuré dans `WEBHOOK_URL`.
+  - `true` : Active le miroir vers le webhook personnalisé (défaut depuis `routes/api_processing.py`).
+  - `false` : Désactive l'envoi des liens au webhook personnalisé.
+  - Lorsqu'il est désactivé, seuls les flux Make.com reçoivent les liens médias; ce paramètre n'affecte pas la détection `delivery_links` ou la journalisation côté poller.
 
 - `enable_subject_group_dedup` (bool) :
   - Active la déduplication par groupe de sujets

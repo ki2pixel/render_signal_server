@@ -2,6 +2,13 @@
 
 ## Terminé
 
+-   [2025-10-22 20:55] **Stabilisation orchestrateur, webhooks et journaux**
+    -   Durcissement de `email_processing/orchestrator.py` (helpers runtime, délégation legacy, règles hors fenêtre, retour explicite pour Media Solution)
+    -   Comportement de retry Make.com sécurisé dans `email_processing/webhook_sender.py`
+    -   Alignement des défauts et alias runtime dans `routes/api_config.py`, `routes/api_processing.py`, `routes/api_webhooks.py`
+    -   Lecture fichier prioritaire, filtrage robuste et tri déterministe dans `routes/api_logs.py`
+    -   Suite de 322 tests désormais verte
+
 -   [2025-10-16 22:41] **Synchronisation de la fenêtre horaire globale**
     - Mise à jour de `GET /api/get_webhook_time_window` pour lire depuis le stockage externe
     - Synchronisation automatique de l'état interne au chargement du tableau de bord

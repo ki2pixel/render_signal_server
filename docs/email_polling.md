@@ -217,6 +217,21 @@ Objectif: n'envoyer qu'un seul webhook par « série » d'emails portant un suje
   - `AUTOREPONDEUR_MAKE_WEBHOOK_URL` (anciennement `DESABO_MAKE_WEBHOOK_URL`) pour les emails d'autorépondeur (désabonnement/journée/tarifs habituels)
 - Les avertissements SSL peuvent être désactivés côté client si `WEBHOOK_SSL_VERIFY=false` (déconseillé en production). Préférer des certificats valides en prod.
 
+#### Détection des détecteurs et règles hors fenêtre
+
+Le poller infère un `detector` pour chaque email à partir des motifs décrits dans `email_processing/pattern_matching.py` (lignes 442-492 de `check_new_emails_and_trigger_webhook()`):
+
+- **recadrage** : résultat positif de `check_media_solution_pattern(...)` (flux Média Solution). Retourne aussi `delivery_time` pour le payload.
+- **desabonnement_journee_tarifs** : fallback via `check_desabo_conditions(...)` (autorépondeur DESABO) avec option de vérifier la présence d'un lien Dropbox "request".
+
+Ces détecteurs pilotent le comportement hors fenêtre horaire (« dedicated webhook window », lignes 512-553) :
+
+- **desabonnement_journee_tarifs (DESABO)** : envoi autorisé même hors fenêtre des webhooks. Les logs indiquent le bypass (`WEBHOOK_GLOBAL_TIME_WINDOW: Outside window ... detector=DESABO -> bypassing`).
+- **recadrage** : en dehors de la fenêtre, l'envoi est ignoré et l'email est marqué lu/traité (`mark_email_as_read_imap`, `mark_email_id_as_processed_redis`). Log `IGNORED: RECADRAGE skipped outside window...` pour traçabilité.
+- **Autres détecteurs / sans détecteur** : comportement standard (skip sans marquer traité). L'email sera réévalué lors d'un cycle ultérieur quand la fenêtre est ouverte.
+
+Référence : `email_processing/orchestrator.py`, fonction `check_new_emails_and_trigger_webhook()`, blocs « detector inference » et « outside window ».
+
 ### Flag ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS
 
 - Défaut `false` pour éviter les appels webhook custom prévisibles en échec (422).

@@ -284,39 +284,43 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
 ### Configuration des webhooks
 
 - `GET /api/webhooks/config` (protégé)
-  - Retourne la configuration actuelle des webhooks
+  - Retourne la configuration actuelle des webhooks, fusion des valeurs persistées et des valeurs par défaut d'environnement.
+  - Le champ `webhook_url` est masqué (suffixe `***`) côté lecture pour éviter d'exposer l'URL complète dans l'interface.
   - Réponse:
     ```json
     {
       "success": true,
       "config": {
-        "webhook_url": "https://...",
-        "webhook_enabled": true,
+        "webhook_url": "https://webhook.example.com/***",
+        "presence_flag": false,
         "webhook_ssl_verify": true,
-        "custom_webhook_url": "https://...",
-        "custom_webhook_enabled": true,
-        "mirror_media_to_custom": false
+        "webhook_sending_enabled": true,
+        "webhook_time_start": "09h00",
+        "webhook_time_end": "18h00"
       }
     }
     ```
 
 - `POST /api/webhooks/config` (protégé)
-  - Met à jour la configuration des webhooks
-  - Corps JSON (tous les champs sont optionnels) :
+  - Met à jour la configuration des webhooks. Tous les champs sont optionnels et sont fusionnés avec la configuration courante.
+  - Corps JSON :
     ```json
     {
-      "webhook_url": "https://...",
-      "webhook_enabled": true,
-      "webhook_ssl_verify": true,
-      "custom_webhook_url": "https://...",
-      "custom_webhook_enabled": true,
-      "mirror_media_to_custom": false
+      "webhook_url": "https://webhook.example.com/endpoint",
+      "presence_flag": true,
+      "webhook_ssl_verify": false,
+      "webhook_sending_enabled": false,
+      "presence_true_url": "https://hook.eu2.make.com/<token>",
+      "presence_false_url": "https://hook.eu2.make.com/<token>",
+      "webhook_time_start": "09h00",
+      "webhook_time_end": "18h00"
     }
     ```
   - Réponses :
     - 200 : `{ "success": true, "message": "Configuration des webhooks mise à jour avec succès" }`
     - 400 : `{ "success": false, "message": "..." }` (erreur de validation)
     - 500 : `{ "success": false, "message": "..." }` (erreur serveur)
+  - `webhook_sending_enabled` contrôle l'envoi global des webhooks personnalisés. S'il est positionné à `false`, le poller continue de traiter les emails mais n'enverra pas de requêtes HTTP sortantes tant que le flag n'est pas réactivé.
 
 ### Gestion des fenêtres horaires
 

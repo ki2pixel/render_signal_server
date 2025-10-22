@@ -111,6 +111,12 @@ def update_webhook_config():
     if "webhook_sending_enabled" in payload:
         config["webhook_sending_enabled"] = bool(payload["webhook_sending_enabled"])
 
+    # Optional Make.com presence URLs: accept and normalize
+    if "presence_true_url" in payload:
+        config["presence_true_url"] = _normalize_make_webhook_url(payload.get("presence_true_url"))
+    if "presence_false_url" in payload:
+        config["presence_false_url"] = _normalize_make_webhook_url(payload.get("presence_false_url"))
+
     # Optional: accept time window fields here too, for convenience
     # Validate format using parse_time_hhmm when provided and non-empty
     if "webhook_time_start" in payload or "webhook_time_end" in payload:
@@ -129,10 +135,11 @@ def update_webhook_config():
             config["webhook_time_start"] = start
             config["webhook_time_end"] = end
 
-    # Nettoyer les champs obsolètes s'ils existent
+    # Nettoyer les champs obsolètes s'ils existent (ne pas supprimer presence_* gérés ci-dessus)
     obsolete_fields = [
-        "recadrage_webhook_url", "presence_true_url", "presence_false_url", 
-        "autorepondeur_webhook_url", "polling_enabled"
+        "recadrage_webhook_url",
+        "autorepondeur_webhook_url",
+        "polling_enabled",
     ]
     for field in obsolete_fields:
         if field in config:

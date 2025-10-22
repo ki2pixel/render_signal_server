@@ -1,17 +1,25 @@
 {
-  "active_days": [0, 1, 2, 3, 4],
-  "active_start_hour": 9,
-  "active_end_hour": 23,
-  "enable_subject_group_dedup": true,
-  "sender_of_interest_for_polling": [
-    "achats@media-solution.fr",
-    "camille.moine.pro@gmail.com",
-    "a.peault@media-solution.fr",
-    "v.lorent@media-solution.fr",
-    "technique@media-solution.fr",
-    "t.deslus@media-solution.fr"
-  ],
-  "enable_polling": true,
-  "vacation_start": null,
-  "vacation_end": null
+    "active_days": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+    ],
+    "active_start_hour": 9,
+    "active_end_hour": 19,
+    "enable_subject_group_dedup": true,
+    "sender_of_interest_for_polling": [
+        "achats@media-solution.fr",
+        "camille.moine.pro@gmail.com",
+        "a.peault@media-solution.fr",
+        "v.lorent@media-solution.fr",
+        "technique@media-solution.fr",
+        "t.deslus@media-solution.fr"
+    ],
+    "enable_polling": true,
+    "vacation_start": null,
+    "vacation_end": null,
+    "_updated_at": "2025-10-19T09:50:10+00:00"
 }

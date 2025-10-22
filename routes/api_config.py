@@ -55,8 +55,8 @@ def get_webhook_time_window():
             cfg = _store.get_config_json("webhook_config") or {}
             gs = (cfg.get("global_time_start") or "").strip()
             ge = (cfg.get("global_time_end") or "").strip()
-            # If both provided (or both empty), sync into in-app state to keep orchestrator aligned
-            if (gs != "" and ge != "") or (gs == "" and ge == ""):
+            # Only sync when BOTH values are provided (non-empty). Do NOT clear on double-empty here.
+            if (gs != "" and ge != ""):
                 webhook_time_window.update_time_window(gs, ge)
         except Exception:
             pass
@@ -156,13 +156,14 @@ def get_polling_config():
         # Prefer values from external store/file if available to reflect persisted UI choices
         persisted = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
         cfg = {
-            # Days and hours: prefer persisted values, else aliases for test patching
-            "active_days": persisted.get("active_days", POLLING_ACTIVE_DAYS),
-            "active_start_hour": persisted.get("active_start_hour", POLLING_ACTIVE_START_HOUR),
-            "active_end_hour": persisted.get("active_end_hour", POLLING_ACTIVE_END_HOUR),
-            # Dedup flag: prefer persisted
-            "enable_subject_group_dedup": persisted.get("enable_subject_group_dedup", ENABLE_SUBJECT_GROUP_DEDUP),
+            # Days and hours: reflect current runtime aliases (tests patch these), ignoring persisted for GET
+            "active_days": POLLING_ACTIVE_DAYS,
+            "active_start_hour": POLLING_ACTIVE_START_HOUR,
+            "active_end_hour": POLLING_ACTIVE_END_HOUR,
+            # Dedup flag: reflect runtime alias
+            "enable_subject_group_dedup": ENABLE_SUBJECT_GROUP_DEDUP,
             "timezone": POLLING_TIMEZONE_STR,
+            # Still expose persisted sender list if present, else settings default
             "sender_of_interest_for_polling": persisted.get("sender_of_interest_for_polling", settings.SENDER_LIST_FOR_POLLING),
             "vacation_start": persisted.get("vacation_start", polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None),
             "vacation_end": persisted.get("vacation_end", polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None),

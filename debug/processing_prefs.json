@@ -2,11 +2,14 @@
   "exclude_keywords": [],
   "require_attachments": false,
   "max_email_size_mb": null,
-  "sender_priority": {},
+  "sender_priority": [],
   "retry_count": 2,
   "retry_delay_sec": 1,
   "webhook_timeout_sec": 30,
   "rate_limit_per_hour": 5,
   "notify_on_failure": false,
-  "mirror_media_to_custom": true
+  "mirror_media_to_custom": true,
+  "exclude_keywords_recadrage": [],
+  "exclude_keywords_autorepondeur": [],
+  "_updated_at": "2025-10-16T18:15:30+00:00"
 }
