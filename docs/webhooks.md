@@ -31,20 +31,23 @@ Cette application utilise un flux de webhooks unifié avec les caractéristiques
 
 #### Exception par détecteur (hors fenêtre)
 
-- **desabonnement_journee_tarifs (DESABO)** : envoi autorisé même hors fenêtre des webhooks. Le poller logue l'exception puis poursuit l'envoi via le flux personnalisé, ce qui garantit la transmission immédiate de l'autorépondeur même lorsque la fenêtre globale est fermée.
+- **desabonnement_journee_tarifs (DESABO)** :
+  - **non urgent** → envoi autorisé même hors fenêtre des webhooks (bypass conservé).
+  - **urgent** → hors fenêtre, l'envoi est ignoré (pas de bypass). Le message sera réévalué lors du prochain cycle à l'intérieur de la fenêtre.
 - **recadrage (Média Solution)** : hors fenêtre, l'envoi est ignoré ET l'e-mail est marqué comme lu/traité pour éviter un retraitement automatique lorsque la fenêtre s'ouvrira. Le poller journalise explicitement ce choix pour conserver la traçabilité.
 - **Autres détecteurs** : comportement standard (skip sans marquer traité) : l'e-mail sera réévalué lors du prochain cycle à l'intérieur de la fenêtre.
 
-Logs représentatifs (`email_processing/orchestrator.py`, lignes 514-553) :
+Logs représentatifs (`email_processing/orchestrator.py`, lignes 520-553) :
 
 ```text
-WEBHOOK_GLOBAL_TIME_WINDOW: Outside window for email <id> but detector=DESABO -> bypassing window and proceeding to send (...)
+WEBHOOK_GLOBAL_TIME_WINDOW: Outside window for email <id> but detector=DESABO (non-urgent) -> bypassing window and proceeding to send (...)
+WEBHOOK_GLOBAL_TIME_WINDOW: Outside window for email <id> and detector=DESABO but URGENT -> skipping webhook (...)
 WEBHOOK_GLOBAL_TIME_WINDOW: Outside window for email <id> and detector=RECADRAGE -> skipping webhook AND marking read/processed (...)
+IGNORED: DESABO urgent skipped outside window (email <id>)
 IGNORED: RECADRAGE skipped outside window and marked processed (email <id>)
 ```
 
 Implémentation complète : voir `check_new_emails_and_trigger_webhook()` dans `email_processing/orchestrator.py`, bloc « outside window » conditionné par `detector_val`.
-
 - **Fenêtre Horaire des E-mails** : Contrôle quand les e-mails sont récupérés du serveur IMAP
   - Configurable via les variables d'environnement `POLLING_ACTIVE_START_HOUR`, `POLLING_ACTIVE_END_HOUR` et `POLLING_ACTIVE_DAYS`
   - Si un e-mail est reçu en dehors de cette fenêtre, il ne sera pas traité avant le prochain cycle de polling dans la fenêtre active

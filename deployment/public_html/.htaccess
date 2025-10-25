@@ -11,14 +11,18 @@ RewriteEngine On
 # via getenv()/$_SERVER. Do NOT commit real secrets to version control.
 # Uncomment and set on the server (or configure via hosting panel):
 #
-# SetEnv GMAIL_CLIENT_ID "your_client_id_here"
-# SetEnv GMAIL_CLIENT_SECRET "your_client_secret_here"
-# SetEnv GMAIL_REFRESH_TOKEN "your_refresh_token_here"
-# SetEnv GMAIL_FROM_EMAIL "your_email_here"
-# SetEnv GMAIL_FROM_NAME "Your Name"
-# SetEnv APP_TZ "Europe/Paris"
+# SetEnv GMAIL_CLIENT_ID "YOUR_CLIENT_ID"
+# SetEnv GMAIL_CLIENT_SECRET "YOUR_CLIENT_SECRET"
+# SetEnv GMAIL_REFRESH_TOKEN "YOUR_REFRESH_TOKEN"
+# SetEnv GMAIL_FROM_EMAIL "no-reply@example.com"
+# SetEnv GMAIL_FROM_NAME "Render Signal Server"
+# SetEnv APP_TZ "Europe/Luxembourg"
 # SetEnv AUTOREPONDEUR_TO "technique@media-solution.fr"
 # SetEnv RECADRAGE_TO "technique@media-solution.fr"
+# SetEnv GMAIL_OAUTH_TEST_TO "operations@example.com"
+# SetEnv GMAIL_OAUTH_CHECK_INTERVAL_DAYS "7"
+# Optionnel: protège l’endpoint auto-check
+# SetEnv GMAIL_OAUTH_CHECK_KEY "YOUR_RANDOM_SECRET"
 #
 # Note: Some hosts require using a control panel to define environment
 # variables instead of .htaccess. In that case, leave these lines commented

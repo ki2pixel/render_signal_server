@@ -447,6 +447,7 @@ def check_new_emails_and_trigger_webhook() -> int:
                         pass
                 detector_val = None
                 delivery_time_val = None  # for recadrage
+                desabo_is_urgent = False  # for DESABO
                 try:
                     # Obtain pattern_matching each time, preferring a monkeypatched object on this module
                     pm_mod = globals().get('pattern_matching')
@@ -484,6 +485,10 @@ def check_new_emails_and_trigger_webhook() -> int:
                                 detector_val = 'desabonnement_journee_tarifs'
                             else:
                                 detector_val = 'desabonnement_journee_tarifs'
+                            try:
+                                desabo_is_urgent = bool(des_res.get('is_urgent'))
+                            except Exception:
+                                desabo_is_urgent = False
                 except Exception as _det_ex:
                     try:
                         logger.debug("DETECTOR_DEBUG: inference error for email %s: %s", email_id, _det_ex)
@@ -515,14 +520,28 @@ def check_new_emails_and_trigger_webhook() -> int:
                     tw_start_str = (s_str or 'unset')
                     tw_end_str = (e_str or 'unset')
                     if detector_val == 'desabonnement_journee_tarifs':
-                        logger.info(
-                            "WEBHOOK_GLOBAL_TIME_WINDOW: Outside window for email %s but detector=DESABO -> bypassing window and proceeding to send (now=%s, window=%s-%s)",
-                            email_id,
-                            now_local.strftime('%H:%M'),
-                            tw_start_str,
-                            tw_end_str,
-                        )
-                        # Fall through to payload/send below
+                        if desabo_is_urgent:
+                            logger.info(
+                                "WEBHOOK_GLOBAL_TIME_WINDOW: Outside window for email %s and detector=DESABO but URGENT -> skipping webhook (now=%s, window=%s-%s)",
+                                email_id,
+                                now_local.strftime('%H:%M'),
+                                tw_start_str,
+                                tw_end_str,
+                            )
+                            try:
+                                logger.info("IGNORED: DESABO urgent skipped outside window (email %s)", email_id)
+                            except Exception:
+                                pass
+                            continue
+                        else:
+                            logger.info(
+                                "WEBHOOK_GLOBAL_TIME_WINDOW: Outside window for email %s but detector=DESABO (non-urgent) -> bypassing window and proceeding to send (now=%s, window=%s-%s)",
+                                email_id,
+                                now_local.strftime('%H:%M'),
+                                tw_start_str,
+                                tw_end_str,
+                            )
+                            # Fall through to payload/send below
                     elif detector_val == 'recadrage':
                         logger.info(
                             "WEBHOOK_GLOBAL_TIME_WINDOW: Outside window for email %s and detector=RECADRAGE -> skipping webhook AND marking read/processed (now=%s, window=%s-%s)",

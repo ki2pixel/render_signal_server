@@ -127,8 +127,21 @@ class GmailMailer
         $ok = ($httpCode >= 200 && $httpCode < 300);
         if (!$ok) {
             error_log('GmailMailer send failed: HTTP ' . $httpCode . ' resp=' . substr($response, 0, 300));
+            return ['success' => false, 'status' => $httpCode, 'error' => $response];
         }
-        return ['success' => $ok, 'status' => $httpCode, 'error' => $ok ? null : $response];
+
+        // Parse Gmail API response for traceability (id, threadId)
+        $respJson = json_decode($response, true);
+        $gmailMessageId = is_array($respJson) ? ($respJson['id'] ?? null) : null;
+        $gmailThreadId = is_array($respJson) ? ($respJson['threadId'] ?? null) : null;
+
+        return [
+            'success' => true,
+            'status' => $httpCode,
+            'error' => null,
+            'gmail_message_id' => $gmailMessageId,
+            'gmail_thread_id' => $gmailThreadId,
+        ];
     }
 
     /**

@@ -215,9 +215,9 @@ def check_desabo_conditions(subject: str, email_content: str, logger):
         logger: Logger pour traces de debug
 
     Returns:
-        dict: { 'matches': bool, 'has_dropbox_request': bool }
+        dict: { 'matches': bool, 'has_dropbox_request': bool, 'is_urgent': bool }
     """
-    result = {"matches": False, "has_dropbox_request": False}
+    result = {"matches": False, "has_dropbox_request": False, "is_urgent": False}
 
     try:
         norm_body = normalize_no_accents_lower_trim(email_content or "")
@@ -227,6 +227,8 @@ def check_desabo_conditions(subject: str, email_content: str, logger):
         has_journee = "journee" in norm_body
         has_tarifs = "tarifs habituels" in norm_body
         has_desabo = ("desabonn" in norm_body) or ("desabonn" in norm_subject)
+        # Détection URGENCE: mot-clé dans le sujet ou le corps normalisés
+        is_urgent = ("urgent" in norm_subject) or ("urgence" in norm_subject) or ("urgent" in norm_body) or ("urgence" in norm_body)
         forbidden_terms = [
             "annulation",
             "facturation",
@@ -249,10 +251,11 @@ def check_desabo_conditions(subject: str, email_content: str, logger):
             missing_required = [t for t in required_terms if t not in norm_body]
             present_forbidden = [t for t in forbidden_terms if t in norm_body]
             logger.debug(
-                "DESABO_HELPER_DEBUG: required_ok=%s, forbidden_present=%s, dropbox_request=%s, missing_required=%s, present_forbidden=%s",
+                "DESABO_HELPER_DEBUG: required_ok=%s, forbidden_present=%s, dropbox_request=%s, urgent=%s, missing_required=%s, present_forbidden=%s",
                 has_required,
                 has_forbidden,
                 has_dropbox_request,
+                is_urgent,
                 missing_required,
                 present_forbidden,
             )
@@ -261,6 +264,7 @@ def check_desabo_conditions(subject: str, email_content: str, logger):
 
         # Match if required conditions satisfied and no forbidden terms
         result["matches"] = bool(has_required and (not has_forbidden))
+        result["is_urgent"] = bool(is_urgent)
         return result
     except Exception as e:
         try:

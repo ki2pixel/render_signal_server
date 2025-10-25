@@ -2,6 +2,18 @@
 
 Ce document enregistre les décisions techniques et architecturales importantes prises au cours du projet.
 
+**[2025-10-22 23:19:00] - Outils de validation Gmail OAuth (CLI + Web) et auto-check planifié**
+- **Décisions** :
+  - Créer un script CLI `deployment/scripts/gmail_oauth_connection_test.php` pour valider OAuth et envoyer un e‑mail de test (mode `--dry-run` et envoi réel).
+  - Ajouter une page web `deployment/public_html/GmailOAuthTest.php` pour tester depuis un navigateur (dry-run + send) et exposer un endpoint `action=auto-check` pour une vérification périodique.
+  - Protéger l'auto-check par clé (`GMAIL_OAUTH_CHECK_KEY`), paramétrer l’intervalle via `GMAIL_OAUTH_CHECK_INTERVAL_DAYS` (par défaut 7) et le destinataire via `GMAIL_OAUTH_TEST_TO`.
+  - Persister l’état dans `deployment/data/gmail_oauth_last_check.json` et historiser chaque run dans `deployment/data/gmail_oauth_check_history.jsonl`.
+  - Corriger le chemin de stockage (fonction `storage_dir()`) pour cibler `deployment/data/`.
+  - Améliorer `deployment/src/GmailMailer.php` pour parser la réponse Gmail API et retourner `gmail_message_id`/`gmail_thread_id`.
+  - Mettre à jour la documentation `docs/gmail-oauth-setup.md` (validation via CLI, exemples dry-run/envoi, et consignes cron).
+- **Raisons** : rendre observable et testable l’auth Gmail côté déploiement, permettre une surveillance automatique, et renforcer la traçabilité des envois.
+- **Impacts** : scripts prêt à l’emploi (CLI + Web), endpoint cron sécurisé par clé, journaux persistés, meilleure traçabilité opérationnelle.
+
 **[2025-10-22 19:16:00] - Règles hors fenêtre (détecteur) et limites d'infrastructure de tests**
 - **Décision** : Implémenter dans `email_processing/orchestrator.py` des règles spécifiques hors fenêtre horaire des webhooks:
   - `detector=recadrage` → ne pas envoyer, marquer l'email comme lu + traité.
