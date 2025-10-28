@@ -2,6 +2,15 @@
 
 ## Terminé
 
+-   [2025-10-28 12:00] **Correction de l'heure de démarrage des webhooks DESABO**
+    - Mise à jour de `orchestrator.py` pour définir `webhooks_time_start` à l'heure de début configurée (par exemple "12h00") pour les e-mails DESABO non urgents traités avant l'ouverture de la fenêtre horaire.
+    - Ajout de tests unitaires complets dans `test_orchestrator_desabo_start_before_window.py` pour vérifier le comportement.
+    - Mise à jour de la documentation dans `docs/webhooks.md` pour refléter le comportement de l'heure de début pour les DESABO non urgents.
+    - Amélioration de la robustesse de la gestion des chemins de fichiers dans `routes/api_logs.py`.
+
+-   [2025-10-25 13:05:00] **Implémentation de la règle URGENT pour DESABO**
+    - Ajustement du bypass fenêtre pour les webhooks `detector=desabonnement_journee_tarifs` (urgent skip hors fenêtre, non-urgent bypass conservé). Mises à jour code (`pattern_matching.py`, `orchestrator.py`) + docs (`webhooks.md`).
+
 -   [2025-10-22 20:55] **Stabilisation orchestrateur, webhooks et journaux**
     -   Durcissement de `email_processing/orchestrator.py` (helpers runtime, délégation legacy, règles hors fenêtre, retour explicite pour Media Solution)
     -   Comportement de retry Make.com sécurisé dans `email_processing/webhook_sender.py`

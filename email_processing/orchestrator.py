@@ -576,16 +576,26 @@ def check_new_emails_and_trigger_webhook() -> int:
                 # Provide email_content to avoid server-side IMAP search and allow URL extraction.
                 preview = (combined_text_for_detection or "")[:200]
                 # Load current global time window strings and compute start payload logic
+                # IMPORTANT: Prefer the same source used for the bypass decision (s_str/e_str)
+                # to avoid desynchronization with config overrides. Fall back to
+                # config.webhook_time_window.get_time_window_info() only if needed.
                 try:
-                    tw_info = _w_tw.get_time_window_info()
-                    tw_start_str = (tw_info.get('start') or '').strip() or None
-                    tw_end_str = (tw_info.get('end') or '').strip() or None
+                    # s_str/e_str were loaded earlier via _load_webhook_global_time_window()
+                    _pref_start = (s_str or '').strip()
+                    _pref_end = (e_str or '').strip()
+                    if not _pref_start or not _pref_end:
+                        tw_info = _w_tw.get_time_window_info()
+                        _pref_start = _pref_start or (tw_info.get('start') or '').strip()
+                        _pref_end = _pref_end or (tw_info.get('end') or '').strip()
+                    tw_start_str = _pref_start or None
+                    tw_end_str = _pref_end or None
                 except Exception:
                     tw_start_str = None
                     tw_end_str = None
+
                 # Determine start payload:
                 # - If within window: "maintenant"
-                # - If before window start: configured start string
+                # - If before window start AND detector is DESABO non-urgent (bypass case): use configured start string
                 # - Else (after window end or window inactive): leave unset (PHP defaults to 'maintenant')
                 start_payload_val = None
                 try:
@@ -594,13 +604,18 @@ def check_new_emails_and_trigger_webhook() -> int:
                         start_t = _parse_hhmm(tw_start_str)
                         end_t = _parse_hhmm(tw_end_str)
                         if start_t and end_t:
-                            now_local = datetime.now(ar.TZ_FOR_POLLING)
+                            # Reuse the already computed local time and within decision
                             now_t = now_local.timetz().replace(tzinfo=None)
-                            # Compare naive times (same local TZ day context)
-                            if start_t <= now_t <= end_t:
+                            if within:
                                 start_payload_val = "maintenant"
-                            elif now_t < start_t:
-                                start_payload_val = tw_start_str
+                            else:
+                                # Before window start: for DESABO non-urgent bypass, fix start to configured start
+                                if (
+                                    detector_val == 'desabonnement_journee_tarifs'
+                                    and not desabo_is_urgent
+                                    and now_t < start_t
+                                ):
+                                    start_payload_val = tw_start_str
                 except Exception:
                     start_payload_val = None
                 payload_for_webhook = {

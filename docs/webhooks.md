@@ -33,6 +33,7 @@ Cette application utilise un flux de webhooks unifié avec les caractéristiques
 
 - **desabonnement_journee_tarifs (DESABO)** :
   - **non urgent** → envoi autorisé même hors fenêtre des webhooks (bypass conservé).
+    - Si l'e-mail arrive avant l'heure de début configurée, le payload fixe désormais `webhooks_time_start` à l'heure de début (ex. "12h00") — et non plus "maintenant". Cela garantit que les e-mails générés annoncent correctement le début réel de la disponibilité.
   - **urgent** → hors fenêtre, l'envoi est ignoré (pas de bypass). Le message sera réévalué lors du prochain cycle à l'intérieur de la fenêtre.
 - **recadrage (Média Solution)** : hors fenêtre, l'envoi est ignoré ET l'e-mail est marqué comme lu/traité pour éviter un retraitement automatique lorsque la fenêtre s'ouvrira. Le poller journalise explicitement ce choix pour conserver la traçabilité.
 - **Autres détecteurs** : comportement standard (skip sans marquer traité) : l'e-mail sera réévalué lors du prochain cycle à l'intérieur de la fenêtre.
@@ -78,31 +79,25 @@ Headers HTTP (conseillé):
 - `X-Source: render-signal-server`
 - (optionnel) `Authorization: Bearer <token>` si l'URL réceptrice l'exige
 
-Body JSON (exemple):
+Body JSON (exemple généré par `build_custom_webhook_payload()`):
 ```json
 {
-  "event": "email_processed",
-  "email": {
-    "id": "4f0d2d4b2a7d0b1e...",
-    "subject": "Média Solution - Missions Recadrage - Lot 123",
-    "sender_email": "expediteur@example.com",
-    "received_at": "2025-09-20T07:10:00Z"
-  },
-  "matches_media_solution_pattern": true,
-  "delivery_time": "11h30",
+  "microsoft_graph_email_id": "4f0d2d4b2a7d0b1e...",
+  "subject": "Média Solution - Missions Recadrage - Lot 123",
+  "receivedDateTime": "2025-09-20T07:10:00Z",
+  "sender_address": "expediteur@example.com",
+  "bodyPreview": "Résumé du message",
+  "email_content": "Contenu complet normalisé",
   "delivery_links": [
-    {"provider": "dropbox", "raw_url": "https://www.dropbox.com/s/.../file1?dl=1", "direct_url": "https://www.dropbox.com/s/.../file1?dl=1"},
-    {"provider": "fromsmash", "raw_url": "https://fromsmash.com/ABCdef", "direct_url": "https://cdn.fromsmash.co/transfer/ABCdef/zip/ABCdef.zip?..."},
-    {"provider": "swisstransfer", "raw_url": "https://www.swisstransfer.com/d/UUID", "direct_url": "https://dl.swisstransfer.com/api/download/UUID?..."}
+    {"provider": "dropbox", "raw_url": "https://www.dropbox.com/s/.../file1"},
+    {"provider": "fromsmash", "raw_url": "https://fromsmash.com/ABCdef"},
+    {"provider": "swisstransfer", "raw_url": "https://www.swisstransfer.com/d/UUID"}
   ],
-  "first_direct_download_url": "https://cdn.fromsmash.co/transfer/ABCdef/zip/ABCdef.zip?...",
-  "webhooks_time_start": "11h30",
-  "webhooks_time_end": "17h30",
-  "meta": {
-    "processor": "render-signal-server",
-    "version": "1.0",
-    "dedup": true
-  }
+  "first_direct_download_url": null,
+  "dropbox_urls": [
+    "https://www.dropbox.com/s/.../file1"
+  ],
+  "dropbox_first_url": "https://www.dropbox.com/s/.../file1"
 }
 ```
 
@@ -341,4 +336,4 @@ async def receive_webhook(payload: WebhookPayload):
  
 # Contrôle des scénarios Make
 
-Note: le contrôle des scénarios Make (activation/désactivation) s'effectue désormais manuellement dans l'interface Make.com. Le tableau de bord de cette application n'expose plus de commandes pour piloter les scénarios.
+Note: le contrôle des scénarios Make (activation/désactivation) s'effectue via `routes/api_make.py` (`POST /api/make/toggle_all`) ou manuellement dans l'interface Make.com. Le tableau de bord n'expose pas de boutons de pilotage automatique.

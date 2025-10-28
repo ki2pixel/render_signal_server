@@ -11,13 +11,14 @@ L'API est structurée en blueprints Flask pour une meilleure organisation et mai
 | `health` | `routes/health.py` | Vérification de l'état du service | `GET /health` |
 | `dashboard` | `routes/dashboard.py` | Interface utilisateur | `GET /`, `/login`, `/logout` |
 | `api_webhooks` | `routes/api_webhooks.py` | Gestion des webhooks | `GET/POST /api/webhooks/config` |
-| `api_polling` | `routes/api_polling.py` | Réservé pour extensions futures | — |
+| `api_polling` | `routes/api_polling.py` | Compatibilité legacy (toggle simplifié) | `POST /api/polling/toggle` |
 | `api_processing` | `routes/api_processing.py` | Préférences de traitement | `GET/POST /api/processing_prefs` |
 | `api_logs` | `routes/api_logs.py` | Consultation des logs | `GET /api/webhook_logs` |
 | `api_test` | `routes/api_test.py` | Endpoints de test (CORS) | `GET /api/test/*` |
 | `api_utility` | `routes/api_utility.py` | Utilitaires (ping, trigger, statut local) | `GET /api/ping`, `GET /api/check_trigger`, `GET /api/get_local_status` |
 | `api_admin` | `routes/api_admin.py` | Admin (redémarrage, déclenchement manuel) | `POST /api/restart_server`, `POST /api/check_emails_and_download` |
-| `api_config` | `routes/api_config.py` | Configuration (fenêtres horaires, flags, polling) | `GET/POST /api/webhooks/time-window`, `GET/POST /api/runtime-flags`, `GET/POST /api/polling-config` |
+| `api_config` | `routes/api_config.py` | Configuration (fenêtres horaires, flags, polling) | `GET /api/get_webhook_time_window`, `POST /api/set_webhook_time_window`, `GET/POST /api/get_runtime_flags`, `GET/POST /api/get_polling_config` |
+| `api_make` | `routes/api_make.py` | Pilotage manuel des scénarios Make | `POST /api/make/toggle_all`, `GET /api/make/status_all` |
 
 ## Authentification
 
@@ -76,36 +77,34 @@ Pour assurer la rétrocompatibilité, les anciennes URLs sont maintenues via des
 
 ### Configuration des flags runtime
 
-### Récupération des flags
+-### Récupération des flags
 
-- `GET /api/runtime-flags` (protégé)
-  - Retourne les flags runtime actuels
+- `GET /api/get_runtime_flags` (protégé)
+  - Retourne les flags runtime actuels: `disable_email_id_dedup`, `allow_custom_webhook_without_links`.
   - Réponse :
     ```json
     {
       "success": true,
       "flags": {
-        "debug_mode": false,
-        "enable_verbose_logging": false,
-        "force_processing": false
+        "disable_email_id_dedup": false,
+        "allow_custom_webhook_without_links": false
       }
     }
     ```
 
 ### Mise à jour des flags
 
-- `POST /api/runtime-flags` (protégé)
-  - Met à jour les flags runtime
-  - Corps JSON (tous les champs sont optionnels) :
+- `POST /api/update_runtime_flags` (protégé)
+  - Met à jour les flags runtime et les persiste dans `debug/runtime_flags.json`.
+  - Corps JSON (champs optionnels) :
     ```json
     {
-      "debug_mode": false,
-      "enable_verbose_logging": false,
-      "force_processing": false
+      "disable_email_id_dedup": true,
+      "allow_custom_webhook_without_links": true
     }
     ```
   - Réponses :
-    - 200 : `{ "success": true, "message": "Flags runtime mis à jour avec succès" }`
+    - 200 : `{ "success": true, "message": "Modifications enregistrées. Un redémarrage peut être nécessaire." }`
     - 400 : `{ "success": false, "message": "..." }` (erreur de validation)
     - 500 : `{ "success": false, "message": "..." }` (erreur serveur)
 
@@ -150,61 +149,33 @@ Remplacez `DOMAIN` par l'URL Render, et `<USERNAME>/<PASSWORD>` par vos identifi
 
 ## Format des webhooks
 
-### Webhook principal
+### Webhook principal (payload custom)
 
 ```json
 {
-  "event_type": "email_received",
-  "timestamp": "2025-10-16T14:30:00Z",
-  "email": {
-    "id": "<email_id>",
-    "subject": "Sujet de l'email",
-    "from": "expediteur@example.com",
-    "to": ["destinataire@example.com"],
-    "date": "2025-10-16T14:25:00Z",
-    "text": "Contenu texte de l'email",
-    "html": "<p>Contenu HTML de l'email</p>",
-    "attachments": [
-      {
-        "filename": "piece-jointe.pdf",
-        "content_type": "application/pdf",
-        "size": 12345,
-        "content_id": "<content_id>"
-      }
-    ]
-  },
-  "metadata": {
-    "processing_time_ms": 123,
-    "detected_media": [
-      {
-        "provider": "swisstransfer",
-        "raw_url": "https://www.swisstransfer.com/d/...",
-        "direct_url": "https://www.swisstransfer.com/d/.../download"
-      }
-    ]
-  }
-}
-```
-
-### Webhook personnalisé (si activé)
-
-```json
-{
-  "event_type": "email_processed",
-  "timestamp": "2025-10-16T14:30:00Z",
-  "email_id": "<email_id>",
+  "microsoft_graph_email_id": "<email_id>",
   "subject": "Sujet de l'email",
-  "from": "expediteur@example.com",
-  "to": ["destinataire@example.com"],
-  "date": "2025-10-16T14:25:00Z",
-  "media_links": [
+  "receivedDateTime": "2025-10-16T14:25:00Z",
+  "sender_address": "expediteur@example.com",
+  "bodyPreview": "Résumé du message",
+  "email_content": "Contenu complet (texte + HTML nettoyé)",
+  "delivery_links": [
     {
       "provider": "swisstransfer",
-      "url": "https://www.swisstransfer.com/d/..."
+      "raw_url": "https://www.swisstransfer.com/d/..."
     }
-  ]
+  ],
+  "first_direct_download_url": null,
+  "dropbox_urls": [],
+  "dropbox_first_url": null
 }
 ```
+
+Notes :
+
+- Les champs reflètent `email_processing/payloads.py::build_custom_webhook_payload()`.
+- `delivery_links` ne contient que des URLs brutes (`raw_url`). La résolution « direct_url » a été supprimée.
+- `dropbox_*` sont fournis pour compatibilité legacy.
 
 ## Gestion des erreurs
 
@@ -245,11 +216,6 @@ Toutes les erreurs d'API suivent le format suivant :
 - Les jetons sont gérés via des sessions sécurisées
 - Les mots de passe sont stockés de manière sécurisée (hash + sel)
 
-### Protection CSRF
-
-- Toutes les requêtes POST doivent inclure un jeton CSRF valide
-- Le jeton est disponible dans le cookie `csrftoken` et doit être inclus dans l'en-tête `X-CSRFToken`
-
 ### En-têtes de sécurité
 
 L'application inclut les en-têtes de sécurité HTTP suivants :
@@ -260,6 +226,8 @@ L'application inclut les en-têtes de sécurité HTTP suivants :
 - `X-XSS-Protection: 1; mode=block` : Active la protection XSS des navigateurs
 - `Strict-Transport-Security: max-age=31536000; includeSubDomains` : Force l'utilisation de HTTPS
 - `Referrer-Policy: strict-origin-when-cross-origin` : Contrôle les informations de référent envoyées
+
+> À ce stade, aucune protection CSRF n'est implémentée côté serveur. Les clients doivent s'appuyer sur les sessions authentifiées et/ou une clé API (`X-API-Key`) selon le blueprint utilisé.
 
 ## Journalisation
 
@@ -303,6 +271,7 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
 
 - `POST /api/webhooks/config` (protégé)
   - Met à jour la configuration des webhooks. Tous les champs sont optionnels et sont fusionnés avec la configuration courante.
+  - **Validation** : `webhook_url` doit être une URL **HTTPS** sinon la requête est rejetée (`400`).
   - Corps JSON :
     ```json
     {
@@ -353,66 +322,33 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
     - 400 : `{ "success": false, "message": "..." }` (erreur de validation)
     - 500 : `{ "success": false, "message": "..." }` (erreur serveur)
 
-### Contrôle du polling (via configuration)
+### Contrôle du polling (via configuration `api_config`)
 
 - `GET /api/get_polling_config` (protégé)
-  - Retourne la configuration persistée côté serveur, incluant le flag `enable_polling`.
-  - Réponse: `{ "success": true, "config": { ..., "enable_polling": bool } }`
-
-- `POST /api/update_polling_config` (protégé)
-  - Met à jour la configuration de polling. Champs optionnels (merge partiel), dont `enable_polling` (bool):
-    - `active_days`: array d'entiers 0..6 (0=lundi)
-    - `active_start_hour`: int 0..23
-    - `active_end_hour`: int 0..23
-    - `enable_subject_group_dedup`: bool
-    - `sender_of_interest_for_polling`: array d'emails (validés/normalisés)
-    - `enable_polling`: bool
-  - Réponses:
-    - 200: `{ "success": true, "message": "Configuration polling enregistrée.", "config": { ..., "enable_polling": bool } }`
-  - Notes:
-    - Le thread de polling au démarrage est conditionné par: `ENABLE_BACKGROUND_TASKS` (env) ET `enable_polling` (config persistée).
-    - Un redémarrage du service est nécessaire pour (dés)activer effectivement le thread de fond.
-
-### Configuration du Polling
-
-### Récupération de la configuration
-
-- `GET /api/polling-config` (protégé)
-  - Retourne la configuration actuelle du polling
+  - Retourne la configuration courante en fusionnant les valeurs persistées et les alias runtime (`settings.POLLING_ACTIVE_*`).
   - Réponse :
     ```json
     {
       "success": true,
       "config": {
-        "active_days": [1, 2, 3, 4, 5],
+        "active_days": [0, 1, 2, 3, 4],
         "active_start_hour": 9,
         "active_end_hour": 18,
         "enable_subject_group_dedup": true,
         "sender_of_interest_for_polling": ["contact@example.com"],
+        "vacation_start": null,
+        "vacation_end": null,
         "enable_polling": true
       }
     }
     ```
 
-### Mise à jour de la configuration
-
-- `POST /api/polling-config` (protégé)
-  - Met à jour la configuration du polling
-  - Corps JSON (tous les champs sont optionnels) :
-    ```json
-    {
-      "active_days": [1, 2, 3, 4, 5],
-      "active_start_hour": 9,
-      "active_end_hour": 18,
-      "enable_subject_group_dedup": true,
-      "sender_of_interest_for_polling": ["contact@example.com"],
-      "enable_polling": true
-    }
-    ```
+- `POST /api/update_polling_config` (protégé)
+  - Met à jour la configuration du polling (jours, heures, dédup, expéditeurs, période de vacances, flag `enable_polling`).
   - Réponses :
-    - 200 : `{ "success": true, "message": "Configuration du polling mise à jour avec succès" }`
-    - 400 : `{ "success": false, "message": "..." }` (erreur de validation)
-    - 500 : `{ "success": false, "message": "..." }` (erreur serveur)
+    - 200 : `{ "success": true, "message": "Configuration polling mise à jour. Un redémarrage peut être nécessaire." }`
+    - 400 / 500 en cas d'erreur de validation ou d'I/O.
+  - Notes : la modification du flag `enable_polling` nécessite un redémarrage pour affecter le thread de fond.
 
 ### Fenêtre horaire du polling
 
@@ -450,7 +386,8 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
 - Supprimés lors du refactoring (routes → blueprints) puis consolidation polling:
   - `GET /api/get_webhook_config` → remplacé par `GET /api/webhooks/config`
   - `POST /api/update_webhook_config` → remplacé par `POST /api/webhooks/config`
-  - `POST /api/toggle_polling` et `POST /api/polling/toggle` → supprimés. Le contrôle du polling passe par `POST /api/update_polling_config` avec le champ `enable_polling`.
+  - `POST /api/toggle_polling` (legacy)
+  - `POST /api/polling/toggle` (legacy, maintien tests)
 
 - Dépréciés (télécommande):
   - `GET /api/get_local_status`

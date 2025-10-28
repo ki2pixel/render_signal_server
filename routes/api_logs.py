@@ -32,12 +32,19 @@ def get_webhook_logs():
         # Prefer direct file read first (tests pre-populate the file), then fall back to helper
         from pathlib import Path
         from datetime import datetime, timedelta, timezone
-        fp = getattr(_ar, "WEBHOOK_LOGS_FILE")
-        if isinstance(fp, Path) and fp.exists():
+        fp_any = getattr(_ar, "WEBHOOK_LOGS_FILE")
+        # Accept any path-like; convert to Path for robust exists/read in tests
+        try:
+            from pathlib import Path as _Path
+            fp = _Path(fp_any)
+        except Exception:
+            fp = fp_any
+        if hasattr(fp, 'exists') and fp.exists():
             try:
                 import json
                 with open(fp, "r", encoding="utf-8") as f:
-                    all_logs = json.load(f)
+                    loaded = json.load(f)
+                all_logs = loaded if isinstance(loaded, list) else (loaded.get("logs", []) if isinstance(loaded, dict) else [])
                 # Diagnostics under TESTING
                 try:
                     _app_obj = getattr(_ar, "app", None)

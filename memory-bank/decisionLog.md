@@ -2,6 +2,26 @@
 
 Ce document enregistre les décisions techniques et architecturales importantes prises au cours du projet.
 
+**[2025-10-28 12:00:00] - Correction de l'heure de démarrage pour les webhooks DESABO non urgents**
+- **Décision** : Modifier le comportement de `webhooks_time_start` pour les e-mails DESABO non urgents traités avant l'ouverture de la fenêtre horaire, en définissant cette valeur sur l'heure de début configurée (par exemple "12h00") plutôt que sur "maintenant".
+- **Contexte** : Les e-mails DESABO non urgents reçus avant l'ouverture de la fenêtre horaire utilisaient "maintenant" comme heure de début, ce qui pouvait entraîner une incohérence avec l'heure de début configurée dans la fenêtre horaire.
+- **Implémentation** :
+  - Mise à jour de `email_processing/orchestrator.py` pour définir `start_payload_val` sur la valeur de `tw_start_str` (par exemple "12h00") pour les e-mails DESABO non urgents traités avant l'ouverture de la fenêtre.
+  - Ajout de tests unitaires complets dans `tests/test_orchestrator_desabo_start_before_window.py` pour vérifier le comportement.
+  - Mise à jour de la documentation dans `docs/webhooks.md` pour refléter ce comportement.
+- **Raisons** : Assurer la cohérence entre l'heure de début affichée dans les e-mails et la fenêtre horaire configurée, améliorant ainsi la clarté pour les utilisateurs finaux.
+- **Impacts** : Les e-mails DESABO non urgents traités avant l'ouverture de la fenêtre horaire afficheront désormais l'heure de début configurée (par exemple "12h00") plutôt que "maintenant".
+
+**[2025-10-25 13:05:00] - Ajustement bypass fenêtre webhook pour DESABO urgent**
+- **Décision** : Empêcher le bypass de la fenêtre horaire globale pour les webhooks `detector=desabonnement_journee_tarifs` lorsque l’email est identifié comme urgent (mots-clés "urgent"/"urgence" dans sujet/corps), tout en conservant le bypass pour les cas non urgents.
+- **Contexte** : Log incident montrant un email DESABO urgent traité à 11:25 (hors fenêtre 12h00-19h00) et webhook envoyé malgré urgence.
+- **Implémentation** :
+  - Ajout détection urgence dans `email_processing/pattern_matching.py::check_desabo_conditions()` (retourne `is_urgent`).
+  - Modification logique dans `email_processing/orchestrator.py::check_new_emails_and_trigger_webhook()` : bypass seulement si non-urgent; sinon skip hors fenêtre.
+  - Mise à jour `docs/webhooks.md` (section exceptions détecteur).
+- **Raisons** : Respecter la règle métier pour emails urgents (pas de bypass), éviter envois hors fenêtre pour urgents.
+- **Impacts** : Comportement changé pour DESABO urgent (skip hors fenêtre); non-urgent inchangé (bypass).
+
 **[2025-10-22 23:19:00] - Outils de validation Gmail OAuth (CLI + Web) et auto-check planifié**
 - **Décisions** :
   - Créer un script CLI `deployment/scripts/gmail_oauth_connection_test.php` pour valider OAuth et envoyer un e‑mail de test (mode `--dry-run` et envoi réel).

@@ -1,164 +1,164 @@
 Return-Path: <camille.moine.pro+caf_=kidpixel=inbox.lt@gmail.com>
 Received: from eu-timmy2-clean.inbox.eu ([10.20.1.72])
 	 by eu-brat1.inbox.eu (Cyrus 2.5-135) with LMTPA;
-	 Sat, 25 Oct 2025 12:24:33 +0300
+	 Tue, 28 Oct 2025 10:45:35 +0200
 Received: from eu-ham3.inbox.eu (eu-ham3 [10.20.1.103])
-	by eu-timmy2-clean.inbox.eu (Postfix) with ESMTP id 4ctvVT5ChmzWf3K
-	for <kidpixel@inbox.lt>; Sat, 25 Oct 2025 12:24:33 +0300 (EEST)
-Received: from eu-kas1.inbox.eu (eu-kas1 [10.20.1.91])
-	by eu-ham3.inbox.eu (Postfix) with ESMTP id EC26B12C07C3
-	for <kidpixel@inbox.lt>; Sat, 25 Oct 2025 12:24:28 +0300 (EEST)
-Received: from mail-oo1-f42.google.com (mail-oo1-f42.google.com [209.85.161.42])
-	by eu-timmy3-main.inbox.eu (Postfix) with ESMTPS id 4ctvVN114Wz5vNG
-	for <kidpixel@inbox.lt>; Sat, 25 Oct 2025 12:24:28 +0300 (EEST)
-Received: by mail-oo1-f42.google.com with SMTP id 006d021491bc7-654ee10146aso157307eaf.3
-        for <kidpixel@inbox.lt>; Sat, 25 Oct 2025 02:24:28 -0700 (PDT)
-ARC-Seal: i=2; a=rsa-sha256; t=1761384267; cv=pass;
+	by eu-timmy2-clean.inbox.eu (Postfix) with ESMTP id 4cwkV74Nm2zWf3K
+	for <kidpixel@inbox.lt>; Tue, 28 Oct 2025 10:45:35 +0200 (EET)
+Received: from eu-kas2.inbox.eu (eu-kas2 [10.20.1.92])
+	by eu-ham3.inbox.eu (Postfix) with ESMTP id 6ED2412C0780
+	for <kidpixel@inbox.lt>; Tue, 28 Oct 2025 10:45:34 +0200 (EET)
+Received: from mail-oi1-f175.google.com (mail-oi1-f175.google.com [209.85.167.175])
+	by eu-timmy3-main.inbox.eu (Postfix) with ESMTPS id 4cwkV54rvKz5vNK
+	for <kidpixel@inbox.lt>; Tue, 28 Oct 2025 10:45:33 +0200 (EET)
+Received: by mail-oi1-f175.google.com with SMTP id 5614622812f47-44db3c8ff14so1271648b6e.3
+        for <kidpixel@inbox.lt>; Tue, 28 Oct 2025 01:45:33 -0700 (PDT)
+ARC-Seal: i=2; a=rsa-sha256; t=1761641132; cv=pass;
         d=google.com; s=arc-20240605;
-        b=Z5jXgcTyK8Pd/+EYihSNDz5Pf7c3aqH0nun4qkrOpXRf+XPnTwV2OMEPF/SpmHI1mE
-         4/YdxrC1RX7VHlmMdUX7SMgV8bDurLB3de0wkMI+Qg91HvfEu7XGk5RohK+1KgaFjXRA
-         c/XOvTOQStTn5FadXo3LyAKtst/HA2zc+NTNZEtcgoVlkjIDS6RqSOm/SmNHCw7jkCmX
-         Pgy+6VjPI4sB1b0VPKs8LxJjI45LCii24BonuIpmtKCbeTfyjLWEfzpfxsoSb81TmRZ+
-         yd10pGR0KDB2DwboUtK6vsWJv4o9XclxtPUTxJrNcOzg/yUDmvYhPRCQzVq8YOTzggSb
-         iexA==
+        b=XtJg84LNSMGERw5E7gInMcpARDQ2wlL2vmTPt8YZa3rmaYWsGQ6IC/JxaaGUgMeCPk
+         didh2YhiVPdqfbGIJSF3YZPn+A+35c6HS3x7N1SmwlU0yz6OEiHAENHcmaN7DkaG4yjC
+         R0BlVIV7hebHn+C7XTXIt6+AuAkhlWDiU2u3i1aZHDCTSGZPxHOsRyPyMpH7neDvM0xD
+         wXflDcpfYjAS8eLJ2FGYiU2s0suDWwO/jctI9v07HyJHi/QQLjPhokyqHu2/8SkvsGxF
+         akAg3GHEkIuf3+2gt9qDGs/VumfuLGnlizI4gmPr8TtfbHdjcoDhJeP0nM6DK99lEtgc
+         ezcQ==
 ARC-Message-Signature: i=2; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20240605;
         h=feedback-id:list-unsubscribe-post:precedence:mime-version:subject
          :message-id:to:reply-to:from:date:list-unsubscribe:dkim-signature
          :dkim-signature:delivered-to;
-        bh=97Y/O0eEgFPVKmLCL/8LHvUwx6u1G5HGBKBmhqBTbqA=;
-        fh=ZxiBRvPb9FZTlWDZ9blLDZSPErOIj5gxN5pS3u/EC8I=;
-        b=NuhwFbpdV1YuL7mjhTCtQRfXASCyhOnK8VFWwkKoe3G6rawzursODYoVktYmIN4gHO
-         SqWoOft8a3Ahl5eiyafPk+wqJbTTCu+mY0PNUw7drRyHzckyph/5+ixduo6zVtrVQIBt
-         NGwrGMPjkWb0lejj8nLFZic7qis8jXFqoTRcp2z1QZ7DawV6W5aMVP4galDbMMKT+IZj
-         gyh/lfyPdEWhS+ImP9919EGi5GHGFZzLNPHWvP4dztFV3qd63nHhmTT89SeBaNkdhRBL
-         1DbA4Mgs6nviUgTzknlwvdS1LAFQOTt+JZcgNh3w7au2ZbD28xcosF3VRj1CEKNoxRgd
-         J95w==;
+        bh=Q741sF0zy0bzjvrQBdnyCUe3grNoRBwWRNLFcKsjofI=;
+        fh=x8/5T2Fwr0ZV+hN27kj6LujiIy6yWJj+02itIgLtJo0=;
+        b=SLOZbIGEXISU3wM+6ocV3jB/bx7h2Bv5xaC3T65iNX0vupOCiz1eRyZR6yQH4aIjyl
+         fb8pCgXbji5BP1hIPCQ+EvtkVFx+5bOnoOqzDlG2ywvc9BI9aSNb1mDe2lE5/qbjvlhv
+         to9rbsVCPidjf951SaeWrK8ZSBSvqFQ7f0DuShy0Fdd4IKJQdbmjIaXi3qDWIg1Jy3+8
+         tHbupKmn3IlwUHJQxaCI3CEWifHgjnNfyd4uKTXkoTwc6MWF93ZbBfuMJ4usEpu37A/W
+         3c0UC1oNkaegCT/IgBaRD/QId8BufMhpIx3A2M/KLbKSckj3eEE0A7cNe/55pvkBg0VD
+         V5bg==;
         darn=inbox.lt
 ARC-Authentication-Results: i=2; mx.google.com;
-       dkim=pass header.i=@bf01.eu1.hubspotstarter.net header.s=hs1 header.b=apRuwYe5;
-       dkim=pass header.i=@media-solution.fr header.s=hs1-25523946 header.b=S6xLZen5;
-       spf=pass (google.com: domain of 1axbp2586ddqvsmf45vscf2ek0vkt2tb3nse1s@bf01.eu1.hubspotstarter.net designates 143.244.84.152 as permitted sender) smtp.mailfrom=1axbp2586ddqvsmf45vscf2ek0vkt2tb3nse1s@bf01.eu1.hubspotstarter.net;
+       dkim=pass header.i=@bf01.eu1.hubspotstarter.net header.s=hs1 header.b=WFLh7tc2;
+       dkim=pass header.i=@media-solution.fr header.s=hs1-25523946 header.b="X/dm1sK0";
+       spf=pass (google.com: domain of 1axb0bfieluzr6dx0zrupekgwfcbdhbg17qux8@bf01.eu1.hubspotstarter.net designates 143.244.84.174 as permitted sender) smtp.mailfrom=1axb0bfieluzr6dx0zrupekgwfcbdhbg17qux8@bf01.eu1.hubspotstarter.net;
        dmarc=pass (p=NONE sp=NONE dis=NONE) header.from=media-solution.fr
 X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
-        d=1e100.net; s=20230601; t=1761384267; x=1761989067;
+        d=1e100.net; s=20230601; t=1761641132; x=1762245932;
         h=feedback-id:list-unsubscribe-post:precedence:mime-version:subject
          :message-id:to:reply-to:from:date:list-unsubscribe:dkim-signature
          :dkim-signature:delivered-to:x-forwarded-for:x-forwarded-to
          :x-gm-message-state:from:to:cc:subject:date:message-id:reply-to;
-        bh=97Y/O0eEgFPVKmLCL/8LHvUwx6u1G5HGBKBmhqBTbqA=;
-        b=b7c/FBqN5J7tMRdF0hApL3QZ1x+Loq21C+U3kmQdAwV71Q4XM04BUY43ko57fMAfLi
-         xq49BRXJKQVjDK270CLQFho89u6OxbXuWkI31wuModqGLffkaOn5KghnLyFQuD3Ln6ll
-         LA6nY57pYwTgy4WBhwERQ90CnZ0o/2xsvsEJfK9jWkkxqRkRBN6faF37ZrCwpmoU/wgl
-         m9zq4y68TTH3KTcwHqQC7QLf8Urar24ZDZFaoUi9IBO92ktIFnID3umvePZtDM99+FJc
-         7K8o+VbRHZd3Sv1fDK5efTNL9Mpud2bXrkpQhWk1zMmoowkSO7fqz3rKI6sI+funi1nb
-         AX0Q==
-X-Forwarded-Encrypted: i=2; AJvYcCXsO+qGvmPhVWRAgNeQ6LQWh5DGN04ptcPIVWml++1IcLEwbCoh99WSu4BoNRrjFQ7kFb4SB7vW2g==@inbox.lt
-X-Gm-Message-State: AOJu0Ywl8kLuVVOX/5ozL91Ddj0UctC1Ff6JIODDXsLpzUN8ox823Y/j
-	cmlHwY7iB4h2CeddroBSY1A4gNZTRKlCbhNRHcVSgyf4eUfZgu9Lx5RXVTTxvVkcgH6XBIyACxZ
-	pl/IWl7kP/4hFFxs6XszY1RvLTh+rk/UdAyBHxSzDwTNbHLWGRjJNgzguEwVMgg==
-X-Received: by 2002:a4a:e844:0:b0:651:d89a:62e with SMTP id 006d021491bc7-651d89a07demr9806712eaf.4.1761384266751;
-        Sat, 25 Oct 2025 02:24:26 -0700 (PDT)
+        bh=Q741sF0zy0bzjvrQBdnyCUe3grNoRBwWRNLFcKsjofI=;
+        b=lWkDqU8PLN++36IU4x1XF2ZDFkPk91HHjtZ3iWzri7jCj7+b01GRnjyGIgPNWDoN7u
+         wEfaoCEeoWQWBdOziUG+iyLyYDHcceVEIXZrR98JZm/GgduU1pM4zEMVEfNqRpnqPPGL
+         7ZmHVsAYmuvv+Xj4JK3StAg026mZor7Xj/3hpZF6+DPmHdq+qBfIrCXaW1LFLZHvWW/8
+         KLuEh4WoCqGT5g+fn1hPg/OAzFA/51gJqrspdfzssCX2lxVx8G6vamM1rKsePCbRJxRl
+         n83IAseM6ewUpuMZ2OBoNkKh6Vj1u/ztGMmJwpIfvx5gzRkQ13BqA1HJ+of0nlD4V/bs
+         MdJQ==
+X-Forwarded-Encrypted: i=2; AJvYcCWhw7/JVaEEWU3lVC+T0x7cmW7rHV9nfhkWhgBXCKB7Y8R7/4UqcXNf14FwfGr+JRFxRCEqKvb5Ag==@inbox.lt
+X-Gm-Message-State: AOJu0YxvrASd/VZp3UZkTVvKI1vuvAm1q6JyShgOEreOR4r7icFucY4C
+	82EvSXeKTF3OV8jE1uhryHHbFYyL23JibgnTTEUsx+jeELAZZ+kVShUno+OuNplmPRJZE4Nu2/U
+	VTlwRfaHItMLPGJfR89+hIF4ZsVZj/diALoTKBDXA4bYBvU5xVFFz7IqvG2MSBw==
+X-Received: by 2002:a05:6808:1828:b0:439:b4fb:1d4f with SMTP id 5614622812f47-44f6b9a89d1mr1194858b6e.10.1761641132084;
+        Tue, 28 Oct 2025 01:45:32 -0700 (PDT)
 X-Forwarded-To: kidpixel@inbox.lt
 X-Forwarded-For: camille.moine.pro@gmail.com kidpixel@inbox.lt
 Delivered-To: camille.moine.pro@gmail.com
-Received: by 2002:a17:504:150:10b0:1d87:3aa8:327 with SMTP id f16-n1csp295216njo;
-        Sat, 25 Oct 2025 02:24:24 -0700 (PDT)
-X-Google-Smtp-Source: AGHT+IEayzUegLnS5zGy54F5NyfCK7hsfKObWCd/yh7WKg/xl7ICKtJkrwES98oaydrzTeM5PBIS
-X-Received: by 2002:a17:906:6a17:b0:b6d:53f5:7a13 with SMTP id a640c23a62f3a-b6d53f57bf7mr975361366b.53.1761384264765;
-        Sat, 25 Oct 2025 02:24:24 -0700 (PDT)
-ARC-Seal: i=1; a=rsa-sha256; t=1761384264; cv=none;
+Received: by 2002:a17:504:145:20b0:1d87:3aa8:327 with SMTP id f5-n2csp611599njo;
+        Tue, 28 Oct 2025 01:45:30 -0700 (PDT)
+X-Google-Smtp-Source: AGHT+IGP/Gj/qnwaSJ/PyzPgb9+xlh8RDORkKGWZ/Dmun+Lll6wJy/dwThqLgL/CMpZZqv/7YLQl
+X-Received: by 2002:a17:906:9f91:b0:b6d:75eb:fe67 with SMTP id a640c23a62f3a-b6dba605f2dmr280048366b.61.1761641130272;
+        Tue, 28 Oct 2025 01:45:30 -0700 (PDT)
+ARC-Seal: i=1; a=rsa-sha256; t=1761641130; cv=none;
         d=google.com; s=arc-20240605;
-        b=a2oirp1jr2hUAIGLylzO1xE+N8VML7unXH22abj52Qjy1s4kAKFbuCbGYnISdX3eGr
-         Ro+Tk6nIb74Vg6iPv0b+Pf/iB2i30PH3iNhOhs0K0Aij0mtwop9k320USe6BwcT7Yu3x
-         xyChB6M/kLn0+RGiTgW/Dy9sxQNpH3NoURYjPFO2wM0SlBNEaA7s8or4bt4+to9jbbdA
-         CkGdM8S4euh3mCbrubWMm0Chm60jb8+SEHigMwcPtUNbD/Jiolq57mxcGUZ2m+KLXJ8j
-         hBlQMMd57/6AFD7c91pCGB75o+evIEguvx2jKb9FHIfOESiWB6CsYFp8RjeHVq5gisMQ
-         ULLA==
+        b=JKd+NYpNb1uWmEknnNRSRmlSvtRWoDz5i4aRHYH7HM6ATunpUm61nD9jevzRc/FlYV
+         XG36E6t7Dbo52Bt/o74ueRZWmjhrZ9czGPpbJlLzUkDXyXGwLe0Ot/uP8+JLsjZz0cQt
+         L/ty/wkGo91oK9qKOZeInWgUMYe7uwnOCoVPMLB/pLyeXVtVpHywiJSNRjXJB/EbNyHB
+         uqK7E52KJgwaCZ1IBhlfCJJfKm9CZVlUH5ZVS46x7wRFvM9LKP9H+hSdoD76uJAfB0Z1
+         Zw9jjLwY+MWGmoNUt1q/9xQ+er96cpMSWXNuZy2uMdFXY5A26qiXKBlGhE93o9h5NAP1
+         BTbw==
 ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20240605;
         h=feedback-id:list-unsubscribe-post:precedence:mime-version:subject
          :message-id:to:reply-to:from:date:list-unsubscribe:dkim-signature
          :dkim-signature;
-        bh=97Y/O0eEgFPVKmLCL/8LHvUwx6u1G5HGBKBmhqBTbqA=;
+        bh=Q741sF0zy0bzjvrQBdnyCUe3grNoRBwWRNLFcKsjofI=;
         fh=eEB++fGW6NfxZvXKZUssKv+EpX+k0uudjNVQVkAG7ls=;
-        b=S7cibrdJT2v2kNZvDlsA1dJ0HBNH8OT5y2Ce4mHWcT++521N/KXTniQM0MKNOyf9Jw
-         mac+et66I7xxdOEGi2eLdfqYzbq75ZMGsF9SCbe7jQfYhOu4PNURlYzWoOO8MMSn5Co6
-         ZGxA3cXjy5jgIMxcrBI9vA93cjske8R27JawZr40J4pnFz0RAHywqXxZbwXfsPPr8kBB
-         g9zFlWn7qxR6yr1Yo7/ESPxOB3DPf4/EcCPpXltoWPr6rvquCZy6FMkd8CN72f3u9JvS
-         MnRpcxvYyzJNB9vhQsbBEglLHjEuNJ7KRt+oBtq2ZAgkiYtyhfjXhTSSw0EbFjOBmnT9
-         O+pw==;
+        b=GOVGGe9094v2ATEGytOeQFjpdPVw9FWALdr+od8R+zIfMX7lwS7TfDAtNknAo4hswY
+         Ia88vorCKeRx+EyNoAtaHpl6ha6lXJd+O2ifnlpX4Zwsf9atrDOen3RHk0QxnJMff3gd
+         nIXjcE8Nlxe89LkU8sOqU8bc9cFnTW/3UBLZJbFVJNJLKrdbk9+KwXd8X2PiZayt6wPw
+         rBgDVBgYHKj+02cmvYXqFf7njfqsS2JHgcQjWIjLxKxqQ7tYsor8eU7qlW60lx4n3MYE
+         2SN7BkUufMrPmi/lHswUEmj7sVjyv2LELr9Hz7mxFL8s7Bdnii0qMaaeyJEsbbkS3iil
+         +efA==;
         dara=google.com
 ARC-Authentication-Results: i=1; mx.google.com;
-       dkim=pass header.i=@bf01.eu1.hubspotstarter.net header.s=hs1 header.b=apRuwYe5;
-       dkim=pass header.i=@media-solution.fr header.s=hs1-25523946 header.b=S6xLZen5;
-       spf=pass (google.com: domain of 1axbp2586ddqvsmf45vscf2ek0vkt2tb3nse1s@bf01.eu1.hubspotstarter.net designates 143.244.84.152 as permitted sender) smtp.mailfrom=1axbp2586ddqvsmf45vscf2ek0vkt2tb3nse1s@bf01.eu1.hubspotstarter.net;
+       dkim=pass header.i=@bf01.eu1.hubspotstarter.net header.s=hs1 header.b=WFLh7tc2;
+       dkim=pass header.i=@media-solution.fr header.s=hs1-25523946 header.b="X/dm1sK0";
+       spf=pass (google.com: domain of 1axb0bfieluzr6dx0zrupekgwfcbdhbg17qux8@bf01.eu1.hubspotstarter.net designates 143.244.84.174 as permitted sender) smtp.mailfrom=1axb0bfieluzr6dx0zrupekgwfcbdhbg17qux8@bf01.eu1.hubspotstarter.net;
        dmarc=pass (p=NONE sp=NONE dis=NONE) header.from=media-solution.fr
-Received: from bd77fai.bf01.eu1.hubspotstarter.net (bd77fai.bf01.eu1.hubspotstarter.net. [143.244.84.152])
-        by mx.google.com with ESMTPS id a640c23a62f3a-b6d876a4763si77666266b.237.2025.10.25.02.24.24
+Received: from bd77fa4.bf01.eu1.hubspotstarter.net (bd77fa4.bf01.eu1.hubspotstarter.net. [143.244.84.174])
+        by mx.google.com with ESMTPS id a640c23a62f3a-b6d877272d3si444757666b.988.2025.10.28.01.45.30
         for <camille.moine.pro@gmail.com>
         (version=TLS1_2 cipher=ECDHE-ECDSA-AES128-GCM-SHA256 bits=128/128);
-        Sat, 25 Oct 2025 02:24:24 -0700 (PDT)
-Received-SPF: pass (google.com: domain of 1axbp2586ddqvsmf45vscf2ek0vkt2tb3nse1s@bf01.eu1.hubspotstarter.net designates 143.244.84.152 as permitted sender) client-ip=143.244.84.152;
+        Tue, 28 Oct 2025 01:45:30 -0700 (PDT)
+Received-SPF: pass (google.com: domain of 1axb0bfieluzr6dx0zrupekgwfcbdhbg17qux8@bf01.eu1.hubspotstarter.net designates 143.244.84.174 as permitted sender) client-ip=143.244.84.174;
 Authentication-Results: mx.google.com;
-       dkim=pass header.i=@bf01.eu1.hubspotstarter.net header.s=hs1 header.b=apRuwYe5;
-       dkim=pass header.i=@media-solution.fr header.s=hs1-25523946 header.b=S6xLZen5;
-       spf=pass (google.com: domain of 1axbp2586ddqvsmf45vscf2ek0vkt2tb3nse1s@bf01.eu1.hubspotstarter.net designates 143.244.84.152 as permitted sender) smtp.mailfrom=1axbp2586ddqvsmf45vscf2ek0vkt2tb3nse1s@bf01.eu1.hubspotstarter.net;
+       dkim=pass header.i=@bf01.eu1.hubspotstarter.net header.s=hs1 header.b=WFLh7tc2;
+       dkim=pass header.i=@media-solution.fr header.s=hs1-25523946 header.b="X/dm1sK0";
+       spf=pass (google.com: domain of 1axb0bfieluzr6dx0zrupekgwfcbdhbg17qux8@bf01.eu1.hubspotstarter.net designates 143.244.84.174 as permitted sender) smtp.mailfrom=1axb0bfieluzr6dx0zrupekgwfcbdhbg17qux8@bf01.eu1.hubspotstarter.net;
        dmarc=pass (p=NONE sp=NONE dis=NONE) header.from=media-solution.fr
-Received: by 172.16.38.52 with SMTP id a089896hoz7451l63119n0icgxn2kn33fopj9uechw;
-        Sat, 25 Oct 2025 09:24:24 GMT
+Received: by 172.16.38.52 with SMTP id a089896hoz7451nhe79nfds9dqiaorccw1nifnwu5x;
+        Tue, 28 Oct 2025 08:45:28 GMT
 DKIM-Signature: v=1; s=hs1; d=bf01.eu1.hubspotstarter.net;
         i=@bf01.eu1.hubspotstarter.net;
         h=sender:from:from:reply-to:to:to:cc:cc:subject:subject:list-unsubscribe:form-sub:feedback-id:list-unsubscribe-post;
         a=rsa-sha256; c=relaxed/relaxed;
-        bh=97Y/O0eEgFPVKmLCL/8LHvUwx6u1G5HGBKBmhqBTbqA=;
-        b=apRuwYe54casOaT969aDOQhM/x7z8FZr0wrQwM6kvqShr1VR17AzrmxWDCV/EC
-         OB4pXHd7pBvKPLMfjHaauuNDLB/GJvUiUJOgodd1TQkqLKHmWWE4tTqHifzJwi1
-         I0+ng11a1JawuMIJVJ+YiA9eRxraAL+Ne7LZMwj6P6PwJTh2VGu0e1/roPl+1BD
-         jYbyum+y/cMDbdMxg6iVSlAfn8NqrvkyM8mrQ5paub/LvgBeF99fd7wr+gt+JXN
-         Q9vbBm4hWPRI2W3QoXhC1DNBlq5PThz4qS3dRAk1iwYBm2iiJn4JR5SbWDqWxbK
-         8Ir+3XLl3mGoTUI5qSYbL7kRn0/g==; q=dns/txt; t=1761384263;
-        x=1761647063;
+        bh=Q741sF0zy0bzjvrQBdnyCUe3grNoRBwWRNLFcKsjofI=;
+        b=WFLh7tc20ljZVDdFmY01a4X9+2rd0l/7XUBMoh33L0AybVSP5HNnqPT/trqanF
+         9p7k8k2/nkATubQ8i0F/lh3G2srXKz7y3GACgQyCAxYpi4TGXza2wWEwpn9knO+
+         xAc94fXyx17ZWAFWyfSUDYLyP1+rphALss5/PiwGEpJytcIOOd3K9Imf0oni9uC
+         zcZKZUk9MIf6D1WhMY/mhaCsORzMamnKJYe/EcrUPXOnhIEBg3ctmlM89SD4ckc
+         +8bKor6hoWtfNsjP+W6XCYkwD9y4gpddE96hYzUKhaAayduBYwn7bZxK39znzCo
+         nV+ze2QZ2M0dhGapAczy8/oEhg9g==; q=dns/txt; t=1761641128;
+        x=1761903928;
 DKIM-Signature: v=1; s=hs1-25523946; d=media-solution.fr;
         i=@media-solution.fr;
         h=sender:from:from:reply-to:to:to:cc:cc:subject:subject:list-unsubscribe:form-sub:feedback-id:list-unsubscribe-post;
         a=rsa-sha256; c=relaxed/relaxed;
-        bh=97Y/O0eEgFPVKmLCL/8LHvUwx6u1G5HGBKBmhqBTbqA=;
-        b=S6xLZen5Vge/JhbztOQjkpboFfmZ9XhAhw9SrObB1kK0mMjFmiBlxnWwdk+Mge
-         8O+WlOAluyY36Bp86Ox0cV0NK40zjREZx4dTTQOkd7bQoB1cjLZcgzTruDaNbLD
-         oGpd6TXxwMZQexSkn9IaQqXHRZrstSuRFeFVybvyePiIXM1YLG4O0BpMv8grrkQ
-         WmwfV5KMMBkPaXqcYh9sMenTKdP6q7iEV2tkzJF2KrxReVm9u5lZ0ps3FYlZVya
-         qnk7qx0166EwkqL1NEpHsXXBd7k5qJuEc90bXine5YNWY5omLJSSf4nzdvNZVcB
-         /1KQlEn4oEk7c4GA9z9saLsrllXA==; q=dns/txt; t=1761384263;
-        x=1761647063;
-X-HS-Cid: 1axfi4y55mti0hgrfzpw7yfsot4j3dp77c2qz0
-List-Unsubscribe: <mailto:1axcnimt48gpw5pdyuaiyeyq8zmody2uygpueo@bf01.eu1.hubspotstarter.net?subject=unsubscribe>, <https://hs-25523946.s.hubspotstarter-eu1.net/subscription-preferences/v2/unsubscribe-all?data=W2nVjwf3Y2x07W2MwmFc2-L6nFW2RtPmV3JT4VRW2-rJ3_3R5j7XW41Krtl3486CcW3M1rqC4pFn7DW3j4qWZ3W368bW4plyM34kdGTLW43RwKj3b99bZW4tx0Bh2MWJVVW3yRXDd1LkWyDW36y6wD2-8hNKW238_9d4p9MgLW3zk5Jr3T0vLgW2WF65F2TzyYrW1XcmY13gmZGWW3BZj_X2Kx1mGW3z7xqL1_b8q0W367Tbw1QDJqcW2zHRn83z97CgW1BqW0H2t4BXXW3jfwj049slD5W4cywT84mqY5HW3VXKBL309MqvW2Cvc9g3SJ1RxW2Whl_p2CZ5wnW21cC9t32cfVRW3ZHMxx2MB_MvW2Tjrh73JTB1DW4hMlxq32cb1hW2TK4BL2-MJ-8W2PBmGF3M8BPwW2B12Nc2nQzzYW3SCrMn3F8lFgW3M65-v2KNp_vW3Z-cqj2nW-Y6W3yZYsv1BnR02W3jcnGl41YxbCW3bzmtN3JZxVzW3VHpHd3JWBzfW4kcTkf22XF2qW2B0Kx32WgwHqW4rws262vz71GW2TQrqL25ns4kW3VJyYk43Ym6ZW23gkS02qCDyqW383Yxp2KG2rVW2nPjL61BLWk8W3bzlS_49tz1xW4hHB6r3Fdv8PW3Y254s1QcDRkW2YDwNR254ZwV0>
-Date: Sat, 25 Oct 2025 11:24:24 +0200
+        bh=Q741sF0zy0bzjvrQBdnyCUe3grNoRBwWRNLFcKsjofI=;
+        b=X/dm1sK0ekhUte6YdI3WknN1W4EoeI7o6uVWhGBZoHMmS8W1dswoCHhcg88yf6
+         qqgoP0gtMTAY3SRtULciE2X6JMAEbIEqZ/OT872uKJr2IjpuIxpwEqSKC0OHvtT
+         Vm7WhiQOvw7MHaAycf+fytvp7UAHvq+/0pjyWe8X3aBXomymTxkdxupDxqNtRH2
+         PXXbV8n9sqCQoFstYDvUJ/jmQv4PEwB7p41MthAUMjczO/rKB+UTqy/U/rnrLsv
+         sNJVJeywxGunWQrgTI2vI0M+OClBLpb9Uq0ufWytPwSnNbEVIaWHAsr3pcQYgfd
+         0AgsTeoOOTz+TFtuBHgkMBheZkeQ==; q=dns/txt; t=1761641128;
+        x=1761903928;
+X-HS-Cid: 1axe8olglx51qsgm6fi2jvb4dkm2i3jouv38xc
+List-Unsubscribe: <mailto:1axcxwsqpj7dh31vnh4xq0mngjcqgucyq4kmcw@bf01.eu1.hubspotstarter.net?subject=unsubscribe>, <https://hs-25523946.s.hubspotstarter-eu1.net/subscription-preferences/v2/unsubscribe-all?data=W2nVjwf3Y2w_CW2PCcvM49kFRmW3ZWRQX2r1X-lW1N84Wn2vRDl_W1_6nWy41-FYFW2Tvp0S2sVN2-W4psMd01_bDZHW3F6g4R3_SG-BW1Bp83V4tn_8wW2zw8Qw3SYk5DW4cjzwB2PPbVlW2-p9CW47KjBSW1BGmtK2xJ0c6W30j2Pz230zBHW4t85q44rkq9JW3zdVV434HkV4W30prW-4kr5NmW3QVbWf1XsmLmW2Mj-X93C8YV4W2qMvj22x-0qVW32qvNK2qVYWzW45xTPP4p9MxCW3b1hjY3XQFNzW3T1cVN41HN_QW25pd2T2PzYjZW45GwYw20XlJ5W1S2hrT21bT7LW3_VQ392Fr0t6W25nss72HHx9hW3W11J31V3MDwW2r3wyG22Tf98W4fLNz84kBTw9W4ktCCQ43s5nWW3d1Xyl2FVbWmW1ScRx12MQcftW20YJX73jnFW0W2HKJnZ2YNLGyW47v-353XWgW3W21qV-q1NB06KW2Rxj9F47KDl5W3ZVDTk47MjjCW2Yt7F-32k4rpW38rVyM4tlwrPW4hF-FV41HNpqW41Ysdy2176B8W36jDnW2vD2mnW3d7kn14tDttnW2MT6zp3b2ZcwW3T1dpp2MlDtQW2HClLK239jF-W2PNNlR2WPqJyW3VLhTR4pgKFt0>
+Date: Tue, 28 Oct 2025 09:45:28 +0100
 From: =?UTF-8?Q?L=27=C3=A9quipe_M=C3=A9dia_Solution?=
  <technique@media-solution.fr>
 Reply-To: technique@media-solution.fr
 To: camille.moine.pro@gmail.com
-Message-ID: <1761384263596.dfd4d6d1-c242-4c31-b44a-5a8c70ad4720@bf01.eu1.hubspotstarter.net>
-Subject: =?utf-8?Q?M=C3=A9dia_Solution_-_Missions_de_recadrage_25/10?=
+Message-ID: <1761641128318.945a2ac2-98bc-4057-8655-ee54b91ce6ad@bf01.eu1.hubspotstarter.net>
+Subject: =?utf-8?Q?M=C3=A9dia_Solution_-_Missions_de_recadrage_28/10?=
 MIME-Version: 1.0
 Content-Type: multipart/alternative;
-	boundary="----=_Part_3364890_546959650.1761384263854"
+	boundary="----=_Part_45803_1042949457.1761641128597"
 Precedence: bulk
 X-Report-Abuse-To: abuse@hubspotstarter.net (see
  https://hubspotstarter.net/)
 List-Unsubscribe-Post: List-Unsubscribe=One-Click
-Feedback-ID: aephcos:aib9x3mr:aidf:HubSpot
+Feedback-ID: aephcos:aib914lf:aidf:HubSpot
 X-KLMS-Message-Action: skipped, AntiSpam
-X-KLMS-AntiSpam-Lua-Profiles: 197433 [Oct 24 2025]
+X-KLMS-AntiSpam-Lua-Profiles: 197506 [Oct 28 2025]
 X-KLMS-AntiSpam-Version: 6.1.1.11
 X-KLMS-AntiSpam-Rate: 0
 X-KLMS-AntiSpam-Status: mass_mail
 X-KLMS-AntiSpam-Method: mass mail
 X-KLMS-AntiSpam-Auth: dmarc=pass header.from=media-solution.fr policy=none;spf=pass smtp.mailfrom=gmail.com;dkim=pass header.d=bf01.eu1.hubspotstarter.net;dkim=pass header.d=media-solution.fr
-X-KLMS-AntiSpam-Info: LuaCore: 72 0.3.72 80ff96170b649fb7ebd1aa4cb544c36c109810bd, {rep_avail}, {dkim_exist_silent}, {Mass mail sign in precedence header [mass mail]}, {Tracking_smtp_not_equal_from}, {Tracking_uf_ne_domains}, {Tracking_marketers}, {Tracking_from_domain_doesnt_match_to}, {Has list-unsubscribe header [mass mail]}, {Tracking_smtp_domain_mismatch}, {Tracking_smtp_domain_2level_mismatch}, FromAlignment: n, ApMailHostAddress: 209.85.161.42
+X-KLMS-AntiSpam-Info: LuaCore: 72 0.3.72 80ff96170b649fb7ebd1aa4cb544c36c109810bd, {rep_avail}, {dkim_exist_silent}, {Mass mail sign in precedence header [mass mail]}, {Tracking_smtp_not_equal_from}, {Tracking_uf_ne_domains}, {Tracking_marketers}, {Tracking_from_domain_doesnt_match_to}, {Has list-unsubscribe header [mass mail]}, {Tracking_smtp_domain_mismatch}, {Tracking_smtp_domain_2level_mismatch}, FromAlignment: n, ApMailHostAddress: 209.85.167.175
 X-MS-Exchange-Organization-SCL: -1
-X-KLMS-AntiVirus: Modern antivirus of Inbox, version 8.0.3.30, bases: 2025/10/25 06:18:00 #27796334
+X-KLMS-AntiVirus: Modern antivirus of Inbox, version 8.0.3.30, bases: 2025/10/28 07:35:00 #27799183
 X-KLMS-AntiVirus-Status: Clean, skipped
 
-------=_Part_3364890_546959650.1761384263854
+------=_Part_45803_1042949457.1761641128597
 Content-Type: text/plain; charset=utf-8
 Content-Transfer-Encoding: quoted-printable
 
@@ -170,10 +170,12 @@ Bonjour Camille,
 
 Nous esp=C3=A9rons que tout va bien pour toi.
 
-Un lot urgent est arriv=C3=A9, es-tu dispo pour le traiter ?
+Des lots de vid=C3=A9os vont arriver tout au long de la journ=C3=A9e, seras=
+-tu disponible pour les traiter ?
 
-Nous ferons un r=C3=A9cap lundi pour =C3=A9diter un bon de commande corresp=
-ondant aux vid=C3=A9os livr=C3=A9es, aux tarifs habituels.
+Nous ferons un r=C3=A9cap en fin de journ=C3=A9e (ou demain matin) pour =C3=
+=A9diter un bon de commande correspondant aux vid=C3=A9os livr=C3=A9es, aux=
+ tarifs habituels.
 
 Une fois un lot trait=C3=A9, tu pourras d=C3=A9poser ton travail en suivant=
  le lien ci-dessous (un dossier nomm=C3=A9 simplement : "N=C2=B0du lot Pr=
@@ -183,13 +185,13 @@ Exemple : 550 Adam
 
 Lien de d=C3=A9p=C3=B4t :
 
-https://d3053H04.eu1.hubspotlinksstarter.com/Ctc/W+113/d3053H04/VX4gCT7GV26=
-8W1R3QDW575nSXW197v5Z5F3fdcN6hnppR3lcq-W7Y8-PT6lZ3mTW28yVvh3N0pxLW1DFGB65sG=
-SGmW7_ZqpR5DTFD2W4bbjwy2ZwrQlW8SzPcs4bKVzpV_y3Qv7xxl0lN8X2nF3T9ZxqW78grl84V=
-k8FLW7kJGfT4BtDGDW9fh8sw2hdDm9W3KNkHv2tvJcMW5q77nt20LB2cW98BfV05B8740VHzfhH=
-5MdF-sW7sPn0g6ztTyPW8gvkxW8mSK5VW8-hc9799xB3SW5DP6CX4hlF5PW5nkw9t2-9RB8W7m-=
-2y58vPPKZW7rg8rK4B0SPVW1KYpMm1gW7sgW8nxRpy3kfJWcW7syB3G1SsTyrN24ZC62B6hCQW8=
-W24Z92HMPRCf8XjtST04
+https://d3053H04.eu1.hubspotlinksstarter.com/Ctc/W+113/d3053H04/VWvTf475Zzl=
+4W3bJrYT358YF2W6klx535F9DkhN4CDgfj3lcq-W7Y8-PT6lZ3lJW5-PvnN2tDbLfW9jQYQ-24F=
+ptTW4b4NLd6fSkvHW3KnYl28k5VHKN5fzT_myfXdWW87Q1Zs3298G5W7-nhKn29ggTvN7QGR1XV=
+DjPhW6xHq1s3YYcNqW2WymmZ15fP8tW550W3z5bD6BkV-5rNZ7RZh-CW2ttQv73l9T9ZVTG82R4=
+8LRjGW8MsNsL7pgyJVW5ykWGC3LpQg2W1rM5v42K9FTMW6LhVG_8vqBd_W1PfSk43b44WkW45Gp=
+rT2gWVCGW8jn4YX1ZsdD0W8jpLhG14sjsZW3nC0hX6mTpFKW2K6W5b8NycphW4kbJ4J6BkS7sW5=
+ptG-N9fLpZdf73nmrb04
 
 Merci par avance,
 
@@ -204,32 +206,32 @@ L'=C3=A9quipe technique de M=C3=A9dia Solution
 SPOTL, 12, rue Alexandre Dumas, Paris, France 75011, 01 53 20 91 69
 
 Se d=C3=A9sabonner (https://hs-25523946.s.hubspotstarter-eu1.net/preference=
-s/fr/unsubscribe?data=3DW2nVjwf3Y2w_yW43CTTm3R3CNQW2xJrFj2FBlSmW2WGMNt4kvs9=
-jW4pDX--2xB4RHW4mGKYb2zG_BXW2KwDlF2qPZcMW2r91gv2YKT-nW3z9dly3jwdV8W2PNmdb2P=
-BmHLW3Y30wh3M4NhqW1QcbXF32jFX7W2CXsvj1LmZlqW3P0W931X2d8VW3XxKjM3XJQ4pW2s_zh=
-L4kltXwW2TG_8x2FTmTmW3Y1dch3S_CfJW3M41rg1BGJnCW2WNchF3_VP06W47T8513g9-mLW43=
-DFWp2xH99tW3M91nY49jNfpW258PKb3VQpK5W3Y30YT1Bd45ZW4mKK5G22WnPBW2Yt7zb1NtDK_=
-W3XLxtG3BVYGbW252W632p3MnMW2FJBJc3QVbbPW4fpRfj1Xcn4_W4cQGY53CdgvyW3NCs6B3DL=
-1-yW1VrHPj3yYkDwW2WyVBt2Wv_WVW2RTz9b1LwQ60W1Ly_g52FXd--W2HrJvm3NN910W2MnNht=
-3XwrjZW1ZlhFR1ZljCWW49w9y83dv38vW1SkJK42FDs8LW45mmsx1-XGRvW32pBP42-JWD4W3H4=
-qKz3DSKQjW2HF71g2RQC19W4mnr8M4tynBRW3C7MDx3SMLcbW2HzPgD2RPPXLW3JSljH1SqhL1W=
-3VZQYr21mycRW32FvTb1Y-m6Nf3_VQCd04&_hsenc=3Dp2ANqtz-9iRIxN7n3RCOpFDp2FzYI9C=
-OK623irV59dxu76Jz5YR6EDU8xPFkx24URsjES3uwz1KijIcsUag31HnGtVjCsdF-hfJSqelYlv=
-FKruQAkYVeMo_HE&_hsmi=3D120363857 )
+s/fr/unsubscribe?data=3DW2nVjwf3Y2x9WW3ZFGW543zjBtW1-ZgjF41tx_YW2H-P523H3XX=
+9W2HGLNg2w62znW3XsyGx30KwKYW3bs3yc348wvRW2t5RRK20ZtmHW4kK2cz3BPcryW3M1SJL4h=
+g5k3W3K2wg33NGhMmW2vYZv134vQq7W43T-VP3M0cnHW1NtbWL236nW8W23r77H49NpbmW2RQgn=
+x2RkQnxW2vLjrL3zdZ-YW3dkCRM3BWPLXW2MWgJT3zkyRhW34HqPm24_xRZW3__GW03j6s6pW1Z=
+tLL34kl6r6W3_DhP22-DG3bW1V2W9D1Z5NswW3JH-s93NXW6zW4pDwTV3GHNMyW3K1MmX3bwSXy=
+W2WxffK4fpPXRW3b3MNs4rvGKBW32hMPh2HH9GRW41CHjW3LZgBzW34qCRZ1Vcf9FW1LxffH45F=
+Hy5W4pmM5R3VyL1kW1SrTm01Lwv3gW2vLhRd1QswhTW2sVng81Ndb_VW4kwB_p1NFmCSW4crMcf=
+2WPQwBW4fGCLk30t6HfW3yQ-mH3ZDqFfW4hmx-F3XZ4qHW2YfYMZ1Xt_CkW3SLRMn2p0RslW49s=
+NgF21k0rXW3j8yxp47mX24W24TV3R3XF1cFW1QzpFQ43nn97W2p5n8S2xRw0NW2HYl3h32BDRJW=
+2PwCrK1Qg50rW4tyjLG45wG_-f4mFw-504&_hsenc=3Dp2ANqtz-_23hdFvARjlKVwv45ehp5Xo=
+7RHlTTtb-tpeXCZipEAOW09kBxpRg3JzoY2zY2p_Kslidepn7qpZIMPbsuNQFNFZi9Q4CtAzM6k=
+SH_9DVXjGJdaRmw&_hsmi=3D120551729 )
 G=C3=A9rer les pr=C3=A9f=C3=A9rences (https://hs-25523946.s.hubspotstarter-=
-eu1.net/preferences/fr/manage?data=3DW2nVjwf3Y2w_yW43CTTm3R3CNQW2xJrFj2FBlS=
-mW2WGMNt4kvs9jW4pDX--2xB4RHW4mGKYb2zG_BXW2KwDlF2qPZcMW2r91gv2YKT-nW3z9dly3j=
-wdV8W2PNmdb2PBmHLW3Y30wh3M4NhqW1QcbXF32jFX7W2CXsvj1LmZlqW3P0W931X2d8VW3XxKj=
-M3XJQ4pW2s_zhL4kltXwW2TG_8x2FTmTmW3Y1dch3S_CfJW3M41rg1BGJnCW2WNchF3_VP06W47=
-T8513g9-mLW43DFWp2xH99tW3M91nY49jNfpW258PKb3VQpK5W3Y30YT1Bd45ZW4mKK5G22WnPB=
-W2Yt7zb1NtDK_W3XLxtG3BVYGbW252W632p3MnMW2FJBJc3QVbbPW4fpRfj1Xcn4_W4cQGY53Cd=
-gvyW3NCs6B3DL1-yW1VrHPj3yYkDwW2WyVBt2Wv_WVW2RTz9b1LwQ60W1Ly_g52FXd--W2HrJvm=
-3NN910W2MnNht3XwrjZW1ZlhFR1ZljCWW49w9y83dv38vW1SkJK42FDs8LW45mmsx1-XGRvW32p=
-BP42-JWD4W3H4qKz3DSKQjW2HF71g2RQC19W4mnr8M4tynBRW3C7MDx3SMLcbW2HzPgD2RPPXLW=
-3JSljH1SqhL1W3VZQYr21mycRW32FvTb1Y-m6Nf3_VQCd04&_hsenc=3Dp2ANqtz-9iRIxN7n3R=
-COpFDp2FzYI9COK623irV59dxu76Jz5YR6EDU8xPFkx24URsjES3uwz1KijIcsUag31HnGtVjCs=
-dF-hfJSqelYlvFKruQAkYVeMo_HE&_hsmi=3D120363857 )
-------=_Part_3364890_546959650.1761384263854
+eu1.net/preferences/fr/manage?data=3DW2nVjwf3Y2x9WW3ZFGW543zjBtW1-ZgjF41tx_=
+YW2H-P523H3XX9W2HGLNg2w62znW3XsyGx30KwKYW3bs3yc348wvRW2t5RRK20ZtmHW4kK2cz3B=
+PcryW3M1SJL4hg5k3W3K2wg33NGhMmW2vYZv134vQq7W43T-VP3M0cnHW1NtbWL236nW8W23r77=
+H49NpbmW2RQgnx2RkQnxW2vLjrL3zdZ-YW3dkCRM3BWPLXW2MWgJT3zkyRhW34HqPm24_xRZW3_=
+_GW03j6s6pW1ZtLL34kl6r6W3_DhP22-DG3bW1V2W9D1Z5NswW3JH-s93NXW6zW4pDwTV3GHNMy=
+W3K1MmX3bwSXyW2WxffK4fpPXRW3b3MNs4rvGKBW32hMPh2HH9GRW41CHjW3LZgBzW34qCRZ1Vc=
+f9FW1LxffH45FHy5W4pmM5R3VyL1kW1SrTm01Lwv3gW2vLhRd1QswhTW2sVng81Ndb_VW4kwB_p=
+1NFmCSW4crMcf2WPQwBW4fGCLk30t6HfW3yQ-mH3ZDqFfW4hmx-F3XZ4qHW2YfYMZ1Xt_CkW3SL=
+RMn2p0RslW49sNgF21k0rXW3j8yxp47mX24W24TV3R3XF1cFW1QzpFQ43nn97W2p5n8S2xRw0NW=
+2HYl3h32BDRJW2PwCrK1Qg50rW4tyjLG45wG_-f4mFw-504&_hsenc=3Dp2ANqtz-_23hdFvARj=
+lKVwv45ehp5Xo7RHlTTtb-tpeXCZipEAOW09kBxpRg3JzoY2zY2p_Kslidepn7qpZIMPbsuNQFN=
+FZi9Q4CtAzM6kSH_9DVXjGJdaRmw&_hsmi=3D120551729 )
+------=_Part_45803_1042949457.1761641128597
 Content-Type: text/html; charset="utf-8"
 Content-Transfer-Encoding: quoted-printable
 
@@ -237,11 +239,11 @@ Content-Transfer-Encoding: quoted-printable
 .w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns=3D"http://www.w3=
 .org/1999/xhtml" xmlns:o=3D"urn:schemas-microsoft-com:office:office" xmlns:=
 v=3D"urn:schemas-microsoft-com:vml" lang=3D"fr"><head>
-    <title>M=C3=A9dia Solution - Missions de recadrage 25/10</title>
+    <title>M=C3=A9dia Solution - Missions de recadrage 28/10</title>
     <meta property=3D"og:title" content=3D"M=C3=A9dia Solution - Missions d=
-e recadrage 25/10">
+e recadrage 28/10">
     <meta name=3D"twitter:title" content=3D"M=C3=A9dia Solution - Missions =
-de recadrage 25/10">
+de recadrage 28/10">
    =20
    =20
    =20
@@ -285,8 +287,8 @@ de recadrage 25/10">
  =20
    =20
   <meta name=3D"generator" content=3D"HubSpot"><meta property=3D"og:url" co=
-ntent=3D"http://media-solution-25523946.hs-sites-eu1.com/-temporary-slug-31=
-35c5c7-bb23-4f85-beab-9ab58090c2a7"><meta name=3D"robots" content=3D"noinde=
+ntent=3D"http://media-solution-25523946.hs-sites-eu1.com/-temporary-slug-93=
+18fe39-b4d9-4d40-ac71-bb4b9962a3ef"><meta name=3D"robots" content=3D"noinde=
 x,follow"><!--[if !((mso)|(IE))]><!-- --><style type=3D"text/css">@media on=
 ly screen and (max-width:639px){img.stretch-on-mobile,.hs_rss_email_entries=
 _table img,.hs-stretch-cta .hs-cta-img{height:auto !important;width:100% !i=
@@ -454,12 +456,13 @@ t;" data-hs-cos-general-type=3D"widget" data-hs-cos-type=3D"rich_text"><div=
 =A9rons que tout va bien pour toi.</span></p>
 <p style=3D"line-height:175%">&nbsp;</p>
 <p style=3D"line-height:175%; font-weight:bold"><span style=3D"color: #0000=
-00;">Un lot urgent est arriv=C3=A9, es-tu dispo pour le traiter ?</span></p=
->
+00;">Des lots de vid=C3=A9os vont arriver tout au long de la journ=C3=A9e, =
+seras-tu disponible pour les traiter ?</span></p>
 <p style=3D"line-height:175%; font-weight:bold">&nbsp;</p>
 <p style=3D"line-height:175%; font-weight:bold"><span style=3D"color: #0000=
-00;">Nous ferons un r=C3=A9cap lundi pour =C3=A9diter un bon de commande co=
-rrespondant aux vid=C3=A9os livr=C3=A9es, aux tarifs habituels.</span></p>
+00;">Nous ferons un r=C3=A9cap en fin de journ=C3=A9e (ou demain matin) pou=
+r =C3=A9diter un bon de commande correspondant aux vid=C3=A9os livr=C3=A9es=
+, aux tarifs habituels.</span></p>
 <p style=3D"line-height:175%; font-weight:bold">&nbsp;</p>
 <p style=3D"line-height:175%; font-weight:bold"><span style=3D"color: #ff02=
 01;">Une fois un lot trait=C3=A9, tu pourras d=C3=A9poser ton travail en su=
@@ -623,37 +626,37 @@ t:normal;text-decoration:none;font-style:normal;color:#23496d">
         </p>
         <p>
           <a data-unsubscribe=3D"true" href=3D"https://hs-25523946.s.hubspo=
-tstarter-eu1.net/preferences/fr/unsubscribe?data=3DW2nVjwf3Y2w_yW43CTTm3R3C=
-NQW2xJrFj2FBlSmW2WGMNt4kvs9jW4pDX--2xB4RHW4mGKYb2zG_BXW2KwDlF2qPZcMW2r91gv2=
-YKT-nW3z9dly3jwdV8W2PNmdb2PBmHLW3Y30wh3M4NhqW1QcbXF32jFX7W2CXsvj1LmZlqW3P0W=
-931X2d8VW3XxKjM3XJQ4pW2s_zhL4kltXwW2TG_8x2FTmTmW3Y1dch3S_CfJW3M41rg1BGJnCW2=
-WNchF3_VP06W47T8513g9-mLW43DFWp2xH99tW3M91nY49jNfpW258PKb3VQpK5W3Y30YT1Bd45=
-ZW4mKK5G22WnPBW2Yt7zb1NtDK_W3XLxtG3BVYGbW252W632p3MnMW2FJBJc3QVbbPW4fpRfj1X=
-cn4_W4cQGY53CdgvyW3NCs6B3DL1-yW1VrHPj3yYkDwW2WyVBt2Wv_WVW2RTz9b1LwQ60W1Ly_g=
-52FXd--W2HrJvm3NN910W2MnNht3XwrjZW1ZlhFR1ZljCWW49w9y83dv38vW1SkJK42FDs8LW45=
-mmsx1-XGRvW32pBP42-JWD4W3H4qKz3DSKQjW2HF71g2RQC19W4mnr8M4tynBRW3C7MDx3SMLcb=
-W2HzPgD2RPPXLW3JSljH1SqhL1W3VZQYr21mycRW32FvTb1Y-m6Nf3_VQCd04&amp;utm_sourc=
-e=3Dhs_email&amp;utm_medium=3Demail&amp;utm_content=3D120363857&amp;_hsenc=
-=3Dp2ANqtz--yXfjEtP1mscZNFoXKlhw0elBmNzMtlOIsSbl_dHOD8_TeinkEzf5wyakJcKmB3T=
-l2SGJ27bxTKCjEchE0HkGL1hBcRqxAV86YSRv7mDcgi_3qN9k&amp;_hsmi=3D120363857" st=
+tstarter-eu1.net/preferences/fr/unsubscribe?data=3DW2nVjwf3Y2x9WW3ZFGW543zj=
+BtW1-ZgjF41tx_YW2H-P523H3XX9W2HGLNg2w62znW3XsyGx30KwKYW3bs3yc348wvRW2t5RRK2=
+0ZtmHW4kK2cz3BPcryW3M1SJL4hg5k3W3K2wg33NGhMmW2vYZv134vQq7W43T-VP3M0cnHW1Ntb=
+WL236nW8W23r77H49NpbmW2RQgnx2RkQnxW2vLjrL3zdZ-YW3dkCRM3BWPLXW2MWgJT3zkyRhW3=
+4HqPm24_xRZW3__GW03j6s6pW1ZtLL34kl6r6W3_DhP22-DG3bW1V2W9D1Z5NswW3JH-s93NXW6=
+zW4pDwTV3GHNMyW3K1MmX3bwSXyW2WxffK4fpPXRW3b3MNs4rvGKBW32hMPh2HH9GRW41CHjW3L=
+ZgBzW34qCRZ1Vcf9FW1LxffH45FHy5W4pmM5R3VyL1kW1SrTm01Lwv3gW2vLhRd1QswhTW2sVng=
+81Ndb_VW4kwB_p1NFmCSW4crMcf2WPQwBW4fGCLk30t6HfW3yQ-mH3ZDqFfW4hmx-F3XZ4qHW2Y=
+fYMZ1Xt_CkW3SLRMn2p0RslW49sNgF21k0rXW3j8yxp47mX24W24TV3R3XF1cFW1QzpFQ43nn97=
+W2p5n8S2xRw0NW2HYl3h32BDRJW2PwCrK1Qg50rW4tyjLG45wG_-f4mFw-504&amp;utm_sourc=
+e=3Dhs_email&amp;utm_medium=3Demail&amp;utm_content=3D120551729&amp;_hsenc=
+=3Dp2ANqtz--9Fuu3RrTOSbx5QpzWGRo6S8-JUss_YYpUx1gUMj5Ly4TRll-j1rUWZG3-grk1vB=
+HQSBIIQqjwjTI3q4W__7nlwQHXODniZSMlBVzKur6yTgI4JTk&amp;_hsmi=3D120551729" st=
 yle=3D"font-family:Helvetica,Arial,sans-serif; font-size:12px; color:#00a4b=
 d; font-weight:normal; text-decoration:underline; font-style:normal" data-h=
 s-link-id=3D"0" data-hs-link-id-v2=3D"SFRZzEXk" target=3D"_blank">Se d=C3=
 =A9sabonner</a>
           <a data-unsubscribe=3D"true" href=3D"https://hs-25523946.s.hubspo=
-tstarter-eu1.net/preferences/fr/manage?data=3DW2nVjwf3Y2w_yW43CTTm3R3CNQW2x=
-JrFj2FBlSmW2WGMNt4kvs9jW4pDX--2xB4RHW4mGKYb2zG_BXW2KwDlF2qPZcMW2r91gv2YKT-n=
-W3z9dly3jwdV8W2PNmdb2PBmHLW3Y30wh3M4NhqW1QcbXF32jFX7W2CXsvj1LmZlqW3P0W931X2=
-d8VW3XxKjM3XJQ4pW2s_zhL4kltXwW2TG_8x2FTmTmW3Y1dch3S_CfJW3M41rg1BGJnCW2WNchF=
-3_VP06W47T8513g9-mLW43DFWp2xH99tW3M91nY49jNfpW258PKb3VQpK5W3Y30YT1Bd45ZW4mK=
-K5G22WnPBW2Yt7zb1NtDK_W3XLxtG3BVYGbW252W632p3MnMW2FJBJc3QVbbPW4fpRfj1Xcn4_W=
-4cQGY53CdgvyW3NCs6B3DL1-yW1VrHPj3yYkDwW2WyVBt2Wv_WVW2RTz9b1LwQ60W1Ly_g52FXd=
---W2HrJvm3NN910W2MnNht3XwrjZW1ZlhFR1ZljCWW49w9y83dv38vW1SkJK42FDs8LW45mmsx1=
--XGRvW32pBP42-JWD4W3H4qKz3DSKQjW2HF71g2RQC19W4mnr8M4tynBRW3C7MDx3SMLcbW2HzP=
-gD2RPPXLW3JSljH1SqhL1W3VZQYr21mycRW32FvTb1Y-m6Nf3_VQCd04&amp;utm_source=3Dh=
-s_email&amp;utm_medium=3Demail&amp;utm_content=3D120363857&amp;_hsenc=3Dp2A=
-Nqtz--yXfjEtP1mscZNFoXKlhw0elBmNzMtlOIsSbl_dHOD8_TeinkEzf5wyakJcKmB3Tl2SGJ2=
-7bxTKCjEchE0HkGL1hBcRqxAV86YSRv7mDcgi_3qN9k&amp;_hsmi=3D120363857" style=3D=
+tstarter-eu1.net/preferences/fr/manage?data=3DW2nVjwf3Y2x9WW3ZFGW543zjBtW1-=
+ZgjF41tx_YW2H-P523H3XX9W2HGLNg2w62znW3XsyGx30KwKYW3bs3yc348wvRW2t5RRK20ZtmH=
+W4kK2cz3BPcryW3M1SJL4hg5k3W3K2wg33NGhMmW2vYZv134vQq7W43T-VP3M0cnHW1NtbWL236=
+nW8W23r77H49NpbmW2RQgnx2RkQnxW2vLjrL3zdZ-YW3dkCRM3BWPLXW2MWgJT3zkyRhW34HqPm=
+24_xRZW3__GW03j6s6pW1ZtLL34kl6r6W3_DhP22-DG3bW1V2W9D1Z5NswW3JH-s93NXW6zW4pD=
+wTV3GHNMyW3K1MmX3bwSXyW2WxffK4fpPXRW3b3MNs4rvGKBW32hMPh2HH9GRW41CHjW3LZgBzW=
+34qCRZ1Vcf9FW1LxffH45FHy5W4pmM5R3VyL1kW1SrTm01Lwv3gW2vLhRd1QswhTW2sVng81Ndb=
+_VW4kwB_p1NFmCSW4crMcf2WPQwBW4fGCLk30t6HfW3yQ-mH3ZDqFfW4hmx-F3XZ4qHW2YfYMZ1=
+Xt_CkW3SLRMn2p0RslW49sNgF21k0rXW3j8yxp47mX24W24TV3R3XF1cFW1QzpFQ43nn97W2p5n=
+8S2xRw0NW2HYl3h32BDRJW2PwCrK1Qg50rW4tyjLG45wG_-f4mFw-504&amp;utm_source=3Dh=
+s_email&amp;utm_medium=3Demail&amp;utm_content=3D120551729&amp;_hsenc=3Dp2A=
+Nqtz--9Fuu3RrTOSbx5QpzWGRo6S8-JUss_YYpUx1gUMj5Ly4TRll-j1rUWZG3-grk1vBHQSBII=
+QqjwjTI3q4W__7nlwQHXODniZSMlBVzKur6yTgI4JTk&amp;_hsmi=3D120551729" style=3D=
 "font-family:Helvetica,Arial,sans-serif; font-size:12px; color:#00a4bd; fon=
 t-weight:normal; text-decoration:underline; font-style:normal" data-hs-link=
 -id=3D"0" data-hs-link-id-v2=3D"qjPJqCop" target=3D"_blank">G=C3=A9rer les =
@@ -676,10 +679,10 @@ pr=C3=A9f=C3=A9rences</a>
     </div>
  =20
 <img src=3D"https://d3053H04.eu1.hubspotlinksstarter.com/Cto/W+113/d3053H04=
-/VX4gCT7GV268W1R3QDW575nSXW197v5Z5F3fdcW6hnp8l8fYJlS315G1" alt=3D"" width=
+/VWvTf475Zzl4W3bJrYT358YF2W6klx535F9DkhW4CDf_R8fYJlS315G1" alt=3D"" width=
 =3D"1" height=3D"1" border=3D"0" style=3D"display:none!important;min-height=
 :1px!important;width:1px!important;border-width:0!important;margin-top:0!im=
 portant;margin-bottom:0!important;margin-right:0!important;margin-left:0!im=
 portant;padding-top:0!important;padding-bottom:0!important;padding-right:0!=
 important;padding-left:0!important"></body></html>
-------=_Part_3364890_546959650.1761384263854--
+------=_Part_45803_1042949457.1761641128597--

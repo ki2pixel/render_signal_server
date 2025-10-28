@@ -67,14 +67,15 @@ Cette application fournit une télécommande web sécurisée (Flask + Flask-Logi
   - `app_config_store.py` - Gestion unifiée de la configuration avec fallback sur stockage externe ou fichiers locaux
 
 #### Routes API
-  - `api_webhooks.py` - Gestion de la configuration des webhooks
-  - `api_polling.py` - Contrôle du polling d'emails
-  - `api_processing.py` - Gestion des préférences de traitement
-  - `api_test.py` - Endpoints de test (CORS)
-  - `api_logs.py` - Consultation des logs
-  - `api_admin.py` - Endpoints administratifs (présence Make, redémarrage, déclenchement manuel `/api/check_emails_and_download`, endpoint de vérification manuelle des e-mails)
-  - `api_utility.py` - Utilitaires (ping, trigger, statut local UI)
-  - `api_config.py` - Endpoints protégés de configuration (fenêtre horaire webhooks, runtime flags, configuration polling)
+  - `api_webhooks.py` - Gestion de la configuration des webhooks (URL, fenêtre globale, flags SSL)
+  - `api_polling.py` - Endpoint legacy `POST /api/polling/toggle` conservé pour la rétrocompatibilité des tests
+  - `api_processing.py` - Gestion des préférences de traitement (avec routes legacy exposées via `legacy_bp`)
+  - `api_test.py` - Endpoints de test (CORS) authentifiés par clé API
+  - `api_logs.py` - Consultation des journaux de webhooks
+  - `api_admin.py` - Endpoints administratifs (présence Make, redémarrage, déclenchement manuel `/api/check_emails_and_download`, déploiement Render)
+  - `api_utility.py` - Utilitaires (ping ouvert, trigger local, statut local protégé)
+  - `api_config.py` - Endpoints protégés de configuration (fenêtre horaire webhooks legacy, runtime flags, configuration polling)
+  - `api_make.py` - Pilotage manuel des scénarios Make (toggle all / status)
   - `dashboard.py` - Routes de l'interface utilisateur
   - `health.py` - Endpoint de santé
 - `auth/`
@@ -123,6 +124,7 @@ Objectifs: séparation des responsabilités, testabilité améliorée, réductio
     - `GET /api/ping` – santé de l'application.
     - `GET /api/check_trigger` – lecture/consommation d'un signal local (fichier `signal_data_app_render/local_workflow_trigger_signal.json`).
     - `POST /api/check_emails_and_download` – lance en arrière-plan une vérification IMAP (protégé: login requis).
+    - `POST /api/make/toggle_all` – contrôle manuel des scénarios Make (protégé, conservé pour opérations).
   - Thread de fond: `background_email_poller()` démarre au boot via `start_background_tasks()`.
 
 - Frontend (`dashboard.html` + `static/dashboard.js`)

@@ -2,6 +2,19 @@
 
 Ce document recense les patrons de conception et les standards récurrents dans le projet.
 
+## Gestion des fenêtres horaires et traitement des e-mails
+
+- **Fenêtres horaires configurables** : Le système utilise des fenêtres horaires configurables pour le traitement des e-mails et l'envoi de webhooks. Ces fenêtres sont définies par des variables d'environnement (`WEBHOOK_TIME_START`, `WEBHOOK_TIME_END`) et peuvent être modifiées via l'interface d'administration.
+
+- **Traitement spécial pour les e-mails DESABO** :
+  - **Cas non urgent** : Pour les e-mails DESABO non urgents reçus avant l'ouverture de la fenêtre horaire, l'heure de début est définie sur l'heure de début configurée (par exemple "12h00") plutôt que sur l'heure actuelle.
+  - **Cas urgent** : Les e-mails DESABO marqués comme urgents ne contournent pas la fenêtre horaire et sont traités uniquement pendant les heures d'ouverture.
+  - **Détection d'urgence** : La détection d'urgence est basée sur la présence de mots-clés ("urgent", "urgence") dans le sujet ou le corps de l'e-mail.
+
+- **Gestion robuste des chemins de fichiers** : Les fonctions qui manipulent des fichiers utilisent `pathlib.Path` pour une gestion cohérente des chemins sur différents systèmes d'exploitation. Les chemins sont vérifiés pour l'existence avant toute opération de lecture/écriture.
+
+- **Journalisation structurée** : Les événements importants sont enregistrés avec un format structuré pour faciliter l'analyse et le débogage. Les journaux incluent des métadonnées telles que l'ID de l'e-mail, le type de détecteur et les décisions de traitement prises.
+
 ## Tests et Qualité du Code
 
 - **Structure des Tests** : Organisation en dossiers `tests/` avec une structure reflétant l'architecture du code source. Utilisation de préfixes `test_` pour les fichiers de test et les fonctions de test.
