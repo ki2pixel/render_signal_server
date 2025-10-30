@@ -9,13 +9,13 @@ require_once __DIR__ . '/EmailProcessor.php';
 require_once __DIR__ . '/DropboxUrlProcessor.php';
 require_once __DIR__ . '/FromSmashUrlProcessor.php';
 require_once __DIR__ . '/SwissTransferUrlProcessor.php';
-require_once __DIR__ . '/DatabaseLogger.php';
+require_once __DIR__ . '/JsonLogger.php';
 require_once __DIR__ . '/GmailMailer.php';
 
 class WebhookHandler
 {
     private $emailProcessor;
-    private $databaseLogger;
+    private $jsonLogger;
 
     /**
      * Constructor
@@ -23,15 +23,12 @@ class WebhookHandler
     public function __construct()
     {
         $this->emailProcessor = new EmailProcessor();
-        $this->databaseLogger = new DatabaseLogger();
-        
-        // Ensure database table exists
-        $this->databaseLogger->ensureTableExists();
+        $this->jsonLogger = new JsonLogger();
     }
 
     /**
      * Process webhook request
-     * 
+     *
      * @param array $webhookData Webhook payload data
      * @return array Processing result
      */
@@ -54,7 +51,7 @@ class WebhookHandler
             // Extract sender email from webhook data (support sender_address or sender_email)
             $senderField = isset($webhookData['sender_address']) ? $webhookData['sender_address'] : (isset($webhookData['sender_email']) ? $webhookData['sender_email'] : '');
             $senderEmail = $this->emailProcessor->extractSenderEmail($senderField);
-            
+
             if (!$senderEmail) {
                 $result['message'] = 'Could not extract sender email';
                 return $result;
@@ -71,7 +68,7 @@ class WebhookHandler
             // This mirrors the Make.com scenario defined in make/AUTOREPONDEUR_MAKE_WEBHOOK_URL.blueprint.json
             $detector = isset($webhookData['detector']) ? $webhookData['detector'] : null;
             if ($detector === 'desabonnement_journee_tarifs') {
-                $to = 'technique@media-solution.fr'; // Temporaire pour les tests
+                $to = getenv('AUTOREPONDEUR_TO'); // Définir via env (.htaccess SetEnv)
                 error_log("AUTOREPONDEUR: Envoi à $to");
                 if (empty($to)) {
                     $result['message'] = 'AUTOREPONDEUR_TO not configured';
@@ -127,7 +124,7 @@ class WebhookHandler
                 }
             } elseif ($detector === 'recadrage') {
                 // Confirmation mission recadrage (Make blueprint: RECADRAGE_MAKE_WEBHOOK_URL)
-                $to = 'technique@media-solution.fr'; // Temporaire pour les tests (configurable via ENV à terme)
+                $to = getenv('RECADRAGE_TO'); // Définir via env (.htaccess SetEnv)
                 error_log("RECADRAGE: Envoi à $to");
                 if (empty($to)) {
                     $result['message'] = 'RECADRAGE_TO not configured';
@@ -165,8 +162,42 @@ class WebhookHandler
                 $sendRes = $mailer->send($to, $subjectOut, $html);
                 error_log("Résultat envoi (recadrage): " . json_encode($sendRes));
                 if ($sendRes['success']) {
+                    // Email sent OK; proceed to extract and log delivery links (Dropbox/Smash/Swiss) before returning
                     $result['success'] = true;
                     $result['message'] = 'RECADRAGE email sent successfully';
+
+                    // Build processed URLs list from payload or email content
+                    $processedUrls = [];
+                    if (isset($webhookData['delivery_links']) && is_array($webhookData['delivery_links']) && count($webhookData['delivery_links']) > 0) {
+                        foreach ($webhookData['delivery_links'] as $item) {
+                            if (is_array($item) && isset($item['raw_url'])) {
+                                $processedUrls[] = $item['raw_url'];
+                            } elseif (is_string($item)) {
+                                $processedUrls[] = $item;
+                            }
+                        }
+                        $processedUrls = array_values(array_unique(array_filter($processedUrls)));
+                    } else {
+                        // Fallback: use provided email_content (same shape as later code path)
+                        if (isset($webhookData['email_content']) && !empty($webhookData['email_content'])) {
+                            $emailData = [
+                                'text' => $webhookData['email_content'],
+                                'html' => $webhookData['email_content'],
+                                'subject' => $incomingSubject,
+                                'from' => $senderField,
+                            ];
+                            $processedUrls = $this->processEmailForDropboxUrls($emailData);
+                        }
+                    }
+
+                    if (!empty($processedUrls)) {
+                        $loggedCount = $this->jsonLogger->logMultipleDropboxUrls($processedUrls);
+                        $result['processed_urls'] = $processedUrls;
+                        // Add a trailing note in message for observability
+                        $result['message'] .= "; {$loggedCount} delivery link(s) logged";
+                        error_log("Webhook processed successfully: {$loggedCount} URLs logged");
+                    }
+
                     return $result;
                 } else {
                     $result['message'] = 'Failed to send RECADRAGE email';
@@ -218,14 +249,14 @@ class WebhookHandler
             }
 
             // Log URLs to database
-            $loggedCount = $this->databaseLogger->logMultipleDropboxUrls($processedUrls);
+            $loggedCount = $this->jsonLogger->logMultipleDropboxUrls($processedUrls);
 
             $result['success'] = true;
             $result['message'] = "Successfully processed {$loggedCount} delivery link(s)";
             $result['processed_urls'] = $processedUrls;
-            
+
             error_log("Webhook processed successfully: {$loggedCount} URLs logged");
-            
+
         } catch (Exception $e) {
             $result['errors'][] = $e->getMessage();
             error_log("Webhook processing error: " . $e->getMessage());
@@ -236,7 +267,7 @@ class WebhookHandler
 
     /**
      * Validate webhook data structure
-     * 
+     *
      * @param array $data Webhook data
      * @return bool True if valid
      */
@@ -280,7 +311,7 @@ class WebhookHandler
 
     /**
      * Search for email using webhook data
-     * 
+     *
      * @param array $webhookData Webhook data
      * @return array|null Email data or null if not found
      */
@@ -288,23 +319,23 @@ class WebhookHandler
     {
         // Extract sender email
         $senderEmail = $this->emailProcessor->extractSenderEmail($webhookData['sender_address']);
-        
+
         // Format date for search
         $searchDate = $this->emailProcessor->formatDateForSearch($webhookData['receivedDateTime']);
-        
+
         // Build search criteria (replicating Make.com logic)
         $searchCriteria = [
             'from' => $senderEmail,
             'subject' => $webhookData['subject'],
             'since' => $searchDate
         ];
-        
+
         return $this->emailProcessor->searchEmail($searchCriteria);
     }
 
     /**
      * Process email content for Dropbox URLs
-     * 
+     *
      * @param array $emailData Email data
      * @return array Array of processed Dropbox URLs
      */
@@ -312,7 +343,7 @@ class WebhookHandler
     {
         // Get email content (prefer HTML, fallback to text)
         $content = !empty($emailData['html']) ? $emailData['html'] : $emailData['text'];
-        
+
         if (empty($content)) {
             return [];
         }
@@ -330,7 +361,7 @@ class WebhookHandler
 
     /**
      * Manual processing method for testing
-     * 
+     *
      * @param string $senderEmail Sender email
      * @param string $subject Email subject
      * @param string $date Email date
@@ -345,20 +376,20 @@ class WebhookHandler
             'microsoft_graph_email_id' => 'manual-' . time(),
             'bodyPreview' => 'Manual processing'
         ];
-        
+
         return $this->processWebhook($webhookData);
     }
 
     /**
      * Get processing statistics
-     * 
+     *
      * @return array Statistics data
      */
     public function getStatistics()
     {
         try {
-            $recentLogs = $this->databaseLogger->getRecentLogs(10);
-            
+            $recentLogs = $this->jsonLogger->getRecentLogs(10);
+
             return [
                 'recent_logs' => $recentLogs,
                 'total_processed' => count($recentLogs),
@@ -412,7 +443,7 @@ class WebhookHandler
         if (!empty($allUrls)) {
             try {
                 // On utilise le logger existant de la classe
-                $this->databaseLogger->logMultipleDropboxUrls($allUrls);
+                $this->jsonLogger->logMultipleDropboxUrls($allUrls);
                 $result['logged_count'] = count($allUrls);
             } catch (Exception $e) {
                 // On ne bloque pas le test en cas d'erreur de log

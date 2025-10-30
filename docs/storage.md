@@ -79,6 +79,22 @@ Si le backend externe n'est pas configuré ou n'est pas accessible, l'applicatio
 - **Notification** : Un avertissement est affiché dans l'interface utilisateur
 
 
+## Secrets et artefacts Gmail OAuth (deployment/)
+
+Les éléments suivants sont gérés par l'écosystème PHP (`deployment/`) et doivent être sauvegardés/protégés :
+
+- `deployment/data/env.local.php` — secrets OAuth (`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, etc.).
+- `deployment/data/gmail_oauth_last_check.json` — dernier statut de l'auto-check (`last_run_ts`, succès/échec, détails).
+- `deployment/data/gmail_oauth_check_history.jsonl` — historique append-only de chaque auto-check (un JSON par ligne).
+
+### Recommandations
+
+- Restreindre les permissions (`chmod 600` ou équivalent) et conserver ces fichiers hors du webroot (`deployment/data/`).
+- Inclure ces fichiers dans les plans de sauvegarde chiffrés. Ils contiennent des tokens OAuth et l'historique d'envoi.
+- Surveiller l'existence/la fraîcheur de `gmail_oauth_last_check.json` pour détecter les auto-checks bloqués.
+- En cas de rotation de secrets, mettre à jour `env.local.php` puis relancer un `POST action=dry-run` via `GmailOAuthTest.php` pour vérifier.
+
+
 ## Dépannage
 
 ### Erreurs courantes

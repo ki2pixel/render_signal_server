@@ -2,6 +2,12 @@
 
 ## Terminé
 
+-   [2025-10-30 14:47] **Stabilisation déploiement PHP (DirectAdmin) + OAuth Gmail Web**
+    - Correction des chemins sous DirectAdmin: inclusion `bootstrap_env.php` via `__DIR__` et `.htaccess` (`php_value auto_prepend_file bootstrap_env.php`).
+    - Mise à jour `bootstrap_env.php::env_bootstrap_path()` pour distinguer `public_html/` et `data/` (écriture/lecture OK).
+    - Correction `GmailOAuthTest.php`: `declare(strict_types=1)` en tout début, chemin `require_once`, réponses JSON propres pour AJAX, logging d'erreurs.
+    - Validation end-to-end: dry-run OK, fallback et persistance dans `domains/webhook.kidpixel.fr/data/env.local.php` confirmés.
+
 -   [2025-10-28 12:00] **Correction de l'heure de démarrage des webhooks DESABO**
     - Mise à jour de `orchestrator.py` pour définir `webhooks_time_start` à l'heure de début configurée (par exemple "12h00") pour les e-mails DESABO non urgents traités avant l'ouverture de la fenêtre horaire.
     - Ajout de tests unitaires complets dans `test_orchestrator_desabo_start_before_window.py` pour vérifier le comportement.

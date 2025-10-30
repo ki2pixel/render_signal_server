@@ -2,6 +2,18 @@
 
 Ce document enregistre les décisions techniques et architecturales importantes prises au cours du projet.
 
+**[2025-10-30 14:47:00] - Durcissement déploiement PHP (DirectAdmin) + Validation OAuth Gmail (Web)**
+- **Décisions** :
+  - Standardiser la résolution des chemins en hébergement DirectAdmin en distinguant clairement `public_html/` et `data/`.
+  - Forcer l’inclusion de `bootstrap_env.php` depuis `public_html` via `require_once __DIR__ . '/bootstrap_env.php';` et activer l’auto-prepend dans `.htaccess` (`php_value auto_prepend_file bootstrap_env.php`).
+  - Ajuster `env_bootstrap_path()` pour utiliser des bases absolues stables: `/home/kidp0/domains/webhook.kidpixel.fr/public_html` pour les fichiers web et `/home/kidp0/domains/webhook.kidpixel.fr` pour `data/`.
+  - Valider et persister la configuration OAuth côté PHP dans `domains/webhook.kidpixel.fr/data/env.local.php` (fallback/écriture OK).
+  - Durcir `deployment/public_html/GmailOAuthTest.php` : placer `declare(strict_types=1);` en première instruction, corriger le chemin `require_once`, et renvoyer des réponses JSON propres pour les requêtes AJAX (détection `X-Requested-With` ou `_format=json`).
+- **Raisons** :
+  - Éviter les erreurs 500 liées aux chemins en environnement mutualisé (DirectAdmin), garantir l’initialisation fiable de la config et des secrets, et fournir un retour JSON consommable côté front (éviter « Unexpected token '<' »).
+- **Impacts** :
+  - Pages web de test OAuth stables, auto-prepend fonctionnel, chemins résolus de façon déterministe, logs d’erreurs activés. Le flux OAuth web fonctionne de bout en bout avec persistence dans `env.local.php`.
+
 **[2025-10-28 12:00:00] - Correction de l'heure de démarrage pour les webhooks DESABO non urgents**
 - **Décision** : Modifier le comportement de `webhooks_time_start` pour les e-mails DESABO non urgents traités avant l'ouverture de la fenêtre horaire, en définissant cette valeur sur l'heure de début configurée (par exemple "12h00") plutôt que sur "maintenant".
 - **Contexte** : Les e-mails DESABO non urgents reçus avant l'ouverture de la fenêtre horaire utilisaient "maintenant" comme heure de début, ce qui pouvait entraîner une incohérence avec l'heure de début configurée dans la fenêtre horaire.

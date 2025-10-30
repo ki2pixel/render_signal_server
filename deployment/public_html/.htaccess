@@ -1,3 +1,5 @@
+# Chargement automatique du bootstrap
+php_value auto_prepend_file bootstrap_env.php
 # Security and Configuration for webhook.kidpixel.fr
 # Place this file in the public_html directory
 
@@ -23,6 +25,13 @@ RewriteEngine On
 # SetEnv GMAIL_OAUTH_CHECK_INTERVAL_DAYS "7"
 # Optionnel: protège l’endpoint auto-check
 # SetEnv GMAIL_OAUTH_CHECK_KEY "YOUR_RANDOM_SECRET"
+#
+# OAuth helper pages (oauth_authorize.php / oauth_callback.php)
+# SetEnv OAUTH_REDIRECT_URI "https://votredomaine.com/oauth_callback.php"
+# SetEnv OAUTH_SCOPES "https://mail.google.com/"
+# SetEnv OAUTH_PROMPT "consent"
+# SetEnv OAUTH_ACCESS_TYPE "offline"
+# SetEnv OAUTH_INCLUDE_GRANTED_SCOPES "true"
 #
 # Note: Some hosts require using a control panel to define environment
 # variables instead of .htaccess. In that case, leave these lines commented

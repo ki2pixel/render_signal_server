@@ -44,6 +44,26 @@ location / {
 
 Le répertoire `deployment/` contient une application PHP autonome reproduisant le scénario Make.com (IMAP, extraction d'URL Dropbox, logs MySQL, dashboard). Elle est indépendante du serveur Flask. Voir `deployment/README.md` et `deployment/deployment-guide.md` pour l'installer côté PHP si nécessaire.
 
+### Configuration DirectAdmin (Gmail OAuth)
+
+- **Auto-prepend** : activer dans `.htaccess` (ou via DirectAdmin) :
+
+  ```apache
+  php_value auto_prepend_file "/home/kidp0/domains/webhook.kidpixel.fr/public_html/bootstrap_env.php"
+  ```
+
+  Cela garantit que `deployment/public_html/bootstrap_env.php` charge `deployment/data/env.local.php` et injecte les variables d'environnement avant toute exécution.
+
+- **Chemins absolus** : `env_bootstrap_path()` résout automatiquement les fichiers sous `public_html/` et `data/`. Les secrets (OAuth, historiques) doivent rester dans `/home/kidp0/domains/webhook.kidpixel.fr/data/` avec des permissions restrictives (`chmod 600` conseillé).
+
+- **Journaux** : la page `GmailOAuthTest.php` écrit les erreurs PHP dans `deployment/public_html/gmail_oauth_errors.log`. Surveillez ce fichier lors des vérifications post-déploiement.
+
+- **Vérifications recommandées** :
+  - Accéder à `https://<domaine>/GmailOAuthTest.php?_format=json` pour vérifier la configuration (réponse JSON `status: success`).
+  - Tester `POST action=dry-run` et `POST action=send` (via bouton ou `curl`) pour confirmer l'obtention du token et l'envoi Gmail.
+  - Lancer `POST action=auto-check&force=1` pour créer/mettre à jour `deployment/data/gmail_oauth_last_check.json` et `.../gmail_oauth_check_history.jsonl`.
+  - Protéger l'endpoint via `GMAIL_OAUTH_CHECK_KEY` (et idéalement Auth HTTP/IP allowlist).
+
 ## Vérifications post-déploiement
 - Accès HTTPS au domaine et au login `/login`.
 - `GET /api/ping` renvoie `200`.

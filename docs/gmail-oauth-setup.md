@@ -53,6 +53,53 @@ GMAIL_REFRESH_TOKEN=le_refresh_token_obtenu
 GMAIL_FROM_EMAIL=votre_email@gmail.com
 AUTOREPONDEUR_TO=destinataire@example.com
 ```
+
+## Stockage sécurisé des identifiants
+
+### Format recommandé (PHP pour DirectAdmin)
+
+Créez un fichier `env.local.php` dans le dossier `data/` de votre hébergement DirectAdmin (`/home/kidp0/domains/webhook.kidpixel.fr/data/env.local.php`) avec le contenu suivant :
+
+```php
+<?php
+return [
+    // Identifiants Google Cloud
+    'GMAIL_CLIENT_ID' => 'votre_id_client',
+    'GMAIL_CLIENT_SECRET' => 'votre_secret_client',
+    'GMAIL_REFRESH_TOKEN' => 'votre_refresh_token',
+    
+    // Configuration de l'application
+    'GMAIL_REDIRECT_URI' => 'https://webhook.kidpixel.fr/oauth_callback.php',
+    'GMAIL_FROM_EMAIL' => 'votre@email.com',
+    'AUTOREPONDEUR_TO' => 'destinataire@example.com',
+    
+    // Sécurité
+    'GMAIL_OAUTH_CHECK_KEY' => 'change_me_strong_key',
+    'GMAIL_OAUTH_TEST_TO' => 'camille.moine.pro@gmail.com',
+    'GMAIL_OAUTH_CHECK_INTERVAL_DAYS' => '7'
+];
+```
+
+> **Important** : 
+> - Assurez-vous que le fichier est protégé (chmod 600 recommandé) et n'est pas accessible depuis le web.
+> - Le fichier doit être placé en dehors du répertoire `public_html`.
+> - Les chemins sont configurés pour l'environnement DirectAdmin standard.
+
+### Initialisation via `bootstrap_env.php`
+
+Pour garantir que toutes les pages PHP chargent automatiquement les secrets (`env.local.php`), activez l'auto-prepend dans `.htaccess` (ou la configuration vhost) au sein de `deployment/public_html/` :
+
+```apache
+php_value auto_prepend_file "/home/kidp0/domains/webhook.kidpixel.fr/public_html/bootstrap_env.php"
+```
+
+Le helper `env_bootstrap_path()` différencie désormais les chemins sous `public_html/` et ceux du dossier `data/` :
+
+- Les fichiers web (`*.php`, assets) restent sous `/home/kidp0/domains/webhook.kidpixel.fr/public_html/…`
+- Les secrets et persistances (`data/env.local.php`, historiques) résident sous `/home/kidp0/domains/webhook.kidpixel.fr/data/`
+
+> **Sécurité** : le dossier `deployment/data/` doit rester hors webroot. Vérifiez les permissions (ex: `chmod 600 deployment/data/env.local.php`) et limitez l'accès FTP/SFTP aux comptes autorisés.
+
 ## Validation de la connexion
 
 Un script CLI est fourni pour vérifier la validité OAuth et, si souhaité, envoyer un e‑mail de test : `deployment/scripts/gmail_oauth_connection_test.php`.
@@ -83,6 +130,23 @@ Notes :
 - Si `--to` est omis, le script utilise `AUTOREPONDEUR_TO` puis `GMAIL_FROM_EMAIL`.
 - Sortie JSON : `success`, `message`, `details` (statut HTTP, erreur éventuelle). Les secrets sont masqués.
 - Codes de sortie : `0` = succès, `1` = échec.
+
+### 2) Test via l'interface web `GmailOAuthTest.php`
+
+La page `deployment/public_html/GmailOAuthTest.php` expose trois actions :
+
+- `POST ?action=dry-run` → vérifie l'obtention du token. Réponse JSON (ou HTML si chargé directement).
+- `POST ?action=send` → envoie un e‑mail HTML de test via `deployment/src/GmailMailer.php`, retourne les IDs Gmail (`gmail_message_id`, `gmail_thread_id`).
+- `POST/GET ?action=auto-check` → mode cron/monitoring. Respecte `GMAIL_OAUTH_CHECK_INTERVAL_DAYS`, supporte `force=1` pour ignorer l'intervalle.
+
+Toutes les réponses asynchrones renvoient du JSON valide (token partiellement masqué), évitant l'ancien message « Unexpected token '<' » côté front. Les erreurs HTTP (400/422/502) retournent un message explicite (`message`, `details`).
+
+Les exécutions auto-check journalisent l'état dans :
+
+- `deployment/data/gmail_oauth_last_check.json` (dernier statut)
+- `deployment/data/gmail_oauth_check_history.jsonl` (historique append-only)
+
+> **Bonnes pratiques** : protégez `GmailOAuthTest.php` (HTTP auth, IP allowlist) et définissez `GMAIL_OAUTH_CHECK_KEY`. L'auto-check crée aussi un log d'erreurs `deployment/public_html/gmail_oauth_errors.log` pour diagnostiquer les problèmes serveur.
 
 ### 3) Auto-check (cron) et forçage
 
