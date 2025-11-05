@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 import urllib3
 from urllib.parse import urljoin
+import signal
 import fcntl  # File locking to ensure singleton background poller across processes
 from collections import deque  # Rate limiting queue for webhook sends
 # Ces imports remplacent les définitions locales des mêmes fonctions
@@ -190,6 +191,21 @@ logging.basicConfig(level=log_level,
 if not REDIS_AVAILABLE:
     logging.warning(
         "CFG REDIS (module level): 'redis' Python library not installed. Redis-based features will be disabled or use fallbacks.")
+
+# --- Process Signal Handlers (observability) ---
+def _handle_sigterm(signum, frame):  # pragma: no cover - environment dependent
+    try:
+        app.logger.info("PROCESS: SIGTERM received; shutting down gracefully (platform restart/deploy).")
+    except Exception:
+        # app may not be fully initialized; avoid raising during shutdown
+        pass
+
+try:
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+except Exception:
+    # Some environments may not allow setting signal handlers (e.g., Windows)
+    pass
+
 
 # --- Configuration (log centralisé) ---
 settings.log_configuration(app.logger)
@@ -583,7 +599,7 @@ except Exception:
 
 # --- Start Make Scenarios Vacation Watcher ---
 try:
-    if getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
+    if getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and bool(settings.MAKECOM_API_KEY):
         _make_watcher_thread = threading.Thread(target=make_scenarios_vacation_watcher, daemon=True)
         _make_watcher_thread.start()
         try:
@@ -592,7 +608,10 @@ try:
             pass
     else:
         try:
-            app.logger.info("MAKE_WATCHER: not started because ENABLE_BACKGROUND_TASKS is false")
+            if not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
+                app.logger.info("MAKE_WATCHER: not started because ENABLE_BACKGROUND_TASKS is false")
+            elif not bool(settings.MAKECOM_API_KEY):
+                app.logger.info("MAKE_WATCHER: not started because MAKECOM_API_KEY is not configured (avoiding 401 noise)")
         except Exception:
             pass
 except Exception as e:
