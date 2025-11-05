@@ -647,6 +647,38 @@ def _save_processing_prefs(prefs: dict) -> bool:
 # Initialize with persisted values
 PROCESSING_PREFS = _load_processing_prefs()
 
+def _log_webhook_config_startup():
+    """Log la configuration webhook chargée depuis le fichier de configuration."""
+    try:
+        from routes.api_webhooks import _load_webhook_config
+        
+        config = _load_webhook_config()
+        if not config:
+            app.logger.info("CFG WEBHOOK_CONFIG: Aucune configuration webhook trouvée (fichier vide ou inexistant)")
+            return
+            
+        # Liste des clés à logger avec des valeurs par défaut si absentes
+        keys_to_log = [
+            'presence_flag',
+            'webhook_ssl_verify',
+            'webhook_sending_enabled',
+            'webhook_time_start',
+            'webhook_time_end',
+            'global_time_start',
+            'global_time_end'
+        ]
+        
+        # Log chaque valeur individuellement pour une meilleure lisibilité
+        for key in keys_to_log:
+            value = config.get(key, 'non défini')
+            app.logger.info("CFG WEBHOOK_CONFIG: %s=%s", key, value)
+            
+    except Exception as e:
+        app.logger.warning("CFG WEBHOOK_CONFIG: Erreur lors de la lecture de la configuration: %s", str(e))
+
+# Log de la configuration webhook au démarrage
+_log_webhook_config_startup()
+
 # Diagnostics: log effective custom webhook + mirroring configuration
 try:
     app.logger.info(
