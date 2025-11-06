@@ -156,12 +156,12 @@ def get_polling_config():
         # Prefer values from external store/file if available to reflect persisted UI choices
         persisted = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
         cfg = {
-            # Days and hours: reflect current runtime aliases (tests patch these), ignoring persisted for GET
-            "active_days": POLLING_ACTIVE_DAYS,
-            "active_start_hour": POLLING_ACTIVE_START_HOUR,
-            "active_end_hour": POLLING_ACTIVE_END_HOUR,
-            # Dedup flag: reflect runtime alias
-            "enable_subject_group_dedup": ENABLE_SUBJECT_GROUP_DEDUP,
+            # Days and hours: reflect live settings (runtime-updated), not the import-time aliases
+            "active_days": settings.POLLING_ACTIVE_DAYS,
+            "active_start_hour": settings.POLLING_ACTIVE_START_HOUR,
+            "active_end_hour": settings.POLLING_ACTIVE_END_HOUR,
+            # Dedup flag: reflect live settings
+            "enable_subject_group_dedup": settings.ENABLE_SUBJECT_GROUP_DEDUP,
             "timezone": POLLING_TIMEZONE_STR,
             # Still expose persisted sender list if present, else settings default
             "sender_of_interest_for_polling": persisted.get("sender_of_interest_for_polling", settings.SENDER_LIST_FOR_POLLING),
@@ -309,6 +309,17 @@ def update_polling_config():
             settings.ENABLE_SUBJECT_GROUP_DEDUP = new_dedup
         if new_senders is not None:
             settings.SENDER_LIST_FOR_POLLING = new_senders
+
+        # Keep legacy module-level aliases in sync for backward-compat tests
+        try:
+            global POLLING_ACTIVE_DAYS, POLLING_ACTIVE_START_HOUR, POLLING_ACTIVE_END_HOUR, ENABLE_SUBJECT_GROUP_DEDUP
+            POLLING_ACTIVE_DAYS = settings.POLLING_ACTIVE_DAYS
+            POLLING_ACTIVE_START_HOUR = settings.POLLING_ACTIVE_START_HOUR
+            POLLING_ACTIVE_END_HOUR = settings.POLLING_ACTIVE_END_HOUR
+            ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
+        except Exception:
+            # Non-fatal: aliases are best-effort for legacy tests only
+            pass
 
         # Persistance via store (avec fallback fichier)
         merged = dict(existing)
