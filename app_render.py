@@ -192,6 +192,34 @@ if not REDIS_AVAILABLE:
     logging.warning(
         "CFG REDIS (module level): 'redis' Python library not installed. Redis-based features will be disabled or use fallbacks.")
 
+
+# --- Diagnostics (process start + heartbeat) ---
+try:
+    from datetime import datetime, timezone as _tz
+    PROCESS_START_TIME = datetime.now(_tz.utc)
+except Exception:
+    PROCESS_START_TIME = None
+
+def _heartbeat_loop():
+    interval = 60
+    while True:
+        try:
+            bg = globals().get("_bg_email_poller_thread")
+            mk = globals().get("_make_watcher_thread")
+            bg_alive = bool(bg and bg.is_alive())
+            mk_alive = bool(mk and mk.is_alive())
+            app.logger.info("HEARTBEAT: alive (bg_poller=%s, make_watcher=%s)", bg_alive, mk_alive)
+        except Exception:
+            pass
+        time.sleep(interval)
+
+try:
+    if getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
+        _heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
+        _heartbeat_thread.start()
+except Exception:
+    pass
+
 # --- Process Signal Handlers (observability) ---
 def _handle_sigterm(signum, frame):  # pragma: no cover - environment dependent
     try:

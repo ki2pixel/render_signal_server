@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import sys
 
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
@@ -17,6 +18,69 @@ def ping():
         jsonify({"status": "pong", "timestamp_utc": datetime.now(timezone.utc).isoformat()}),
         200,
     )
+
+
+@bp.route("/diag/runtime", methods=["GET"])  # GET /api/diag/runtime
+def diag_runtime():
+    """Expose basic runtime state without requiring auth.
+
+    Reads values from the main module (app_render) if available. All fields are best-effort.
+    """
+    now = datetime.now(timezone.utc)
+    process_start_iso = None
+    uptime_sec = None
+    last_poll_cycle_ts = None
+    last_webhook_sent_ts = None
+    bg_poller_alive = None
+    make_watcher_alive = None
+    enable_bg = None
+
+    mod = sys.modules.get("app_render")
+    if mod is not None:
+        try:
+            ps = getattr(mod, "PROCESS_START_TIME", None)
+            if ps:
+                process_start_iso = getattr(ps, "isoformat", lambda: str(ps))()
+                try:
+                    uptime_sec = int((now - ps).total_seconds())
+                except Exception:
+                    uptime_sec = None
+        except Exception:
+            pass
+        try:
+            last_poll_cycle_ts = getattr(mod, "LAST_POLL_CYCLE_TS", None)
+        except Exception:
+            pass
+        try:
+            last_webhook_sent_ts = getattr(mod, "LAST_WEBHOOK_SENT_TS", None)
+        except Exception:
+            pass
+        try:
+            t = getattr(mod, "_bg_email_poller_thread", None)
+            bg_poller_alive = bool(t and t.is_alive())
+        except Exception:
+            bg_poller_alive = None
+        try:
+            t2 = getattr(mod, "_make_watcher_thread", None)
+            make_watcher_alive = bool(t2 and t2.is_alive())
+        except Exception:
+            make_watcher_alive = None
+        try:
+            enable_bg = bool(getattr(getattr(mod, "settings", object()), "ENABLE_BACKGROUND_TASKS", False))
+        except Exception:
+            enable_bg = None
+
+    payload = {
+        "process_start_time": process_start_iso,
+        "uptime_sec": uptime_sec,
+        "last_poll_cycle_ts": last_poll_cycle_ts,
+        "last_webhook_sent_ts": last_webhook_sent_ts,
+        "bg_poller_thread_alive": bg_poller_alive,
+        "make_watcher_thread_alive": make_watcher_alive,
+        "enable_background_tasks": enable_bg,
+        "server_time_utc": now.isoformat(),
+    }
+    return jsonify(payload), 200
 
 
 @bp.route("/check_trigger", methods=["GET"])  # GET /api/check_trigger
