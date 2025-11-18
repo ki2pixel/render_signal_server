@@ -2,9 +2,24 @@
 
 La logique de polling est orchestrée par `email_processing/orchestrator.py`.
 
+### Structure de l’orchestrateur (mise à jour 2025-11-18)
+
+- **Helpers module-level** : `_is_webhook_sending_enabled()`, `_load_webhook_global_time_window()` et `_fetch_and_parse_email()` centralisent respectivement l’activation globale des webhooks, la lecture de la fenêtre horaire dédiée et l’extraction sécurisée des messages IMAP (plain + HTML) @email_processing/orchestrator.py#63-188.
+- **TypedDict `ParsedEmail`** : normalise la structure minimale attendue pour un email parsé (numéro, sujet, expéditeur, corps texte/HTML) et facilite les tests @email_processing/orchestrator.py#46-55.
+- **Constantes explicites** : `IMAP_*`, `DETECTOR_*`, `ROUTE_*` remplacent les « magic strings » et rendent la logique de routage plus lisible @email_processing/orchestrator.py#26-40.
+- **Intégration des services** : l’orchestrateur consomme les wrappers exposés par `app_render.py` (dédoublonnage via `DeduplicationService`, préférences via `PollingConfigService`, helpers IMAP extraits) tout en restant testable indépendamment du thread de fond @app_render.py#425-605.
+- **Logs défensifs** : chaque étape critique journalise un message contextualisé (lecture IMAP, allowlist, dédup, décisions de fenêtre horaire). Les exceptions sont capturées pour éviter de stopper le cycle de polling @email_processing/orchestrator.py#288-730.
+
 ## Planification et Configuration
 
 Le polling des emails est géré par le thread `background_email_poller()` qui exécute en boucle les opérations de vérification et de traitement des emails.
+
+### Conditions de démarrage
+
+- `ENABLE_BACKGROUND_TASKS=true` (variable d'environnement)
+- `enable_polling=true` (préférence UI persistée via `/api/update_polling_config`)
+
+Les deux conditions doivent être vraies pour démarrer le thread.
 
 ### Paramètres de Configuration
 
@@ -33,14 +48,16 @@ Le polling des emails est géré par le thread `background_email_poller()` qui e
    - Journalisation détaillée des incidents
    - Relevage d'alertes pour les problèmes critiques
 
-### Désactivation du Polling
+### Désactivation du Polling / Période de vacances
 
 Pour arrêter complètement le polling :
 1. Arrêtez le service
 2. Définissez `ENABLE_BACKGROUND_TASKS=false` dans les variables d'environnement
 3. Redémarrez l'application
 
-> **Note** : L'ancienne fonctionnalité de "mode vacances" a été supprimée. Utilisez les paramètres de planification ou arrêtez le service selon les besoins.
+Fenêtre « vacances » (optionnelle) :
+- Configurable via `/api/update_polling_config` avec `vacation_start`/`vacation_end` (ISO `YYYY-MM-DD`).
+- Pendant la période, le watcher Make reste OFF et le poller peut être considéré inactif selon votre stratégie d'exploitation.
 
 ## Connexion IMAP
 
@@ -89,6 +106,8 @@ Pour arrêter complètement le polling :
 - `DEDUP_GROUP: Skipping duplicate subject group` - Groupe de sujets déjà traité
 - `IGNORED: Sender not in allowed list` - Expéditeur non autorisé
 - `IGNORED: Outside active time window` - En dehors de la plage horaire active
+- `IGNORED: DESABO urgent skipped outside window (email <id>)` - DESABO urgent ignoré hors fenêtre webhook
+- `IGNORED: RECADRAGE skipped outside window and marked processed (email <id>)` - RECADRAGE ignoré hors fenêtre et marqué traité
 
 ### Fichiers de Logs
 
@@ -209,6 +228,9 @@ Objectif: n'envoyer qu'un seul webhook par « série » d'emails portant un suje
   - Valide la présence d'au moins une URL de livraison prise en charge et d'un sujet type « Média Solution - Missions Recadrage - Lot ... ».
   - Extrait/normalise une fenêtre de livraison (`delivery_time`), gère le cas `URGENCE`.
 - `extract_sender_email()` et `decode_email_header()` assurent un parsing robuste.
+
+Liens fournisseurs (Dropbox/FromSmash/SwissTransfer) :
+- `link_extraction.extract_provider_links_from_text()` (module `email_processing/link_extraction.py`) retourne une liste normalisée `{ provider, raw_url }` (déduplication/ordre préservé).
 
 ## Envoi webhook
 

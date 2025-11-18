@@ -7,8 +7,19 @@ Gère le timezone, la fenêtre horaire, et les paramètres de vacances.
 """
 
 from datetime import timezone, datetime, date
-from config.settings import POLLING_TIMEZONE_STR, POLLING_CONFIG_FILE
+from typing import Optional
 import json
+
+from config.settings import (
+    POLLING_TIMEZONE_STR,
+    POLLING_CONFIG_FILE,
+    POLLING_ACTIVE_DAYS as SETTINGS_POLLING_ACTIVE_DAYS,
+    POLLING_ACTIVE_START_HOUR as SETTINGS_POLLING_ACTIVE_START_HOUR,
+    POLLING_ACTIVE_END_HOUR as SETTINGS_POLLING_ACTIVE_END_HOUR,
+    SENDER_LIST_FOR_POLLING as SETTINGS_SENDER_LIST_FOR_POLLING,
+    EMAIL_POLLING_INTERVAL_SECONDS,
+    POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
+)
 
 # Tentative d'import de ZoneInfo (Python 3.9+)
 try:
@@ -182,3 +193,102 @@ def get_enable_polling(default: bool = True) -> bool:
         return bool(default)
     except Exception:
         return bool(default)
+
+
+# =============================================================================
+# POLLING CONFIG SERVICE
+# =============================================================================
+
+class PollingConfigService:
+    """Service centralisé pour accéder à la configuration de polling.
+    
+    Ce service encapsule l'accès aux variables de configuration depuis le
+    module settings, offrant une interface cohérente et facilitant les tests
+    via injection de dépendances.
+    """
+    
+    def __init__(self, settings_module=None):
+        """Initialise le service avec un module de settings.
+        
+        Args:
+            settings_module: Module de configuration (par défaut: config.settings)
+        """
+        self._settings = settings_module
+    
+    def get_active_days(self) -> list[int]:
+        """Retourne la liste des jours actifs pour le polling (0=Lundi, 6=Dimanche)."""
+        if self._settings:
+            return self._settings.POLLING_ACTIVE_DAYS
+        from config import settings
+        return settings.POLLING_ACTIVE_DAYS
+    
+    def get_active_start_hour(self) -> int:
+        """Retourne l'heure de début de la fenêtre de polling (0-23)."""
+        if self._settings:
+            return self._settings.POLLING_ACTIVE_START_HOUR
+        from config import settings
+        return settings.POLLING_ACTIVE_START_HOUR
+    
+    def get_active_end_hour(self) -> int:
+        """Retourne l'heure de fin de la fenêtre de polling (0-23)."""
+        if self._settings:
+            return self._settings.POLLING_ACTIVE_END_HOUR
+        from config import settings
+        return settings.POLLING_ACTIVE_END_HOUR
+    
+    def get_sender_list(self) -> list[str]:
+        """Retourne la liste des expéditeurs d'intérêt pour le polling."""
+        if self._settings:
+            return self._settings.SENDER_LIST_FOR_POLLING
+        from config import settings
+        return settings.SENDER_LIST_FOR_POLLING
+    
+    def get_email_poll_interval_s(self) -> int:
+        """Retourne l'intervalle de polling actif en secondes."""
+        if self._settings:
+            return self._settings.EMAIL_POLLING_INTERVAL_SECONDS
+        from config import settings
+        return settings.EMAIL_POLLING_INTERVAL_SECONDS
+    
+    def get_inactive_check_interval_s(self) -> int:
+        """Retourne l'intervalle de vérification hors période active en secondes."""
+        if self._settings:
+            return self._settings.POLLING_INACTIVE_CHECK_INTERVAL_SECONDS
+        from config import settings
+        return settings.POLLING_INACTIVE_CHECK_INTERVAL_SECONDS
+    
+    def get_tz(self):
+        """Retourne le timezone configuré pour le polling.
+        
+        Returns:
+            ZoneInfo ou timezone.utc selon la configuration
+        """
+        return TZ_FOR_POLLING if TZ_FOR_POLLING else timezone.utc
+    
+    def is_in_vacation(self, check_date_or_dt) -> bool:
+        """Vérifie si une date/datetime est dans la période de vacances.
+        
+        Args:
+            check_date_or_dt: date ou datetime à vérifier (None = aujourd'hui)
+        
+        Returns:
+            True si dans la période de vacances, False sinon
+        """
+        if isinstance(check_date_or_dt, datetime):
+            check_date = check_date_or_dt.date()
+        elif isinstance(check_date_or_dt, date):
+            check_date = check_date_or_dt
+        else:
+            check_date = None
+        return is_in_vacation_period(check_date)
+    
+    def get_enable_polling(self, default: bool = True) -> bool:
+        """Retourne si le polling est activé globalement.
+        
+        Args:
+            default: Valeur par défaut si non configuré
+        
+        Returns:
+            True si le polling est activé, False sinon
+        """
+        return get_enable_polling(default)

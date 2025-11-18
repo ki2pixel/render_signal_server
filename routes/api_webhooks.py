@@ -11,6 +11,9 @@ from utils.validators import normalize_make_webhook_url as _normalize_make_webho
 from utils.time_helpers import parse_time_hhmm
 from config import app_config_store as _store
 
+# Phase 5: Migration vers WebhookConfigService
+from services import WebhookConfigService
+
 bp = Blueprint("api_webhooks", __name__, url_prefix="/api/webhooks")
 
 # Storage path kept compatible with legacy location used in app_render.py
@@ -18,21 +21,32 @@ WEBHOOK_CONFIG_FILE = (
     Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
 )
 
+# Phase 5: Récupérer l'instance WebhookConfigService (Singleton)
+try:
+    _webhook_service = WebhookConfigService.get_instance()
+except ValueError:
+    # Fallback: initialiser si pas encore fait (cas tests)
+    _webhook_service = WebhookConfigService.get_instance(
+        file_path=WEBHOOK_CONFIG_FILE,
+        external_store=_store
+    )
+
 
 def _load_webhook_config() -> dict:
     """Load persisted config from DB if available, else file fallback.
-    Returns an empty dict if nothing persisted.
+    
+    Phase 5: Utilise WebhookConfigService (cache + validation).
     """
-    return _store.get_config_json(
-        "webhook_config", file_fallback=WEBHOOK_CONFIG_FILE
-    ) or {}
+    return _webhook_service.get_all_config()
 
 
 def _save_webhook_config(config: dict) -> bool:
-    """Persist config to DB with file fallback."""
-    return _store.set_config_json(
-        "webhook_config", config, file_fallback=WEBHOOK_CONFIG_FILE
-    )
+    """Persist config to DB with file fallback.
+    
+    Phase 5: Utilise WebhookConfigService (validation automatique + cache invalidation).
+    """
+    success, _ = _webhook_service.update_config(config)
+    return success
 
 
 def _mask_url(url: str | None) -> str | None:

@@ -27,70 +27,72 @@ def test_presence_webhook_missing_url_returns_400(authenticated_flask_client, mo
 
 @pytest.mark.integration
 def test_presence_webhook_sends_when_url_configured(authenticated_flask_client, monkeypatch):
-    from routes import api_admin
-    monkeypatch.setattr(api_admin, 'PRESENCE_TRUE_MAKE_WEBHOOK_URL', 'https://hook.eu2.make.com/abc', raising=False)
-    monkeypatch.setattr(api_admin, 'PRESENCE_FALSE_MAKE_WEBHOOK_URL', 'https://hook.eu2.make.com/def', raising=False)
-
-    # Mock requests.post via webhook_sender
-    with patch('email_processing.webhook_sender.requests.post') as mock_post:
-        mock_resp = MagicMock(); mock_resp.status_code = 200; mock_post.return_value = mock_resp
-        r = authenticated_flask_client.post('/api/test_presence_webhook', json={'presence': 'true'})
-        assert r.status_code == 200
-        # Assert the exact URL used
-        called_url = mock_post.call_args[0][0]
-        assert called_url == 'https://hook.eu2.make.com/abc'
+    # Mock ConfigService.get_presence_config to return test URLs
+    with patch('routes.api_admin._config_service.get_presence_config') as mock_cfg:
+        mock_cfg.return_value = {
+            'true_url': 'https://hook.eu2.make.com/abc',
+            'false_url': 'https://hook.eu2.make.com/def'
+        }
+        # Mock requests.post via webhook_sender
+        with patch('email_processing.webhook_sender.requests.post') as mock_post:
+            mock_resp = MagicMock(); mock_resp.status_code = 200; mock_post.return_value = mock_resp
+            r = authenticated_flask_client.post('/api/test_presence_webhook', json={'presence': 'true'})
+            assert r.status_code == 200
+            # Assert the exact URL used
+            called_url = mock_post.call_args[0][0]
+            assert called_url == 'https://hook.eu2.make.com/abc'
 
 
 @pytest.mark.integration
 def test_presence_webhook_returns_500_on_send_failure(authenticated_flask_client, monkeypatch):
-    from routes import api_admin
-    monkeypatch.setattr(api_admin, 'PRESENCE_TRUE_MAKE_WEBHOOK_URL', 'https://hook.eu2.make.com/abc', raising=False)
-    monkeypatch.setattr(api_admin, 'PRESENCE_FALSE_MAKE_WEBHOOK_URL', 'https://hook.eu2.make.com/def', raising=False)
-
-    with patch('email_processing.webhook_sender.requests.post') as mock_post:
-        mock_resp = MagicMock(); mock_resp.status_code = 500; mock_resp.text = "Server Error"; mock_post.return_value = mock_resp
-        r = authenticated_flask_client.post('/api/test_presence_webhook', json={'presence': 'true'})
-        assert r.status_code == 500
+    # Mock ConfigService.get_presence_config to return test URLs
+    with patch('routes.api_admin._config_service.get_presence_config') as mock_cfg:
+        mock_cfg.return_value = {
+            'true_url': 'https://hook.eu2.make.com/abc',
+            'false_url': 'https://hook.eu2.make.com/def'
+        }
+        with patch('email_processing.webhook_sender.requests.post') as mock_post:
+            mock_resp = MagicMock(); mock_resp.status_code = 500; mock_resp.text = "Server Error"; mock_post.return_value = mock_resp
+            r = authenticated_flask_client.post('/api/test_presence_webhook', json={'presence': 'true'})
+            assert r.status_code == 500
 
 
 @pytest.mark.integration
 def test_presence_webhook_returns_500_on_404(authenticated_flask_client, monkeypatch):
-    from routes import api_admin
-    monkeypatch.setattr(api_admin, 'PRESENCE_TRUE_MAKE_WEBHOOK_URL', 'https://hook.eu2.make.com/abc', raising=False)
-    monkeypatch.setattr(api_admin, 'PRESENCE_FALSE_MAKE_WEBHOOK_URL', 'https://hook.eu2.make.com/def', raising=False)
-
-    with patch('email_processing.webhook_sender.requests.post') as mock_post:
-        mock_resp = MagicMock(); mock_resp.status_code = 404; mock_resp.text = "Not Found"; mock_post.return_value = mock_resp
-        r = authenticated_flask_client.post('/api/test_presence_webhook', json={'presence': 'true'})
-        assert r.status_code == 500
+    # Mock ConfigService.get_presence_config to return test URLs
+    with patch('routes.api_admin._config_service.get_presence_config') as mock_cfg:
+        mock_cfg.return_value = {
+            'true_url': 'https://hook.eu2.make.com/abc',
+            'false_url': 'https://hook.eu2.make.com/def'
+        }
+        with patch('email_processing.webhook_sender.requests.post') as mock_post:
+            mock_resp = MagicMock(); mock_resp.status_code = 404; mock_resp.text = "Not Found"; mock_post.return_value = mock_resp
+            r = authenticated_flask_client.post('/api/test_presence_webhook', json={'presence': 'true'})
+            assert r.status_code == 500
 
 
 @pytest.mark.integration
 def test_presence_webhook_presence_false_uses_false_url(authenticated_flask_client, monkeypatch):
-    from routes import api_admin
-    monkeypatch.setattr(api_admin, 'PRESENCE_TRUE_MAKE_WEBHOOK_URL', 'https://hook.eu2.make.com/true', raising=False)
-    monkeypatch.setattr(api_admin, 'PRESENCE_FALSE_MAKE_WEBHOOK_URL', 'https://hook.eu2.make.com/false', raising=False)
-
-    with patch('email_processing.webhook_sender.requests.post') as mock_post:
-        mock_resp = MagicMock(); mock_resp.status_code = 200; mock_post.return_value = mock_resp
-        r = authenticated_flask_client.post('/api/test_presence_webhook', json={'presence': 'false'})
-        assert r.status_code == 200
-        # Assert the exact URL used is the false URL
-        called_url = mock_post.call_args[0][0]
-        assert called_url == 'https://hook.eu2.make.com/false'
+    # Mock ConfigService.get_presence_config to return test URLs
+    with patch('routes.api_admin._config_service.get_presence_config') as mock_cfg:
+        mock_cfg.return_value = {
+            'true_url': 'https://hook.eu2.make.com/true',
+            'false_url': 'https://hook.eu2.make.com/false'
+        }
+        with patch('email_processing.webhook_sender.requests.post') as mock_post:
+            mock_resp = MagicMock(); mock_resp.status_code = 200; mock_post.return_value = mock_resp
+            r = authenticated_flask_client.post('/api/test_presence_webhook', json={'presence': 'false'})
+            assert r.status_code == 200
+            # Assert the exact URL used is the false URL
+            called_url = mock_post.call_args[0][0]
+            assert called_url == 'https://hook.eu2.make.com/false'
 
 @pytest.mark.integration
 def test_check_emails_and_download_503_on_invalid_config(authenticated_flask_client, monkeypatch):
-    from routes import api_admin
-    # Invalidate minimal config (clear WEBHOOK_URL and sender list)
-    monkeypatch.setattr(api_admin, 'EMAIL_ADDRESS', '', raising=False)
-    monkeypatch.setattr(api_admin, 'EMAIL_PASSWORD', '', raising=False)
-    monkeypatch.setattr(api_admin, 'IMAP_SERVER', '', raising=False)
-    monkeypatch.setattr(api_admin, 'SENDER_LIST_FOR_POLLING', [], raising=False)
-    monkeypatch.setattr(api_admin, 'WEBHOOK_URL', '', raising=False)
-
-    r = authenticated_flask_client.post('/api/check_emails_and_download')
-    assert r.status_code == 503
+    # Mock ConfigService to report invalid config
+    with patch('routes.api_admin._config_service.is_email_config_valid', return_value=False):
+        r = authenticated_flask_client.post('/api/check_emails_and_download')
+        assert r.status_code == 503
 
 
 @pytest.mark.integration

@@ -48,6 +48,7 @@
 - Simulation d’un e-mail conforme → webhook envoyé (vérifier côté récepteur)
 
 ### UI Webhooks – Fenêtre horaire
+- (Recommandé: utiliser `GET/POST /api/webhooks/time-window`; les endpoints listés ci-dessous restent pris en charge pour compatibilité.)
 - `GET /api/get_webhook_time_window` renvoie la configuration attendue (timezone incluse).
 - `POST /api/set_webhook_time_window` accepte les formats `HHhMM`/`HH:MM`; vide+vide désactive.
 - Les payloads webhook incluent `webhooks_time_start` / `webhooks_time_end` si configurés.

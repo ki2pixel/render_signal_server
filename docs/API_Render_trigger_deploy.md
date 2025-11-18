@@ -78,3 +78,21 @@ Trigger a deploy for the service with the provided ID.
 *   **500 An unexpected server error has occurred.**
 
 *   **503 Server currently unavailable.**
+
+---
+
+## Intégration interne (`POST /api/deploy_application`)
+
+- L'application expose un endpoint protégé `POST /api/deploy_application` qui tente, dans l'ordre:
+  1) Appel du Deploy Hook Render si `RENDER_DEPLOY_HOOK_URL` est défini (préfixe exigé `https://api.render.com/deploy/`).
+  2) Appel de l'API Render (`Authorization: Bearer <RENDER_API_KEY>`) sur `/v1/services/{RENDER_SERVICE_ID}/deploys` avec `{"clearCache": RENDER_DEPLOY_CLEAR_CACHE}`.
+  3) Fallback local via `DEPLOY_CMD` (shell) si les deux méthodes précédentes échouent/ne sont pas configurées.
+
+Variables d'environnement:
+- `RENDER_DEPLOY_HOOK_URL`
+- `RENDER_API_KEY`
+- `RENDER_SERVICE_ID`
+- `RENDER_DEPLOY_CLEAR_CACHE` (`true|false`)
+- `DEPLOY_CMD` (fallback)
+
+Voir aussi: `docs/deploiement.md` et `docs/configuration.md`.

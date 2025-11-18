@@ -90,16 +90,17 @@ class TestExtractProviderLinksFromText:
     
     @pytest.mark.unit
     def test_extract_duplicate_links(self):
-        """Test extraction avec liens en double"""
+        """Test extraction avec liens en double - vérifie la déduplication"""
         text = """
         Lien 1: https://www.dropbox.com/scl/fo/abc123
         Lien 2: https://www.dropbox.com/scl/fo/abc123
         """
         result = link_extraction.extract_provider_links_from_text(text)
         
-        # Les deux occurrences doivent être extraites
-        assert len(result) == 2
-        assert result[0]["raw_url"] == result[1]["raw_url"]
+        # Après refactoring: déduplication activée, une seule URL doit être extraite
+        assert len(result) == 1
+        assert result[0]["provider"] == "dropbox"
+        assert "dropbox.com/scl/fo/abc123" in result[0]["raw_url"]
     
     @pytest.mark.unit
     def test_extract_from_html(self):

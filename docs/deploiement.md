@@ -70,6 +70,16 @@ Le répertoire `deployment/` contient une application PHP autonome reproduisant 
 - Les tâches de fond démarrent (logs `BACKGROUND_TASKS`).
 - Les variables d'environnement sensibles sont présentes.
 
+### Observabilité & Signaux
+
+- Le processus journalise `PROCESS: SIGTERM received; ...` lors d'un redémarrage Render/OS (handler SIGTERM).
+- Un heartbeat périodique loggue l'état des threads (`HEARTBEAT: alive (bg_poller=..., make_watcher=...)`).
+
+### Paramètres Gunicorn recommandés (Render)
+
+- `GUNICORN_CMD_ARGS="--timeout 120 --graceful-timeout 30 --keep-alive 75 --threads 2 --max-requests 15000 --max-requests-jitter 3000"`
+- Objectif: redémarrages contrôlés quotidiens, stabilité des connexions et gestion mémoire.
+
 ### Notes opérationnelles (poller IMAP singleton)
 
 - Activer `ENABLE_BACKGROUND_TASKS=true` uniquement sur un seul worker/process.
@@ -80,3 +90,13 @@ Le répertoire `deployment/` contient une application PHP autonome reproduisant 
 
 - Tester `GET /api/get_webhook_time_window` puis `POST /api/set_webhook_time_window` depuis l'UI `trigger_page.html`.
 - Vérifier que les payloads webhook incluent `webhooks_time_start` / `webhooks_time_end` lorsque configurés.
+
+## Déploiement Render via API interne
+
+- Endpoint: `POST /api/deploy_application` (protégé)
+- Ordre de tentative:
+  1) Deploy Hook (`RENDER_DEPLOY_HOOK_URL` commençant par `https://api.render.com/deploy/`)
+  2) Render API (`RENDER_API_KEY`, `RENDER_SERVICE_ID`, payload `{ clearCache: RENDER_DEPLOY_CLEAR_CACHE }`)
+  3) Fallback local (`DEPLOY_CMD`, défaut: reload-or-restart + reload Nginx)
+- Variables d'environnement: voir `docs/configuration.md`.
+- Les logs masquent la clé du Deploy Hook et tracent l'utilisateur authentifié ayant déclenché l'action.

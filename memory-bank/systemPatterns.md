@@ -45,6 +45,17 @@ Ce document recense les patrons de conception et les standards récurrents dans 
 -   **Déploiement via Reverse Proxy** : Le déploiement standard se fait via un serveur d'application (Gunicorn) derrière un reverse proxy (Nginx), qui gère la terminaison SSL, les headers de sécurité et le service des fichiers statiques.
 -   **Flags Runtime Persistés** : Pour les fonctionnalités de débogage ou temporaires, utiliser des flags runtime chargés depuis un fichier JSON (ex: `runtime_flags.json`), appliqués au démarrage et modifiables via API/UI sans redémarrage. Exemples: bypass dedup, skip webhooks conditionnels. Persistance via fichier pour survivre aux restarts, UI pour contrôle dynamique.
 
+---
+
+## Architecture orientée services (2025-11-17)
+
+- **Services dédiés par responsabilité** : Encapsuler la logique métier et de configuration par services (`ConfigService`, `RuntimeFlagsService`, `WebhookConfigService`, `AuthService`, `PollingConfigService`, `DeduplicationService`).
+- **Singletons avec cache TTL** : Pour les configurations volatiles ou fréquemment lues, utiliser des Singletons avec cache mémoire et TTL (ex: `RuntimeFlagsService` TTL=60s; `WebhookConfigService` avec cache/invalidation).
+- **Intégration routes** : Les blueprints (`routes/*`) doivent consommer les services (import ou récupération d’instance via `get_instance()`) plutôt que d’accéder aux modules globaux (`config.*`).
+- **Normalisation/Validation** : Centraliser la validation stricte (ex: URLs HTTPS) et la normalisation (ex: Make.com) dans `WebhookConfigService` au lieu de la logique dispersée dans les routes.
+- **Nettoyage legacy** : Préférer des appels directs aux services et supprimer progressivement les wrappers de compatibilité une fois les tests verts.
+- **Tests** : Vérifier prioritairement via l’API (GET/POST) plutôt que lecture directe de fichiers; garder des tests unitaires de service isolés pour la logique de validation/cache.
+
 ## Code et Logique
 
 -   **Authentification par Session** : L'accès aux routes protégées est géré par des sessions côté serveur, mises en place par Flask-Login. Le client conserve un cookie de session.
@@ -63,3 +74,10 @@ Ce document recense les patrons de conception et les standards récurrents dans 
 ## Tests
 
 -   **Pyramide des Tests** : L'approche de test préconise une majorité de tests unitaires, complétés par des tests d'intégration pour les interactions I/O (base de données, réseau), et potentiellement des tests E2E pour les flux critiques. `pytest` est l'outil recommandé.
+
+## Orchestrateur email — Patterns (2025-11-18)
+- Helpers module-level: éviter les fonctions imbriquées longues et non testables.
+- TypedDict pour les structures transmises (ParsedEmail) afin de clarifier les contrats.
+- Constantes nommées (IMAP_*, DETECTOR_*, ROUTE_*) pour éviter les magic strings et les typos.
+- Découpage fetch/parse vs. logique de routing pour réduire la complexité cyclomatique.
+- Logs défensifs: messages concis, pas de contenu sensible, format %s, early-returns.

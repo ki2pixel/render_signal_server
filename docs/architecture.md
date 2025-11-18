@@ -4,38 +4,144 @@ Cette application fournit une télécommande web sécurisée (Flask + Flask-Logi
 
 ## Structure modulaire (refactor 2025-10)
 
-### Dernières évolutions (2025-10-16)
+### Architecture orientée services (2025-11-17)
 
-#### Migration vers le Stockage Externe
-- **Remplacement de MySQL** : Passage à une solution de stockage externe via API PHP avec fallback sur fichiers JSON locaux
-- **Fichiers de configuration** :
-  - `debug/webhook_config.json` : Configuration des webhooks et fenêtres horaires
+- Services dédiés par responsabilité pour encapsuler la logique métier et la configuration.
+- Singletons avec cache mémoire (TTL 60s) pour limiter les lectures disque et invalider automatiquement lors des mises à jour.
+- Intégration côté routes: les blueprints consomment les services (imports `services.*`) au lieu d’accéder directement aux modules globaux.
+- Centralisation des validations/normalisations (ex: URLs HTTPS + normalisation Make.com dans `WebhookConfigService`).
+
+| Service | Module | Responsabilités clés |
+| --- | --- | --- |
+| `ConfigService` | `services/config_service.py` | Agrège `config.settings`, expose validations d’email, URL Render et helpers d’injection dans `app_render.py` @app_render.py#129-154 |
+| `AuthService` | `services/auth_service.py` | Initialise Flask-Login, fournit les helpers d’authentification (sessions dashboard + API) @app_render.py#137-185 |
+| `RuntimeFlagsService` (Singleton) | `services/runtime_flags_service.py` | Charge/persiste `runtime_flags.json`, applique cache TTL=60 s, expose `get_all_flags()` et `update_flags()` @routes/api_config.py#27-158 |
+| `WebhookConfigService` (Singleton) | `services/webhook_config_service.py` | Gère la config webhook (validation HTTPS forcée, normalisation Make.com, cache + store externe) @app_render.py#299-310 |
+| `DeduplicationService` | `services/deduplication_service.py` | Orchestration du dedup email/subject (Redis + fallback mémoire) injectée dans le poller @app_render.py#425-437 |
+| `PollingConfigService` | `config/polling_config.py` | Exposé comme service léger pour lire jours/heures actifs, timezone et flag UI `enable_polling` @config/polling_config.py#202-295 |
+
+> `PollingConfigService` réside dans `config/polling_config.py` pour rester proche des helpers historiques; `app_render.py` l’instancie et l’injecte dans le poller et le watcher Make @app_render.py#278-735.
+
+Bootstrap `app_render.py` (ordre d'initialisation, simplifié):
+- Initialisation `ConfigService` → `AuthService.init_flask_login()` (sessions dashboard & API) @app_render.py#129-185
+- Enregistrement des blueprints (toutes les routes orientées services) @app_render.py#143-156
+- Initialisation des Singletons (`RuntimeFlagsService`, `WebhookConfigService`) avec logs d’état et fallback externe @app_render.py#284-310
+- Initialisation du `DeduplicationService` (Redis/Fallback) @app_render.py#425-437
+- Initialisation de la fenêtre horaire (ENV → overrides UI via fichier/store) @app_render.py#324-332
+- Observabilité: heartbeat périodique, handler SIGTERM, contrôles d’activation des threads (poller + watcher Make) @app_render.py#230-735
+
+Orchestrateur (2025-11-18): helpers module-level extraits (`_is_webhook_sending_enabled`, `_load_webhook_global_time_window`, `_fetch_and_parse_email`), `TypedDict ParsedEmail`, constantes `IMAP_*`, `DETECTOR_*`, `ROUTE_*`, parsing plain+HTML @email_processing/orchestrator.py#26-188.
+
+Règles de fenêtre horaire (webhooks dédiés):
+- DESABO non urgent: bypass hors fenêtre et envoi immédiat.
+- DESABO urgent: ne contourne pas la fenêtre → skip hors fenêtre.
+- RECADRAGE hors fenêtre: skip + marquage lu/traité (évite retrait à l’ouverture de fenêtre).
+
+## Dernières Évolutions (2025-11-18)
+
+### Refonte du Traitement des Emails
+
+- **Extraction des Helpers** :
+  - `_is_webhook_sending_enabled` : Vérification de l'activation des webhooks
+  - `_load_webhook_global_time_window` : Chargement de la fenêtre horaire
+  - `_fetch_and_parse_email` : Récupération et analyse des emails
+
+- **Typage Fort** :
+  - `TypedDict ParsedEmail` pour une meilleure vérification de type
+  - Constantes typées pour les configurations IMAP, détecteurs et routes
+
+- **Améliorations des Performances** :
+  - Cache des résultats coûteux
+  - Réduction des lectures disque
+  - Optimisation des requêtes IMAP
+
+### Architecture de Stockage
+
+#### Stockage Externe
+- **Remplacement de MySQL** : Solution hybride API PHP + fichiers JSON
+- **Fichiers de Configuration** :
+  - `debug/webhook_config.json` : Configuration des webhooks
   - `debug/processing_prefs.json` : Préférences de traitement
-  - `debug/webhook_time_window.json` : Configuration de la fenêtre horaire des webhooks
-- **Avantages** :
-  - Simplification de l'infrastructure (plus besoin de base de données dédiée)
-  - Meilleure portabilité entre environnements
-  - Facilité de sauvegarde et de restauration
+  - `debug/webhook_time_window.json` : Fenêtres horaires
 
-#### Séparation des Fenêtres Horaire
-- **Deux fenêtres indépendantes** :
-  - **Fenêtre des e-mails** : Contrôle quand les e-mails sont récupérés du serveur IMAP
-  - **Fenêtre des webhooks** : Contrôle quand les notifications sont envoyées aux webhooks
-- **Gestion via API** :
-  - Endpoints dédiés pour la configuration (`/api/webhooks/time-window`)
-  - Persistance dans `webhook_time_window.json`
-  - Rechargement dynamique sans redémarrage
+#### Avantages
+- **Simplicité** : Plus de base de données à gérer
+- **Portabilité** : Facile à déployer et à sauvegarder
+- **Flexibilité** : Configuration dynamique sans redémarrage
 
-### Extractions de modules récentes (2025-10-12)
+### Gestion des Fenêtres Temporelles
 
-#### Pipeline de Traitement des Emails
-- **`email_processing/`** - Extraction complète de la logique de traitement
-  - `imap_client.py` - Gestion des connexions IMAP avec reconnexion automatique
-  - `pattern_matching.py` - Détection des motifs spécifiques (Média Solution, DESABO)
-  - `webhook_sender.py` - Envoi des webhooks avec gestion des timeouts et des tentatives
-  - `orchestrator.py` - Flux de traitement principal avec injection de dépendances
-  - `link_extraction.py` - Extraction des URLs de livraison (Dropbox, FromSmash, SwissTransfer)
-  - `payloads.py` - Construction des charges utiles pour les webhooks
+#### Séparation des Préoccupations
+- **Fenêtre IMAP** : Contrôle la récupération des emails
+- **Fenêtre Webhook** : Contrôle l'envoi des notifications
+
+#### API de Contrôle
+- Endpoints REST pour la configuration
+- Rechargement à chaud des paramètres
+- Journalisation des changements
+
+### Améliorations de la Sécurité
+- Validation renforcée des entrées
+- Meilleure gestion des secrets
+- Journalisation des accès sensibles
+
+## Architecture des Modules (2025-11-18)
+
+### email_processing/
+
+#### imap_client.py
+- Gestion robuste des connexions IMAP
+- Reconnexion automatique en cas d'échec
+- Gestion des timeouts et des erreurs réseau
+
+#### pattern_matching.py
+- Détection des motifs spécifiques :
+  - Média Solution
+  - DESABO (urgent/non urgent)
+- Extraction des métadonnées pertinentes
+
+#### webhook_sender.py
+- Envoi asynchrone des webhooks
+- Gestion des timeouts et des tentatives
+- Journalisation détaillée des échecs
+
+#### orchestrator.py
+- Point d'entrée principal du traitement
+- Gestion du cycle de vie des emails
+- Application des règles métier
+- Coordination des différents modules
+
+#### link_extraction.py
+- Extraction des URLs de livraison :
+  - Dropbox
+  - FromSmash
+  - SwissTransfer
+- Nettoyage et validation des URLs
+
+#### payloads.py
+- Construction des charges utiles JSON
+- Formatage selon les attentes des consommateurs
+- Gestion des cas spéciaux et des erreurs
+
+### app_logging/
+- Journalisation centralisée
+- Support de plusieurs niveaux de log
+- Intégration avec les services existants
+
+### preferences/
+- Gestion des préférences utilisateur
+- Validation des entrées
+- Persistance des paramètres
+
+### deduplication/
+- Prévention des doublons
+- Support de Redis avec fallback
+- Gestion des TTL
+
+### background/
+- Tâches asynchrones
+- Gestion des verrous
+- Surveillance de l'état du système
 
 #### Modules de Support
 - **`app_logging/`** - Journalisation centralisée avec fallback Redis
@@ -50,6 +156,7 @@ Cette application fournit une télécommande web sécurisée (Flask + Flask-Logi
 - **`background/`** - Tâches en arrière-plan
   - `polling_thread.py` - Gestion du thread de polling avec injection de dépendances
   - `lock.py` - Verrouillage singleton pour empêcher l'exécution simultanée de tâches critiques (ex: polling IMAP) dans un environnement multi-processus
+  - `heartbeat.py` - Boucle de diagnostic qui envoie périodiquement des signaux de vie et surveille l'état des threads de fond
 
 #### Utilitaires
 - **`utils/`** - Fonctions utilitaires réutilisables
@@ -116,16 +223,62 @@ Cette application fournit une télécommande web sécurisée (Flask + Flask-Logi
 
 Objectifs: séparation des responsabilités, testabilité améliorée, réduction du couplage dans `app_render.py`.
 
-## Composants
+## Architecture Technique
 
-- Backend Flask (`app_render.py`)
-  - Authentification par session via `Flask-Login` (`/login`, `/logout`).
-  - API internes:
-    - `GET /api/ping` – santé de l'application.
-    - `GET /api/check_trigger` – lecture/consommation d'un signal local (fichier `signal_data_app_render/local_workflow_trigger_signal.json`).
-    - `POST /api/check_emails_and_download` – lance en arrière-plan une vérification IMAP (protégé: login requis).
-    - `POST /api/make/toggle_all` – contrôle manuel des scénarios Make (protégé, conservé pour opérations).
-  - Thread de fond: `background_email_poller()` démarre au boot via `start_background_tasks()`.
+### Backend (Flask)
+
+#### Authentification
+- **Flask-Login** pour la gestion des sessions
+- Routes protégées : `/dashboard`, `/api/*` (sauf `/api/ping`)
+- Gestion des timeouts de session
+
+#### API REST
+
+##### Points d'Accès Principaux
+- `GET /api/ping` : Vérification de la disponibilité
+- `GET /api/check_trigger` : Lecture des signaux locaux
+- `POST /api/check_emails_and_download` : Déclenchement manuel du polling
+- `POST /api/make/toggle_all` : Contrôle des scénarios Make
+
+##### Gestion des Erreurs
+- Codes HTTP appropriés
+- Messages d'erreur clairs
+- Journalisation des incidents
+
+#### Tâches de Fond
+- **`background_email_poller`** :
+  - S'exécute selon la configuration
+  - Gère les erreurs et les reprises
+  - Met à jour l'état du système
+
+### Frontend
+
+#### Dashboard Web
+- Interface utilisateur réactive
+- Mise à jour en temps réel
+- Gestion des états de chargement
+
+#### Gestion d'État
+- Stockage local des préférences
+- Synchronisation avec le backend
+- Gestion des erreurs utilisateur
+
+### Intégrations
+
+#### IMAP
+- Support de plusieurs fournisseurs
+- Gestion des connexions sécurisées
+- Optimisation des performances
+
+#### Webhooks
+- Envoi asynchrone
+- Gestion des timeouts
+- Logs détaillés
+
+#### Redis (Optionnel)
+- Cache des données fréquemment accédées
+- Verrous distribués
+- Pub/Sub pour la communication inter-processus
 
 - Frontend (`dashboard.html` + `static/dashboard.js`)
   - `dashboard.js` orchestre l'UI du Dashboard Webhooks: fenêtre horaire globale, configuration du polling (jours/heures, expéditeurs, déduplication, vacances), contrôle du polling IMAP, configuration des URLs webhooks et logs.
@@ -158,12 +311,55 @@ Objectifs: séparation des responsabilités, testabilité améliorée, réductio
     - Prochaine exécution planifiée
   - **Journaux** : Consultation des logs et des webhooks récents
 
-3) Polling IMAP et webhook
-- Le thread `background_email_poller()` s'exécute pendant la plage horaire active des e-mails.
-- Orchestration (entrée unique): `email_processing/orchestrator.check_new_emails_and_trigger_webhook()`
-  - **Connexion IMAP** : Établissement de la connexion avec reconnexion automatique en cas d'échec
-  - **Filtrage** :
-    - Filtrage par expéditeurs autorisés (`SENDER_LIST_FOR_POLLING`)
+## Traitement des Emails
+
+### Cycle de Polling
+
+#### 1. Initialisation
+- Vérification de la fenêtre horaire active
+- Acquisition du verrou de singleton
+- Initialisation des composants
+
+#### 2. Connexion IMAP
+- Établissement de la connexion sécurisée
+- Authentification
+- Sélection de la boîte de réception
+
+#### 3. Récupération des Emails
+- Filtrage par expéditeurs autorisés
+- Tri par date (plus ancien au plus récent)
+- Limitation du nombre d'emails par cycle
+
+#### 4. Traitement des Emails
+- Pour chaque email :
+  1. Vérification de la déduplication
+  2. Extraction du contenu
+  3. Détection du type d'email
+  4. Application des règles métier
+  5. Envoi des webhooks si nécessaire
+  6. Marquage comme traité
+
+#### 5. Nettoyage
+- Fermeture propre de la connexion IMAP
+- Libération des ressources
+- Journalisation des statistiques
+
+### Gestion des Erreurs
+
+#### Reconnexion Automatique
+- Détection des déconnexions
+- Tentatives multiples
+- Délai progressif entre les tentatives
+
+#### Journalisation
+- Niveaux de log appropriés
+- Contexte détaillé
+- Alertes pour les erreurs critiques
+
+#### Reprise sur Erreur
+- État persistant
+- Points de reprise
+- Exclusion des éléments problématiques
     - Vérification de la taille maximale des e-mails
     - Filtrage par mots-clés d'exclusion (globaux et spécifiques au webhook)
   - **Déduplication** :
@@ -215,8 +411,8 @@ Objectifs: séparation des responsabilités, testabilité améliorée, réductio
 - `routes/api_config.py` – endpoints de configuration protégés: fenêtre horaire, runtime flags, config polling.
 - `routes/api_admin.py` – endpoints administratifs: webhook présence Make, redémarrage serveur.
 - `routes/api_utility.py` – utilitaires (ping, trigger, statut local UI).
-- `config/runtime_flags.py` – I/O centralisée des flags runtime.
-- `config/webhook_config.py` – I/O centralisée pour la configuration webhooks.
+- `services/runtime_flags_service.py` – Service Singleton pour les flags runtime (cache TTL 60s, persistance JSON).
+- `services/webhook_config_service.py` – Service Singleton pour la configuration webhooks (validation HTTPS, normalisation Make.com, cache + store externe).
 - `dashboard.html` – interface Dashboard Webhooks.
 - `static/dashboard.js` – logique UI centralisée du dashboard.
 - `requirements.txt` – dépendances Python.
@@ -251,11 +447,34 @@ Objectifs: séparation des responsabilités, testabilité améliorée, réductio
 
 ## Gestion des Fonctionnalités
 
-### Flags Runtime Persistés
+## Configuration Avancée
 
-Pour faciliter le débogage en production sans redémarrage, un système de flags runtime permet l'activation/désactivation dynamique de fonctionnalités critiques :
-- **Stockage** : `debug/runtime_flags.json` (via `config/runtime_flags.py`)
-- **Flags disponibles** :
+### Flags Runtime
+
+#### Gestion des Flags
+- **Stockage** : Fichier JSON persistant
+- **API** : Endpoints REST pour la modification
+- **Sécurité** : Accès protégé par authentification
+
+#### Flags Disponibles
+- `ENABLE_EMAIL_POLLING` : Active/désactive le polling IMAP
+- `ENABLE_WEBHOOKS` : Active/désactive l'envoi des webhooks
+- `DEBUG_MODE` : Active le mode débogage (logs détaillés)
+- `MAINTENANCE_MODE` : Mode maintenance (accès limité)
+- `FORCE_EMAIL_PROCESSING` : Force le traitement même hors fenêtre
+
+### Configuration du Stockage
+
+#### Fichiers de Configuration
+- `webhook_config.json` : Configuration des webhooks
+- `processing_prefs.json` : Préférences de traitement
+- `webhook_time_window.json` : Fenêtres horaires
+- `runtime_flags.json` : Flags runtime
+
+#### Surcharge par Environnement
+- Variables d'environnement
+- Fichiers locaux
+- API de configuration
   - `DISABLE_EMAIL_ID_DEDUP` : Désactive la déduplication par ID d'e-mail
   - `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` : Autorise l'envoi de webhooks même sans liens détectés
   - `MIRROR_MEDIA_TO_CUSTOM` : Active l'envoi des liens de médias au webhook personnalisé
@@ -352,5 +571,72 @@ Flask                 POST payload JSON -> WEBHOOK_URL / Make.com
 Webhook Receiver      200 OK (ou 4xx/5xx en cas d'erreur)
 Flask                 Log succès/échec et continue la boucle
 Flask                 Lance check_new_emails_and_trigger_webhook() en thread
-UI                    Affiche message "tâche lancée" (202)
+## Interface Utilisateur
+
+### État des Tâches
+- **Tâche lancée** : Message de confirmation (202)
+- **En cours** : Indicateur visuel
+- **Terminé** : Message de succès/échec
+- **Historique** : Consultation des tâches récentes
+
+### Notifications
+- En temps réel
+- Historique consultable
+- Actions rapides
+
+### Accessibilité
+- Support du clavier
+- Contraste élevé
+- Texte redimensionnable
+
+### Personnalisation
+- Thèmes (clair/sombre)
+- Préférences d'affichage
+- Filtres personnalisés
+
+## Sécurité
+
+### Authentification
+- Sessions sécurisées
+- Expiration automatique
+- Protection CSRF
+
+### Autorisation
+- Rôles et permissions
+- Vérification des accès
+- Journalisation des actions sensibles
+
+### Protection des Données
+- Chiffrement des données sensibles
+- Masquage des informations critiques
+- Nettoyage automatique des logs
+
+## Performance
+
+### Optimisations
+- Mise en cache
+- Chargement paresseux
+- Compression des réponses
+
+### Surveillance
+- Métriques en temps réel
+- Alertes de performance
+- Suggestions d'optimisation
+
+## Maintenance
+
+### Sauvegarde
+- Automatique
+- Chiffrée
+- Avec rétention
+
+### Mises à Jour
+- Notification des nouvelles versions
+- Mise à jour en un clic
+- Rollback automatique en cas d'échec
+
+### Documentation
+- Guide d'installation
+- Guide d'administration
+- Dépannage
 ```

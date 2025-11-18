@@ -5,10 +5,13 @@ email_processing.pattern_matching
 Détection de patterns dans les emails pour trigger des webhooks spécifiques.
 Gère les patterns Média Solution et DESABO.
 """
+from __future__ import annotations
 
 import re
 import unicodedata
 from datetime import datetime, timedelta
+from typing import Any, Dict
+
 from utils.text_helpers import normalize_no_accents_lower_trim
 
 
@@ -25,12 +28,29 @@ URL_PROVIDERS_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# =============================================================================
+# CONSTANTES - DESABO PATTERN
+# =============================================================================
+
+# Mots-clés requis pour la détection DESABO (présents dans le corps normalisé)
+DESABO_REQUIRED_KEYWORDS = ["journee", "tarifs habituels", "desabonn"]
+
+# Mots-clés interdits qui invalident la détection DESABO
+DESABO_FORBIDDEN_KEYWORDS = [
+    "annulation",
+    "facturation",
+    "facture",
+    "moment",
+    "reference client",
+    "total ht",
+]
+
 
 # =============================================================================
 # PATTERN MÉDIA SOLUTION
 # =============================================================================
 
-def check_media_solution_pattern(subject, email_content, tz_for_polling, logger):
+def check_media_solution_pattern(subject, email_content, tz_for_polling, logger) -> Dict[str, Any]:
     """
     Vérifie si l'email correspond au pattern Média Solution spécifique et extrait la fenêtre de livraison.
 
@@ -198,7 +218,7 @@ def check_media_solution_pattern(subject, email_content, tz_for_polling, logger)
     return result
 
 
-def check_desabo_conditions(subject: str, email_content: str, logger):
+def check_desabo_conditions(subject: str, email_content: str, logger) -> Dict[str, Any]:
     """Vérifie les conditions du pattern DESABO.
 
     Ce helper externalise la logique de détection « Se désabonner / journée / tarifs habituels »
@@ -223,33 +243,29 @@ def check_desabo_conditions(subject: str, email_content: str, logger):
         norm_body = normalize_no_accents_lower_trim(email_content or "")
         norm_subject = normalize_no_accents_lower_trim(subject or "")
 
-        # Règles de détection: mots-clés dans le corps + mention de désabonnement
-        has_journee = "journee" in norm_body
-        has_tarifs = "tarifs habituels" in norm_body
-        has_desabo = ("desabonn" in norm_body) or ("desabonn" in norm_subject)
-        # Détection URGENCE: mot-clé dans le sujet ou le corps normalisés
-        is_urgent = ("urgent" in norm_subject) or ("urgence" in norm_subject) or ("urgent" in norm_body) or ("urgence" in norm_body)
-        forbidden_terms = [
-            "annulation",
-            "facturation",
-            "facture",
-            "moment",
-            "reference client",
-            "total ht",
-        ]
-
-        # Relaxed rule: allow match if (journee AND tarifs) AND (explicit desabo OR dropbox request link present)
-        has_required = (has_journee and has_tarifs) and (has_desabo or has_dropbox_request)
-        has_forbidden = any(term in norm_body for term in forbidden_terms)
-
-        # Détection du lien Dropbox Request dans le contenu d'entrée
+        # 1) Détection du lien Dropbox Request dans le contenu d'entrée (DOIT être calculé en premier)
         has_dropbox_request = "https://www.dropbox.com/request/" in (email_content or "").lower()
         result["has_dropbox_request"] = has_dropbox_request
 
+        # 2) Règles de détection: mots-clés dans le corps + mention de désabonnement
+        has_journee = "journee" in norm_body
+        has_tarifs = "tarifs habituels" in norm_body
+        has_desabo = ("desabonn" in norm_body) or ("desabonn" in norm_subject)
+        
+        # 3) Détection URGENCE: mot-clé dans le sujet ou le corps normalisés
+        is_urgent = ("urgent" in norm_subject) or ("urgence" in norm_subject) or ("urgent" in norm_body) or ("urgence" in norm_body)
+        result["is_urgent"] = bool(is_urgent)
+
+        # 4) Règle relaxée: allow match if (journee AND tarifs) AND (explicit desabo OR dropbox request link present)
+        has_required = (has_journee and has_tarifs) and (has_desabo or has_dropbox_request)
+        has_forbidden = any(term in norm_body for term in DESABO_FORBIDDEN_KEYWORDS)
+
         # Logs de diagnostic concis (ne doivent jamais lever)
         try:
-            missing_required = [t for t in required_terms if t not in norm_body]
-            present_forbidden = [t for t in forbidden_terms if t in norm_body]
+            # Construction des listes de diagnostic avec les constantes du module
+            required_for_diagnostic = ["journee", "tarifs habituels"]
+            missing_required = [t for t in required_for_diagnostic if t not in norm_body]
+            present_forbidden = [t for t in DESABO_FORBIDDEN_KEYWORDS if t in norm_body]
             logger.debug(
                 "DESABO_HELPER_DEBUG: required_ok=%s, forbidden_present=%s, dropbox_request=%s, urgent=%s, missing_required=%s, present_forbidden=%s",
                 has_required,
@@ -264,11 +280,10 @@ def check_desabo_conditions(subject: str, email_content: str, logger):
 
         # Match if required conditions satisfied and no forbidden terms
         result["matches"] = bool(has_required and (not has_forbidden))
-        result["is_urgent"] = bool(is_urgent)
         return result
     except Exception as e:
         try:
-            logger.error(f"DESABO_HELPER: Exception during detection: {e}")
+            logger.error("DESABO_HELPER: Exception during detection: %s", e)
         except Exception:
             pass
         return result

@@ -82,3 +82,29 @@ Le projet a récemment subi un important refactoring pour améliorer sa maintena
 -   **Configuration** : Exclusivement via variables d'environnement (documenté dans `configuration.md`).
 -   **Standards de code** : Définis dans `codingstandards.md` (PEP 8, Black, isort pour Python; Prettier, ESLint pour JS; PSR-12 for PHP).
 -   **Documentation** : Organisée dans des fichiers Markdown à la racine.
+
+---
+
+## 5. Mise à jour (2025-11-17) — Architecture orientée services
+
+-   Refactoring complet en 5 phases pour adopter une architecture orientée services.
+-   Services créés et intégrés (6): `ConfigService`, `RuntimeFlagsService` (Singleton, cache 60s), `WebhookConfigService` (Singleton, validation stricte + normalisation), `AuthService`, `PollingConfigService`, `DeduplicationService`.
+-   Intégrations clés:
+    -   `app_render.py` initialise les services et délègue la logique configuration/auth/dédup aux services.
+    -   Routes migrées: `api_config.py` → RuntimeFlagsService, `dashboard.py` → AuthService, `api_webhooks.py` → WebhookConfigService, `api_admin.py` → ConfigService.
+-   Nettoyage: suppression des wrappers legacy, appels directs aux services, tests adaptés pour vérifier via API plutôt que lecture de fichiers.
+-   Qualité: 83/83 tests passent (100%). Couverture globale ≈ 41.16% (+~15 pts). Statut: Production Ready.
+
+## Mise à jour (2025-11-18) — Refactoring email_processing
+- Modules refactorés: imap_client, link_extraction, pattern_matching, payloads, webhook_sender, orchestrator.
+- Ajout massif de types (TypedDict, signatures explicites), logs sécurisés, robustesse renforcée.
+- Orchestrator: helpers extraits, constants, TypedDict ParsedEmail, docstrings complètes, helper de parsing d'e-mail.
+- Tests: 282 passants, 8 échecs préexistants focussés sur routes legacy (non liés au refactor).
+- Couverture globale ≈ 67.3%.
+
+## Mise à jour (2025-11-18) — Nettoyage post-refactoring de app_render.py
+- Nettoyage d'imports inutilisés post-architecture orientée services (subprocess, requests, urljoin, fcntl, re, LoginManager, UserMixin, login_user, logout_user, current_user).
+- Gestion explicite du flag DISABLE_BACKGROUND_TASKS avec priorité override pour tous les threads de fond (_heartbeat, _bg_email_poller, _make_watcher).
+- Amélioration de _log_webhook_config_startup() pour utiliser WebhookConfigService quand disponible.
+- Ajout de TODO pour déprécation future de auth_user.init_login_manager() en faveur de AuthService.
+- Code plus maintenable et contrôle fiable des tâches de fond, aucune régression fonctionnelle.

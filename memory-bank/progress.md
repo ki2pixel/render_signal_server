@@ -2,6 +2,47 @@
 
 ## Terminé
 
+-   [2025-11-18 01:35] **Correction des 11 tests en échec (adaptation architecture services)**
+  - **Tests dashboard** (2) : Patch `_auth_service.create_user_from_credentials` au lieu de fonction déplacée
+  - **Test api_config** (1) : Patch `config.settings.*` au lieu de `routes.api_config.*` 
+  - **Tests api_admin presence** (4) : Mock `_config_service.get_presence_config()` au lieu de monkeypatch constantes
+  - **Test api_admin check_emails** (1) : Mock `_config_service.is_email_config_valid()` pour validation
+  - **Test webhook_logging_integration** : Patch `email_processing.webhook_sender.requests.post` au lieu de `app_render.requests.post`
+  - **Isolation tests webhook_logs** : Amélioration fixture `temp_logs_file` avec initialisation liste vide
+  - Résultat : **345/348 tests passants (99.1%)**, +8 tests corrigés, 3 échecs isolation (passent individuellement)
+  - Couverture : 68.13% (+0.45%)
+  - Tests adaptés à l'architecture orientée services (Phases 1→5)
+
+-   [2025-11-18 01:29] **Refactoring maintenabilité : webhook_logger, processing_prefs, routes**
+  - Suppression du module legacy `logging/webhook_logger.py` (dupliqué avec `app_logging/webhook_logger.py`)
+  - Simplification de `routes/api_logs.py` : utilisation directe de `fetch_webhook_logs()` du helper centralisé
+  - Refactorisation de `routes/api_processing.py` : délégation de la validation à `preferences.processing_prefs.validate_processing_prefs()`
+  - Conservation des alias UI (`exclude_keywords_recadrage`, `exclude_keywords_autorepondeur`) avec normalisation avant validation
+  - Nettoyage des imports inutilisés (json dans api_processing.py)
+  - Tests : 337/348 passants (11 échecs préexistants non liés au refactoring)
+  - Tests spécifiques webhook_logs validés individuellement (état partagé dans suite complète)
+  - Code plus DRY, maintenable et conforme aux Coding Standards
+
+-   [2025-11-18 01:18] **Nettoyage et ajustements post-refactoring de app_render.py**
+  - Nettoyage d'imports inutilisés (subprocess, requests, urljoin, fcntl, re, LoginManager, UserMixin, login_user, logout_user, current_user)
+  - Gestion explicite du flag DISABLE_BACKGROUND_TASKS avec priorité override pour tous les threads de fond
+  - Amélioration de _log_webhook_config_startup() pour utiliser WebhookConfigService.get_all_config() quand disponible
+  - Ajout de TODO pour déprécation future de auth_user.init_login_manager()
+  - Tests validés (8/8 passent), import Python valide, pas de régression
+  - Code plus maintenable et fiable post-refactoring orienté services
+  - Types et logs sécurisés (imap_client), TypedDict + dédup (link_extraction)
+  - Bug has_dropbox_request corrigé + constantes + types (pattern_matching)
+  - TypedDict payloads + factorisation Dropbox (payloads)
+  - Paramètre attempts + types (webhook_sender)
+  - Orchestrator: helpers extraits, constants, TypedDict ParsedEmail, docstrings
+  - Tests adaptés + exécution complète: 282 OK, 8 échecs préexistants
+
+-   [2025-11-06 00:45] **Durcissement Render (SIGTERM, Make watcher, redémarrage planifié)**
+    - Ajout d'un handler `SIGTERM` dans `app_render.py` pour tracer les arrêts plateforme.
+    - Protection du watcher Make pour ne démarrer que si `MAKECOM_API_KEY` est présent.
+    - Recommandation et documentation d'une configuration `GUNICORN_CMD_ARGS` avec `--max-requests/--max-requests-jitter` adaptée au trafic (≈ redémarrage quotidien).
+    - Push GitHub effectué (`feat: add SIGTERM handler for graceful shutdown logging`).
+
 -   [2025-10-30 14:47] **Stabilisation déploiement PHP (DirectAdmin) + OAuth Gmail Web**
     - Correction des chemins sous DirectAdmin: inclusion `bootstrap_env.php` via `__DIR__` et `.htaccess` (`php_value auto_prepend_file bootstrap_env.php`).
     - Mise à jour `bootstrap_env.php::env_bootstrap_path()` pour distinguer `public_html/` et `data/` (écriture/lecture OK).

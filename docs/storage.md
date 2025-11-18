@@ -37,11 +37,15 @@ Pour activer le stockage externe, définissez ces variables d'environnement :
    - La synchronisation avec le stockage persistant est assurée automatiquement
 
 3. **Sécurité** :
-   - Authentification via token Bearer
-   - Validation des données avant écriture
-   - Chiffrement des données sensibles au repos (si configuré)
+  - Authentification via token Bearer
+  - Validation des données avant écriture
+  - Chiffrement des données sensibles au repos (si configuré)
 
-4. **Journalisation** :
+4. **Intégration applicative (services)** :
+   - `WebhookConfigService` peut lire/écrire via le store externe si disponible, avec fallback fichier `debug/webhook_config.json` et cache mémoire TTL 60s (invalidation à l'update).
+   - Les endpoints de fenêtre horaire (`/api/get_webhook_time_window`, `/api/set_webhook_time_window`) synchronisent best‑effort `global_time_start/global_time_end` avec la clé `webhook_config` du store externe.
+
+5. **Journalisation** :
    - Toutes les opérations de lecture/écriture sont journalisées
    - Les erreurs sont enregistrées avec un niveau de sévérité approprié
 

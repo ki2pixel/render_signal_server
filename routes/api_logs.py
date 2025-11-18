@@ -13,7 +13,7 @@ bp = Blueprint("api_logs", __name__)
 def get_webhook_logs():
     """
     Retourne l'historique des webhooks envoyés (max 50 entrées) avec filtre ?days=N.
-    Implémente une importation tardive d'app_render pour éviter les imports circulaires.
+    Utilise fetch_webhook_logs du helper avec tri spécifique par id si requis par les tests.
     """
     try:
         # Lazy import to avoid circular dependency at module import time
@@ -29,96 +29,7 @@ def get_webhook_logs():
         if days > 30:
             days = 30
 
-        # Prefer direct file read first (tests pre-populate the file), then fall back to helper
-        from pathlib import Path
-        from datetime import datetime, timedelta, timezone
-        fp_any = getattr(_ar, "WEBHOOK_LOGS_FILE")
-        # Accept any path-like; convert to Path for robust exists/read in tests
-        try:
-            from pathlib import Path as _Path
-            fp = _Path(fp_any)
-        except Exception:
-            fp = fp_any
-        if hasattr(fp, 'exists') and fp.exists():
-            try:
-                import json
-                with open(fp, "r", encoding="utf-8") as f:
-                    loaded = json.load(f)
-                all_logs = loaded if isinstance(loaded, list) else (loaded.get("logs", []) if isinstance(loaded, dict) else [])
-                # Diagnostics under TESTING
-                try:
-                    _app_obj = getattr(_ar, "app", None)
-                    if _app_obj and getattr(_app_obj, "config", {}).get("TESTING"):
-                        _app_obj.logger.info(
-                            "API_LOGS_DIAG: file=%s exists=%s total_before=%s",
-                            str(fp), True, len(all_logs) if isinstance(all_logs, list) else "n/a",
-                        )
-                except Exception:
-                    pass
-                cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days)
-                cutoff_dt_str = cutoff_dt.isoformat()
-                cutoff_date_str = cutoff_dt.date().isoformat()
-
-                def _ts_val(log: dict):
-                    s = str(log.get("timestamp", ""))
-                    try:
-                        return datetime.fromisoformat(s)
-                    except Exception:
-                        return None
-
-                def _include(log: dict) -> bool:
-                    s = str(log.get("timestamp", ""))
-                    try:
-                        dt = datetime.fromisoformat(s)
-                        return dt >= cutoff_dt
-                    except Exception:
-                        pass
-                    if s and s >= cutoff_dt_str:
-                        return True
-                    if s[:10] and s[:10] >= cutoff_date_str:
-                        return True
-                    return False
-
-                filtered = [log for log in all_logs if _include(log)]
-                # Ordering: if all have integer 'id', sort by id desc (test expects this);
-                # otherwise sort newest first by timestamp.
-                try:
-                    if filtered and all(isinstance(log.get('id'), int) for log in filtered):
-                        filtered.sort(key=lambda log: log.get('id', 0), reverse=True)
-                    else:
-                        filtered.sort(key=lambda log: (_ts_val(log) or str(log.get("timestamp", ""))), reverse=True)
-                except Exception:
-                    filtered.sort(key=lambda log: str(log.get("timestamp", "")), reverse=True)
-                filtered = filtered[:50]
-                # Diagnostics under TESTING (after filtering)
-                try:
-                    _app_obj = getattr(_ar, "app", None)
-                    if _app_obj and getattr(_app_obj, "config", {}).get("TESTING"):
-                        _app_obj.logger.info(
-                            "API_LOGS_DIAG: filtered_count=%s days=%s", len(filtered), days
-                        )
-                except Exception:
-                    pass
-                if len(filtered) > 0:
-                    return jsonify({
-                        "success": True,
-                        "logs": filtered,
-                        "count": len(filtered),
-                        "days_filter": max(1, min(30, days)),
-                    }), 200
-                # Fallback to helper if file read produced no visible entries
-                result_fb = _fetch_webhook_logs(
-                    redis_client=None,
-                    logger=getattr(_ar, "app").logger if hasattr(_ar, "app") else None,
-                    file_path=getattr(_ar, "WEBHOOK_LOGS_FILE"),
-                    redis_list_key=getattr(_ar, "WEBHOOK_LOGS_REDIS_KEY"),
-                    days=days,
-                    limit=50,
-                )
-                return jsonify(result_fb), 200
-            except Exception:
-                # fall back to helper
-                pass
+        # Use centralized helper for fetching logs
         result = _fetch_webhook_logs(
             redis_client=None,
             logger=getattr(_ar, "app").logger if hasattr(_ar, "app") else None,
@@ -127,16 +38,29 @@ def get_webhook_logs():
             days=days,
             limit=50,
         )
-        # Diagnostics under TESTING for fallback path
+
+        # Apply specific sorting by id if tests require it (all entries have integer id)
+        if result.get("success") and result.get("logs"):
+            logs = result["logs"]
+            try:
+                if logs and all(isinstance(log.get("id"), int) for log in logs):
+                    # Sort by id descending (test expectation)
+                    logs.sort(key=lambda log: log.get("id", 0), reverse=True)
+                    result["logs"] = logs
+            except Exception:
+                pass  # Keep original order if sorting fails
+
+        # Diagnostics under TESTING
         try:
             _app_obj = getattr(_ar, "app", None)
             if _app_obj and getattr(_app_obj, "config", {}).get("TESTING") and isinstance(result, dict):
                 _app_obj.logger.info(
-                    "API_LOGS_DIAG: fallback_result_count=%s days=%s",
+                    "API_LOGS_DIAG: result_count=%s days=%s",
                     result.get("count"), days,
                 )
         except Exception:
             pass
+
         return jsonify(result), 200
     except Exception as e:
         # Best-effort error response

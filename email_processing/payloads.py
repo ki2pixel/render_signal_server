@@ -6,7 +6,55 @@ Builders for webhook payloads to keep formatting logic centralized and testable.
 """
 from __future__ import annotations
 
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+from typing_extensions import TypedDict
+
+
+class CustomWebhookPayload(TypedDict, total=False):
+    """Structure du payload pour le webhook custom (PHP endpoint)."""
+    microsoft_graph_email_id: str
+    subject: Optional[str]
+    receivedDateTime: Optional[str]
+    sender_address: Optional[str]
+    bodyPreview: Optional[str]
+    email_content: Optional[str]
+    delivery_links: List[Dict[str, str]]
+    first_direct_download_url: Optional[str]
+    dropbox_urls: List[str]
+    dropbox_first_url: Optional[str]
+
+
+class DesaboMakePayload(TypedDict, total=False):
+    """Structure du payload pour le webhook Make.com DESABO."""
+    detector: str
+    email_content: Optional[str]
+    Text: Optional[str]
+    Subject: Optional[str]
+    Sender: Optional[Dict[str, str]]
+    webhooks_time_start: Optional[str]
+    webhooks_time_end: Optional[str]
+
+
+def _extract_dropbox_urls_legacy(delivery_links: Optional[List[Dict[str, str]]]) -> List[str]:
+    """Extrait les URLs Dropbox depuis delivery_links pour compatibilité legacy.
+    
+    Args:
+        delivery_links: Liste de dicts avec 'provider' et 'raw_url'
+    
+    Returns:
+        Liste des raw_url où provider == 'dropbox'
+    """
+    if not delivery_links:
+        return []
+    
+    try:
+        return [
+            item.get("raw_url")
+            for item in delivery_links
+            if item and item.get("provider") == "dropbox" and item.get("raw_url")
+        ]
+    except Exception:
+        return []
 
 
 def build_custom_webhook_payload(
@@ -25,6 +73,8 @@ def build_custom_webhook_payload(
     Mirrors legacy fields for backward compatibility.
     Adds legacy Dropbox-specific aliases (`dropbox_urls`, `dropbox_first_url`).
     """
+    dropbox_urls_legacy = _extract_dropbox_urls_legacy(delivery_links)
+    
     payload = {
         "microsoft_graph_email_id": email_id,
         "subject": subject,
@@ -34,19 +84,9 @@ def build_custom_webhook_payload(
         "email_content": full_email_content,
         "delivery_links": delivery_links,
         "first_direct_download_url": first_direct_url,
+        "dropbox_urls": dropbox_urls_legacy,
+        "dropbox_first_url": dropbox_urls_legacy[0] if dropbox_urls_legacy else None,
     }
-
-    try:
-        dropbox_urls_legacy = [
-            item.get("raw_url")
-            for item in (delivery_links or [])
-            if item and item.get("provider") == "dropbox" and item.get("raw_url")
-        ]
-    except Exception:
-        dropbox_urls_legacy = []
-
-    payload["dropbox_urls"] = dropbox_urls_legacy
-    payload["dropbox_first_url"] = dropbox_urls_legacy[0] if dropbox_urls_legacy else None
 
     return payload
 

@@ -1,3 +1,25 @@
+## Déploiement Render (variables)
+
+- `RENDER_API_KEY` – Token API Render (Bearer) pour `POST /v1/services/{id}/deploys`.
+- `RENDER_SERVICE_ID` – Identifiant du service Render.
+- `RENDER_DEPLOY_HOOK_URL` – URL Deploy Hook Render (prioritaire si défini).
+- `RENDER_DEPLOY_CLEAR_CACHE` – `true|false` (contrôle le champ `clearCache` lors des appels API Render).
+- `DEPLOY_CMD` – Commande fallback locale (ex: `systemctl reload-or-restart render-signal-server; nginx -s reload`).
+
+Notes:
+- L'endpoint interne `POST /api/deploy_application` choisit automatiquement le meilleur chemin: Deploy Hook → API Render → commande fallback.
+- Les logs masquent la clé du Deploy Hook et tracent l'identité de l'utilisateur authentifié ayant déclenché le déploiement.
+
+## Politique SSL des webhooks
+
+- `WEBHOOK_SSL_VERIFY=false` n'est à utiliser qu'en développement. En production, laisser `true` pour la vérification TLS/SSL.
+- Lorsque désactivé, l'application émet un avertissement dans les logs au démarrage.
+
+## Accès configuration via services
+
+- `ConfigService` expose des accesseurs typés (`get_email_config()`, `get_api_token()`, `get_render_config()`, etc.).
+- `RuntimeFlagsService` (Singleton) gère `get_all_flags()` et `update_flags()` avec persistence JSON et cache TTL 60s.
+- `WebhookConfigService` (Singleton) centralise la configuration webhooks (validation HTTPS, normalisation Make.com, cache + store externe optionnel). Les champs couvrent aussi la « fenêtre horaire des webhooks » (`webhook_time_start`, `webhook_time_end`, ainsi que `global_time_start/global_time_end` pour synchronisation UI legacy). La persistance privilégie le store externe (si configuré) avec fallback fichier `debug/webhook_config.json`.
 # Configuration (variables d'environnement)
 
 ## Stockage de la configuration
@@ -50,18 +72,36 @@ Pour plus de détails sur la configuration avancée, consultez le fichier `deplo
 - `EMAIL_ADDRESS`
 - `EMAIL_PASSWORD`
 - `IMAP_SERVER` (ex: `mail.inbox.lt`)
-{{ ... }}
+- `IMAP_PORT` (défaut: `993`)
+- `IMAP_SSL` (défaut: `true`)
+- `EMAIL_CONFIG_VALID` (validation des paramètres IMAP)
 - `DISABLE_EMAIL_ID_DEDUP` (`true|false`, défaut `false`) – bypass la déduplication par email ID pour débogage.
 ### Contrôle d'exécution des tâches de fond (sécurité opérationnelle)
 - `ENABLE_BACKGROUND_TASKS` (`true|false`) – doit être `true` pour démarrer `background_email_poller()`. Laissez `false` sur les workers secondaires.
 - `BG_POLLER_LOCK_FILE` (chemin) – fichier de verrou pour assurer un singleton inter-processus (défaut: `/tmp/render_signal_server_email_poller.lock`).
+ - Watcher Make (optionnel) – ne démarre que si `ENABLE_BACKGROUND_TASKS=true` ET `MAKECOM_API_KEY` est défini (réduction du bruit 401 en absence de clé).
 
 ## Webhooks
 - `DEBUG_EMAIL` – active le mode débogage pour les e-mails (pas d'envoi réel)
 - `DEBUG_WEBHOOK` – active le mode débogage pour les webhooks (pas d'envoi réel)
 - `WEBHOOK_URL` - URL du webhook personnalisé qui recevra les notifications
-- `WEBHOOK_SSL_VERIFY` - Vérification SSL (désactivez uniquement en développement, défaut: `true`)
+- `WEBHOOK_SSL_VERIFY` - Vérification SSL pour les appels sortants (désactivez uniquement pour le débogage, défaut: `true`)
 - `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` - Si `true`, envoie les webhooks même sans liens détectés (défaut: `false`)
+
+Notes (service):
+- La validation stricte des URLs et la normalisation Make.com sont centralisées dans `WebhookConfigService`.
+- Les valeurs sont mises en cache (TTL 60s) et invalidées lors des mises à jour via l'API.
+
+## Gmail OAuth (pour envoi d'emails depuis les webhooks)
+- `GMAIL_CLIENT_ID` - ID client OAuth de Google Cloud Console
+- `GMAIL_CLIENT_SECRET` - Secret client OAuth de Google Cloud Console
+- `GMAIL_REFRESH_TOKEN` - Refresh token obtenu via OAuth Playground
+- `GMAIL_FROM_EMAIL` - Adresse e-mail expéditrice (doit correspondre au compte Gmail)
+- `GMAIL_FROM_NAME` - Nom d'affichage optionnel pour l'expéditeur
+- `AUTOREPONDEUR_TO` - Adresse e-mail destinataire pour les notifications d'autorépondeur
+- `GMAIL_OAUTH_CHECK_KEY` - Clé de sécurité pour l'auto-check périodique
+- `GMAIL_OAUTH_CHECK_INTERVAL_DAYS` - Intervalle en jours pour les vérifications automatiques (défaut: 7)
+- `GMAIL_OAUTH_TEST_TO` - Adresse de test pour les envois d'exemple
 
 ## Fichiers de configuration locaux (fallback)
 
@@ -69,6 +109,11 @@ Pour plus de détails sur la configuration avancée, consultez le fichier `deplo
 - `PROCESSING_PREFS_FILE` – préférences de traitement (défaut: `debug/processing_prefs.json`)
 - `WEBHOOK_SSL_VERIFY` – Vérification SSL (désactivez uniquement en développement, défaut: `true`)
 - `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` – Si `true`, envoie les webhooks même sans liens détectés (défaut: `false`)
+
+Fichiers supplémentaires (services):
+- `RUNTIME_FLAGS_FILE` – fichier JSON des flags runtime (défaut: `debug/runtime_flags.json`) utilisé par `RuntimeFlagsService`.
+- `POLLING_CONFIG_FILE` – fichier JSON de configuration du polling (défaut: `debug/polling_config.json`).
+- `TRIGGER_SIGNAL_FILE` – fichier de signal local (par défaut sous `signal_data_app_render/`).
 
 ## Redis (optionnel)
 - `REDIS_URL` – ex: `redis://:password@host:6379/0`
@@ -86,8 +131,8 @@ Pour plus de détails sur la configuration avancée, consultez le fichier `deplo
 
 ### Fenêtre horaire des webhooks
 Une fenêtre horaire dédiée est disponible pour contrôler l'envoi des webhooks, indépendamment de la réception des e-mails :
-- Configurable via l'interface utilisateur ou l'API
-- Persistée dans `debug/webhook_time_window.json`
+- Configurable via l'interface utilisateur ou l'API (`GET/POST /api/webhooks/time-window`)
+- Persistée via `WebhookConfigService` (store externe prioritaire, fallback fichier `debug/webhook_config.json`)
 - Peut être désactivée pour envoyer les webhooks à toute heure
 - Rechargée dynamiquement par le serveur sans redémarrage nécessaire
 
@@ -101,6 +146,10 @@ Une fenêtre horaire dédiée est disponible pour contrôler l'envoi des webhook
 ### Gestion via API
 - `GET /api/webhooks/time-window` - Récupère la configuration actuelle
 - `POST /api/webhooks/time-window` - Met à jour la configuration
+
+Synchronisation avec store externe (best-effort):
+- Lors d'un `GET /api/get_webhook_time_window`, l'application tente de synchroniser `global_time_start/global_time_end` depuis le store externe si disponibles.
+- Lors d'un `POST /api/set_webhook_time_window`, l'application met à jour le store externe avec les valeurs courantes (si accessible). Le fallback fichier local reste opérationnel en cas d'indisponibilité du store externe.
 
 Exemple de réponse :
 ```json

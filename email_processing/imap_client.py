@@ -4,64 +4,73 @@ email_processing.imap_client
 
 Gestion de la connexion IMAP pour la lecture des emails et helpers associés.
 """
+from __future__ import annotations
 
-from config.settings import (
-    IMAP_SERVER,
-    IMAP_PORT,
-    IMAP_USE_SSL,
-    EMAIL_ADDRESS,
-    EMAIL_PASSWORD,
-)
-
-import imaplib
 import hashlib
+import imaplib
 import re
 from email.header import decode_header
+from logging import Logger
+from typing import Optional, Union
+
+from config.settings import (
+    EMAIL_ADDRESS,
+    EMAIL_PASSWORD,
+    IMAP_PORT,
+    IMAP_SERVER,
+    IMAP_USE_SSL,
+)
 
 
-def create_imap_connection(logger):
-    """
-    Crée une connexion IMAP sécurisée au serveur email.
-    
+def create_imap_connection(logger: Optional[Logger]) -> Optional[Union[imaplib.IMAP4_SSL, imaplib.IMAP4]]:
+    """Crée une connexion IMAP sécurisée au serveur email.
+
     Args:
-        logger: Instance de logger Flask (app.logger)
-    
+        logger: Instance de logger Flask (app.logger) ou None
+
     Returns:
-        imaplib.IMAP4_SSL ou imaplib.IMAP4 si succès, None si échec
+        Connection IMAP (IMAP4_SSL ou IMAP4) si succès, None si échec
     """
-    # Log detailed configuration for debugging
-    logger.info(f"IMAP_DEBUG: Attempting connection with:")
-    logger.info(f"IMAP_DEBUG: - Server: {IMAP_SERVER}")
-    logger.info(f"IMAP_DEBUG: - Port: {IMAP_PORT}")
-    logger.info(f"IMAP_DEBUG: - SSL: {IMAP_USE_SSL}")
-    logger.info(f"IMAP_DEBUG: - Email: {EMAIL_ADDRESS}")
-    logger.info(f"IMAP_DEBUG: - Password: {'*' * len(EMAIL_PASSWORD) if EMAIL_PASSWORD else 'NOT_SET'}")
+    if not logger:
+        # Fallback minimal si pas de logger disponible
+        return None
+
+    # Validation minimale des paramètres de connexion (ne jamais logger les credentials)
+    if not IMAP_SERVER or not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+        logger.error("IMAP: Configuration incomplète (serveur, email ou mot de passe manquant)")
+        return None
+
+    # Logs de debug uniquement (pas INFO pour éviter le spam)
+    logger.debug("IMAP: Tentative de connexion au serveur %s:%s (SSL=%s)", IMAP_SERVER, IMAP_PORT, IMAP_USE_SSL)
 
     try:
         if IMAP_USE_SSL:
-            # Connexion SSL/TLS
-            logger.info(f"IMAP_DEBUG: Creating SSL connection to {IMAP_SERVER}:{IMAP_PORT}")
             mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT)
         else:
-            # Connexion non-sécurisée (non recommandée)
-            logger.info(f"IMAP_DEBUG: Creating non-SSL connection to {IMAP_SERVER}:{IMAP_PORT}")
+            # Connexion non-sécurisée (déconseillé)
+            logger.warning("IMAP: Connexion non-SSL utilisée (vulnérable)")
             mail = imaplib.IMAP4(IMAP_SERVER, IMAP_PORT)
 
-        logger.info(f"IMAP_DEBUG: Connection established, attempting authentication...")
-        # Authentification
+        # Authentification (ne jamais logger le mot de passe)
         mail.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-        logger.info(f"IMAP: Successfully connected to {IMAP_SERVER}:{IMAP_PORT}")
+        logger.info("IMAP: Connexion établie avec succès (%s)", IMAP_SERVER)
         return mail
+
     except imaplib.IMAP4.error as e:
-        logger.error(f"IMAP: Authentication failed for {EMAIL_ADDRESS} on {IMAP_SERVER}:{IMAP_PORT} - {e}")
+        logger.error("IMAP: Échec d'authentification pour %s sur %s:%s - %s", EMAIL_ADDRESS, IMAP_SERVER, IMAP_PORT, e)
         return None
     except Exception as e:
-        logger.error(f"IMAP: Connection error to {IMAP_SERVER}:{IMAP_PORT} - {e}")
+        logger.error("IMAP: Erreur de connexion à %s:%s - %s", IMAP_SERVER, IMAP_PORT, e)
         return None
 
 
-def close_imap_connection(logger, mail):
-    """Ferme proprement une connexion IMAP."""
+def close_imap_connection(logger: Optional[Logger], mail: Optional[Union[imaplib.IMAP4_SSL, imaplib.IMAP4]]) -> None:
+    """Ferme proprement une connexion IMAP.
+    
+    Args:
+        logger: Instance de logger Flask (app.logger) ou None
+        mail: Connection IMAP à fermer ou None
+    """
     try:
         if mail:
             mail.close()
@@ -70,7 +79,7 @@ def close_imap_connection(logger, mail):
                 logger.debug("IMAP: Connection closed successfully")
     except Exception as e:
         if logger:
-            logger.warning(f"IMAP: Error closing connection: {e}")
+            logger.warning("IMAP: Error closing connection: %s", e)
 
 
 def generate_email_id(msg_data: dict) -> str:
@@ -113,14 +122,25 @@ def decode_email_header_value(header_value: str) -> str:
     return decoded_string
 
 
-def mark_email_as_read_imap(logger, mail, email_num) -> bool:
-    """Marque un email comme lu via IMAP."""
+def mark_email_as_read_imap(logger: Optional[Logger], mail: Optional[Union[imaplib.IMAP4_SSL, imaplib.IMAP4]], email_num: str) -> bool:
+    """Marque un email comme lu via IMAP.
+    
+    Args:
+        logger: Instance de logger Flask (app.logger) ou None
+        mail: Connection IMAP active
+        email_num: Numéro de l'email à marquer comme lu
+        
+    Returns:
+        True si succès, False sinon
+    """
     try:
+        if not mail:
+            return False
         mail.store(email_num, '+FLAGS', '\\Seen')
         if logger:
-            logger.info(f"IMAP: Email {email_num} marked as read")
+            logger.debug("IMAP: Email %s marked as read", email_num)
         return True
     except Exception as e:
         if logger:
-            logger.error(f"IMAP: Error marking email {email_num} as read: {e}")
+            logger.error("IMAP: Error marking email %s as read: %s", email_num, e)
         return False

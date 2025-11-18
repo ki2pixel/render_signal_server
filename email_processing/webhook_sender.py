@@ -25,6 +25,7 @@ def send_makecom_webhook(
     override_webhook_url: Optional[str] = None,
     extra_payload: Optional[dict] = None,
     *,
+    attempts: int = 2,
     logger: Optional[logging.Logger] = None,
     log_hook: Optional[Callable[[dict], None]] = None,
 ) -> bool:
@@ -41,6 +42,7 @@ def send_makecom_webhook(
         email_id: Identifiant unique de l'email (pour les logs)
         override_webhook_url: URL Make.com alternative (prioritaire si fournie)
         extra_payload: Données supplémentaires à fusionner dans le payload JSON
+        attempts: Nombre de tentatives d'envoi (défaut: 2, minimum: 1)
         logger: Logger optionnel (par défaut logging.getLogger(__name__))
         log_hook: Callback facultatif prenant un dict pour journaliser côté dashboard
 
@@ -70,7 +72,8 @@ def send_makecom_webhook(
         log.error("MAKECOM: No webhook URL configured (target_url is empty). Proceeding with placeholder for retry behavior.")
         target_url = "http://localhost/placeholder-webhook"
 
-    attempts = 2  # première tentative + 1 retry
+    # Valider le nombre de tentatives (au moins 1)
+    attempts = max(1, attempts)
     last_ok = False
     for attempt in range(1, attempts + 1):
         try:

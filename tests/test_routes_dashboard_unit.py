@@ -19,8 +19,8 @@ def test_login_page_get(flask_client):
 
 @pytest.mark.integration
 def test_login_post_invalid_credentials(flask_client):
-    # Patch create_user_from_credentials to return None (invalid)
-    with patch('routes.dashboard.create_user_from_credentials', return_value=None):
+    # Patch AuthService.create_user_from_credentials to return None (invalid)
+    with patch('routes.dashboard._auth_service.create_user_from_credentials', return_value=None):
         r = flask_client.post('/login', data={'username': 'u', 'password': 'p'})
         assert r.status_code == 200
         # Should re-render login with error text
@@ -34,7 +34,7 @@ def test_login_post_success_with_next(flask_client):
     user.is_authenticated = True
     user.get_id.return_value = '123'
 
-    with patch('routes.dashboard.create_user_from_credentials', return_value=user):
+    with patch('routes.dashboard._auth_service.create_user_from_credentials', return_value=user):
         r = flask_client.post('/login?next=%2Fsomewhere', data={'username': 'ok', 'password': 'ok'})
         # Should redirect to provided next
         assert r.status_code in (302, 303)

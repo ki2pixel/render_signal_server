@@ -33,32 +33,42 @@ Ce guide explique comment configurer l'authentification OAuth 2.0 pour envoyer d
 
 1. Allez dans "Identifiants" > "Créer des identifiants" > "ID client OAuth"
 2. Sélectionnez "Application de bureau"
-3. Donnez un nom à votre application
 4. Notez l'**ID client** et le **secret client** générés
 
 ## Étape 4 : Obtenir un refresh token via OAuth Playground
 
 1. Allez sur [OAuth 2.0 Playground](https://developers.google.com/oauthplayground/)
-2. Cliquez sur l'icône d'engrenage (⚙️) en haut à droite
-3. Cochez "Utiliser vos propres identifiants OAuth"
-4. Dans la section "Scopes", entrez l'un des scopes suivants :
-   - `https://mail.google.com/` (accès complet à l'API Gmail) - recommandé
-   - `https://www.googleapis.com/auth/gmail.send` (uniquement pour l'envoi d'emails)
-5. Cliquez sur "Authorize APIs" pour obtenir votre code d'autorisation
-6. Échangez le code d'autorisation contre un refresh token
-```
-GMAIL_CLIENT_ID=votre_id_client
-GMAIL_CLIENT_SECRET=votre_secret_client
-GMAIL_REFRESH_TOKEN=le_refresh_token_obtenu
-GMAIL_FROM_EMAIL=votre_email@gmail.com
-AUTOREPONDEUR_TO=destinataire@example.com
-```
+2. Cliquez sur## Validation de l'OAuth Gmail
 
-## Stockage sécurisé des identifiants
+### Outils de Validation
 
-### Format recommandé (PHP pour DirectAdmin)
+#### Script CLI (`deployment/scripts/gmail_oauth_connection_test.php`)
+- Valide la configuration OAuth et envoie un e-mail de test
+- Mode `--dry-run` pour validation sans envoi
+- Envoi réel pour test complet
+- Historisation des runs dans `deployment/data/gmail_oauth_check_history.jsonl`
 
-Créez un fichier `env.local.php` dans le dossier `data/` de votre hébergement DirectAdmin (`/home/kidp0/domains/webhook.kidpixel.fr/data/env.local.php`) avec le contenu suivant :
+#### Page Web (`deployment/public_html/GmailOAuthTest.php`)
+- Test depuis un navigateur (dry-run + send)
+- Endpoint `action=auto-check` pour vérification périodique
+- Protégé par clé `GMAIL_OAUTH_CHECK_KEY`
+- Intervalle configurable via `GMAIL_OAUTH_CHECK_INTERVAL_DAYS` (défaut 7j)
+- Persistance de l'état dans `deployment/data/gmail_oauth_last_check.json`
+
+### Configuration Requise
+- `GMAIL_CLIENT_ID` : ID client OAuth
+- `GMAIL_CLIENT_SECRET` : Secret client OAuth
+- `GMAIL_REFRESH_TOKEN` : Refresh token OAuth
+- `GMAIL_FROM_EMAIL` : Adresse e-mail expéditrice
+- `GMAIL_OAUTH_CHECK_KEY` : Clé pour l'auto-check (optionnel)
+- `GMAIL_OAUTH_CHECK_INTERVAL_DAYS` : Intervalle d'auto-check (défaut 7)
+- `GMAIL_OAUTH_TEST_TO` :Destinataire des tests (optionnel)
+
+### Déploiement DirectAdmin
+- Inclusion de `bootstrap_env.php` via `__DIR__` dans les scripts PHP
+- Auto-prepend dans `.htaccess` : `php_value auto_prepend_file bootstrap_env.php`
+- Chemins résolus : `public_html/` pour web, `data/` pour stockage
+- Persistance OAuth dans `domains/webhook.kidpixel.fr/data/env.local.php`) avec le contenu suivant :
 
 ```php
 <?php

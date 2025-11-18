@@ -9,24 +9,16 @@ import requests
 from flask import Blueprint, jsonify, request, current_app
 from flask_login import login_required, current_user
 
-from config.settings import (
-    PRESENCE_TRUE_MAKE_WEBHOOK_URL,
-    PRESENCE_FALSE_MAKE_WEBHOOK_URL,
-    EMAIL_ADDRESS,
-    EMAIL_PASSWORD,
-    IMAP_SERVER,
-    SENDER_LIST_FOR_POLLING,
-    WEBHOOK_URL,
-    RENDER_API_KEY,
-    RENDER_SERVICE_ID,
-    RENDER_DEPLOY_CLEAR_CACHE,
-    RENDER_DEPLOY_HOOK_URL,
-)
+# Phase 5: Migration vers ConfigService (suppression imports directs)
+from services import ConfigService
 from email_processing import webhook_sender as email_webhook_sender
 from email_processing import orchestrator as email_orchestrator
 from app_logging.webhook_logger import append_webhook_log as _append_webhook_log
 
 bp = Blueprint("api_admin", __name__, url_prefix="/api")
+
+# Phase 5: Initialiser ConfigService pour ce module
+_config_service = ConfigService()
 
 
 @bp.route("/restart_server", methods=["POST"])  # POST /api/restart_server
@@ -115,24 +107,26 @@ def deploy_application():
                 current_app.logger.warning("ADMIN: Deploy hook call failed: %s", e)
 
         # 2) Sinon, si variables Render API sont définies, utiliser l'API Render
-        if RENDER_API_KEY and RENDER_SERVICE_ID:
+        # Phase 5: Utilisation de ConfigService
+        render_config = _config_service.get_render_config()
+        if render_config["api_key"] and render_config["service_id"]:
             try:
                 current_app.logger.info(
                     "ADMIN: Deploy via Render API requested by '%s' (service_id=%s, clearCache=%s)",
                     getattr(current_user, "id", "unknown"),
-                    RENDER_SERVICE_ID,
-                    RENDER_DEPLOY_CLEAR_CACHE,
+                    render_config["service_id"],
+                    render_config["clear_cache"],
                 )
             except Exception:
                 pass
 
-            url = f"https://api.render.com/v1/services/{RENDER_SERVICE_ID}/deploys"
+            url = f"https://api.render.com/v1/services/{render_config['service_id']}/deploys"
             headers = {
-                "Authorization": f"Bearer {RENDER_API_KEY}",
+                "Authorization": f"Bearer {render_config['api_key']}",
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             }
-            payload = {"clearCache": RENDER_DEPLOY_CLEAR_CACHE}
+            payload = {"clearCache": render_config["clear_cache"]}
             resp = requests.post(url, json=payload, headers=headers, timeout=20)
             ok_status = resp.status_code in (200, 201, 202)
             data = {}
@@ -218,13 +212,15 @@ def test_presence_webhook():
             return jsonify({"success": False, "message": "Valeur 'presence' invalide. Utilisez true|false."}), 400
 
         presence_bool = presence_str in ("true", "1", "yes", "on")
-        target_url = PRESENCE_TRUE_MAKE_WEBHOOK_URL if presence_bool else PRESENCE_FALSE_MAKE_WEBHOOK_URL
+        # Phase 5: Utilisation de ConfigService
+        presence_config = _config_service.get_presence_config()
+        target_url = presence_config["true_url"] if presence_bool else presence_config["false_url"]
         if not target_url:
             return (
                 jsonify(
                     {
                         "success": False,
-                        "message": "URL de webhook de présence non configurée (PRESENCE_TRUE_MAKE_WEBHOOK_URL / PRESENCE_FALSE_MAKE_WEBHOOK_URL)",
+                        "message": "URL de webhook de présence non configurée (presence_true_url / presence_false_url)",
                     }
                 ),
                 400,
@@ -259,9 +255,11 @@ def check_emails_and_download():
         current_app.logger.info(f"API_EMAIL_CHECK: Déclenchement manuel par '{current_user.id}'.")
 
         # Validate minimal email config and required runtime settings
-        email_config_valid = bool(EMAIL_ADDRESS and EMAIL_PASSWORD and IMAP_SERVER)
-        if not all([email_config_valid, SENDER_LIST_FOR_POLLING, WEBHOOK_URL]):
-            return jsonify({"status": "error", "message": "Config serveur email incomplète."}), 503
+        # Phase 5: Utilisation de ConfigService
+        if not _config_service.is_email_config_valid():
+            return jsonify({"status": "error", "message": "Config serveur email incomplète (email/IMAP)."}), 503
+        if not _config_service.has_webhook_url():
+            return jsonify({"status": "error", "message": "Config serveur email incomplète (webhook URL)."}), 503
 
         def run_task():
             try:

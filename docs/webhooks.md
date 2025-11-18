@@ -19,12 +19,21 @@ Cette application utilise un flux de webhooks unifié avec les caractéristiques
 - `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` : Si `true`, envoie les webhooks même sans liens détectés (défaut: `false`)
 - `MIRROR_MEDIA_TO_CUSTOM` : Si `true`, envoie automatiquement les liens de médias (SwissTransfer, Dropbox, FromSmash) vers le webhook configuré (défaut: `false`)
 
+#### Service de configuration des webhooks
+
+- La lecture/écriture de la configuration passe par `WebhookConfigService` (Singleton):
+  - Validation stricte des URLs: HTTPS obligatoire
+  - Normalisation des URLs Make.com (formats `token@domain` → URL canonique)
+  - Cache mémoire TTL 60s avec invalidation automatique à la mise à jour
+  - Intégration possible avec un store externe (fallback fichier `debug/webhook_config.json`)
+  - Masquage de l'URL côté API lecture (suffixe `***`) pour éviter l'exposition complète dans l'UI
+
 ### Gestion du Temps
 
 - **Fenêtre Horaire des Webhooks** : Restreint l'envoi des webhooks à une plage horaire spécifique
   - Totalement indépendante de la fenêtre horaire des e-mails
   - Configurable via l'interface utilisateur ou l'API (`/api/webhooks/time-window`)
-  - Persistée dans `debug/webhook_time_window.json`
+  - Persistée via `WebhookConfigService` (store externe si disponible, fallback fichier `debug/webhook_config.json`)
   - Format : `HHhMM` (ex: "09h30", "17h00")
   - Désactivable via l'interface ou en définissant `start_hour` et `end_hour` à `null` via l'API
   - Rechargée dynamiquement sans redémarrage du serveur
@@ -107,7 +116,7 @@ Notes:
 - `delivery_links` agrège les URLs de fournisseurs supportés (Dropbox, FromSmash, SwissTransfer). `direct_url` peut être `null` si aucun lien direct n'a pu être déterminé.
 - `first_direct_download_url` est le premier lien direct parmi les `delivery_links` trouvés (ou `null`).
 - `webhooks_time_start` et `webhooks_time_end` reflètent la Fenêtre Horaire Globale configurée.
-  - Exception (autorépondeur/Make): si un email d'autorépondeur est détecté avant l'Heure de début, `webhooks_time_start` sera défini à "maintenant" dans le payload Make, afin de déclencher immédiatement le scénario côté Make.
+  - Exception (autorépondeur/Make): si un email d'autorépondeur non urgent est détecté avant l'Heure de début configurée, `webhooks_time_start` est défini à l'heure de début (ex. "12h00"). Pour un cas urgent, hors fenêtre, l'envoi est ignoré (pas de bypass).
 - Pour rétro-compatibilité, vous pouvez continuer d'exposer un champ `dropbox_urls` si votre récepteur l'exige.
 
 ## Compatibilité rétro (dropbox_urls, dropbox_first_url)

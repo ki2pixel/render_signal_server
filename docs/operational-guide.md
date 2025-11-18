@@ -32,11 +32,14 @@
   - Application startup logs (config summaries).
   - Background threads:
     - `BG_POLLER: Singleton lock acquired …` when started.
-    - `MAKE_WATCHER: background thread started …` only if `MAKECOM_API_KEY` is set.
+    - `HEARTBEAT: alive (threads: {count} active, {daemon} daemon)` - Sent every 5 minutes to confirm background threads are running.
+    - `MAKE_WATCHER: background thread started (vacation-aware ON/OFF)` - Only if both `ENABLE_BACKGROUND_TASKS` and `MAKECOM_API_KEY` are set.
 - On platform stop:
   - `PROCESS: SIGTERM received; shutting down gracefully (platform restart/deploy).`
+  - `MAKE_WATCHER: Applying desired=False (enable_ui=…, in_vacation=…)` - If Make watcher was running.
 - During inactive hours:
   - `BG_POLLER: Outside active period. Sleeping.` every `POLLING_INACTIVE_CHECK_INTERVAL_SECONDS`.
+  - `HEARTBEAT: alive (threads: {count} active, {daemon} daemon)` - Continues during inactive periods.
 
 ## Configuration Checklist
 - Render → Environment Variables:

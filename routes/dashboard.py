@@ -3,9 +3,14 @@ from __future__ import annotations
 from flask import Blueprint, render_template, request, redirect, url_for
 from flask_login import login_required, login_user, logout_user, current_user
 
-from auth.user import create_user_from_credentials
+# Phase 3: Utiliser AuthService au lieu de auth.user
+from services import AuthService, ConfigService
 
 bp = Blueprint("dashboard", __name__)
+
+# Phase 3: Initialiser AuthService pour ce module
+_config_service = ConfigService()
+_auth_service = AuthService(_config_service)
 
 
 @bp.route("/")
@@ -24,7 +29,8 @@ def login():
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
-        user_obj = create_user_from_credentials(username, password)
+        # Phase 3: Utiliser AuthService
+        user_obj = _auth_service.create_user_from_credentials(username, password)
         if user_obj is not None:
             login_user(user_obj)
             next_page = request.args.get("next")

@@ -3,22 +3,17 @@ redis_client = None
 
 from background.lock import acquire_singleton_lock
 from flask import Flask, jsonify, request
-from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_login import login_required
 from flask_cors import CORS
 import os
-import subprocess
 import threading
 import time
 from pathlib import Path
 import json
 import logging
-import re
 from datetime import datetime, timedelta, timezone
-import requests
 import urllib3
-from urllib.parse import urljoin
 import signal
-import fcntl  # File locking to ensure singleton background poller across processes
 from collections import deque  # Rate limiting queue for webhook sends
 # Ces imports remplacent les définitions locales des mêmes fonctions
 from utils.time_helpers import parse_time_hhmm as _parse_time_hhmm
@@ -28,8 +23,18 @@ from utils.validators import normalize_make_webhook_url as _normalize_make_webho
 # Ces imports remplacent les définitions de constantes et variables de configuration
 from config import settings
 from config import polling_config
+from config.polling_config import PollingConfigService
 from config import webhook_time_window
 from config.app_config_store import get_config_json as _config_get
+
+# --- Import des services (Phase 2 - Architecture orientée services) ---
+from services import (
+    ConfigService,
+    RuntimeFlagsService,
+    WebhookConfigService,
+    AuthService,
+    DeduplicationService,
+)
 
 # --- Import des modules d'authentification extraits dans auth/ ---
 from auth import user as auth_user
@@ -107,6 +112,34 @@ app = Flask(__name__, template_folder='.', static_folder='static')
 # Pour la production, utilisez une valeur complexe stockée dans les variables d'environnement.
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "une-cle-secrete-tres-complexe-pour-le-developpement-a-changer")
 
+# =============================================================================
+# SERVICES INITIALIZATION (Phase 2 - Architecture Orientée Services)
+# =============================================================================
+# Les services encapsulent la logique métier et fournissent des interfaces
+# cohérentes pour accéder aux fonctionnalités de l'application.
+#
+# L'ordre d'initialisation est important car certains services dépendent d'autres:
+# 1. ConfigService (aucune dépendance)
+# 2. RuntimeFlagsService, WebhookConfigService (dépendent indirectement de config)
+# 3. AuthService (dépend de ConfigService)
+# 4. PollingConfigService (déjà créé plus bas)
+# 5. DeduplicationService (dépend de ConfigService et PollingConfigService)
+
+# 1. Configuration Service
+_config_service = ConfigService()
+
+# 2. Runtime Flags Service (Singleton - sera initialisé plus bas après settings)
+# _runtime_flags_service = RuntimeFlagsService.get_instance(...)
+
+# 3. Webhook Config Service (Singleton - sera initialisé plus bas)
+# _webhook_service = WebhookConfigService.get_instance(...)
+
+# 4. Auth Service  
+_auth_service = AuthService(_config_service)
+
+# Note: _polling_service et _dedup_service seront initialisés plus bas
+# après la configuration complète du logging et Redis
+
 # --- Blueprints registration ---
 app.register_blueprint(health_bp)
 app.register_blueprint(api_webhooks_bp)
@@ -140,12 +173,14 @@ if _cors_origins:
 
     # Preflight requests are handled by Flask-CORS configuration on the api_test blueprint
 
-# --- Authentification: Initialisation Flask-Login ---
+# --- Authentification: Initialisation Flask-Login (via AuthService) ---
 # Le décorateur @login_required est utilisé sur plusieurs routes (ex: '/').
-# Il est donc essentiel d'initialiser LoginManager et de fournir un user_loader.
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'dashboard.login'
+# AuthService encapsule Flask-Login et fournit une interface unifiée pour
+# l'authentification dashboard et API.
+login_manager = _auth_service.init_flask_login(app, login_view='dashboard.login')
+
+# Backward compatibility: Keep auth_user initialization for any legacy code
+# TODO: Deprecate in favor of AuthService.init_flask_login once all consumers updated
 auth_user.init_login_manager(app, login_view='dashboard.login')
 
 # --- Configuration centralisée (alias locaux vers config.settings) ---
@@ -159,14 +194,6 @@ EMAIL_PASSWORD = settings.EMAIL_PASSWORD
 IMAP_SERVER = settings.IMAP_SERVER
 IMAP_PORT = settings.IMAP_PORT
 IMAP_USE_SSL = settings.IMAP_USE_SSL
-
-SENDER_LIST_FOR_POLLING = settings.SENDER_LIST_FOR_POLLING
-POLLING_TIMEZONE_STR = settings.POLLING_TIMEZONE_STR
-POLLING_ACTIVE_START_HOUR = settings.POLLING_ACTIVE_START_HOUR
-POLLING_ACTIVE_END_HOUR = settings.POLLING_ACTIVE_END_HOUR
-POLLING_ACTIVE_DAYS = settings.POLLING_ACTIVE_DAYS
-EMAIL_POLLING_INTERVAL_SECONDS = settings.EMAIL_POLLING_INTERVAL_SECONDS
-POLLING_INACTIVE_CHECK_INTERVAL_SECONDS = settings.POLLING_INACTIVE_CHECK_INTERVAL_SECONDS
 
 EXPECTED_API_TOKEN = settings.EXPECTED_API_TOKEN
 
@@ -214,7 +241,9 @@ def _heartbeat_loop():
         time.sleep(interval)
 
 try:
-    if getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
+    # Heartbeat thread respects DISABLE_BACKGROUND_TASKS
+    disable_bg_hb = os.environ.get("DISABLE_BACKGROUND_TASKS", "").strip().lower() in ["1", "true", "yes"]
+    if getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and not disable_bg_hb:
         _heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
         _heartbeat_thread.start()
 except Exception:
@@ -245,6 +274,42 @@ if not WEBHOOK_SSL_VERIFY:
 # --- Timezone pour le polling (centralisé) ---
 TZ_FOR_POLLING = polling_config.initialize_polling_timezone(app.logger)
 
+# --- Polling Config Service (accès centralisé à la configuration) ---
+_polling_service = PollingConfigService(settings)
+
+# =============================================================================
+# SERVICES INITIALIZATION - Suite (après logging configuré)
+# =============================================================================
+
+# 5. Runtime Flags Service (Singleton)
+try:
+    _runtime_flags_service = RuntimeFlagsService.get_instance(
+        file_path=settings.RUNTIME_FLAGS_FILE,
+        defaults={
+            "disable_email_id_dedup": bool(settings.DISABLE_EMAIL_ID_DEDUP),
+            "allow_custom_webhook_without_links": bool(settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
+        }
+    )
+    app.logger.info(f"SVC: RuntimeFlagsService initialized (cache_ttl={_runtime_flags_service.get_cache_ttl()}s)")
+except Exception as e:
+    app.logger.error(f"SVC: Failed to initialize RuntimeFlagsService: {e}")
+    _runtime_flags_service = None
+
+# 6. Webhook Config Service (Singleton)
+try:
+    # WebhookConfigService peut utiliser l'external store pour synchronisation
+    from config import app_config_store
+    _webhook_service = WebhookConfigService.get_instance(
+        file_path=Path(__file__).parent / "debug" / "webhook_config.json",
+        external_store=app_config_store
+    )
+    app.logger.info(f"SVC: WebhookConfigService initialized (has_url={_webhook_service.has_webhook_url()})")
+except Exception as e:
+    app.logger.error(f"SVC: Failed to initialize WebhookConfigService: {e}")
+    _webhook_service = None
+
+# Note: DeduplicationService sera initialisé plus bas après Redis
+
 if not EXPECTED_API_TOKEN:
     app.logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
 else:
@@ -253,8 +318,8 @@ else:
 # --- Configuration des Webhooks de Présence ---
 # Présence: déjà fournie par settings (alias ci-dessus)
 
-# --- Email server config validation flag ---
-email_config_valid = bool(EMAIL_ADDRESS and EMAIL_PASSWORD and IMAP_SERVER)
+# --- Email server config validation flag (maintenant via ConfigService) ---
+email_config_valid = _config_service.is_email_config_valid()
 
 # --- Webhook time window initialization (env -> then optional UI override from disk) ---
 try:
@@ -340,17 +405,8 @@ try:
         app.logger.info(
             f"CFG POLL(override): days={settings.POLLING_ACTIVE_DAYS}; start={settings.POLLING_ACTIVE_START_HOUR}; end={settings.POLLING_ACTIVE_END_HOUR}; dedup_monthly_scope={settings.ENABLE_SUBJECT_GROUP_DEDUP}"
         )
-    except Exception:
-        pass
-    # IMPORTANT: refresh module-level aliases so the polling thread uses updated values
-    try:
-        POLLING_ACTIVE_DAYS = settings.POLLING_ACTIVE_DAYS
-        POLLING_ACTIVE_START_HOUR = settings.POLLING_ACTIVE_START_HOUR
-        POLLING_ACTIVE_END_HOUR = settings.POLLING_ACTIVE_END_HOUR
-        SENDER_LIST_FOR_POLLING = settings.SENDER_LIST_FOR_POLLING
-        ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
         app.logger.info(
-            f"CFG POLL(effective): days={POLLING_ACTIVE_DAYS}; start={POLLING_ACTIVE_START_HOUR}; end={POLLING_ACTIVE_END_HOUR}; senders={len(SENDER_LIST_FOR_POLLING)}; dedup_monthly_scope={ENABLE_SUBJECT_GROUP_DEDUP}"
+            f"CFG POLL(effective): days={settings.POLLING_ACTIVE_DAYS}; start={settings.POLLING_ACTIVE_START_HOUR}; end={settings.POLLING_ACTIVE_END_HOUR}; senders={len(settings.SENDER_LIST_FOR_POLLING)}; dedup_monthly_scope={settings.ENABLE_SUBJECT_GROUP_DEDUP}"
         )
     except Exception:
         pass
@@ -365,6 +421,19 @@ SUBJECT_GROUP_REDIS_PREFIX = settings.SUBJECT_GROUP_REDIS_PREFIX
 SUBJECT_GROUP_TTL_SECONDS = settings.SUBJECT_GROUP_TTL_SECONDS
 # In-memory fallback store for subject groups (process-local only)
 SUBJECT_GROUPS_MEMORY = set()
+
+# 7. Deduplication Service (avec Redis ou fallback mémoire)
+try:
+    _dedup_service = DeduplicationService(
+        redis_client=redis_client,  # None = fallback mémoire automatique
+        logger=app.logger,
+        config_service=_config_service,
+        polling_config_service=_polling_service,
+    )
+    app.logger.info(f"SVC: DeduplicationService initialized {_dedup_service}")
+except Exception as e:
+    app.logger.error(f"SVC: Failed to initialize DeduplicationService: {e}")
+    _dedup_service = None
 
 # --- Fonctions Utilitaires IMAP ---
 def create_imap_connection():
@@ -507,29 +576,28 @@ def check_new_emails_and_trigger_webhook():
     """Thin delegate to orchestrator entry-point (Step 4E-final)."""
     return email_orchestrator.check_new_emails_and_trigger_webhook()
 
-def background_email_poller():
+def background_email_poller() -> None:
     """Delegate polling loop to background.polling_thread with injected deps."""
     def _is_ready_to_poll() -> bool:
-        return all([email_config_valid, SENDER_LIST_FOR_POLLING, WEBHOOK_URL])
+        return all([email_config_valid, _polling_service.get_sender_list(), WEBHOOK_URL])
 
     def _run_cycle() -> int:
         return email_orchestrator.check_new_emails_and_trigger_webhook()
 
     def _is_in_vacation(now_dt: datetime) -> bool:
         try:
-            # Use polling_config helper if available; fallback to no vacation
-            return polling_config.is_in_vacation_period(now_dt.date())
+            return _polling_service.is_in_vacation(now_dt)
         except Exception:
             return False
 
     background_email_poller_loop(
         logger=app.logger,
-        tz_for_polling=TZ_FOR_POLLING,
-        get_active_days=lambda: POLLING_ACTIVE_DAYS,
-        get_active_start_hour=lambda: POLLING_ACTIVE_START_HOUR,
-        get_active_end_hour=lambda: POLLING_ACTIVE_END_HOUR,
-        inactive_sleep_seconds=POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
-        active_sleep_seconds=EMAIL_POLLING_INTERVAL_SECONDS,
+        tz_for_polling=_polling_service.get_tz(),
+        get_active_days=_polling_service.get_active_days,
+        get_active_start_hour=_polling_service.get_active_start_hour,
+        get_active_end_hour=_polling_service.get_active_end_hour,
+        inactive_sleep_seconds=_polling_service.get_inactive_check_interval_s(),
+        active_sleep_seconds=_polling_service.get_email_poll_interval_s(),
         is_in_vacation=_is_in_vacation,
         is_ready_to_poll=_is_ready_to_poll,
         run_poll_cycle=_run_cycle,
@@ -538,7 +606,7 @@ def background_email_poller():
 
 
 # --- Make Scenarios Vacation Watcher ---
-def make_scenarios_vacation_watcher():
+def make_scenarios_vacation_watcher() -> None:
     """Background watcher that enforces Make scenarios ON/OFF according to
     - UI global toggle enable_polling (persisted via /api/update_polling_config)
     - Vacation window in polling_config (POLLING_VACATION_START/END)
@@ -551,13 +619,13 @@ def make_scenarios_vacation_watcher():
     To minimize API calls, apply only on state changes.
     """
     last_applied = None  # None|True|False meaning desired state last set
-    interval = max(60, int(POLLING_INACTIVE_CHECK_INTERVAL_SECONDS))
+    interval = max(60, _polling_service.get_inactive_check_interval_s())
     while True:
         try:
-            enable_ui = polling_config.get_enable_polling(True)
+            enable_ui = _polling_service.get_enable_polling(True)
             in_vac = False
             try:
-                in_vac = polling_config.is_in_vacation_period()
+                in_vac = _polling_service.is_in_vacation(None)
             except Exception:
                 in_vac = False
             desired = bool(enable_ui and not in_vac)
@@ -580,29 +648,50 @@ def make_scenarios_vacation_watcher():
         time.sleep(interval)
 
 
+def _start_daemon_thread(target, name: str) -> threading.Thread | None:
+    """Helper pour démarrer un thread daemon de manière standardisée.
+    
+    Args:
+        target: Fonction callable à exécuter dans le thread
+        name: Nom descriptif du thread pour les logs
+    
+    Returns:
+        Instance du thread créé, ou None si échec
+    """
+    try:
+        thread = threading.Thread(target=target, daemon=True, name=name)
+        thread.start()
+        app.logger.info(f"THREAD: {name} started successfully")
+        return thread
+    except Exception as e:
+        app.logger.error(f"THREAD: Failed to start {name}: {e}", exc_info=True)
+        return None
+
+
 # --- Start Background Tasks (Email Poller) ---
 try:
+    # Check legacy disable flag (priority override)
+    disable_bg = os.environ.get("DISABLE_BACKGROUND_TASKS", "").strip().lower() in ["1", "true", "yes"]
+    enable_bg = getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and not disable_bg
+    
     # Log effective config before starting background tasks
     try:
         app.logger.info(
-            f"CFG BG: enable_polling(UI)={polling_config.get_enable_polling(True)}; ENABLE_BACKGROUND_TASKS(env)={getattr(settings, 'ENABLE_BACKGROUND_TASKS', False)}"
+            f"CFG BG: enable_polling(UI)={_polling_service.get_enable_polling(True)}; ENABLE_BACKGROUND_TASKS(env)={getattr(settings, 'ENABLE_BACKGROUND_TASKS', False)}; DISABLE_BACKGROUND_TASKS={disable_bg}"
         )
     except Exception:
         pass
     # Start background poller only if both the environment flag and the persisted
     # UI-controlled switch are enabled. This avoids unexpected background work
     # when the operator intentionally disabled polling from the dashboard.
-    if getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and polling_config.get_enable_polling(True):
+    if enable_bg and _polling_service.get_enable_polling(True):
         lock_path = getattr(settings, "BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock")
         try:
             if acquire_singleton_lock(lock_path):
                 app.logger.info(
                     f"BG_POLLER: Singleton lock acquired on {lock_path}. Starting background thread."
                 )
-                _bg_email_poller_thread = threading.Thread(
-                    target=background_email_poller, daemon=True
-                )
-                _bg_email_poller_thread.start()
+                _bg_email_poller_thread = _start_daemon_thread(background_email_poller, "EmailPoller")
             else:
                 app.logger.info(
                     f"BG_POLLER: Singleton lock NOT acquired on {lock_path}. Background thread will not start."
@@ -613,11 +702,15 @@ try:
             )
     else:
         # Clarify which condition prevented starting the poller
-        if not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
+        if disable_bg:
+            app.logger.info(
+                "BG_POLLER: DISABLE_BACKGROUND_TASKS is set. Background poller not started."
+            )
+        elif not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
             app.logger.info(
                 "BG_POLLER: ENABLE_BACKGROUND_TASKS is false. Background poller not started."
             )
-        elif not polling_config.get_enable_polling(True):
+        elif not _polling_service.get_enable_polling(True):
             app.logger.info(
                 "BG_POLLER: UI 'enable_polling' flag is false. Background poller not started."
             )
@@ -627,26 +720,19 @@ except Exception:
 
 # --- Start Make Scenarios Vacation Watcher ---
 try:
-    if getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and bool(settings.MAKECOM_API_KEY):
-        _make_watcher_thread = threading.Thread(target=make_scenarios_vacation_watcher, daemon=True)
-        _make_watcher_thread.start()
-        try:
-            app.logger.info("MAKE_WATCHER: background thread started (vacation-aware ON/OFF)")
-        except Exception:
-            pass
+    if enable_bg and bool(settings.MAKECOM_API_KEY):
+        _make_watcher_thread = _start_daemon_thread(make_scenarios_vacation_watcher, "MakeVacationWatcher")
+        if _make_watcher_thread:
+            app.logger.info("MAKE_WATCHER: vacation-aware ON/OFF watcher active")
     else:
-        try:
-            if not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
-                app.logger.info("MAKE_WATCHER: not started because ENABLE_BACKGROUND_TASKS is false")
-            elif not bool(settings.MAKECOM_API_KEY):
-                app.logger.info("MAKE_WATCHER: not started because MAKECOM_API_KEY is not configured (avoiding 401 noise)")
-        except Exception:
-            pass
+        if disable_bg:
+            app.logger.info("MAKE_WATCHER: not started because DISABLE_BACKGROUND_TASKS is set")
+        elif not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
+            app.logger.info("MAKE_WATCHER: not started because ENABLE_BACKGROUND_TASKS is false")
+        elif not bool(settings.MAKECOM_API_KEY):
+            app.logger.info("MAKE_WATCHER: not started because MAKECOM_API_KEY is not configured (avoiding 401 noise)")
 except Exception as e:
-    try:
-        app.logger.error(f"MAKE_WATCHER: failed to start thread: {e}")
-    except Exception:
-        pass
+    app.logger.error(f"MAKE_WATCHER: failed to start thread: {e}")
 
 # Routes /login, /logout et '/' déplacées vers routes/dashboard.py
 
@@ -695,11 +781,20 @@ def _save_processing_prefs(prefs: dict) -> bool:
 PROCESSING_PREFS = _load_processing_prefs()
 
 def _log_webhook_config_startup():
-    """Log la configuration webhook chargée depuis le fichier de configuration."""
+    """Log la configuration webhook chargée depuis le service ou fichier de configuration."""
     try:
-        from routes.api_webhooks import _load_webhook_config
+        # Préférer le service si disponible, sinon fallback sur chargement direct
+        config = None
+        if _webhook_service is not None:
+            try:
+                config = _webhook_service.get_all_config()
+            except Exception:
+                pass
         
-        config = _load_webhook_config()
+        if config is None:
+            from routes.api_webhooks import _load_webhook_config
+            config = _load_webhook_config()
+        
         if not config:
             app.logger.info("CFG WEBHOOK_CONFIG: Aucune configuration webhook trouvée (fichier vide ou inexistant)")
             return

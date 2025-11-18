@@ -1,24 +1,69 @@
-# API HTTP (Flask)
+# API HTTP (Flask) - Architecture Orientée Services
 
-L'API est organisée en plusieurs blueprints Flask pour une meilleure modularité. Les routes sont documentées ci-dessous par catégorie fonctionnelle.
+L'API est organisée en plusieurs blueprints Flask pour une meilleure modularité, avec une architecture orientée services. Les services principaux sont injectés dans les blueprints pour une meilleure séparation des préoccupations.
+
+## Architecture des Services
+
+L'application utilise une architecture orientée services avec les composants principaux suivants :
+
+| Service | Fichier | Description |
+|---------|---------|-------------|
+| `ConfigService` | `services/config_service.py` | Gestion de la configuration de l'application |
+| `RuntimeFlagsService` | `services/runtime_flags_service.py` | Gestion des flags de runtime (singleton) |
+| `WebhookConfigService` | `services/webhook_config_service.py` | Configuration des webhooks (singleton) |
+| `DeduplicationService` | `services/deduplication_service.py` | Gestion de la déduplication (Redis ou mémoire) |
+| `AuthService` | `services/auth_service.py` | Authentification et autorisation |
+| `PollingConfigService` | `services/polling_config_service.py` | Configuration du polling IMAP |
 
 ## Organisation des routes
 
 L'API est structurée en blueprints Flask pour une meilleure organisation et maintenabilité. Voici la structure complète :
 
-| Blueprint | Fichier | Description | Routes Principales |
-|-----------|---------|-------------|-------------------|
-| `health` | `routes/health.py` | Vérification de l'état du service | `GET /health` |
-| `dashboard` | `routes/dashboard.py` | Interface utilisateur | `GET /`, `/login`, `/logout` |
-| `api_webhooks` | `routes/api_webhooks.py` | Gestion des webhooks | `GET/POST /api/webhooks/config` |
-| `api_polling` | `routes/api_polling.py` | Compatibilité legacy (toggle simplifié) | `POST /api/polling/toggle` |
-| `api_processing` | `routes/api_processing.py` | Préférences de traitement | `GET/POST /api/processing_prefs` |
-| `api_logs` | `routes/api_logs.py` | Consultation des logs | `GET /api/webhook_logs` |
-| `api_test` | `routes/api_test.py` | Endpoints de test (CORS) | `GET /api/test/*` |
-| `api_utility` | `routes/api_utility.py` | Utilitaires (ping, trigger, statut local) | `GET /api/ping`, `GET /api/check_trigger`, `GET /api/get_local_status` |
-| `api_admin` | `routes/api_admin.py` | Admin (redémarrage, déclenchement manuel) | `POST /api/restart_server`, `POST /api/check_emails_and_download` |
-| `api_config` | `routes/api_config.py` | Configuration (fenêtres horaires, flags, polling) | `GET /api/get_webhook_time_window`, `POST /api/set_webhook_time_window`, `GET/POST /api/get_runtime_flags`, `GET/POST /api/get_polling_config` |
-| `api_make` | `routes/api_make.py` | Pilotage manuel des scénarios Make | `POST /api/make/toggle_all`, `GET /api/make/status_all` |
+| Blueprint | Fichier | Services Injectés | Description |
+|-----------|---------|------------------|-------------|
+| `health` | `routes/health.py` | - | Vérification de l'état du service |
+| `dashboard` | `routes/dashboard.py` | `AuthService` | Interface utilisateur |
+| `api_webhooks` | `routes/api_webhooks.py` | `WebhookConfigService` | Gestion des webhooks |
+| `api_polling` | `routes/api_polling.py` | `PollingConfigService` | Configuration du polling IMAP |
+| `api_processing` | `routes/api_processing.py` | `ConfigService` | Préférences de traitement |
+| `api_logs` | `routes/api_logs.py` | `WebhookLogger` | Consultation des logs |
+| `api_test` | `routes/api_test.py` | - | Endpoints de test (CORS) |
+| `api_utility` | `routes/api_utility.py` | - | Utilitaires (ping, trigger, statut) |
+| `api_admin` | `routes/api_admin.py` | `ConfigService`, `AuthService` | Administration |
+| `api_config` | `routes/api_config.py` | `RuntimeFlagsService`, `PollingConfigService` | Configuration |
+
+## Routes Principales
+
+### Authentification
+- `POST /login` - Connexion utilisateur
+- `GET /logout` - Déconnexion
+
+### Webhooks
+- `GET /api/webhooks/config` - Récupérer la configuration
+- `POST /api/webhooks/config` - Mettre à jour la configuration
+- `GET /api/webhooks/time-window` - Récupérer la fenêtre horaire
+- `POST /api/webhooks/time-window` - Mettre à jour la fenêtre horaire
+
+### Configuration
+- `GET /api/get_runtime_flags` - Récupérer les flags de runtime
+- `POST /api/update_runtime_flags` - Mettre à jour les flags de runtime
+- `GET /api/get_polling_config` - Récupérer la configuration du polling
+- `POST /api/update_polling_config` - Mettre à jour la configuration du polling
+
+### Administration
+- `POST /api/restart_server` - Redémarrer le serveur
+- `POST /api/deploy_application` - Déployer la dernière version
+- `POST /api/check_emails_and_download` - Vérifier les emails manuellement
+
+### Logs
+- `GET /api/webhook_logs` - Récupérer les logs des webhooks
+
+### Integration services-first
+
+- `api_config` s’appuie directement sur `RuntimeFlagsService.get_instance()` et `PollingConfigService` pour lire/mettre à jour la configuration (flags, fenêtres horaires, polling) @routes/api_config.py#27-367.
+- `api_webhooks` consomme `WebhookConfigService` pour charger/persister la configuration webhook (validation HTTPS, normalisation Make.com, cache + store externe) @routes/api_webhooks.py.
+- `api_admin` et `dashboard` récupèrent les dépendances via `ConfigService`/`AuthService` initialisés dans `app_render.py`.
+- Les tests d’intégration privilégient les appels API-first (GET/POST) pour vérifier la cohérence entre services et routes @tests/test_routes_*.
 
 ## Authentification
 
@@ -96,6 +141,7 @@ Pour assurer la rétrocompatibilité, les anciennes URLs sont maintenues via des
 
 - `POST /api/update_runtime_flags` (protégé)
   - Met à jour les flags runtime et les persiste dans `debug/runtime_flags.json`.
+  - Implémentation via `RuntimeFlagsService.update_flags()` (mise à jour atomique + invalidation du cache TTL 60s).
   - Corps JSON (champs optionnels) :
     ```json
     {
@@ -105,6 +151,39 @@ Pour assurer la rétrocompatibilité, les anciennes URLs sont maintenues via des
     ```
   - Réponses :
     - 200 : `{ "success": true, "message": "Modifications enregistrées. Un redémarrage peut être nécessaire." }`
+    - 400 : `{ "success": false, "message": "..." }` (erreur de validation)
+    - 500 : `{ "success": false, "message": "..." }` (erreur serveur)
+
+### Configuration de la fenêtre horaire des webhooks
+
+#### Récupération de la fenêtre horaire
+
+- `GET /api/webhooks/time-window` (protégé)
+  - Récupère la configuration actuelle de la fenêtre horaire des webhooks
+  - Réponse :
+    ```json
+    {
+      "success": true,
+      "webhooks_time_start": "09h00",
+      "webhooks_time_end": "18h00"
+    }
+    ```
+
+#### Mise à jour de la fenêtre horaire
+
+- `POST /api/webhooks/time-window` (protégé)
+  - Met à jour la fenêtre horaire des webhooks
+  - Corps JSON :
+    ```json
+    {
+      "start": "09h00",
+      "end": "18h00"
+    }
+    ```
+  - Formats acceptés : `HHhMM`, `HH:MM`, `HHh`, `HH` (normalisés en `HHhMM`)
+  - Pour désactiver : `"start": null, "end": null`
+  - Réponses :
+    - 200 : `{ "success": true, "message": "Time window updated.", "webhooks_time_start": "09h00", "webhooks_time_end": "18h00" }`
     - 400 : `{ "success": false, "message": "..." }` (erreur de validation)
     - 500 : `{ "success": false, "message": "..." }` (erreur serveur)
 
@@ -293,34 +372,7 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
 
 ### Gestion des fenêtres horaires
 
-- `GET /api/webhooks/time-window` (protégé)
-  - Récupère la fenêtre horaire des webhooks
-  - Réponse :
-    ```json
-    {
-      "success": true,
-      "time_window": {
-        "start_hour": 8,
-        "end_hour": 20,
-        "active_days": [1, 2, 3, 4, 5]
-      }
-    }
-    ```
-
-- `POST /api/webhooks/time-window` (protégé)
-  - Met à jour la fenêtre horaire des webhooks
-  - Corps JSON :
-    ```json
-    {
-      "start_hour": 8,
-      "end_hour": 20,
-      "active_days": [1, 2, 3, 4, 5]
-    }
-    ```
-  - Réponses :
-    - 200 : `{ "success": true, "message": "Fenêtre horaire mise à jour avec succès" }`
-    - 400 : `{ "success": false, "message": "..." }` (erreur de validation)
-    - 500 : `{ "success": false, "message": "..." }` (erreur serveur)
+- Voir la section « Configuration de la fenêtre horaire des webhooks » ci-dessus. Les endpoints renvoient/acceptent des champs `webhooks_time_start` et `webhooks_time_end` (formats `HHhMM`/`HH:MM`).
 
 ### Contrôle du polling (via configuration `api_config`)
 
@@ -449,28 +501,17 @@ curl -b cookies.txt -s http://localhost:10000/logout -o /dev/null -w '\nHTTP %{h
 ### Nouveaux endpoints (recommandés)
 - `GET /api/webhooks/time-window`
   - Récupère la fenêtre horaire actuelle pour l'envoi des webhooks
-  - Réponse: `{ 
-    "success": true, 
-    "time_window": {
-      "start": "HHhMM"|null, 
-      "end": "HHhMM"|null,
-      "timezone": "Europe/Paris"
-    }
-  }`
+  - Réponse: `{ "success": true, "webhooks_time_start": "HHhMM"|null, "webhooks_time_end": "HHhMM"|null }`
 
 - `POST /api/webhooks/time-window`
   - Définit la fenêtre horaire pour l'envoi des webhooks
-  - Corps JSON: `{ 
-    "start": "11h30"|null, 
-    "end": "17h30"|null 
-  }`
+  - Corps JSON: `{ "start": "11h30"|""|null, "end": "17h30"|""|null }`
   - Réponses:
-    - 200: `{ "success": true, "time_window": { "start": "HHhMM"|null, "end": "HHhMM"|null } }`
-    - 400: `{ "success": false, "error": "message d'erreur" }`
+    - 200: `{ "success": true, "message": "Time window updated.", "webhooks_time_start": "HHhMM"|null, "webhooks_time_end": "HHhMM"|null }`
+    - 400: `{ "success": false, "message": "..." }`
   - Notes:
-    - Si start et end sont null, la fenêtre horaire est désactivée
-    - Le format d'heure doit être HHhMM (ex: "09h30", "17h00")
-    - La timezone est déterminée par `POLLING_TIMEZONE`
+    - Si start et end sont tous deux vides (ou null), la contrainte est désactivée
+    - Formats acceptés: `HHhMM` ou `HH:MM` (ex: "09h30", "17:45")
 
 ## Statut du worker local (télécommande) — Déprécié
 
@@ -562,6 +603,20 @@ Ces endpoints permettent de gérer les flags runtime pour le contrôle dynamique
   - Programme un redémarrage du serveur via systemd (`systemctl restart render-signal-server`).
   - Nécessite la configuration sudoers pour l'utilisateur service.
   - Réponse: { "success": true, "message": "Redémarrage en cours..." }
+
+## Déploiement applicatif (protégé)
+
+- `POST /api/deploy_application` (protégé)
+  - Déclenche un déploiement de l'application selon l'ordre de préférence suivant:
+    1) Render Deploy Hook si `RENDER_DEPLOY_HOOK_URL` est défini (validation de préfixe + masquage de clé dans les logs)
+    2) Render API si `RENDER_API_KEY` et `RENDER_SERVICE_ID` sont définis (payload `{ clearCache: <bool> }`)
+    3) Fallback local via commande shell `DEPLOY_CMD` (par défaut: reload-or-restart du service + reload Nginx)
+  - Exemples de réponses:
+    - 200: `{ "success": true, "message": "Déploiement Render déclenché via Deploy Hook." }`
+    - 200: `{ "success": true, "message": "Déploiement Render lancé (voir dashboard Render).", "deploy_id": "...", "status": "queued" }`
+    - 200: `{ "success": true, "message": "Déploiement planifié (fallback local)." }`
+    - 502: `{ "success": false, "message": "Render API error: ..." }`
+  - Variables d'environnement: voir `docs/configuration.md` (RENDER_API_KEY, RENDER_SERVICE_ID, RENDER_DEPLOY_HOOK_URL, RENDER_DEPLOY_CLEAR_CACHE, DEPLOY_CMD)
 
 ## Préférences de Traitement (protégés)
 

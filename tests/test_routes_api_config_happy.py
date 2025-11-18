@@ -42,13 +42,13 @@ def test_update_polling_config_happy_flow(authenticated_flask_client, tmp_path):
 
 @pytest.mark.integration
 def test_get_polling_config_reflects_runtime_vars(authenticated_flask_client, tmp_path):
-    # Adjust runtime vars in polling_config and settings via patch to make deterministic response
-    from routes import api_config as api_cfg
-    with patch.object(api_cfg, 'POLLING_ACTIVE_DAYS', [1, 3, 5]), \
-         patch.object(api_cfg, 'POLLING_ACTIVE_START_HOUR', 7), \
-         patch.object(api_cfg, 'POLLING_ACTIVE_END_HOUR', 17), \
-         patch.object(api_cfg, 'ENABLE_SUBJECT_GROUP_DEDUP', False), \
-         patch.object(api_cfg, 'POLLING_TIMEZONE_STR', 'Europe/Paris'):
+    # Adjust runtime vars in settings via patch to make deterministic response
+    from config import settings
+    with patch.object(settings, 'POLLING_ACTIVE_DAYS', [1, 3, 5]), \
+         patch.object(settings, 'POLLING_ACTIVE_START_HOUR', 7), \
+         patch.object(settings, 'POLLING_ACTIVE_END_HOUR', 17), \
+         patch.object(settings, 'ENABLE_SUBJECT_GROUP_DEDUP', False), \
+         patch.object(settings, 'POLLING_TIMEZONE_STR', 'Europe/Paris'):
         # Ensure vacation dates None at module polling_config
         from config import polling_config
         polling_config.POLLING_VACATION_START_DATE = None

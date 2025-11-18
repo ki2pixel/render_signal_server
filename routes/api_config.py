@@ -10,7 +10,6 @@ from flask_login import login_required
 
 from config import webhook_time_window, polling_config, settings
 from config import app_config_store as _store
-from config.runtime_flags import load_runtime_flags, save_runtime_flags
 from config.settings import (
     RUNTIME_FLAGS_FILE,
     DISABLE_EMAIL_ID_DEDUP as DEFAULT_DISABLE_EMAIL_ID_DEDUP,
@@ -20,28 +19,27 @@ from config.settings import (
     POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
     POLLING_CONFIG_FILE,
 )
+# Phase 3: Import des services
+from services import RuntimeFlagsService
 
 bp = Blueprint("api_config", __name__, url_prefix="/api")
 
-# Module-level aliases used by some tests to patch runtime values directly
-# Note: primary source of truth remains config.settings; these aliases are
-# provided for backward-compatibility with legacy tests.
-POLLING_ACTIVE_DAYS = settings.POLLING_ACTIVE_DAYS
-POLLING_ACTIVE_START_HOUR = settings.POLLING_ACTIVE_START_HOUR
-POLLING_ACTIVE_END_HOUR = settings.POLLING_ACTIVE_END_HOUR
-ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
+# Phase 3: Récupérer l'instance RuntimeFlagsService (Singleton)
+# L'instance est déjà initialisée dans app_render.py
+try:
+    _runtime_flags_service = RuntimeFlagsService.get_instance()
+except ValueError:
+    # Fallback: initialiser si pas encore fait (cas tests)
+    _runtime_flags_service = RuntimeFlagsService.get_instance(
+        file_path=RUNTIME_FLAGS_FILE,
+        defaults={
+            "disable_email_id_dedup": bool(DEFAULT_DISABLE_EMAIL_ID_DEDUP),
+            "allow_custom_webhook_without_links": bool(DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
+        }
+    )
 
 
-def _load_runtime_flags_file() -> dict:
-    defaults = {
-        "disable_email_id_dedup": bool(DEFAULT_DISABLE_EMAIL_ID_DEDUP),
-        "allow_custom_webhook_without_links": bool(DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
-    }
-    return load_runtime_flags(RUNTIME_FLAGS_FILE, defaults)
-
-
-def _save_runtime_flags_file(data: dict) -> bool:
-    return save_runtime_flags(RUNTIME_FLAGS_FILE, data)
+# Phase 4: Wrappers legacy supprimés - Appels directs aux services
 
 
 # ---- Time window (session-protected) ----
@@ -117,8 +115,13 @@ def set_webhook_time_window():
 @bp.route("/get_runtime_flags", methods=["GET"])  # GET /api/get_runtime_flags
 @login_required
 def get_runtime_flags():
+    """Récupère les flags runtime.
+    
+    Phase 4: Appel direct à RuntimeFlagsService (cache intelligent 60s).
+    """
     try:
-        data = _load_runtime_flags_file()
+        # Appel direct au service (cache si valide, sinon reload)
+        data = _runtime_flags_service.get_all_flags()
         return jsonify({"success": True, "flags": data}), 200
     except Exception:
         return jsonify({"success": False, "message": "Erreur interne"}), 500
@@ -127,22 +130,31 @@ def get_runtime_flags():
 @bp.route("/update_runtime_flags", methods=["POST"])  # POST /api/update_runtime_flags
 @login_required
 def update_runtime_flags():
+    """Met à jour les flags runtime.
+    
+    Phase 4: Appel direct à RuntimeFlagsService.update_flags() - Atomic update + invalidation cache.
+    """
     try:
         payload = request.get_json(silent=True) or {}
-        data = _load_runtime_flags_file()
+        
+        # Préparer les mises à jour (validation)
+        updates = {}
         if "disable_email_id_dedup" in payload:
-            try:
-                data["disable_email_id_dedup"] = bool(payload.get("disable_email_id_dedup"))
-            except Exception:
-                pass
+            updates["disable_email_id_dedup"] = bool(payload.get("disable_email_id_dedup"))
         if "allow_custom_webhook_without_links" in payload:
-            try:
-                data["allow_custom_webhook_without_links"] = bool(payload.get("allow_custom_webhook_without_links"))
-            except Exception:
-                pass
-        if not _save_runtime_flags_file(data):
+            updates["allow_custom_webhook_without_links"] = bool(payload.get("allow_custom_webhook_without_links"))
+        
+        # Appel direct au service (mise à jour atomique + persiste + invalide cache)
+        if not _runtime_flags_service.update_flags(updates):
             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
-        return jsonify({"success": True, "flags": data, "message": "Modifications enregistrées. Un redémarrage peut être nécessaire."}), 200
+        
+        # Récupérer les flags à jour
+        data = _runtime_flags_service.get_all_flags()
+        return jsonify({
+            "success": True,
+            "flags": data,
+            "message": "Modifications enregistrées. Un redémarrage peut être nécessaire."
+        }), 200
     except Exception:
         return jsonify({"success": False, "message": "Erreur interne"}), 500
 
@@ -297,8 +309,8 @@ def update_polling_config():
         if new_vac_end is not None:
             polling_config.POLLING_VACATION_END_DATE = new_vac_end
 
-        # Mettre à jour dynamiquement les réglages globaux utilisés par l'API/UI
-        # Cela évite que des valeurs importées à l'initialisation restent figées.
+        # Mettre à jour dynamiquement les réglages globaux dans settings
+        # Les consommateurs (comme PollingConfigService) liront directement depuis settings
         if new_days is not None:
             settings.POLLING_ACTIVE_DAYS = new_days
         if new_start is not None:
@@ -309,17 +321,6 @@ def update_polling_config():
             settings.ENABLE_SUBJECT_GROUP_DEDUP = new_dedup
         if new_senders is not None:
             settings.SENDER_LIST_FOR_POLLING = new_senders
-
-        # Keep legacy module-level aliases in sync for backward-compat tests
-        try:
-            global POLLING_ACTIVE_DAYS, POLLING_ACTIVE_START_HOUR, POLLING_ACTIVE_END_HOUR, ENABLE_SUBJECT_GROUP_DEDUP
-            POLLING_ACTIVE_DAYS = settings.POLLING_ACTIVE_DAYS
-            POLLING_ACTIVE_START_HOUR = settings.POLLING_ACTIVE_START_HOUR
-            POLLING_ACTIVE_END_HOUR = settings.POLLING_ACTIVE_END_HOUR
-            ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
-        except Exception:
-            # Non-fatal: aliases are best-effort for legacy tests only
-            pass
 
         # Persistance via store (avec fallback fichier)
         merged = dict(existing)

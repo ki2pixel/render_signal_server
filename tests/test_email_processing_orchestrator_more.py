@@ -373,6 +373,10 @@ def test_outside_window_neutral_skips_without_marking(monkeypatch):
     monkeypatch.setenv('WEBHOOK_SENDING_ENABLED', 'true')
     monkeypatch.setenv('WEBHOOK_TIME_START', '10h30')
     monkeypatch.setenv('WEBHOOK_TIME_END', '19h00')
+    
+    # Mock app_config_store to return empty config so ENV vars are used
+    from config import app_config_store
+    monkeypatch.setattr(app_config_store, 'get_config_json', lambda key, file_fallback=None: {})
 
     # No detectors match
     monkeypatch.setattr(pm, 'check_media_solution_pattern', lambda s, b, tz, l: {"matches": False})

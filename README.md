@@ -2,12 +2,25 @@
 
 Application Flask modulaires pour le pilotage de webhooks et le polling IMAP. Ce dépôt a été refactoré pour passer d'un fichier monolithique (`app_render.py`) à une architecture claire et testable.
 
+## Surveillance et Logs
+
+### Logs Importants
+- **Démarrage** : Vérifiez `BG_POLLER: Singleton lock acquired` pour confirmer le bon démarrage du polling.
+- **Vivacité** : Des messages `HEARTBEAT: alive` sont émis toutes les 5 minutes pour confirmer que les threads de fond fonctionnent correctement.
+- **Arrêt** : `PROCESS: SIGTERM received` indique un arrêt propre du service.
+- **Watcher Make** : `MAKE_WATCHER: background thread started` confirme que le watcher est actif (nécessite `ENABLE_BACKGROUND_TASKS` et `MAKECOM_API_KEY`).
+
+### Surveillance Recommandée
+- Configurez une alerte sur l'absence de logs `HEARTBEAT` pendant plus de 10 minutes.
+- Surveillez les erreurs de connexion IMAP et les échecs d'envoi de webhooks.
+- Consultez les logs pour les entrées `WARNING` et `ERROR` pour détecter les problèmes potentiels.
+
+Consultez [la documentation opérationnelle](docs/operational-guide.md) pour plus de détails sur la configuration et le dépannage.
+
 ## Architecture
 
-```
 render_signal_server-main/
 ├── app_logging/
-│   └── webhook_logger.py          # Logs des webhooks (Redis + fallback fichier JSON)
 ├── auth/
 │   ├── user.py                    # Flask-Login (User, LoginManager)
 │   └── helpers.py                 # API key (X-API-Key), décorateur api_key_required

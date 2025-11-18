@@ -1,11 +1,28 @@
-# Interface utilisateur (Dashboard Webhooks)
+# Interface utilisateur (Dashboard Webhooks) - Architecture Orientée Services
 
-- Template: `dashboard.html`
-- Script: `static/dashboard.js`
+- **Template principal**: `dashboard.html`
+- **Script principal**: `static/dashboard.js`
+- **Architecture**: Interface utilisant des services backend via des appels API REST
 
 ## Vue d'ensemble
 
-Le dashboard a été refactorisé pour se concentrer exclusivement sur la gestion et le contrôle des webhooks, avec une navigation par onglets pour améliorer l'ergonomie. Les onglets incluent: Vue d'ensemble, Webhooks, Make, Préférences, Outils. Les anciennes fonctionnalités de télécommande à distance (déclenchement de workflow local) ont été supprimées. Migration de `trigger_page.html` vers `dashboard.html`.
+Le dashboard a été refactorisé pour utiliser une architecture orientée services, avec une séparation claire entre l'interface utilisateur et la logique métier. Les principales caractéristiques sont :
+
+- **Navigation par onglets** : Vue d'ensemble, Webhooks, Configuration, Outils
+- **Authentification** : Gérée par `AuthService`
+- **Configuration** : Gérée par `ConfigService` et `WebhookConfigService`
+- **Déduplication** : Gérée par `DeduplicationService` (Redis ou mémoire)
+- **Polling** : Géré par `PollingConfigService`
+
+## Intégration avec les services
+
+L'interface communique avec les services backend via des appels API REST. Les principaux services utilisés sont :
+
+- `WebhookConfigService` : Configuration des webhooks
+- `RuntimeFlagsService` : Gestion des flags de runtime
+- `PollingConfigService` : Configuration du polling IMAP
+- `DeduplicationService` : Gestion de la déduplication
+- `AuthService` : Authentification et autorisation
 
 ## Sections du Dashboard
 
@@ -15,11 +32,11 @@ Le dashboard a été refactorisé pour se concentrer exclusivement sur la gestio
 - **Bouton**: `#saveTimeWindowBtn`
 - **Message**: `#timeWindowMsg`
 - **Appels API**:
-  - `GET /api/get_webhook_time_window` pour charger les valeurs actuelles
-  - `POST /api/set_webhook_time_window` pour sauvegarder
+  - Recommandé: `GET /api/webhooks/time-window` pour charger, `POST /api/webhooks/time-window` pour sauvegarder
+  - Legacy (compat): `GET /api/get_webhook_time_window`, `POST /api/set_webhook_time_window`
 - **Formats acceptés**: `HHhMM`, `HH:MM`, `HHh`, `HH` (normalisés en `HHhMM`)
 - **Comportement**: Laisser les deux champs vides désactive la contrainte horaire
-- **Persistance**: `debug/webhook_time_window.json`
+- **Persistance**: via `WebhookConfigService` (store externe prioritaire, fallback fichier `debug/webhook_config.json`)
 - **Effet**: Immédiat, sans redéploiement
 
 ### 2. Préférences Make (Polling IMAP)
@@ -61,8 +78,8 @@ Permet de configurer l'URL de webhook principale et les options associées :
 **Note** : Les webhooks spécifiques à Make.com (Recadrage, Autorépondeur, Présence) ont été dépréciés. Tous les appels sont maintenant dirigés vers l'URL de webhook principale configurée ci-dessus.
 
 **Appels API**:
-- `GET /api/get_webhook_config` pour charger la configuration actuelle (URLs masquées partiellement)
-- `POST /api/update_webhook_config` pour sauvegarder les modifications
+- Recommandé: `GET /api/webhooks/config` pour charger, `POST /api/webhooks/config` pour sauvegarder (URL masquée côté lecture)
+- Legacy (compat): `GET /api/get_webhook_config`, `POST /api/update_webhook_config`
 
 **Sécurité**:
 - Les URLs sont masquées partiellement lors de l'affichage pour la sécurité

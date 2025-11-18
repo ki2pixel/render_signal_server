@@ -9,7 +9,8 @@ happen behind this stable facade.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Any, Dict
+from typing_extensions import TypedDict
 from datetime import datetime, timezone
 import os
 import json
@@ -17,18 +18,217 @@ from pathlib import Path
 from utils.time_helpers import parse_time_hhmm, is_within_time_window_local
 from utils.text_helpers import strip_leading_reply_prefixes
 
+
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+# IMAP constants
+IMAP_MAILBOX_INBOX = "INBOX"
+IMAP_STATUS_OK = "OK"
+IMAP_SEARCH_CRITERIA_UNSEEN = "(UNSEEN)"
+IMAP_FETCH_RFC822 = "(RFC822)"
+
+# Detector types
+DETECTOR_RECADRAGE = "recadrage"
+DETECTOR_DESABO = "desabonnement_journee_tarifs"
+
+# Route identifiers  
+ROUTE_PRESENCE = "PRESENCE"
+ROUTE_DESABO = "DESABO"
+ROUTE_MEDIA_SOLUTION = "MEDIA_SOLUTION"
+
+
+# =============================================================================
+# TYPE DEFINITIONS
+# =============================================================================
+
+class ParsedEmail(TypedDict, total=False):
+    """Structure d'un email parsé depuis IMAP."""
+    num: str
+    subject: str
+    sender: str
+    date_raw: str
+    msg: Any  # email.message.Message
+    body_plain: str
+    body_html: str
+
 # NOTE: We import lazily inside functions to avoid circular imports at module load
 
 
+# =============================================================================
+# MODULE-LEVEL HELPERS
+# =============================================================================
+
+def _is_webhook_sending_enabled() -> bool:
+    """Check if webhook sending is globally enabled.
+    
+    Checks in order: DB config → JSON file → ENV var (default: true)
+    
+    Returns:
+        bool: True if webhooks should be sent
+    """
+    try:
+        from config import app_config_store as _store
+        cfg_path = Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
+        data = _store.get_config_json("webhook_config", file_fallback=cfg_path) or {}
+        if isinstance(data, dict) and "webhook_sending_enabled" in data:
+            return bool(data.get("webhook_sending_enabled"))
+    except Exception:
+        pass
+    try:
+        env_val = os.environ.get("WEBHOOK_SENDING_ENABLED", "true").strip().lower()
+        return env_val in ("1", "true", "yes", "on")
+    except Exception:
+        return True
+
+
+def _load_webhook_global_time_window() -> tuple[str, str]:
+    """Load webhook time window configuration.
+    
+    Checks in order: DB config → JSON file → ENV vars
+    
+    Returns:
+        tuple[str, str]: (start_time_str, end_time_str) e.g. ('10h30', '19h00')
+    """
+    try:
+        from config import app_config_store as _store
+        cfg_path = Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
+        data = _store.get_config_json("webhook_config", file_fallback=cfg_path) or {}
+        s = (data.get("webhook_time_start") or "").strip()
+        e = (data.get("webhook_time_end") or "").strip()
+        # If file provided any values, use them but allow ENV to fill missing sides
+        env_s = (os.environ.get("WEBHOOK_TIME_START") or "").strip()
+        env_e = (os.environ.get("WEBHOOK_TIME_END") or "").strip()
+        if s or e:
+            s_eff = s or env_s
+            e_eff = e or env_e
+            return s_eff, e_eff
+    except Exception:
+        pass
+    # ENV fallbacks
+    try:
+        s = (os.environ.get("WEBHOOK_TIME_START") or "").strip()
+        e = (os.environ.get("WEBHOOK_TIME_END") or "").strip()
+        return s, e
+    except Exception:
+        return "", ""
+
+
+def _fetch_and_parse_email(mail, num: bytes, logger, decode_fn, extract_sender_fn) -> Optional[ParsedEmail]:
+    """Fetch et parse un email depuis IMAP.
+    
+    Args:
+        mail: Connection IMAP active
+        num: Numéro de message (bytes)
+        logger: Logger Flask
+        decode_fn: Fonction de décodage des headers (ar.decode_email_header)
+        extract_sender_fn: Fonction d'extraction du sender (ar.extract_sender_email)
+    
+    Returns:
+        ParsedEmail si succès, None si échec
+    """
+    from email import message_from_bytes
+    
+    try:
+        # Fetch full message
+        status, msg_data = mail.fetch(num, '(RFC822)')
+        if status != 'OK' or not msg_data:
+            logger.warning("IMAP: Failed to fetch message %s (status=%s)", num, status)
+            return None
+        
+        # Extract raw bytes
+        raw_bytes = None
+        for part in msg_data:
+            if isinstance(part, tuple) and isinstance(part[1], (bytes, bytearray)):
+                raw_bytes = part[1]
+                break
+        
+        if not raw_bytes:
+            logger.warning("IMAP: No RFC822 bytes for message %s", num)
+            return None
+        
+        # Parse message
+        msg = message_from_bytes(raw_bytes)
+        subj_raw = msg.get('Subject', '')
+        from_raw = msg.get('From', '')
+        date_raw = msg.get('Date', '')
+        
+        subject = decode_fn(subj_raw) if decode_fn else subj_raw
+        sender = extract_sender_fn(from_raw).lower() if extract_sender_fn else from_raw.lower()
+        
+        # Extract body parts
+        body_plain = ""
+        body_html = ""
+        try:
+            if msg.is_multipart():
+                for part in msg.walk():
+                    ctype = part.get_content_type()
+                    if ctype == 'text/plain':
+                        body_plain = part.get_payload(decode=True).decode('utf-8', errors='ignore')
+                    elif ctype == 'text/html':
+                        body_html = part.get_payload(decode=True).decode('utf-8', errors='ignore')
+            else:
+                body_plain = msg.get_payload(decode=True).decode('utf-8', errors='ignore')
+        except Exception as e:
+            logger.debug("Email body extraction error for %s: %s", num, e)
+        
+        return {
+            'num': num.decode() if isinstance(num, bytes) else str(num),
+            'subject': subject,
+            'sender': sender,
+            'date_raw': date_raw,
+            'msg': msg,
+            'body_plain': body_plain,
+            'body_html': body_html,
+        }
+    except Exception as e:
+        logger.error("Error fetching/parsing email %s: %s", num, e)
+        return None
+
+
+# =============================================================================
+# MAIN ORCHESTRATION FUNCTION
+# =============================================================================
+
 def check_new_emails_and_trigger_webhook() -> int:
     """Execute one IMAP polling cycle and trigger webhooks when appropriate.
-
-    Returns the number of triggered actions (best-effort count).
-
+    
+    This is the main orchestration function for email-based webhook triggering.
+    It connects to IMAP, fetches unseen emails, applies pattern detection,
+    and triggers appropriate webhooks based on routing rules.
+    
+    Workflow:
+    1. Connect to IMAP server
+    2. Fetch unseen emails from INBOX
+    3. For each email:
+       a. Parse headers and body
+       b. Check sender allowlist and deduplication
+       c. Infer detector type (RECADRAGE, DESABO, or none)
+       d. Route to appropriate handler (Presence, DESABO, Media Solution, Custom)
+       e. Apply time window rules
+       f. Send webhook if conditions are met
+       g. Mark email as processed
+    
+    Routes:
+    - PRESENCE: Thursday/Friday presence notifications via autorepondeur webhook
+    - DESABO: Désabonnement requests via Make.com webhook (bypasses time window)
+    - MEDIA_SOLUTION: Legacy Media Solution route (disabled, uses Custom instead)
+    - CUSTOM: Unified webhook flow via WEBHOOK_URL (with time window enforcement)
+    
+    Detector types:
+    - RECADRAGE: Média Solution pattern (subject + delivery time extraction)
+    - DESABO: Désabonnement + journée + tarifs pattern
+    - None: Falls back to Custom webhook flow
+    
+    Returns:
+        int: Number of triggered actions (best-effort count)
+    
     Implementation notes:
-    - Imports are inside the function to avoid circular dependencies at import time.
-    - Uses helpers exposed by app_render and modules under email_processing/.
-    - Defensive logging; never raises to the background loop.
+    - Imports are lazy (inside function) to avoid circular dependencies
+    - Defensive logging: never raises exceptions to the background loop
+    - Uses deduplication (Redis) to avoid processing same email multiple times
+    - Subject-group deduplication prevents spam from repetitive emails
     """
     # Legacy delegation removed to ensure this native flow is exercised consistently
     # Rationale: tests validate detector-specific behavior (RECADRAGE/DESABO) implemented here.
@@ -79,23 +279,6 @@ def check_new_emails_and_trigger_webhook() -> int:
     if not logger:
         return 0
 
-    # Helper: load global enable/disable for webhook sending (DB+JSON fallback + ENV)
-    def _is_webhook_sending_enabled() -> bool:
-        # Prefer DB via app_config_store; fallback to file, then ENV
-        try:
-            from config import app_config_store as _store  # local import to avoid cycles
-            cfg_path = Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
-            data = _store.get_config_json("webhook_config", file_fallback=cfg_path) or {}
-            if isinstance(data, dict) and "webhook_sending_enabled" in data:
-                return bool(data.get("webhook_sending_enabled"))
-        except Exception:
-            pass
-        try:
-            env_val = os.environ.get("WEBHOOK_SENDING_ENABLED", "true").strip().lower()
-            return env_val in ("1", "true", "yes", "on")
-        except Exception:
-            return True
-
     # Establish IMAP connection
     mail = ar.create_imap_connection()
     if not mail:
@@ -106,8 +289,8 @@ def check_new_emails_and_trigger_webhook() -> int:
     try:
         # Select INBOX
         try:
-            status, _ = mail.select('INBOX')
-            if status != 'OK':
+            status, _ = mail.select(IMAP_MAILBOX_INBOX)
+            if status != IMAP_STATUS_OK:
                 logger.error("IMAP: Unable to select INBOX (status=%s)", status)
                 return 0
         except Exception as e_sel:
@@ -117,7 +300,7 @@ def check_new_emails_and_trigger_webhook() -> int:
         # Search unseen messages
         try:
             status, data = mail.search(None, 'UNSEEN')
-            if status != 'OK':
+            if status != IMAP_STATUS_OK:
                 logger.error("IMAP: search UNSEEN failed (status=%s)", status)
                 return 0
             email_nums = data[0].split() if data and data[0] else []
@@ -372,31 +555,6 @@ def check_new_emails_and_trigger_webhook() -> int:
                 # 4) Custom webhook flow (outside-window handling occurs after detector inference)
 
                 # Enforce dedicated webhook-global time window only when sending is enabled
-                def _load_webhook_global_time_window():
-                    # Returns (start_str or '', end_str or '')
-                    try:
-                        from config import app_config_store as _store  # local import to avoid cycles
-                        cfg_path = Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
-                        data = _store.get_config_json("webhook_config", file_fallback=cfg_path) or {}
-                        s = (data.get("webhook_time_start") or "").strip()
-                        e = (data.get("webhook_time_end") or "").strip()
-                        # If file provided any values, use them but allow ENV to fill missing sides
-                        env_s = (os.environ.get("WEBHOOK_TIME_START") or "").strip()
-                        env_e = (os.environ.get("WEBHOOK_TIME_END") or "").strip()
-                        if s or e:
-                            s_eff = s or env_s
-                            e_eff = e or env_e
-                            return s_eff, e_eff
-                    except Exception:
-                        pass
-                    # ENV fallbacks
-                    try:
-                        s = (os.environ.get("WEBHOOK_TIME_START") or "").strip()
-                        e = (os.environ.get("WEBHOOK_TIME_END") or "").strip()
-                        return s, e
-                    except Exception:
-                        return "", ""
-
                 try:
                     now_local = datetime.now(ar.TZ_FOR_POLLING)
                 except Exception:
@@ -697,7 +855,7 @@ def compute_desabo_time_window(
     webhooks_time_start_str: Optional[str],
     webhooks_time_end_str: Optional[str],
     within_window: bool,
-):
+) -> tuple[bool, Optional[str], bool]:
     """Compute DESABO time window flags and payload start value.
 
     Returns (early_ok: bool, time_start_payload: Optional[str], window_ok: bool)
