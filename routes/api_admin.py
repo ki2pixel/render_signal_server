@@ -64,14 +64,16 @@ def deploy_application():
     """
     try:
         # 1) Si un Deploy Hook Render est configuré, l'utiliser en priorité (plus simple)
-        if RENDER_DEPLOY_HOOK_URL:
+        render_config = _config_service.get_render_config()
+        hook_url = render_config.get("deploy_hook_url")
+        if hook_url:
             try:
                 # Validation basique de l'URL (éviter appels arbitraires)
-                if not RENDER_DEPLOY_HOOK_URL.startswith("https://api.render.com/deploy/"):
+                if not hook_url.startswith("https://api.render.com/deploy/"):
                     return jsonify({"success": False, "message": "RENDER_DEPLOY_HOOK_URL invalide (préfixe inattendu)."}), 400
 
                 # Masquer la clé dans les logs
-                masked = RENDER_DEPLOY_HOOK_URL
+                masked = hook_url
                 try:
                     if "?key=" in masked:
                         masked = masked.split("?key=")[0] + "?key=***"
@@ -87,7 +89,7 @@ def deploy_application():
                 pass
 
             try:
-                resp = requests.get(RENDER_DEPLOY_HOOK_URL, timeout=15)
+                resp = requests.get(hook_url, timeout=15)
                 ok_status = resp.status_code in (200, 201, 202, 204)
                 if ok_status:
                     current_app.logger.info(
@@ -108,7 +110,6 @@ def deploy_application():
 
         # 2) Sinon, si variables Render API sont définies, utiliser l'API Render
         # Phase 5: Utilisation de ConfigService
-        render_config = _config_service.get_render_config()
         if render_config["api_key"] and render_config["service_id"]:
             try:
                 current_app.logger.info(
