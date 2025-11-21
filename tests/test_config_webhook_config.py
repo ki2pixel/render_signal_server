@@ -24,9 +24,7 @@ def test_load_webhook_config_returns_empty_for_missing_or_invalid(tmp_path):
 def test_save_and_load_webhook_config_roundtrip(tmp_path):
     p = tmp_path / "webhook_config.json"
     data = {
-        "webhook_url": "https://example.com/hook",
-        "presence_flag": True,
-        "presence_true_url": "https://hook.eu2.make.com/abc",
+        "webhook_url": "https://example.com/hook"
     }
     ok = wc.save_webhook_config(p, data)
     assert ok is True

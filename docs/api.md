@@ -196,23 +196,7 @@ curl -sSL -c cookies.txt -b cookies.txt \
   -d "username=<USERNAME>&password=<PASSWORD>" \
   https://DOMAIN/login -o /dev/null
 
-# 2) presence=true (JSON)
-curl -sS -X POST -H "Content-Type: application/json" \
-  -b cookies.txt -c cookies.txt \
-  https://DOMAIN/api/test_presence_webhook \
-  -d '{"presence":"true"}'
-
-# 3) presence=false (JSON)
-curl -sS -X POST -H "Content-Type: application/json" \
-  -b cookies.txt -c cookies.txt \
-  https://DOMAIN/api/test_presence_webhook \
-  -d '{"presence":"false"}'
-
-# Variante form-urlencoded
-curl -sS -X POST \
-  -b cookies.txt -c cookies.txt \
-  -d "presence=true" \
-  https://DOMAIN/api/test_presence_webhook
+# (Présence) Les endpoints de test de présence ont été supprimés.
 ```
 
 Remplacez `DOMAIN` par l'URL Render, et `<USERNAME>/<PASSWORD>` par vos identifiants.
@@ -339,7 +323,6 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
       "success": true,
       "config": {
         "webhook_url": "https://webhook.example.com/***",
-        "presence_flag": false,
         "webhook_ssl_verify": true,
         "webhook_sending_enabled": true,
         "webhook_time_start": "09h00",
@@ -355,11 +338,8 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
     ```json
     {
       "webhook_url": "https://webhook.example.com/endpoint",
-      "presence_flag": true,
       "webhook_ssl_verify": false,
       "webhook_sending_enabled": false,
-      "presence_true_url": "https://hook.eu2.make.com/<token>",
-      "presence_false_url": "https://hook.eu2.make.com/<token>",
       "webhook_time_start": "09h00",
       "webhook_time_end": "18h00"
     }

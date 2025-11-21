@@ -185,25 +185,7 @@ class ConfigService:
             self._settings.RENDER_API_KEY and self._settings.RENDER_SERVICE_ID
         ) or bool(self._settings.RENDER_DEPLOY_HOOK_URL)
     
-    # =========================================================================
-    # Configuration Présence
-    # =========================================================================
-    
-    def get_presence_config(self) -> dict:
-        """Retourne la configuration des webhooks de présence.
-        
-        Returns:
-            dict avec flag, true_url, false_url
-        """
-        return {
-            "flag": self._settings.PRESENCE_FLAG,
-            "true_url": self._settings.PRESENCE_TRUE_MAKE_WEBHOOK_URL,
-            "false_url": self._settings.PRESENCE_FALSE_MAKE_WEBHOOK_URL,
-        }
-    
-    def is_presence_enabled(self) -> bool:
-        """Vérifie si le flag de présence est activé."""
-        return bool(self._settings.PRESENCE_FLAG)
+    # Présence: feature removed
     
     # =========================================================================
     # Configuration Authentification Dashboard

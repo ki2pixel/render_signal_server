@@ -11,7 +11,7 @@ un point unique pour accéder à toutes les configurations.
 
 import os
 from pathlib import Path
-from utils.validators import env_bool, normalize_make_webhook_url
+from utils.validators import env_bool
 
 
 # =============================================================================
@@ -88,10 +88,7 @@ if RENDER_DEPLOY_CLEAR_CACHE not in ("clear", "do_not_clear"):
 # Exemple: https://api.render.com/deploy/<serviceId>?key=<secret>
 RENDER_DEPLOY_HOOK_URL = os.environ.get("RENDER_DEPLOY_HOOK_URL", "")
 
-# --- Webhooks de Présence ---
-PRESENCE_FLAG = env_bool("PRESENCE", False)
-PRESENCE_TRUE_MAKE_WEBHOOK_URL = normalize_make_webhook_url(os.environ.get("PRESENCE_TRUE_MAKE_WEBHOOK_URL"))
-PRESENCE_FALSE_MAKE_WEBHOOK_URL = normalize_make_webhook_url(os.environ.get("PRESENCE_FALSE_MAKE_WEBHOOK_URL"))
+# Presence feature removed
 
 # --- Configuration Polling Email ---
 SENDER_OF_INTEREST_FOR_POLLING_RAW = os.environ.get(

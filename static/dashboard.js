@@ -347,7 +347,6 @@ async function applyImportedServerConfig(obj) {
         const cfg = obj.webhook_config.config;
         const payload = {};
         if (cfg.webhook_url) payload.webhook_url = cfg.webhook_url;
-        if (typeof cfg.presence_flag === 'boolean') payload.presence_flag = cfg.presence_flag;
         if (typeof cfg.webhook_ssl_verify === 'boolean') payload.webhook_ssl_verify = cfg.webhook_ssl_verify;
         if (Object.keys(payload).length) {
             await fetch('/api/webhooks/config', {
@@ -636,8 +635,7 @@ async function loadWebhookConfig() {
             const wh = document.getElementById('webhookUrl');
             if (wh) wh.placeholder = config.webhook_url || 'Non configuré';
             
-            const pf = document.getElementById('presenceFlag');
-            if (pf) pf.value = config.presence_flag ? 'true' : 'false';
+            // presence flag removed
             const ssl = document.getElementById('sslVerifyToggle');
             if (ssl) ssl.checked = !!config.webhook_ssl_verify;
             const sending = document.getElementById('webhookSendingToggle');
@@ -738,12 +736,12 @@ async function saveWebhookConfig() {
     const payload = {};
     // Collecter seulement les champs pertinents
     const webhookUrlEl = document.getElementById('webhookUrl');
-    const presenceFlagEl = document.getElementById('presenceFlag');
+    // presence flag removed
     const sslEl = document.getElementById('sslVerifyToggle');
     const sendingEl = document.getElementById('webhookSendingToggle');
     const webhookUrl = (webhookUrlEl?.value || '').trim();
     if (webhookUrl) payload.webhook_url = webhookUrl;
-    if (presenceFlagEl) payload.presence_flag = presenceFlagEl.value === 'true';
+    // presence flag removed
     if (sslEl) payload.webhook_ssl_verify = !!sslEl.checked;
     if (sendingEl) payload.webhook_sending_enabled = !!sendingEl.checked;
     

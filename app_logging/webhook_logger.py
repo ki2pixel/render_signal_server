@@ -87,10 +87,11 @@ def fetch_webhook_logs(
 
     # Fallback to file
     if all_logs is None:
-        if not file_path.exists():
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                all_logs = json.load(f)
+        except Exception:
             return {"success": True, "logs": [], "count": 0, "days_filter": days}
-        with open(file_path, "r", encoding="utf-8") as f:
-            all_logs = json.load(f)
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     filtered_logs = []

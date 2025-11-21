@@ -7,7 +7,6 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
 
-from utils.validators import normalize_make_webhook_url as _normalize_make_webhook_url
 from utils.time_helpers import parse_time_hhmm
 from config import app_config_store as _store
 
@@ -67,10 +66,6 @@ def get_webhook_config():
 
     # Defaults from environment to mirror legacy behavior in app_render
     webhook_url = persisted.get("webhook_url") or os.environ.get("WEBHOOK_URL")
-    presence_flag = persisted.get(
-        "presence_flag",
-        os.environ.get("PRESENCE", "false").strip().lower() in ("1", "true", "yes", "on"),
-    )
     webhook_ssl_verify = persisted.get(
         "webhook_ssl_verify",
         os.environ.get("WEBHOOK_SSL_VERIFY", "true").strip().lower()
@@ -88,7 +83,6 @@ def get_webhook_config():
 
     config = {
         "webhook_url": webhook_url or _mask_url(webhook_url),
-        "presence_flag": presence_flag,
         "webhook_ssl_verify": webhook_ssl_verify,
         "webhook_sending_enabled": bool(webhook_sending_enabled),
         # Expose as None when empty to be explicit in API response
@@ -115,9 +109,6 @@ def update_webhook_config():
             )
         config["webhook_url"] = val
 
-    if "presence_flag" in payload:
-        config["presence_flag"] = bool(payload["presence_flag"])
-
     if "webhook_ssl_verify" in payload:
         config["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
 
@@ -125,11 +116,7 @@ def update_webhook_config():
     if "webhook_sending_enabled" in payload:
         config["webhook_sending_enabled"] = bool(payload["webhook_sending_enabled"])
 
-    # Optional Make.com presence URLs: accept and normalize
-    if "presence_true_url" in payload:
-        config["presence_true_url"] = _normalize_make_webhook_url(payload.get("presence_true_url"))
-    if "presence_false_url" in payload:
-        config["presence_false_url"] = _normalize_make_webhook_url(payload.get("presence_false_url"))
+    # Presence URLs removed (feature deprecated)
 
     # Optional: accept time window fields here too, for convenience
     # Validate format using parse_time_hhmm when provided and non-empty

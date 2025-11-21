@@ -33,8 +33,7 @@ IMAP_FETCH_RFC822 = "(RFC822)"
 DETECTOR_RECADRAGE = "recadrage"
 DETECTOR_DESABO = "desabonnement_journee_tarifs"
 
-# Route identifiers  
-ROUTE_PRESENCE = "PRESENCE"
+# Route identifiers
 ROUTE_DESABO = "DESABO"
 ROUTE_MEDIA_SOLUTION = "MEDIA_SOLUTION"
 
@@ -485,60 +484,7 @@ def check_new_emails_and_trigger_webhook() -> int:
                 except Exception:
                     combined_text_for_detection = full_text or ''
 
-                # 1) Presence "samedi" route (exclusive if matched)
-                # Use a safe default for Make webhook sender to avoid AttributeError in tests or minimal setups
-                _send_makecom_webhook = getattr(ar, 'send_makecom_webhook', None)
-                if _send_makecom_webhook is None:
-                    def _send_makecom_webhook(**kwargs):
-                        return False
-
-                if os.environ.get('ORCH_TEST_RERAISE') == '1':
-                    try:
-                        print("DEBUG_TEST entering presence route")
-                    except Exception:
-                        pass
-                # Safe config extraction for presence parameters
-                _cfg = getattr(_app, 'config', None)
-                _cfg_get = _cfg.get if isinstance(_cfg, dict) else (getattr(_cfg, 'get', None))
-                _presence_flag = False
-                _presence_true_url = None
-                _presence_false_url = None
-                try:
-                    if callable(_cfg_get):
-                        _presence_raw = _cfg_get('PRESENCE_FLAG')
-                        _presence_flag = False if _presence_raw is None else bool(_presence_raw)
-                        _presence_true_url = _cfg_get('PRESENCE_TRUE_MAKE_WEBHOOK_URL')
-                        _presence_false_url = _cfg_get('PRESENCE_FALSE_MAKE_WEBHOOK_URL')
-                except Exception:
-                    pass
-
-                routed_presence = handle_presence_route(
-                    subject=subject or '',
-                    full_email_content=combined_text_for_detection or '',
-                    email_id=email_id,
-                    sender_raw=from_raw,
-                    tz_for_polling=ar.TZ_FOR_POLLING,
-                    webhooks_time_start_str=None,
-                    webhooks_time_end_str=None,
-                    presence_flag=_presence_flag,
-                    presence_true_url=_presence_true_url,
-                    presence_false_url=_presence_false_url,
-                    is_within_time_window_local=_is_within_time_window_local,
-                    extract_sender_email=ar.extract_sender_email,
-                    send_makecom_webhook=_send_makecom_webhook,
-                    logger=logger,
-                )
-                if os.environ.get('ORCH_TEST_RERAISE') == '1':
-                    try:
-                        print(f"DEBUG_TEST routed_presence={routed_presence}")
-                    except Exception:
-                        pass
-                if routed_presence:
-                    # Presence is exclusive; mark processed and continue
-                    ar.mark_email_id_as_processed_redis(email_id)
-                    ar.mark_email_as_read_imap(mail, num)
-                    triggered_count += 1
-                    continue
+                # Presence route removed (feature deprecated)
 
                 # 2) DESABO route — disabled (legacy Make.com path). Unified flow via WEBHOOK_URL only.
                 try:
@@ -883,109 +829,17 @@ def handle_presence_route(
     email_id: str,
     sender_raw: str,
     tz_for_polling,
-    webhooks_time_start_str: Optional[str],
-    webhooks_time_end_str: Optional[str],
-    presence_flag: bool,
-    presence_true_url: Optional[str],
-    presence_false_url: Optional[str],
+    webhooks_time_start_str,
+    webhooks_time_end_str,
+    presence_flag,
+    presence_true_url,
+    presence_false_url,
     is_within_time_window_local,
     extract_sender_email,
     send_makecom_webhook,
     logger,
 ) -> bool:
-    """Detect 'samedi' presence emails and optionally send Make.com webhook.
-
-    Returns:
-        bool: presence_routed (engage exclusivity at caller side if True)
-    """
-    try:
-        def _normalize_no_accents_lower(s: str) -> str:
-            try:
-                import unicodedata
-                if not s:
-                    return ""
-                nfkd = unicodedata.normalize('NFD', s)
-                no_accents = ''.join(ch for ch in nfkd if not unicodedata.combining(ch))
-                return no_accents.lower()
-            except Exception:
-                return (s or "").lower()
-
-        norm_subject = _normalize_no_accents_lower(subject)
-        norm_body = _normalize_no_accents_lower(full_email_content)
-        contains_samedi = ("samedi" in norm_subject) and ("samedi" in norm_body)
-
-        if not contains_samedi:
-            return False
-
-        try:
-            now_check = datetime.now(tz_for_polling)
-            logger.debug(
-                "PRESENCE_DEBUG: Email %s - contains_samedi=True, weekday=%d",
-                email_id,
-                now_check.weekday(),
-            )
-        except Exception:
-            pass
-
-        now_local = datetime.now(tz_for_polling)
-        is_friday = now_local.weekday() == 4
-        is_thursday = now_local.weekday() == 3
-        if not (is_friday or is_thursday):
-            logger.info(
-                "PRESENCE: 'samedi' detected for email %s but today is not Thursday or Friday (weekday=%d). Presence webhooks are restricted to Thursdays and Fridays. Skipping.",
-                email_id,
-                now_local.weekday(),
-            )
-            return False
-
-        if not is_within_time_window_local(now_local):
-            logger.info(
-                "PRESENCE: Time window not satisfied for email %s (now=%s, window=%s-%s). Skipping.",
-                email_id,
-                now_local.strftime('%H:%M'),
-                webhooks_time_start_str or 'unset',
-                webhooks_time_end_str or 'unset',
-            )
-            try:
-                logger.info("IGNORED: Presence webhook skipped due to time window (email %s)", email_id)
-            except Exception:
-                pass
-            return False
-
-        presence_url = presence_true_url if presence_flag else presence_false_url
-        # Engage exclusivity even if URL not configured (caller will act on True)
-        if presence_url:
-            logger.info(
-                "PRESENCE: 'samedi' detected with valid day/time window for email %s. PRESENCE=%s. Sending to dedicated Make webhook.",
-                email_id,
-                presence_flag,
-            )
-            presence_sender_email = extract_sender_email(sender_raw)
-            send_ok = send_makecom_webhook(
-                subject=subject,
-                delivery_time=None,
-                sender_email=presence_sender_email,
-                email_id=email_id,
-                override_webhook_url=presence_url,
-                extra_payload={
-                    "presence": presence_flag,
-                    "detector": "samedi_presence",
-                    "webhooks_time_start": webhooks_time_start_str or None,
-                    "webhooks_time_end": webhooks_time_end_str or None,
-                },
-            )
-            if send_ok:
-                logger.info("PRESENCE: Make.com webhook (presence) sent successfully for email %s", email_id)
-            else:
-                logger.error("PRESENCE: Make.com webhook (presence) failed for email %s", email_id)
-        else:
-            logger.warning(
-                "PRESENCE: 'samedi' detected with valid day/time window but PRESENCE_*_MAKE_WEBHOOK_URL not configured. Exclusivity applied; skipping presence webhook call and custom webhook."
-            )
-        return True
-    except Exception as e_presence:
-        logger.error("PRESENCE: Exception during samedi presence handling for email %s: %s", email_id, e_presence)
-        return False
+    return False
 
 
 def handle_desabo_route(

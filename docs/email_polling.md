@@ -279,21 +279,7 @@ Pour les emails correspondant au motif d'autorépondeur (désabonnement/journée
     - Email à 14h30 → `start_payload = "maintenant"` (dans la fenêtre)
     - Email à 19h30 → Pas d'envoi (hors fenêtre)
 
-### Détection spéciale « samedi » → Webhook Make (présence)
-
-En plus du flux « Média Solution », le poller détecte désormais un cas simple de planning basé sur la présence:
-
-- Si le mot « samedi » est présent à la fois dans le sujet ET dans le corps de l'email, le serveur envoie un webhook Make dédié.
-- Restriction jour: ces webhooks « présence/absence » ne sont envoyés que le jeudi (weekday=3) ou vendredi (weekday=4) selon `POLLING_TIMEZONE`. Si un email « samedi » est détecté un autre jour, le webhook de présence est ignoré (non envoyé) et le reste du traitement peut se poursuivre normalement.
-- L'URL cible est choisie en fonction de la variable d'environnement `PRESENCE`:
-  - `PRESENCE=true` → `PRESENCE_TRUE_MAKE_WEBHOOK_URL`
-  - `PRESENCE=false` → `PRESENCE_FALSE_MAKE_WEBHOOK_URL`
-
-Notes:
-- Les variables `PRESENCE_*_MAKE_WEBHOOK_URL` acceptent soit une URL complète Make (`https://hook.eu2.make.com/<token>`), soit un alias `<token>@hook.eu2.make.com` (automatiquement normalisé).
-- Le payload envoyé inclut `subject`, `delivery_time` (null pour ce cas), `sender_email`, et des champs additionnels: `{ "presence": <bool>, "detector": "samedi_presence" }`.
-- Exclusivité: si ce webhook présence est déclenché, le flux Make « Média Solution » classique (détection via `check_media_solution_pattern()` et envoi Make par défaut) est ignoré pour cet email.
- - Restriction jour: lorsque ce n'est ni jeudi ni vendredi, aucun webhook présence n'est envoyé (même si « samedi » est détecté), et l'exclusivité ne s'applique pas (le flux « Média Solution » peut donc s'exécuter si l'email correspond au motif).
+<!-- Détection spéciale « samedi » (présence) supprimée -->
 
 ### Liens de téléchargement (simplifiés)
 

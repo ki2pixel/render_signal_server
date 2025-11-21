@@ -9,6 +9,7 @@ import pytest
 from email_processing import orchestrator as orch
 
 
+@pytest.mark.skip(reason="presence feature removed")
 @pytest.mark.unit
 def test_handle_presence_route_returns_false_when_not_thu_or_fri(monkeypatch):
     # Force a Monday (weekday=0) to trigger the early return False
@@ -37,6 +38,7 @@ def test_handle_presence_route_returns_false_when_not_thu_or_fri(monkeypatch):
     assert routed is False
 
 
+@pytest.mark.skip(reason="presence feature removed")
 @pytest.mark.unit
 def test_handle_presence_route_valid_day_but_window_not_satisfied_returns_false(monkeypatch):
     # Force Thursday (weekday=3), but time window check returns False
@@ -65,6 +67,7 @@ def test_handle_presence_route_valid_day_but_window_not_satisfied_returns_false(
     assert routed is False
 
 
+@pytest.mark.skip(reason="presence feature removed")
 @pytest.mark.unit
 def test_handle_presence_route_send_fails_but_routes_true(monkeypatch):
     # Force Friday (weekday=4) within window; send returns False but function still routes True
@@ -131,6 +134,7 @@ def test_check_new_emails_and_trigger_webhook_delegation(monkeypatch):
     assert orch.check_new_emails_and_trigger_webhook() == 7
 
 
+@pytest.mark.skip(reason="presence feature removed")
 @pytest.mark.unit
 def test_handle_presence_route_valid_day_time_missing_url_still_returns_true(monkeypatch):
     # Force Thursday (weekday=3)
@@ -241,6 +245,7 @@ def test_send_custom_webhook_flow_200_success_false_returns_false():
     assert any(l.get("status") == "error" for l in calls["logs"])
 
 
+@pytest.mark.skip(reason="presence feature removed")
 @pytest.mark.unit
 def test_handle_presence_route_false_flag_invalid_url_still_routes_true(monkeypatch):
     # Force Thursday (weekday=3)
@@ -314,6 +319,7 @@ def test_send_custom_webhook_flow_200_json_without_success_returns_false():
     assert any(l.get("status") == "error" for l in calls["logs"])
 
 
+@pytest.mark.skip(reason="presence feature removed")
 @pytest.mark.unit
 def test_handle_presence_route_false_flag_sends_false_url(monkeypatch):
     # Force Friday (weekday=4)

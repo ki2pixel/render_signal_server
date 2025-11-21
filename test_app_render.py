@@ -415,6 +415,7 @@ def test_update_webhook_config_invalid_url(authenticated_client, temp_config_fil
     assert "HTTPS" in data["message"]
 
 
+@pytest.mark.skip(reason="presence feature removed")
 def test_update_webhook_config_presence_flag(authenticated_client, temp_config_file):
     """Test mise à jour du flag PRESENCE.
     

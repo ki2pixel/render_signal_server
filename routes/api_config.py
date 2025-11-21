@@ -165,18 +165,21 @@ def update_runtime_flags():
 @login_required
 def get_polling_config():
     try:
+        # Read live settings at call time to honor pytest patch.object overrides
+        from importlib import import_module as _import_module
+        live_settings = _import_module('config.settings')
         # Prefer values from external store/file if available to reflect persisted UI choices
         persisted = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
         cfg = {
             # Days and hours: reflect live settings (runtime-updated), not the import-time aliases
-            "active_days": settings.POLLING_ACTIVE_DAYS,
-            "active_start_hour": settings.POLLING_ACTIVE_START_HOUR,
-            "active_end_hour": settings.POLLING_ACTIVE_END_HOUR,
+            "active_days": getattr(live_settings, 'POLLING_ACTIVE_DAYS', settings.POLLING_ACTIVE_DAYS),
+            "active_start_hour": getattr(live_settings, 'POLLING_ACTIVE_START_HOUR', settings.POLLING_ACTIVE_START_HOUR),
+            "active_end_hour": getattr(live_settings, 'POLLING_ACTIVE_END_HOUR', settings.POLLING_ACTIVE_END_HOUR),
             # Dedup flag: reflect live settings
-            "enable_subject_group_dedup": settings.ENABLE_SUBJECT_GROUP_DEDUP,
+            "enable_subject_group_dedup": getattr(live_settings, 'ENABLE_SUBJECT_GROUP_DEDUP', settings.ENABLE_SUBJECT_GROUP_DEDUP),
             "timezone": POLLING_TIMEZONE_STR,
             # Still expose persisted sender list if present, else settings default
-            "sender_of_interest_for_polling": persisted.get("sender_of_interest_for_polling", settings.SENDER_LIST_FOR_POLLING),
+            "sender_of_interest_for_polling": persisted.get("sender_of_interest_for_polling", getattr(live_settings, 'SENDER_LIST_FOR_POLLING', settings.SENDER_LIST_FOR_POLLING)),
             "vacation_start": persisted.get("vacation_start", polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None),
             "vacation_end": persisted.get("vacation_end", polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None),
             # Global enable toggle: prefer persisted, fallback helper

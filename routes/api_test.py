@@ -17,9 +17,6 @@ from config.settings import (
     WEBHOOK_URL,
     RECADRAGE_MAKE_WEBHOOK_URL,
     AUTOREPONDEUR_MAKE_WEBHOOK_URL,
-    PRESENCE_FLAG,
-    PRESENCE_TRUE_MAKE_WEBHOOK_URL,
-    PRESENCE_FALSE_MAKE_WEBHOOK_URL,
     WEBHOOK_SSL_VERIFY,
     POLLING_TIMEZONE_STR,
     POLLING_ACTIVE_DAYS,
@@ -112,9 +109,6 @@ def get_webhook_config():
         cfg = {
             "webhook_url": persisted.get("webhook_url") or _mask_url(WEBHOOK_URL),
             "recadrage_webhook_url": persisted.get("recadrage_webhook_url") or _mask_url(RECADRAGE_MAKE_WEBHOOK_URL),
-            "presence_flag": persisted.get("presence_flag", PRESENCE_FLAG),
-            "presence_true_url": persisted.get("presence_true_url") or _mask_url(PRESENCE_TRUE_MAKE_WEBHOOK_URL),
-            "presence_false_url": persisted.get("presence_false_url") or _mask_url(PRESENCE_FALSE_MAKE_WEBHOOK_URL),
             "autorepondeur_webhook_url": persisted.get("autorepondeur_webhook_url") or _mask_url(AUTOREPONDEUR_MAKE_WEBHOOK_URL),
             "webhook_ssl_verify": persisted.get("webhook_ssl_verify", WEBHOOK_SSL_VERIFY),
             "polling_enabled": persisted.get("polling_enabled", False),
@@ -153,20 +147,7 @@ def update_webhook_config():
                 )
             config["recadrage_webhook_url"] = val
 
-        if "presence_flag" in payload:
-            config["presence_flag"] = bool(payload["presence_flag"])
-
-        if "presence_true_url" in payload:
-            val = payload["presence_true_url"].strip() if payload["presence_true_url"] else None
-            if val:
-                val = _normalize_make_webhook_url(val)
-            config["presence_true_url"] = val
-
-        if "presence_false_url" in payload:
-            val = payload["presence_false_url"].strip() if payload["presence_false_url"] else None
-            if val:
-                val = _normalize_make_webhook_url(val)
-            config["presence_false_url"] = val
+        # presence fields removed
 
         if "autorepondeur_webhook_url" in payload:
             val = payload["autorepondeur_webhook_url"].strip() if payload["autorepondeur_webhook_url"] else None

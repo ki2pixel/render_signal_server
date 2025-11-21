@@ -133,58 +133,7 @@ class WebhookConfigService:
         """Vérifie si une URL webhook est configurée."""
         return bool(self.get_webhook_url())
     
-    # =========================================================================
-    # Configuration Présence
-    # =========================================================================
-    
-    def get_presence_config(self) -> Dict[str, Any]:
-        """Retourne la configuration présence complète.
-        
-        Returns:
-            dict avec flag, true_url, false_url
-        """
-        config = self._get_cached_config()
-        return {
-            "flag": config.get("presence_flag", False),
-            "true_url": config.get("presence_true_url", ""),
-            "false_url": config.get("presence_false_url", ""),
-        }
-    
-    def update_presence_config(self, updates: Dict[str, Any]) -> Tuple[bool, str]:
-        """Met à jour la configuration présence.
-        
-        Args:
-            updates: dict pouvant contenir presence_flag, presence_true_url, presence_false_url
-            
-        Returns:
-            Tuple (success, message)
-        """
-        config = self._load_from_disk()
-        
-        # Valider et appliquer les URLs si fournies
-        if "presence_true_url" in updates:
-            url = normalize_make_webhook_url(updates["presence_true_url"])
-            if url:
-                ok, msg = self.validate_webhook_url(url)
-                if not ok:
-                    return False, f"presence_true_url invalide: {msg}"
-            config["presence_true_url"] = url
-        
-        if "presence_false_url" in updates:
-            url = normalize_make_webhook_url(updates["presence_false_url"])
-            if url:
-                ok, msg = self.validate_webhook_url(url)
-                if not ok:
-                    return False, f"presence_false_url invalide: {msg}"
-            config["presence_false_url"] = url
-        
-        if "presence_flag" in updates:
-            config["presence_flag"] = bool(updates["presence_flag"])
-        
-        if self._save_to_disk(config):
-            self._invalidate_cache()
-            return True, "Configuration présence mise à jour."
-        return False, "Erreur lors de la sauvegarde."
+    # Présence: feature removed
     
     # =========================================================================
     # Configuration SSL et Enabled
@@ -331,7 +280,7 @@ class WebhookConfigService:
         config = self._load_from_disk()
         
         # Valider les URLs si présentes
-        for key in ["webhook_url", "presence_true_url", "presence_false_url"]:
+        for key in ["webhook_url"]:
             if key in updates and updates[key]:
                 normalized = normalize_make_webhook_url(updates[key])
                 ok, msg = self.validate_webhook_url(normalized)

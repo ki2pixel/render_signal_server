@@ -29,7 +29,7 @@ def get_webhook_logs():
         if days > 30:
             days = 30
 
-        # Use centralized helper for fetching logs
+        # Use centralized helper (resilient to missing files)
         result = _fetch_webhook_logs(
             redis_client=None,
             logger=getattr(_ar, "app").logger if hasattr(_ar, "app") else None,

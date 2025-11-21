@@ -19,6 +19,7 @@ Consultez [la documentation opérationnelle](docs/operational-guide.md) pour plu
 
 ## Architecture
 
+```
 render_signal_server-main/
 ├── app_logging/
 ├── auth/
@@ -52,7 +53,7 @@ render_signal_server-main/
 │   ├── time_helpers.py            # parse_time_hhmm(), is_within_time_window_local()
 │   ├── text_helpers.py            # normalize_*, strip_leading_reply_prefixes(), detect_provider()
 │   └── validators.py              # env_bool(), normalize_make_webhook_url()
-├── app_render.py                  # Serveur Flask (point d’entrée), délégation vers modules
+├── app_render.py                  # Serveur Flask (point d'entrée), délégation vers modules
 ├── dashboard.html                 # UI principale (onglets)
 ├── login.html                     # Page de login
 ├── docs/                          # Documentation technique

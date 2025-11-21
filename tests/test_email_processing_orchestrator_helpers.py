@@ -9,6 +9,7 @@ import pytest
 from email_processing import orchestrator as orch
 
 
+@pytest.mark.skip(reason="presence feature removed")
 @pytest.mark.unit
 def test_handle_presence_route_valid_day_time_and_url(monkeypatch):
     logger = MagicMock()
