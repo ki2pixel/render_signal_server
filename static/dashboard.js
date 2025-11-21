@@ -640,15 +640,15 @@ async function loadWebhookConfig() {
             const sending = document.getElementById('webhookSendingToggle');
             if (sending) sending.checked = !!config.webhook_sending_enabled;
             
-            // Présence pause
-            const presenceToggle = document.getElementById('presencePauseToggle');
-            if (presenceToggle) presenceToggle.checked = !!config.presence_pause_enabled;
+            // Absence pause
+            const absenceToggle = document.getElementById('absencePauseToggle');
+            if (absenceToggle) absenceToggle.checked = !!config.absence_pause_enabled;
             
-            // Jours de présence pause
-            const presenceDays = Array.isArray(config.presence_pause_days) ? config.presence_pause_days : [];
-            const dayCheckboxes = document.querySelectorAll('input[name="presencePauseDay"]');
+            // Jours d'absence pause
+            const absenceDays = Array.isArray(config.absence_pause_days) ? config.absence_pause_days : [];
+            const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]');
             dayCheckboxes.forEach(cb => {
-                cb.checked = presenceDays.includes(cb.value);
+                cb.checked = absenceDays.includes(cb.value);
             });
             
             // Charger la fenêtre horaire dédiée
@@ -748,26 +748,26 @@ async function saveWebhookConfig() {
     const webhookUrlEl = document.getElementById('webhookUrl');
     const sslEl = document.getElementById('sslVerifyToggle');
     const sendingEl = document.getElementById('webhookSendingToggle');
-    const presenceToggle = document.getElementById('presencePauseToggle');
+    const absenceToggle = document.getElementById('absencePauseToggle');
     
     const webhookUrl = (webhookUrlEl?.value || '').trim();
     if (webhookUrl) payload.webhook_url = webhookUrl;
     if (sslEl) payload.webhook_ssl_verify = !!sslEl.checked;
     if (sendingEl) payload.webhook_sending_enabled = !!sendingEl.checked;
     
-    // Présence pause
-    if (presenceToggle) {
-        payload.presence_pause_enabled = !!presenceToggle.checked;
+    // Absence pause
+    if (absenceToggle) {
+        payload.absence_pause_enabled = !!absenceToggle.checked;
         
         // Collecter les jours sélectionnés
         const selectedDays = [];
-        const dayCheckboxes = document.querySelectorAll('input[name="presencePauseDay"]:checked');
+        const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]:checked');
         dayCheckboxes.forEach(cb => selectedDays.push(cb.value));
-        payload.presence_pause_days = selectedDays;
+        payload.absence_pause_days = selectedDays;
         
         // Validation: si le toggle est activé, au moins un jour doit être sélectionné
-        if (presenceToggle.checked && selectedDays.length === 0) {
-            showMessage('configMsg', 'Au moins un jour doit être sélectionné pour activer la présence.', 'error');
+        if (absenceToggle.checked && selectedDays.length === 0) {
+            showMessage('configMsg', 'Au moins un jour doit être sélectionné pour activer l\'absence.', 'error');
             return;
         }
     }

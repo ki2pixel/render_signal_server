@@ -134,20 +134,20 @@ class WebhookConfigService:
         return bool(self.get_webhook_url())
     
     # =========================================================================
-    # Présence Globale (Pause Webhook)
+    # Absence Globale (Pause Webhook)
     # =========================================================================
     
-    def get_presence_pause_enabled(self) -> bool:
-        """Retourne si la pause présence est activée.
+    def get_absence_pause_enabled(self) -> bool:
+        """Retourne si la pause absence est activée.
         
         Returns:
             False par défaut
         """
         config = self._get_cached_config()
-        return config.get("presence_pause_enabled", False)
+        return config.get("absence_pause_enabled", False)
     
-    def set_presence_pause_enabled(self, enabled: bool) -> bool:
-        """Active/désactive la pause présence.
+    def set_absence_pause_enabled(self, enabled: bool) -> bool:
+        """Active/désactive la pause absence.
         
         Args:
             enabled: True pour activer la pause
@@ -156,24 +156,24 @@ class WebhookConfigService:
             True si sauvegarde réussie
         """
         config = self._load_from_disk()
-        config["presence_pause_enabled"] = bool(enabled)
+        config["absence_pause_enabled"] = bool(enabled)
         
         if self._save_to_disk(config):
             self._invalidate_cache()
             return True
         return False
     
-    def get_presence_pause_days(self) -> list[str]:
+    def get_absence_pause_days(self) -> list[str]:
         """Retourne la liste des jours de pause.
         
         Returns:
             Liste des jours (format lowercase: monday, tuesday, etc.)
         """
         config = self._get_cached_config()
-        days = config.get("presence_pause_days", [])
+        days = config.get("absence_pause_days", [])
         return days if isinstance(days, list) else []
     
-    def set_presence_pause_days(self, days: list[str]) -> Tuple[bool, str]:
+    def set_absence_pause_days(self, days: list[str]) -> Tuple[bool, str]:
         """Définit les jours de pause avec validation.
         
         Args:
@@ -192,7 +192,7 @@ class WebhookConfigService:
         
         # Charger config actuelle
         config = self._load_from_disk()
-        config["presence_pause_days"] = normalized_days
+        config["absence_pause_days"] = normalized_days
         
         # Sauvegarder
         if self._save_to_disk(config):
