@@ -80,6 +80,12 @@ def get_webhook_config():
     # Time window for global webhook toggle (may be empty strings)
     webhook_time_start = (persisted.get("webhook_time_start") or "").strip()
     webhook_time_end = (persisted.get("webhook_time_end") or "").strip()
+    
+    # Presence pause configuration
+    presence_pause_enabled = persisted.get("presence_pause_enabled", False)
+    presence_pause_days = persisted.get("presence_pause_days", [])
+    if not isinstance(presence_pause_days, list):
+        presence_pause_days = []
 
     config = {
         "webhook_url": webhook_url or _mask_url(webhook_url),
@@ -88,6 +94,8 @@ def get_webhook_config():
         # Expose as None when empty to be explicit in API response
         "webhook_time_start": webhook_time_start or None,
         "webhook_time_end": webhook_time_end or None,
+        "presence_pause_enabled": bool(presence_pause_enabled),
+        "presence_pause_days": presence_pause_days,
     }
     return jsonify({"success": True, "config": config}), 200
 
@@ -115,8 +123,29 @@ def update_webhook_config():
     # New flag: webhook_sending_enabled
     if "webhook_sending_enabled" in payload:
         config["webhook_sending_enabled"] = bool(payload["webhook_sending_enabled"])
-
-    # Presence URLs removed (feature deprecated)
+    
+    # Presence pause configuration
+    if "presence_pause_enabled" in payload:
+        config["presence_pause_enabled"] = bool(payload["presence_pause_enabled"])
+    
+    if "presence_pause_days" in payload:
+        days = payload["presence_pause_days"]
+        if not isinstance(days, list):
+            return jsonify({"success": False, "message": "presence_pause_days doit être une liste."}), 400
+        
+        # Valider les jours
+        valid_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        normalized_days = [str(d).lower() for d in days if isinstance(d, str)]
+        invalid_days = [d for d in normalized_days if d not in valid_days]
+        
+        if invalid_days:
+            return jsonify({"success": False, "message": f"Jours invalides: {', '.join(invalid_days)}"}), 400
+        
+        config["presence_pause_days"] = normalized_days
+    
+    # Validation: si presence_pause_enabled est True, vérifier qu'au moins un jour est sélectionné
+    if config.get("presence_pause_enabled") and not config.get("presence_pause_days"):
+        return jsonify({"success": False, "message": "Au moins un jour doit être sélectionné pour activer la pause présence."}), 400
 
     # Optional: accept time window fields here too, for convenience
     # Validate format using parse_time_hhmm when provided and non-empty

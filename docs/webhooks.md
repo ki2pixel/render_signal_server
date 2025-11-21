@@ -28,6 +28,60 @@ Cette application utilise un flux de webhooks unifié avec les caractéristiques
   - Intégration possible avec un store externe (fallback fichier `debug/webhook_config.json`)
   - Masquage de l'URL côté API lecture (suffixe `***`) pour éviter l'exposition complète dans l'UI
 
+### Présence Globale (Stop Emails)
+
+La fonctionnalité de **Présence Globale** permet de bloquer complètement l'envoi de tous les webhooks pour des jours spécifiques de la semaine. 
+
+#### Comportement
+
+Lorsque la présence globale est activée pour un jour donné :
+- **Aucun email n'est envoyé** (ni DESABO ni Média Solution)
+- Tous les types sont bloqués : urgents et non urgents
+- Le blocage s'applique pour toute la journée (00h00 à 23h59)
+- Les exceptions par détecteur (comme le bypass DESABO non urgent) sont **ignorées**
+
+#### Configuration
+
+**Via l'interface utilisateur (Dashboard)** :
+1. Accédez à l'onglet "Webhooks"
+2. Localisez la section "Présence Globale (Stop Emails)" (fond orange)
+3. Activez le toggle "Activer la présence globale"
+4. Sélectionnez les jours où aucun email ne doit être envoyé
+5. Cliquez sur "💾 Enregistrer la Configuration"
+
+**Via l'API** :
+```bash
+curl -X POST "http://localhost:5000/api/webhooks/config" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer VOTRE_TOKEN" \
+  -d '{
+    "presence_pause_enabled": true,
+    "presence_pause_days": ["monday", "friday"]
+  }'
+```
+
+#### Validation
+
+- Au moins un jour doit être sélectionné si le toggle est activé
+- Les noms de jours sont normalisés en minuscules
+- Jours valides : `monday`, `tuesday`, `wednesday`, `thursday`, `friday`, `saturday`, `sunday`
+- Toute tentative d'activer la présence sans sélectionner de jour sera rejetée (erreur 400)
+
+#### Priorité
+
+La présence globale a la **plus haute priorité** :
+1. ✅ Présence globale activée pour le jour actuel → **BLOQUER tous les webhooks**
+2. Sinon, vérifier `webhook_sending_enabled`
+3. Sinon, vérifier la fenêtre horaire
+4. Sinon, vérifier les règles par détecteur
+
+#### Cas d'usage
+
+- Périodes de congés où aucun traitement n'est souhaité
+- Jours de maintenance planifiée
+- Jours fériés spécifiques
+- Gestion de disponibilité récurrente (ex: fermeture tous les lundis)
+
 ### Gestion du Temps
 
 - **Fenêtre Horaire des Webhooks** : Restreint l'envoi des webhooks à une plage horaire spécifique

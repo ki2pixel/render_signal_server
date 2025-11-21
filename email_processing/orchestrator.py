@@ -63,14 +63,29 @@ def _is_webhook_sending_enabled() -> bool:
     """Check if webhook sending is globally enabled.
     
     Checks in order: DB config → JSON file → ENV var (default: true)
+    Also checks presence pause configuration to block all emails on specific days.
     
     Returns:
         bool: True if webhooks should be sent
     """
+    # Check basic webhook sending flag first
     try:
         from config import app_config_store as _store
         cfg_path = Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
         data = _store.get_config_json("webhook_config", file_fallback=cfg_path) or {}
+        
+        # Check presence pause configuration
+        presence_pause_enabled = data.get("presence_pause_enabled", False)
+        if presence_pause_enabled:
+            presence_pause_days = data.get("presence_pause_days", [])
+            if isinstance(presence_pause_days, list) and presence_pause_days:
+                # Get current day name in lowercase (monday, tuesday, etc.)
+                current_day = datetime.now(timezone.utc).astimezone().strftime('%A').lower()
+                if current_day in presence_pause_days:
+                    # Présence pause active for today - block all webhooks
+                    return False
+        
+        # Check standard webhook_sending_enabled flag
         if isinstance(data, dict) and "webhook_sending_enabled" in data:
             return bool(data.get("webhook_sending_enabled"))
     except Exception:

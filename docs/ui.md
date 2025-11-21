@@ -72,10 +72,10 @@ L'interface communique avec les services backend via des appels API REST. Les pr
 Permet de configurer l'URL de webhook principale et les options associées :
 
 - **Webhook personnalisé (obligatoire)**: `#webhookUrl` (WEBHOOK_URL)
-- **Flag PRESENCE** (contrôle le comportement le samedi) : `#presenceFlag` (select true/false)
+- **Envoi des webhooks** (activation/désactivation globale) : `#webhookSendingToggle` (WEBHOOK_SENDING_ENABLED)
 - **Vérification SSL** (active/désactive la vérification des certificats) : `#sslVerifyToggle` (WEBHOOK_SSL_VERIFY)
 
-**Note** : Les webhooks spécifiques à Make.com (Recadrage, Autorépondeur, Présence) ont été dépréciés. Tous les appels sont maintenant dirigés vers l'URL de webhook principale configurée ci-dessus.
+**Note** : Les webhooks spécifiques à Make.com (Recadrage, Autorépondeur, Présence) ont été dépréciés. Tous les flux passent désormais par l'URL de webhook principale configurée ci-dessus.
 
 **Appels API**:
 - Recommandé: `GET /api/webhooks/config` pour charger, `POST /api/webhooks/config` pour sauvegarder (URL masquée côté lecture)

@@ -133,7 +133,72 @@ class WebhookConfigService:
         """Vérifie si une URL webhook est configurée."""
         return bool(self.get_webhook_url())
     
-    # Présence: feature removed
+    # =========================================================================
+    # Présence Globale (Pause Webhook)
+    # =========================================================================
+    
+    def get_presence_pause_enabled(self) -> bool:
+        """Retourne si la pause présence est activée.
+        
+        Returns:
+            False par défaut
+        """
+        config = self._get_cached_config()
+        return config.get("presence_pause_enabled", False)
+    
+    def set_presence_pause_enabled(self, enabled: bool) -> bool:
+        """Active/désactive la pause présence.
+        
+        Args:
+            enabled: True pour activer la pause
+            
+        Returns:
+            True si sauvegarde réussie
+        """
+        config = self._load_from_disk()
+        config["presence_pause_enabled"] = bool(enabled)
+        
+        if self._save_to_disk(config):
+            self._invalidate_cache()
+            return True
+        return False
+    
+    def get_presence_pause_days(self) -> list[str]:
+        """Retourne la liste des jours de pause.
+        
+        Returns:
+            Liste des jours (format lowercase: monday, tuesday, etc.)
+        """
+        config = self._get_cached_config()
+        days = config.get("presence_pause_days", [])
+        return days if isinstance(days, list) else []
+    
+    def set_presence_pause_days(self, days: list[str]) -> Tuple[bool, str]:
+        """Définit les jours de pause avec validation.
+        
+        Args:
+            days: Liste des jours (monday, tuesday, etc.)
+            
+        Returns:
+            Tuple (success: bool, message: str)
+        """
+        # Valider les jours
+        valid_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        normalized_days = [d.lower() for d in days if isinstance(d, str)]
+        
+        invalid_days = [d for d in normalized_days if d not in valid_days]
+        if invalid_days:
+            return False, f"Jours invalides: {', '.join(invalid_days)}"
+        
+        # Charger config actuelle
+        config = self._load_from_disk()
+        config["presence_pause_days"] = normalized_days
+        
+        # Sauvegarder
+        if self._save_to_disk(config):
+            self._invalidate_cache()
+            return True, "Jours de pause mis à jour avec succès."
+        return False, "Erreur lors de la sauvegarde."
     
     # =========================================================================
     # Configuration SSL et Enabled

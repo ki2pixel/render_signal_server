@@ -214,7 +214,7 @@ Règles de fenêtre horaire (webhooks dédiés):
         - `desabonnement_journee_tarifs` contourne la fenêtre et force l'envoi
         - `recadrage` est marqué lu/traité hors fenêtre pour éviter les retraits
       - le déclenchement du flux webhook personnalisé `send_custom_webhook_flow()` (payloads unifiés + miroir médias)
-    - `handle_presence_route()` : Gère la détection et le routage des emails de présence "samedi"
+    - La logique historique `handle_presence_route()` a été retirée : les emails de présence ne sont plus routés via l'application.
     - `compute_desabo_time_window()` : Calcule la fenêtre temporelle pour les webhooks DESABO (`early_ok`, start=`maintenant`)
     - `send_custom_webhook_flow()` : Flux complet d'envoi de webhook avec gestion des erreurs
   - `link_extraction.py` : extraction des URLs fournisseurs (Dropbox, FromSmash, SwissTransfer)
@@ -286,7 +286,7 @@ Objectifs: séparation des responsabilités, testabilité améliorée, réductio
 
 - Intégrations externes
   - IMAP (inbox.lt): lecture des e-mails pour extraire des URLs de livraison (Dropbox, FromSmash, SwissTransfer) et métadonnées.
-  - Webhook HTTP: envoi des événements vers `WEBHOOK_URL` (personnalisable) et/ou Make.com (`RECADRAGE_MAKE_WEBHOOK_URL`, `AUTOREPONDEUR_MAKE_WEBHOOK_URL`, présence `PRESENCE_*_MAKE_WEBHOOK_URL`).
+  - Webhook HTTP: envoi des événements vers `WEBHOOK_URL` (personnalisable). Les blueprints Make.com legacy (`RECADRAGE_MAKE_WEBHOOK_URL`, `AUTOREPONDEUR_MAKE_WEBHOOK_URL`) restent documentés pour référence, tandis que la route Presence a été supprimée.
   - Redis (optionnel): déduplication des e-mails traités via un Set `processed_email_ids_set_v1` et dédup par groupe de sujet.
   - Résolution de liens directs supprimée: Les URLs de partage (Dropbox, FromSmash, SwissTransfer) sont extraites telles quelles (landing pages) et l'UI propose une ouverture manuelle pour éviter la complexité de maintenance liée aux changements des sites.
 
