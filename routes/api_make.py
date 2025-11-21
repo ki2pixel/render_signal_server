@@ -11,12 +11,10 @@ from config.settings import MAKECOM_API_KEY
 
 bp = Blueprint("api_make", __name__, url_prefix="/api/make")
 # Scenario IDs: can be overridden by env vars, fallback to provided IDs
-# ENV overrides (optional): MAKE_SCENARIO_ID_AUTOREPONDEUR, MAKE_SCENARIO_ID_RECADRAGE, MAKE_SCENARIO_ID_PRESENCE_TRUE, MAKE_SCENARIO_ID_PRESENCE_FALSE
+# ENV overrides (optional): MAKE_SCENARIO_ID_AUTOREPONDEUR, MAKE_SCENARIO_ID_RECADRAGE
 SCENARIO_IDS = {
     "autorepondeur": int(os.environ.get("MAKE_SCENARIO_ID_AUTOREPONDEUR", "7448207")),
     "recadrage": int(os.environ.get("MAKE_SCENARIO_ID_RECADRAGE", "6649843")),
-    "presence_true": int(os.environ.get("MAKE_SCENARIO_ID_PRESENCE_TRUE", "7407389")),
-    "presence_false": int(os.environ.get("MAKE_SCENARIO_ID_PRESENCE_FALSE", "7407408")),
 }
 
 # Configuration du webhook de contrôle (solution alternative)

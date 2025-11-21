@@ -797,7 +797,6 @@ def _log_webhook_config_startup():
             
         # Liste des clés à logger avec des valeurs par défaut si absentes
         keys_to_log = [
-            'presence_flag',
             'webhook_ssl_verify',
             'webhook_sending_enabled',
             'webhook_time_start',
