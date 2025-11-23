@@ -15,6 +15,35 @@ Ce document recense les patrons de conception et les standards récurrents dans 
 
 - **Journalisation structurée** : Les événements importants sont enregistrés avec un format structuré pour faciliter l'analyse et le débogage. Les journaux incluent des métadonnées telles que l'ID de l'e-mail, le type de détecteur et les décisions de traitement prises.
 
+## Refactoring terminologique : "Presence Pause" → "Absence Globale" (2025-11-21)
+
+- **Configuration persistante** : La fonctionnalité Absence Globale utilise des champs JSON persistants (`absence_pause_enabled`, `absence_pause_days`) dans `debug/webhook_config.json`.
+- **Validation stricte** : Les jours valides sont normalisés en minuscules et vérifiés contre la liste ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].
+- **Priorité maximale** : L'absence globale a la plus haute priorité dans la logique d'envoi de webhooks, ignorant les autres règles (fenêtre horaire, bypass DESABO).
+- **Interface utilisateur** : Toggle binaire avec sélection multiple de jours, validation côté client et serveur.
+- **API REST** : Endpoints GET/POST `/api/webhooks/config` pour récupération et mise à jour de la configuration.
+- **Tests complets** : Couverture des cas nominaux, limites et d'erreur pour API, service et orchestrateur.
+
+## Suppression de la fonctionnalité "Presence" (2025-11-18)
+
+- **Nettoyage du code** : Suppression complète de la fonctionnalité "Presence" qui n'était plus utilisée, incluant :
+  - Éléments d'interface utilisateur dans `dashboard.html` et `dashboard.js`
+  - Endpoints API dans `api_webhooks.py` et `api_admin.py`
+  - Méthodes liées dans `ConfigService` et `WebhookConfigService`
+  - Logique d'orchestration dans `orchestrator.py`
+  - Variables d'environnement obsolètes (`PRESENCE_FLAG`, `PRESENCE_TRUE_MAKE_WEBHOOK_URL`, `PRESENCE_FALSE_MAKE_WEBHOOK_URL`)
+
+- **Avantages** :
+  - Réduction de la complexité du code
+  - Amélioration des performances en supprimant le code inutile
+  - Simplification de la maintenance future
+  - Réduction de la surface d'attaque de l'application
+
+- **Impact** :
+  - Aucun impact sur les fonctionnalités principales
+  - Tous les tests passent avec succès
+  - Documentation mise à jour pour refléter les changements
+
 ## Tests et Qualité du Code
 
 - **Structure des Tests** : Organisation en dossiers `tests/` avec une structure reflétant l'architecture du code source. Utilisation de préfixes `test_` pour les fichiers de test et les fonctions de test.

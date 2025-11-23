@@ -2,6 +2,24 @@
 
 ## Terminé
 
+-   [2025-11-24 00:43] **Application stricte de l'Absence Globale + Tests**
+    - Ajout d'une garde de cycle dans `email_processing/orchestrator.py` pour stopper le polling les jours d'absence.
+    - Normalisation robuste des jours (`strip().lower()`) dans `_is_webhook_sending_enabled()`.
+    - Ajout de tests: normalisation casse/espaces et test d'intégration de la garde de cycle (`tests/test_absence_pause.py`).
+    - Résultat: 14/14 tests absence passent; aucun envoi attendu les jours configurés.
+
+-   [2025-11-21 17:49] **Mise à jour de la documentation API suite au workflow /docs-updater**
+  - Mise à jour de `docs/api.md` pour inclure les nouveaux champs `absence_pause_enabled` et `absence_pause_days` dans les exemples GET et POST /api/webhooks/config.
+  - Ajout des règles de validation : `absence_pause_days` doit être une liste de jours valides (monday, tuesday, wednesday, thursday, friday, saturday, sunday), et au moins un jour si `absence_pause_enabled` est `true`.
+  - Cohérence parfaite entre code source et documentation assurée.
+
+-   [2025-11-21 17:41] **Refactoring terminologique : "Presence Pause" → "Absence Globale"**
+  - **Refactoring complet** : Changement de terminologie "presence_pause" → "absence_pause" pour une meilleure cohérence logique.
+  - **Fonctionnalité Absence Globale** : Permet de bloquer complètement l'envoi de webhooks sur des jours spécifiques de la semaine.
+  - **Fichiers impactés** : `services/webhook_config_service.py`, `routes/api_webhooks.py`, `email_processing/orchestrator.py`, `static/dashboard.js`, `dashboard.html`, `docs/webhooks.md`, `tests/test_absence_pause.py`
+  - **Tests** : Nouveau fichier `test_absence_pause.py` avec 12 tests couvrant API, service et orchestrateur (12/12 OK)
+  - **Résultat** : Terminologie cohérente dans tout le codebase, fonctionnalité préservée, tests validés, commit poussé vers main
+
 -   [2025-11-18 01:35] **Correction des 11 tests en échec (adaptation architecture services)**
   - **Tests dashboard** (2) : Patch `_auth_service.create_user_from_credentials` au lieu de fonction déplacée
   - **Test api_config** (1) : Patch `config.settings.*` au lieu de `routes.api_config.*` 

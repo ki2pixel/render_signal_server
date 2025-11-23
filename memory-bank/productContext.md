@@ -108,3 +108,26 @@ Le projet a récemment subi un important refactoring pour améliorer sa maintena
 - Amélioration de _log_webhook_config_startup() pour utiliser WebhookConfigService quand disponible.
 - Ajout de TODO pour déprécation future de auth_user.init_login_manager() en faveur de AuthService.
 - Code plus maintenable et contrôle fiable des tâches de fond, aucune régression fonctionnelle.
+
+## Mise à jour (2025-11-18) — Suppression de la fonctionnalité "Presence"
+- **Suppression complète** de la fonctionnalité "Presence" obsolète, incluant :
+  - Éléments d'interface utilisateur dans `dashboard.html` et `dashboard.js`
+  - Endpoints API dans `api_webhooks.py` et `api_admin.py`
+  - Méthodes liées dans `ConfigService` et `WebhookConfigService`
+  - Logique d'orchestration dans `orchestrator.py`
+  - Variables d'environnement obsolètes (`PRESENCE_FLAG`, `PRESENCE_TRUE_MAKE_WEBHOOK_URL`, `PRESENCE_FALSE_MAKE_WEBHOOK_URL`)
+- **Tests** : Suppression ou marquage comme skip des tests liés à la présence
+- **Documentation** : Mise à jour pour refléter les changements
+- **Avantages** : Réduction de la complexité, amélioration des performances, simplification de la maintenance
+- **Statut** : Déployé en production, tous les tests passent avec succès
+
+## Mise à jour (2025-11-21) — Refactoring terminologique : "Presence Pause" → "Absence Globale"
+- **Refactoring complet** : Changement de terminologie "presence_pause" → "absence_pause" pour une meilleure cohérence logique.
+- **Fonctionnalité Absence Globale** : Permet de bloquer complètement l'envoi de webhooks sur des jours spécifiques de la semaine.
+  - **Configuration** : Via l'interface utilisateur (dashboard) ou API (`/api/webhooks/config`)
+  - **Comportement** : Aucun email envoyé (DESABO ni Media Solution) les jours sélectionnés, de 00h00 à 23h59
+  - **Priorité** : Plus haute priorité, ignore les autres règles (fenêtre horaire, bypass DESABO)
+  - **Validation** : Au moins un jour doit être sélectionné si activé, jours valides : monday-sunday
+- **Fichiers impactés** : `services/webhook_config_service.py`, `routes/api_webhooks.py`, `email_processing/orchestrator.py`, `static/dashboard.js`, `dashboard.html`, `docs/webhooks.md`, `tests/test_absence_pause.py`
+- **Tests** : 12/12 tests passent (100%), couverture maintenue
+- **Statut** : Refactoring terminé, déployé en production

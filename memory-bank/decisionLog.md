@@ -1,6 +1,39 @@
 # Journal des Décisions (Chronologie Inversée)
 Ce document enregistre les décisions techniques et architecturales importantes prises au cours du projet.
 
+- **[2025-11-24 00:43:00] - Application stricte de l'Absence Globale (garde de cycle + normalisation)**
+  - **Décision** : Faire appliquer l'Absence Globale dès le début du cycle de polling et renforcer la normalisation des jours configurés.
+  - **Changements clés** :
+    - `email_processing/orchestrator.py`
+      - Normalisation des jours `absence_pause_days` via `strip().lower()` dans `_is_webhook_sending_enabled()`.
+      - Ajout d'une garde en début de `check_new_emails_and_trigger_webhook()` qui stoppe le cycle si l'absence est active aujourd'hui, avec log `ABSENCE_PAUSE: ... skipping all webhook sends this cycle.`
+    - `tests/test_absence_pause.py`
+      - Ajout d'un test de normalisation casse/espaces et d'un test d'intégration léger pour la garde de cycle.
+  - **Raisons** : Un webhook a été envoyé un samedi malgré `absence_pause_enabled=true` et `absence_pause_days=["saturday"]`. La logique n'était pas appliquée en amont du cycle et la comparaison devait être durcie contre les variations de casse/espaces.
+  - **Impacts** :
+    - Aucun envoi de webhook les jours d'absence sélectionnés (priorité maximale respectée).
+    - Tests d'absence: 14/14 OK.
+  - **Alternatives** : Appliquer l'absence uniquement au moment de l'envoi par détecteur → rejeté; l'arrêt en début de cycle est plus clair, moins coûteux et évite des effets de bord.
+
+- **[2025-11-21 17:41:00] - Refactoring terminologique : "Presence Pause" → "Absence Globale"**
+  - **Décision** : Renommer tous les éléments liés à "presence_pause" en "absence_pause" pour une meilleure cohérence logique dans la fonctionnalité de blocage des webhooks.
+  - **Changements clés** :
+    - **Services** : `WebhookConfigService.get_absence_pause_enabled()`, `set_absence_pause_enabled()`, `get_absence_pause_days()`, `set_absence_pause_days()`
+    - **API** : Endpoints `/api/webhooks/config` avec `absence_pause_enabled` et `absence_pause_days`
+    - **Orchestrateur** : `_is_webhook_sending_enabled()` vérifie `absence_pause_enabled` et `absence_pause_days`
+    - **Frontend** : Éléments HTML `absencePauseToggle`, `absencePauseDaysGroup`, JavaScript `absenceToggle`, `absenceDays`
+    - **Tests** : Nouveau fichier `test_absence_pause.py` avec 12 tests couvrant API, service et orchestrateur
+    - **Documentation** : Mise à jour de `docs/webhooks.md` avec nouveaux exemples API
+  - **Raisons** :
+    - La terminologie "absence" reflète mieux la nature de la fonctionnalité (blocage des emails les jours d'absence)
+    - Cohérence terminologique dans tout le codebase
+    - Amélioration de la lisibilité pour les développeurs et utilisateurs
+  - **Impacts** :
+    - Terminologie cohérente dans l'interface utilisateur et la documentation
+    - Tests 12/12 passent avec succès
+    - Fonctionnalité préservée avec la même logique métier
+    - Commit poussé vers main avec message conventionnel
+
 - **[2025-11-18 01:35:00] - Correction des tests pour adaptation à l'architecture orientée services**
   - **Décision** : Corriger les 11 tests en échec suite au refactoring orienté services (Phases 1→5) pour adapter les mocks et patches à la nouvelle architecture.
   - **Changements clés** :

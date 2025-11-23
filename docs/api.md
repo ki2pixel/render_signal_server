@@ -326,14 +326,16 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
         "webhook_ssl_verify": true,
         "webhook_sending_enabled": true,
         "webhook_time_start": "09h00",
-        "webhook_time_end": "18h00"
+        "webhook_time_end": "18h00",
+        "absence_pause_enabled": false,
+        "absence_pause_days": []
       }
     }
     ```
 
 - `POST /api/webhooks/config` (protégé)
   - Met à jour la configuration des webhooks. Tous les champs sont optionnels et sont fusionnés avec la configuration courante.
-  - **Validation** : `webhook_url` doit être une URL **HTTPS** sinon la requête est rejetée (`400`).
+  - **Validation** : `webhook_url` doit être une URL **HTTPS** sinon la requête est rejetée (`400`). `absence_pause_days` doit être une liste de jours valides (monday, tuesday, wednesday, thursday, friday, saturday, sunday), et au moins un jour si `absence_pause_enabled` est `true`.
   - Corps JSON :
     ```json
     {
@@ -341,7 +343,9 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
       "webhook_ssl_verify": false,
       "webhook_sending_enabled": false,
       "webhook_time_start": "09h00",
-      "webhook_time_end": "18h00"
+      "webhook_time_end": "18h00",
+      "absence_pause_enabled": true,
+      "absence_pause_days": ["monday", "friday"]
     }
     ```
   - Réponses :

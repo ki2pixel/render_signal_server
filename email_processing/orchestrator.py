@@ -79,10 +79,9 @@ def _is_webhook_sending_enabled() -> bool:
         if absence_pause_enabled:
             absence_pause_days = data.get("absence_pause_days", [])
             if isinstance(absence_pause_days, list) and absence_pause_days:
-                # Get current day name in lowercase (monday, tuesday, etc.)
                 current_day = datetime.now(timezone.utc).astimezone().strftime('%A').lower()
-                if current_day in absence_pause_days:
-                    # Absence pause active for today - block all webhooks
+                normalized_days = [str(d).strip().lower() for d in absence_pause_days if isinstance(d, str)]
+                if current_day in normalized_days:
                     return False
         
         # Check standard webhook_sending_enabled flag
@@ -292,6 +291,21 @@ def check_new_emails_and_trigger_webhook() -> int:
     logger = getattr(_app, 'logger', None)
     if not logger:
         return 0
+
+    # Enforce global absence at the start of the cycle
+    try:
+        if not _is_webhook_sending_enabled():
+            try:
+                _day = datetime.now(timezone.utc).astimezone().strftime('%A')
+            except Exception:
+                _day = "unknown"
+            logger.info(
+                "ABSENCE_PAUSE: Global absence active for today (%s) — skipping all webhook sends this cycle.",
+                _day,
+            )
+            return 0
+    except Exception:
+        pass
 
     # Establish IMAP connection
     mail = ar.create_imap_connection()

@@ -217,6 +217,49 @@ class TestAbsencePauseOrchestrator:
             
             # Should return True because today (Tuesday) is not in pause days
             assert _is_webhook_sending_enabled() is True
+
+    @patch('email_processing.orchestrator.datetime')
+    def test_webhook_blocked_with_case_and_spaces(self, mock_datetime):
+        """Days with casing/whitespace are normalized and block sending."""
+        # Mock today as Saturday
+        mock_now = MagicMock()
+        mock_now.astimezone.return_value.strftime.return_value = 'Saturday'
+        mock_datetime.now.return_value = mock_now
+
+        # Config returns mixed-case and spaced day names
+        config_data = {
+            'absence_pause_enabled': True,
+            'absence_pause_days': [' Saturday ', 'FRIDAY'],
+            'webhook_sending_enabled': True,
+        }
+
+        with patch('email_processing.orchestrator.Path') as mock_path, \
+             patch('config.app_config_store.get_config_json', return_value=config_data):
+            from email_processing.orchestrator import _is_webhook_sending_enabled
+            # Should return False because 'Saturday' matches after normalization
+            assert _is_webhook_sending_enabled() is False
+
+    def test_cycle_guard_skips_when_absence_active(self, monkeypatch):
+        """Integration guard: entire cycle exits early when absence is active today."""
+        # Prepare a stub app_render with a minimal logger interface
+        import types
+        class _Logger:
+            def info(self, *args, **kwargs):
+                return None
+            def error(self, *args, **kwargs):
+                return None
+        stub_ar = types.SimpleNamespace(app=types.SimpleNamespace(logger=_Logger()))
+
+        # Ensure orchestrator will import our stub 'app_render'
+        import sys
+        sys.modules['app_render'] = stub_ar
+
+        # Force _is_webhook_sending_enabled to return False (absence active)
+        from email_processing import orchestrator as orch
+        monkeypatch.setattr(orch, '_is_webhook_sending_enabled', lambda: False)
+
+        # Run: should return 0 without attempting IMAP connection (early exit)
+        assert orch.check_new_emails_and_trigger_webhook() == 0
     
     @patch('email_processing.orchestrator.datetime')
     def test_webhook_allowed_when_absence_disabled(self, mock_datetime):
