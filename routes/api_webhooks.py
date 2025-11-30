@@ -36,6 +36,9 @@ def _load_webhook_config() -> dict:
     
     Phase 5: Utilise WebhookConfigService (cache + validation).
     """
+    # Force a reload to avoid serving stale values when another endpoint
+    # or external store updated the data recently (cache TTL = 60s).
+    _webhook_service.reload()
     return _webhook_service.get_all_config()
 
 
@@ -88,7 +91,8 @@ def get_webhook_config():
         absence_pause_days = []
 
     config = {
-        "webhook_url": webhook_url or _mask_url(webhook_url),
+        # Always mask webhook_url in API response for safety
+        "webhook_url": _mask_url(webhook_url),
         "webhook_ssl_verify": webhook_ssl_verify,
         "webhook_sending_enabled": bool(webhook_sending_enabled),
         # Expose as None when empty to be explicit in API response
@@ -104,8 +108,9 @@ def get_webhook_config():
 @login_required
 def update_webhook_config():
     payload = request.get_json(silent=True) or {}
-
-    config = _load_webhook_config()
+    # Build a minimal updates dict to avoid clobbering unrelated fields with
+    # potentially stale cached values.
+    updates = {}
 
     if "webhook_url" in payload:
         val = payload["webhook_url"].strip() if payload["webhook_url"] else None
@@ -115,18 +120,18 @@ def update_webhook_config():
                 jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}),
                 400,
             )
-        config["webhook_url"] = val
+        updates["webhook_url"] = val
 
     if "webhook_ssl_verify" in payload:
-        config["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
+        updates["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
 
     # New flag: webhook_sending_enabled
     if "webhook_sending_enabled" in payload:
-        config["webhook_sending_enabled"] = bool(payload["webhook_sending_enabled"])
+        updates["webhook_sending_enabled"] = bool(payload["webhook_sending_enabled"])
     
     # Absence pause configuration
     if "absence_pause_enabled" in payload:
-        config["absence_pause_enabled"] = bool(payload["absence_pause_enabled"])
+        updates["absence_pause_enabled"] = bool(payload["absence_pause_enabled"])
     
     if "absence_pause_days" in payload:
         days = payload["absence_pause_days"]
@@ -141,10 +146,10 @@ def update_webhook_config():
         if invalid_days:
             return jsonify({"success": False, "message": f"Jours invalides: {', '.join(invalid_days)}"}), 400
         
-        config["absence_pause_days"] = normalized_days
+        updates["absence_pause_days"] = normalized_days
     
     # Validation: si absence_pause_enabled est True, vérifier qu'au moins un jour est sélectionné
-    if config.get("absence_pause_enabled") and not config.get("absence_pause_days"):
+    if updates.get("absence_pause_enabled") and not updates.get("absence_pause_days"):
         return jsonify({"success": False, "message": "Au moins un jour doit être sélectionné pour activer la pause absence."}), 400
 
     # Optional: accept time window fields here too, for convenience
@@ -154,16 +159,16 @@ def update_webhook_config():
         end = (str(payload.get("webhook_time_end", "")) or "").strip()
         # If both empty -> clear
         if start == "" and end == "":
-            config["webhook_time_start"] = ""
-            config["webhook_time_end"] = ""
+            updates["webhook_time_start"] = ""
+            updates["webhook_time_end"] = ""
         else:
             # Require both if one is provided
             if not start or not end:
                 return jsonify({"success": False, "message": "Both webhook_time_start and webhook_time_end are required (or both empty to clear)."}), 400
             if parse_time_hhmm(start) is None or parse_time_hhmm(end) is None:
                 return jsonify({"success": False, "message": "Invalid time format. Use HHhMM or HH:MM (e.g., 11h30, 17:45)."}), 400
-            config["webhook_time_start"] = start
-            config["webhook_time_end"] = end
+            updates["webhook_time_start"] = start
+            updates["webhook_time_end"] = end
 
     # Nettoyer les champs obsolètes s'ils existent (ne pas supprimer presence_* gérés ci-dessus)
     obsolete_fields = [
@@ -172,13 +177,14 @@ def update_webhook_config():
         "polling_enabled",
     ]
     for field in obsolete_fields:
-        if field in config:
+        if field in updates:
             try:
-                del config[field]
+                del updates[field]
             except Exception:
                 pass
 
-    if not _save_webhook_config(config):
+    success, _msg = _webhook_service.update_config(updates)
+    if not success:
         return (
             jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration."}),
             500,
@@ -211,10 +217,11 @@ def set_webhook_global_time_window():
 
     # Clear both -> disable constraint
     if start == "" and end == "":
-        cfg = _load_webhook_config()
-        cfg["webhook_time_start"] = ""
-        cfg["webhook_time_end"] = ""
-        if not _save_webhook_config(cfg):
+        success, _ = _webhook_service.update_config({
+            "webhook_time_start": "",
+            "webhook_time_end": "",
+        })
+        if not success:
             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
         return jsonify({
             "success": True,
@@ -231,10 +238,11 @@ def set_webhook_global_time_window():
     if parse_time_hhmm(start) is None or parse_time_hhmm(end) is None:
         return jsonify({"success": False, "message": "Invalid time format. Use HHhMM or HH:MM (e.g., 11h30, 17:45)."}), 400
 
-    cfg = _load_webhook_config()
-    cfg["webhook_time_start"] = start
-    cfg["webhook_time_end"] = end
-    if not _save_webhook_config(cfg):
+    success, _ = _webhook_service.update_config({
+        "webhook_time_start": start,
+        "webhook_time_end": end,
+    })
+    if not success:
         return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
     return jsonify({
         "success": True,
