@@ -77,6 +77,7 @@ window.addEventListener('DOMContentLoaded', () => {
 async function loadProcessingPrefsFromServer() {
     try {
         const res = await fetch('/api/get_processing_prefs');
+        if (!res.ok) { console.warn('loadProcessingPrefsFromServer: non-200', res.status); return; }
         const data = await res.json();
         if (!data.success) return;
         const p = data.prefs || {};
@@ -229,6 +230,7 @@ function saveLocalPreferences() {
 async function computeAndRenderMetrics() {
     try {
         const res = await fetch('/api/webhook_logs?days=1');
+        if (!res.ok) { console.warn('metrics: non-200', res.status); clearMetrics(); return; }
         const data = await res.json();
         const logs = (data.success && Array.isArray(data.logs)) ? data.logs : [];
         const total = logs.length;
@@ -533,6 +535,7 @@ function renderTimeWindowDisplay(start, end) {
 async function loadTimeWindow() {
     try {
         const res = await fetch('/api/get_webhook_time_window');
+        if (!res.ok) { console.warn('loadTimeWindow: non-200', res.status); return; }
         const data = await res.json();
         
         if (data.success) {
@@ -560,6 +563,7 @@ async function saveTimeWindow() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ start, end })
         });
+        if (!res.ok) { showMessage('timeWindowMsg', 'Service indisponible (réponse non valide).', 'error'); return; }
         const data = await res.json();
         
         if (data.success) {
@@ -626,6 +630,7 @@ async function togglePolling() {
 async function loadWebhookConfig() {
     try {
         const res = await fetch('/api/webhooks/config');
+        if (!res.ok) { console.warn('loadWebhookConfig: non-200', res.status); return; }
         const data = await res.json();
         
         if (data.success) {
@@ -663,6 +668,7 @@ async function loadWebhookConfig() {
 async function loadGlobalWebhookTimeWindow() {
     try {
         const res = await fetch('/api/webhooks/time-window');
+        if (!res.ok) { console.warn('loadGlobalWebhookTimeWindow: non-200', res.status); return; }
         const data = await res.json();
         if (!data.success) return;
 
@@ -698,7 +704,11 @@ async function saveGlobalWebhookTimeWindow() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ start, end })
         });
-        
+        if (!res.ok) {
+            msgEl.textContent = 'Service indisponible (réponse non valide).';
+            msgEl.className = 'status-msg error';
+            return;
+        }
         const data = await res.json();
         if (data.success) {
             msgEl.textContent = 'Fenêtre horaire enregistrée avec succès !';
@@ -778,6 +788,7 @@ async function saveWebhookConfig() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
+        if (!res.ok) { showMessage('configMsg', 'Service indisponible (réponse non valide).', 'error'); return; }
         const data = await res.json();
         
         if (data.success) {
@@ -864,6 +875,8 @@ function escapeHtml(text) {
 
 // -------------------- Navigation par onglets --------------------
 function initTabs() {
+    if (window.__tabsInitialized) { console.log('[tabs] initTabs: already initialized'); return; }
+    window.__tabsInitialized = true;
     console.log('[tabs] initTabs: starting');
     const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
     const panels = Array.from(document.querySelectorAll('.section-panel'));
