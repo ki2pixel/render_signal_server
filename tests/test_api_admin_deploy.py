@@ -21,7 +21,8 @@ def mock_requests_get(monkeypatch):
 
     def _set(status_code=202, json_data=None, text=""):
         resp = _factory(status_code=status_code, json_data=json_data, text=text)
-        monkeypatch.setattr("routes.api_admin.requests.get", lambda *a, **k: resp)
+        from routes import api_admin
+        monkeypatch.setattr(api_admin.requests, "get", lambda *a, **k: resp)
         calls.append(resp)
         return resp
 
@@ -44,7 +45,8 @@ def mock_requests_post(monkeypatch):
 
     def _set(status_code=201, json_data=None, text=""):
         resp = _factory(status_code=status_code, json_data=json_data, text=text)
-        monkeypatch.setattr("routes.api_admin.requests.post", lambda *a, **k: resp)
+        from routes import api_admin
+        monkeypatch.setattr(api_admin.requests, "post", lambda *a, **k: resp)
         calls.append(resp)
         return resp
 
@@ -54,7 +56,8 @@ def mock_requests_post(monkeypatch):
 @pytest.fixture
 def mock_popen(monkeypatch):
     popen = MagicMock()
-    monkeypatch.setattr("routes.api_admin.subprocess.Popen", popen)
+    from routes import api_admin
+    monkeypatch.setattr(api_admin.subprocess, "Popen", popen)
     return popen
 
 

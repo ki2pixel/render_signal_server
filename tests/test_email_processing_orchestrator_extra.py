@@ -123,6 +123,7 @@ def test_compute_desabo_time_window_exception_path():
 @pytest.mark.unit
 def test_check_new_emails_and_trigger_webhook_delegation(monkeypatch):
     # Ensure delegation to legacy function returns value
+    monkeypatch.setenv('ORCHESTRATOR_ALLOW_LEGACY_DELEGATION', 'true')
     monkeypatch.setattr(
         orch, 'check_new_emails_and_trigger_webhook',
         orch.check_new_emails_and_trigger_webhook  # ensure symbol exists

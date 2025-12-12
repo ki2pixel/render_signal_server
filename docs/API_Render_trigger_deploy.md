@@ -96,3 +96,7 @@ Variables d'environnement:
 - `DEPLOY_CMD` (fallback)
 
 Voir aussi: `docs/deploiement.md` et `docs/configuration.md`.
+
+> Note : ce fichier décrit l’API Render de façon générique.
+> Pour l’intégration dans l’application (endpoint interne `POST /api/deploy_application`,
+> ordre des tentatives, variables d’environnement), se référer à [docs/deploiement.md](/docs/deploiement.md).

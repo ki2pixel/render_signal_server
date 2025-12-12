@@ -37,6 +37,16 @@ DETECTOR_DESABO = "desabonnement_journee_tarifs"
 ROUTE_DESABO = "DESABO"
 ROUTE_MEDIA_SOLUTION = "MEDIA_SOLUTION"
 
+WEEKDAY_NAMES = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+]
+
 
 # =============================================================================
 # TYPE DEFINITIONS
@@ -59,6 +69,47 @@ class ParsedEmail(TypedDict, total=False):
 # MODULE-LEVEL HELPERS
 # =============================================================================
 
+def _get_webhook_config_dict() -> dict:
+    try:
+        from services import WebhookConfigService
+
+        service = None
+        try:
+            service = WebhookConfigService.get_instance()
+        except ValueError:
+            try:
+                from config import app_config_store as _store
+                from pathlib import Path as _Path
+
+                cfg_path = _Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
+                service = WebhookConfigService.get_instance(
+                    file_path=cfg_path,
+                    external_store=_store,
+                )
+            except Exception:
+                service = None
+
+        if service is not None:
+            try:
+                service.reload()
+            except Exception:
+                pass
+            data = service.get_all_config()
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+
+    try:
+        from config import app_config_store as _store
+        from pathlib import Path as _Path
+
+        cfg_path = _Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
+        data = _store.get_config_json("webhook_config", file_fallback=cfg_path) or {}
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
 def _is_webhook_sending_enabled() -> bool:
     """Check if webhook sending is globally enabled.
     
@@ -68,23 +119,34 @@ def _is_webhook_sending_enabled() -> bool:
     Returns:
         bool: True if webhooks should be sent
     """
-    # Check basic webhook sending flag first
     try:
-        from config import app_config_store as _store
-        cfg_path = Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
-        data = _store.get_config_json("webhook_config", file_fallback=cfg_path) or {}
-        
-        # Check absence pause configuration
+        data = _get_webhook_config_dict() or {}
+
         absence_pause_enabled = data.get("absence_pause_enabled", False)
         if absence_pause_enabled:
             absence_pause_days = data.get("absence_pause_days", [])
             if isinstance(absence_pause_days, list) and absence_pause_days:
-                current_day = datetime.now(timezone.utc).astimezone().strftime('%A').lower()
-                normalized_days = [str(d).strip().lower() for d in absence_pause_days if isinstance(d, str)]
+                local_now = datetime.now(timezone.utc).astimezone()
+                weekday_idx: int | None = None
+                try:
+                    weekday_candidate = local_now.weekday()
+                    if isinstance(weekday_candidate, int):
+                        weekday_idx = weekday_candidate
+                except Exception:
+                    weekday_idx = None
+
+                if weekday_idx is not None and 0 <= weekday_idx <= 6:
+                    current_day = WEEKDAY_NAMES[weekday_idx]
+                else:
+                    current_day = local_now.strftime("%A").lower()
+                normalized_days = [
+                    str(d).strip().lower()
+                    for d in absence_pause_days
+                    if isinstance(d, str)
+                ]
                 if current_day in normalized_days:
                     return False
-        
-        # Check standard webhook_sending_enabled flag
+
         if isinstance(data, dict) and "webhook_sending_enabled" in data:
             return bool(data.get("webhook_sending_enabled"))
     except Exception:
@@ -105,14 +167,20 @@ def _load_webhook_global_time_window() -> tuple[str, str]:
         tuple[str, str]: (start_time_str, end_time_str) e.g. ('10h30', '19h00')
     """
     try:
-        from config import app_config_store as _store
-        cfg_path = Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
-        data = _store.get_config_json("webhook_config", file_fallback=cfg_path) or {}
+        data = _get_webhook_config_dict() or {}
         s = (data.get("webhook_time_start") or "").strip()
         e = (data.get("webhook_time_end") or "").strip()
         # If file provided any values, use them but allow ENV to fill missing sides
-        env_s = (os.environ.get("WEBHOOK_TIME_START") or "").strip()
-        env_e = (os.environ.get("WEBHOOK_TIME_END") or "").strip()
+        env_s = (
+            os.environ.get("WEBHOOKS_TIME_START")
+            or os.environ.get("WEBHOOK_TIME_START")
+            or ""
+        ).strip()
+        env_e = (
+            os.environ.get("WEBHOOKS_TIME_END")
+            or os.environ.get("WEBHOOK_TIME_END")
+            or ""
+        ).strip()
         if s or e:
             s_eff = s or env_s
             e_eff = e or env_e
@@ -121,8 +189,16 @@ def _load_webhook_global_time_window() -> tuple[str, str]:
         pass
     # ENV fallbacks
     try:
-        s = (os.environ.get("WEBHOOK_TIME_START") or "").strip()
-        e = (os.environ.get("WEBHOOK_TIME_END") or "").strip()
+        s = (
+            os.environ.get("WEBHOOKS_TIME_START")
+            or os.environ.get("WEBHOOK_TIME_START")
+            or ""
+        ).strip()
+        e = (
+            os.environ.get("WEBHOOKS_TIME_END")
+            or os.environ.get("WEBHOOK_TIME_END")
+            or ""
+        ).strip()
         return s, e
     except Exception:
         return "", ""
@@ -275,17 +351,28 @@ def check_new_emails_and_trigger_webhook() -> int:
             pass
         return 0
 
-    # Optional legacy delegation (used by some tests). If present and callable, use it.
     try:
-        legacy_fn = getattr(ar, '_legacy_check_new_emails_and_trigger_webhook', None)
-        if callable(legacy_fn):
-            res = legacy_fn()
-            try:
-                return int(res) if res is not None else 0
-            except Exception:
-                return 0
+        allow_legacy = os.environ.get("ORCHESTRATOR_ALLOW_LEGACY_DELEGATION", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        if allow_legacy:
+            legacy_fn = getattr(ar, "_legacy_check_new_emails_and_trigger_webhook", None)
+            if callable(legacy_fn):
+                try:
+                    _app.logger.info(
+                        "ORCHESTRATOR: legacy delegation enabled; calling app_render._legacy_check_new_emails_and_trigger_webhook"
+                    )
+                except Exception:
+                    pass
+                res = legacy_fn()
+                try:
+                    return int(res) if res is not None else 0
+                except Exception:
+                    return 0
     except Exception:
-        # fall through to native flow
         pass
 
     logger = getattr(_app, 'logger', None)

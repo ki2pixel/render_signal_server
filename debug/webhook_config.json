@@ -1,17 +1,19 @@
 {
   "example": true,
-  "_updated_at": "2025-11-21T16:38:43+00:00",
-  "presence_flag": false,
+  "_updated_at": "2025-11-28T22:37:26+00:00",
+  "presence_flag": true,
   "webhook_ssl_verify": true,
   "webhook_sending_enabled": true,
-  "webhook_time_start": "09h30",
+  "webhook_time_start": "10h30",
   "webhook_time_end": "19h00",
-  "global_time_start": "09h30",
+  "global_time_start": "10h30",
   "global_time_end": "19h00",
   "absence_pause_enabled": true,
   "absence_pause_days": [
     "monday",
     "friday",
     "wednesday"
-  ]
+  ],
+  "webhook_url": "https://new.example.com/webhook",
+  "polling_enabled": false
 }

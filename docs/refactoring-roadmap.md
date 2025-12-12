@@ -236,7 +236,7 @@ cp app_render.py app_render_backup_step4d.py
 - Tous les tests passent: 58/58 ✅
 
 #### Notes
-- La logique legacy `_legacy_check_new_emails_and_trigger_webhook()` subsiste pour compat, mais l'entrée active passe par l'orchestrateur.
+- La logique legacy `_legacy_check_new_emails_and_trigger_webhook()` peut subsister pour compat, mais elle est désactivée par défaut côté orchestrateur. Pour l'autoriser explicitement (si présent en production), définir `ORCHESTRATOR_ALLOW_LEGACY_DELEGATION=true`.
 - Nettoyage effectué: suppression des helpers locaux d'extraction de liens dans `app_render.py`, imports inutilisés nettoyés.
 
 ---

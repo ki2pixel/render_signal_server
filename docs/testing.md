@@ -239,6 +239,7 @@ def test_normalize_text():
   - `DeduplicationService` : Prévention des doublons
   - `AuthService` : Authentification et autorisation
   - `PollingConfigService` : Configuration du polling
+  - `tests/test_absence_pause.py` : vérifie la normalisation des jours (`strip().lower()`) et la garde de cycle (`ABSENCE_PAUSE`), garantissant que le poller s'arrête avant toute connexion IMAP les jours d'absence.
 
 ### 🔄 Tests d'Intégration (`@pytest.mark.integration`)
 

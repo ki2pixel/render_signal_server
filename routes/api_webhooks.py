@@ -140,7 +140,7 @@ def update_webhook_config():
         
         # Valider les jours
         valid_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-        normalized_days = [str(d).lower() for d in days if isinstance(d, str)]
+        normalized_days = [str(d).strip().lower() for d in days if isinstance(d, str)]
         invalid_days = [d for d in normalized_days if d not in valid_days]
         
         if invalid_days:

@@ -75,7 +75,7 @@ class TestAbsencePauseAPI:
         """Test that day names are normalized to lowercase."""
         payload = {
             'absence_pause_enabled': True,
-            'absence_pause_days': ['Monday', 'FRIDAY', 'Wednesday']
+            'absence_pause_days': [' Monday ', 'FRIDAY', 'Wednesday  ']
         }
         response = authenticated_flask_client.post('/api/webhooks/config',
                               json=payload,
@@ -92,6 +92,9 @@ class TestAbsencePauseAPI:
         # Ensure no uppercase
         assert 'Monday' not in days
         assert 'FRIDAY' not in days
+        # Ensure no whitespace variants
+        assert ' Monday ' not in days
+        assert 'Wednesday  ' not in days
 
 
 class TestAbsencePauseService:
@@ -252,7 +255,7 @@ class TestAbsencePauseOrchestrator:
 
         # Ensure orchestrator will import our stub 'app_render'
         import sys
-        sys.modules['app_render'] = stub_ar
+        monkeypatch.setitem(sys.modules, 'app_render', stub_ar)
 
         # Force _is_webhook_sending_enabled to return False (absence active)
         from email_processing import orchestrator as orch

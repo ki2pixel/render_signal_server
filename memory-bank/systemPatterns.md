@@ -2,6 +2,24 @@
 
 Ce document recense les patrons de conception et les standards récurrents dans le projet.
 
+## Gestion des erreurs et initialisation dans l'interface utilisateur (2025-11-30)
+
+- **Prévention de la double initialisation** : 
+  - Utilisation d'un flag global `window.__tabsInitialized` pour s'assurer que les composants UI ne sont initialisés qu'une seule fois
+  - Vérification systématique de ce flag avant toute initialisation de composant
+  - Journalisation des tentatives d'initialisation multiples pour le débogage
+
+- **Gestion robuste des erreurs API** :
+  - Vérification systématique de `res.ok` avant d'appeler `res.json()`
+  - Gestion explicite des réponses non-200 avec des messages d'erreur utilisateur clairs
+  - Journalisation détaillée des erreurs côté client pour le débogage
+  - Gestion des erreurs de parsing JSON avec des blocs try/catch
+
+- **Mise en cache intelligente** :
+  - Forçage du rechargement du cache côté serveur avant les requêtes GET critiques
+  - Mise à jour optimiste de l'interface utilisateur lors des opérations POST
+  - Synchronisation bidirectionnelle entre le cache et l'interface utilisateur
+
 ## Gestion des fenêtres horaires et traitement des e-mails
 
 - **Fenêtres horaires configurables** : Le système utilise des fenêtres horaires configurables pour le traitement des e-mails et l'envoi de webhooks. Ces fenêtres sont définies par des variables d'environnement (`WEBHOOK_TIME_START`, `WEBHOOK_TIME_END`) et peuvent être modifiées via l'interface d'administration.

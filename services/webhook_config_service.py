@@ -184,7 +184,7 @@ class WebhookConfigService:
         """
         # Valider les jours
         valid_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-        normalized_days = [d.lower() for d in days if isinstance(d, str)]
+        normalized_days = [str(d).strip().lower() for d in days if isinstance(d, str)]
         
         invalid_days = [d for d in normalized_days if d not in valid_days]
         if invalid_days:
@@ -343,6 +343,37 @@ class WebhookConfigService:
             Tuple (success, message)
         """
         config = self._load_from_disk()
+
+        if "absence_pause_enabled" in updates:
+            updates["absence_pause_enabled"] = bool(updates.get("absence_pause_enabled"))
+
+        if "absence_pause_days" in updates:
+            days_val = updates.get("absence_pause_days")
+            if not isinstance(days_val, list):
+                return False, "absence_pause_days invalide: doit être une liste"
+            valid_days = [
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday",
+                "sunday",
+            ]
+            normalized_days = [
+                str(d).strip().lower() for d in days_val if isinstance(d, str)
+            ]
+            invalid_days = [d for d in normalized_days if d not in valid_days]
+            if invalid_days:
+                return False, f"absence_pause_days invalide: {', '.join(invalid_days)}"
+            updates["absence_pause_days"] = normalized_days
+
+        enabled_effective = bool(
+            updates.get("absence_pause_enabled", config.get("absence_pause_enabled", False))
+        )
+        days_effective = updates.get("absence_pause_days", config.get("absence_pause_days", []))
+        if enabled_effective and (not isinstance(days_effective, list) or not days_effective):
+            return False, "absence_pause_enabled=true requiert au moins un jour dans absence_pause_days"
         
         # Valider les URLs si présentes
         for key in ["webhook_url"]:

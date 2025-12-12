@@ -39,6 +39,9 @@ Lorsque l'absence globale est activée pour un jour donné :
 - Tous les types sont bloqués : urgents et non urgents
 - Le blocage s'applique pour toute la journée (00h00 à 23h59)
 - Les exceptions par détecteur (comme le bypass DESABO non urgent) sont **ignorées**
+- Le poller arrête désormais le cycle **avant même d'ouvrir la connexion IMAP** :
+  - `_is_webhook_sending_enabled()` vérifie la configuration, normalise les jours (`strip().lower()`) et retourne `False` si aujourd'hui est listé
+  - `check_new_emails_and_trigger_webhook()` journalise `"ABSENCE_PAUSE: Global absence active for today (%s) — skipping all webhook sends this cycle."` puis retourne immédiatement `0`
 
 #### Configuration
 
@@ -63,7 +66,7 @@ curl -X POST "http://localhost:5000/api/webhooks/config" \
 #### Validation
 
 - Au moins un jour doit être sélectionné si le toggle est activé
-- Les noms de jours sont normalisés en minuscules
+- Les noms de jours sont normalisés (trim + lowercase) pour éviter toute dépendance à la casse ou aux espaces parasites
 - Jours valides : `monday`, `tuesday`, `wednesday`, `thursday`, `friday`, `saturday`, `sunday`
 - Toute tentative d'activer l'absence sans sélectionner de jour sera rejetée (erreur 400)
 
@@ -92,6 +95,9 @@ L'absence globale a la **plus haute priorité** :
   - Format : `HHhMM` (ex: "09h30", "17h00")
   - Désactivable via l'interface ou en définissant `start_hour` et `end_hour` à `null` via l'API
   - Rechargée dynamiquement sans redémarrage du serveur
+  - Variables d'environnement (fallback):
+    - `WEBHOOKS_TIME_START`, `WEBHOOKS_TIME_END` : noms canoniques.
+    - `WEBHOOK_TIME_START`, `WEBHOOK_TIME_END` : rétrocompatibilité (dépréciés) ; utilisés si les variables canoniques ne sont pas définies.
 
 #### Exception par détecteur (hors fenêtre)
 
@@ -121,7 +127,7 @@ Implémentation complète : voir `check_new_emails_and_trigger_webhook()` dans `
 
 Pour assurer la rétrocompatibilité :
 - Les champs hérités (`dropbox_urls`, `dropbox_first_url`) sont maintenus dans le payload
-- Les anciens noms de variables d'environnement sont toujours supportés mais dépréciés
+- Les anciens noms de variables d'environnement sont toujours supportés mais dépréciés (ex: `WEBHOOK_TIME_START/WEBHOOK_TIME_END` → `WEBHOOKS_TIME_START/WEBHOOKS_TIME_END`)
 - Les anciens endpoints Make.com ont été supprimés et ne sont plus disponibles
 
 ### Miroir des Médias

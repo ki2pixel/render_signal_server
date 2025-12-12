@@ -2,6 +2,13 @@
 
 ## Terminé
 
+-   [2025-11-30 01:43] **Amélioration de la robustesse de l'interface webhooks**
+    - Correction des problèmes d'affichage des données obsolètes dans la section webhooks
+    - Ajout de gardes contre la double initialisation des composants UI
+    - Amélioration de la gestion des erreurs dans les appels API (vérification res.ok)
+    - Nettoyage des erreurs de console (503, JSON parsing)
+    - Mise à jour forcée du cache côté serveur avant les requêtes GET
+
 -   [2025-11-24 00:43] **Application stricte de l'Absence Globale + Tests**
     - Ajout d'une garde de cycle dans `email_processing/orchestrator.py` pour stopper le polling les jours d'absence.
     - Normalisation robuste des jours (`strip().lower()`) dans `_is_webhook_sending_enabled()`.

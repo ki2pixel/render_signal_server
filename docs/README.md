@@ -9,25 +9,35 @@ La documentation est organisée pour répondre aux besoins des développeurs, op
 ### Architecture et Conception
 - `architecture.md` - Vue d'ensemble de l'architecture orientée services
 - `api.md` - Documentation complète de l'API REST
-- `database.md` - Schéma de la base de données et migrations
-- `testing.md` - Stratégie de tests et couverture de code
+- `ui.md` - Détails du Dashboard Webhooks (frontend)
 
-### Développement
-- `installation.md` - Guide d'installation et configuration initiale
-- `development.md` - Configuration de l'environnement de développement
-- `coding_standards.md` - Standards de codage et bonnes pratiques
-- `debugging.md` - Techniques de débogage et outils
+### Traitement des e-mails & Webhooks
+- `email_polling.md` - Polling IMAP et orchestrateur de traitement
+- `webhooks.md` - Flux webhooks sortants, Absence Globale et fenêtres horaires
 
 ### Déploiement et Opérations
-- `deployment.md` - Guide de déploiement (Gunicorn, Nginx, Docker)
-- `configuration.md` - Référence des paramètres de configuration
-- `monitoring.md` - Surveillance et métriques
-- `maintenance.md` - Tâches de maintenance courantes
+- `installation.md` - Guide d'installation et configuration initiale
+- `deploiement.md` - Déploiement Flask (Gunicorn/Nginx) et couche PHP associée
+- `operational-guide.md` - Comportement Render Free, Gunicorn et health checks
+- `checklist_production.md` - Check-list de mise en production
+- `depannage.md` - Guide de dépannage (problèmes courants)
+- `securite.md` - Principes de sécurité applicative
+- `API_Render_trigger_deploy.md` - Détails de l'API Render pour le déclenchement des déploiements
 
-### Référence
-- `api_reference/` - Documentation technique détaillée de l'API
-- `changelog.md` - Historique des changements
-- `glossary.md` - Glossaire des termes techniques
+### Configuration & Stockage
+- `configuration.md` - Référence des paramètres de configuration et variables d'environnement
+- `storage.md` - Backend JSON externe, fallback fichiers, artefacts Gmail OAuth
+- `gmail-oauth-setup.md` - Configuration détaillée de l'authentification Gmail OAuth
+
+### Tests & Qualité
+- `testing.md` - Stratégie de tests, exécution et couverture de code
+- `../TESTING_STATUS.md` - Snapshot historique de la suite de tests (2025-10-13)
+
+### Refactoring & Historique
+- `refactoring-roadmap.md` - Roadmap de refactoring (historique)
+- `refactoring-conformity-report.md` - Rapport de conformité finale (historique)
+- `refactoring/` - Détails par phase et exemples d'utilisation des services
+- `../ACHIEVEMENT_100_PERCENT.md` - Badge "100% refactoring" (historique)
 
 ## 🚀 Aperçu rapide
 
@@ -145,7 +155,6 @@ python debug/simulate_webhooks.py
 - **Types d'Emails**
   - Média Solution
   - Désabonnement (DESABO)
-  - Présence
   - Autres types personnalisés
 
 - **Cas d'Erreur**

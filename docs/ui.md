@@ -74,6 +74,7 @@ Permet de configurer l'URL de webhook principale et les options associées :
 - **Webhook personnalisé (obligatoire)**: `#webhookUrl` (WEBHOOK_URL)
 - **Envoi des webhooks** (activation/désactivation globale) : `#webhookSendingToggle` (WEBHOOK_SENDING_ENABLED)
 - **Vérification SSL** (active/désactive la vérification des certificats) : `#sslVerifyToggle` (WEBHOOK_SSL_VERIFY)
+- **Absence Globale (Stop Emails)** : toggle `#absencePauseToggle` + cases `#absencePauseDaysGroup`
 
 **Note** : Les webhooks spécifiques à Make.com (Recadrage, Autorépondeur, Présence) ont été dépréciés. Tous les flux passent désormais par l'URL de webhook principale configurée ci-dessus.
 
@@ -85,8 +86,15 @@ Permet de configurer l'URL de webhook principale et les options associées :
 - Les URLs sont masquées partiellement lors de l'affichage pour la sécurité
 - Seules les URLs complètes saisies sont envoyées au backend
 - Validation côté serveur (format HTTPS, normalisation des tokens Make.com)
+- Les jours sélectionnés pour l'absence sont normalisés côté serveur (`strip()` + `lower()`), et au moins un jour est requis pour activer la pause
 
 **Persistance**: `debug/webhook_config.json`
+
+#### Absence Globale (Stop Emails)
+
+- **Effet immédiat** : dès qu'un jour configuré correspond au jour courant, `check_new_emails_and_trigger_webhook()` loggue `ABSENCE_PAUSE` et termine le cycle avant toute connexion IMAP (aucun webhook envoyé).
+- **Validation UI** : l'interface empêche l'enregistrement si aucun jour n'est coché lorsque le toggle est actif (message d'erreur + accent orange).
+- **Synchronisation automatique** : rechargement des cases à cocher après sauvegarde, en cohérence avec la normalisation côté backend (jours toujours affichés en minuscules).
 
 ### 4. Historique des Webhooks
 

@@ -4,231 +4,235 @@ description:
 globs: 
 ---
 
-# Coding Standards
-
-Ce document définit les règles de développement pour le projet `render_signal_server`. Il sert de référence pour assurer la qualité, la sécurité, la maintenabilité et la cohérence du code entre les contributeurs.
-
-Sommaire
-- Principes directeurs
-- Portée et périmètre
-- Langages, style et formatage
-- Nommage, commentaires et documentation
-- Gestion des dépendances et configuration
-- Sécurité applicative
-- Gestion des erreurs, logs et observabilité
-- Tests (unitaires, d’intégration, end-to-end)
-- Performance et optimisation
-- Git, branches et messages de commit
-- Revue de code (Code Review)
-- Front-end (JS/HTML/CSS)
-- Backend Python
-- PHP (dossier deployment/)
-- Base de données et migrations
-- CI/CD (recommandations)
-- Checklist PR
-
+# Coding Standards – Proposition Temporaire pour render_signal_server
 
 ## Principes directeurs
-- Lisibilité > concision. Préférer un code expressif et simple à comprendre.
-- Commenter le “pourquoi” lorsque la logique n’est pas évidente.
-- Nommage explicite et cohérent.
-- Sécurité by default: validation et sanitation des entrées, gestion stricte des secrets.
-- DRY (Don’t Repeat Yourself): factoriser les logiques communes.
-- Tests pertinents et reproductibles.
-- Configuration par variables d’environnement.
-- Documentation à jour et proche du code.
 
-
-## Portée et périmètre
-Le dépôt comprend principalement:
-- Backend Python: serveur Flask et modules applicatifs.
-- Front-end statique: `static/` (JS/CSS/HTML) et pages `login.html`, `dashboard.html`.
-- Déploiement PHP (legacy / hosting): `deployment/public_html/` et `deployment/config/`.
-- Documentation: `docs/`.
-
-Organisation modulaire côté backend:
-- `app_render.py` : point d’entrée / orchestrateur (initialisation, enregistrement des blueprints, démarrage des tâches de fond)
-- `routes/` : blueprints Flask (API et UI)
-  - `api_webhooks.py`, `api_polling.py`, `api_processing.py`, `api_test.py`, `api_logs.py`, `dashboard.py`, `health.py`
-- `email_processing/` : pipeline de traitement des e-mails
-  - `imap_client.py`, `pattern_matching.py`, `webhook_sender.py`, `orchestrator.py`, `link_extraction.py`, `payloads.py`
-- `background/` : tâches de fond
-  - `polling_thread.py` : boucle de polling paramétrable (injection de dépendances)
-- `config/` : configuration centralisée
-  - `settings.py`, `polling_config.py`, `webhook_time_window.py`
-- `auth/` : authentification & helpers
-  - `user.py`, `helpers.py`
-- `utils/` : fonctions utilitaires
-  - `time_helpers.py`, `text_helpers.py`, `validators.py`
-- `app_logging/` : journalisation applicative
-  - `webhook_logger.py`
-- `preferences/` : préférences de traitement
-  - `processing_prefs.py`
-- `deduplication/` : dédoublonnage
-  - `redis_client.py`
-
-
-## Langages, style et formatage
-- Python
-  - Respecter PEP 8.
-  - Formatage automatique avec Black (ligne max 88) et import sorting via isort.
-  - Lint: flake8 ou ruff.
-- JavaScript
-  - ES2019+ (au minimum). Formatage via Prettier.
-  - Lint via ESLint (airbnb-base ou eslint:recommended).
-- PHP
-  - PSR-12 pour le style.
-- Fichiers
-  - Encodage UTF-8, fin de ligne LF.
-  - Pas d’espaces en fin de ligne; une nouvelle ligne finale par fichier.
-
-
-## Nommage, commentaires et documentation
-- Nommage
-  - Variables/fonctions: snake_case en Python, camelCase en JS, camelCase/PascalCase selon conventions PHP/PSR.
-  - Classes: PascalCase.
-  - Noms explicites sans abréviations cryptiques.
-- Commentaires
-  - Expliquer l’intention/le pourquoi. Éviter de paraphraser le code.
-  - Ajouter des commentaires pour les cas limites, compromis et choix techniques.
-- Docstrings et documentation
-  - Python: docstrings style Google ou reST pour fonctions/méthodes publiques.
-  - Mettre à jour `docs/` à chaque évolution significative (API, sécurité, déploiement).
-
-
-## Gestion des dépendances et configuration
-- Python
-  - Lister dans `requirements.txt` avec versions figées lorsque c’est possible (ex: `package==x.y.z`).
-  - Éviter les dépendances non nécessaires; justifier tout ajout dans la PR.
-- JavaScript
-  - Si un gestionnaire de paquets est introduit (npm/pnpm/yarn), verrouiller via lockfile.
-- Configuration
-  - Utiliser des variables d’environnement (ENV) pour toute configuration sensible (URL DB, clés API, secrets…).
-  - Ne jamais committer de secrets. Utiliser des placeholders et documenter les variables requises dans `docs/`.
-  - Optionnel: charger `.env` en dev via `python-dotenv` (ne pas committer le fichier).
-
-
-## Sécurité applicative
-- Entrées utilisateur
-  - Valider et nettoyer toutes les entrées (serveur et client). 
-  - Éviter l’injection (SQL, command injection, XSS). Utiliser des requêtes paramétrées et échapper correctement les sorties.
-- Authentification & Autorisation
-  - Ne pas stocker de mots de passe en clair. Utiliser des hash sûrs (ex: bcrypt/argon2) côté service concerné.
-  - Vérifier systématiquement les droits d’accès côté serveur.
-- Secrets et clés API
-  - Jamais en clair dans le code, ni dans les commits. Stockage via variables d’environnement.
-- Entêtes et politiques de sécurité
-  - Fournir des en-têtes HTTP de sécurité (CSP, HSTS, X-Content-Type-Options, etc.) si le serveur HTTP est géré ici.
-- Dépendances
-  - Vérifier et corriger les vulnérabilités (pip audit, npm audit, dependabot si CI). 
-- Logs
-  - Ne jamais logger de secrets, tokens, ou données personnelles sensibles.
-
-
-## Gestion des erreurs, logs et observabilité
-- Erreurs
-  - Lever des exceptions explicites et capturer aux frontières (contrôleurs, handlers) pour renvoyer des réponses propres.
-- Journalisation
-  - Utiliser `app_logging/webhook_logger.py` pour les logs spécifiques webhooks (avec fallback Redis/fichier).
-  - Ne jamais logger de secrets, tokens ou données personnelles sensibles.
-- Métrologie
-  - Prévoir des métriques clés et health checks si nécessaire (exposition /health).
-
-
-## Tests (unitaires, d’intégration, end-to-end)
-- Testabilité
-  - La modularisation (séparation en `email_processing/`, `routes/`, `background/`, etc.) vise à faciliter les tests unitaires isolés.
-  - Injecter les dépendances (clients IMAP, logger, storage) pour pouvoir stubber/mocker facilement.
-  - Viser une couverture élevée sur les modules critiques et des tests d’intégration pour les flux I/O (IMAP, webhooks, Redis).
-
-
-## Performance et optimisation
-- Visibilité
-  - Ajouter des métriques/chronos autour des sections coûteuses (si besoin).
-- Bonnes pratiques
-  - Éviter les N+1 IO/DB, privilégier les batchs et caches contrôlés.
-  - Ne pas optimiser prématurément; profiler d’abord (e.g. cProfile) si un goulot est identifié.
-
-
-## Git, branches et messages de commit
-- Stratégie
-  - Tronc principal: `main`. Branches par feature/fix: `feature/<slug>` ou `fix/<slug>`.
-- Commits
-  - Conventionnel (Conventional Commits) recommandé: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`…
-  - Messages clairs, au présent, décrivant le “pourquoi” si utile.
-- Pull Requests
-  - Petites et ciblées. Description claire, captures/logs si pertinent. Lier les issues.
-
-
-## Revue de code (Code Review)
-- Objectifs
-  - Qualité, sécurité, lisibilité, conformité aux standards.
-- Attentes
-  - Le demandeur répond aux commentaires, met à jour la PR et coche la checklist.
-  - Le relecteur vérifie les points critiques (sécurité, erreurs, tests, perfs).
-
-
-## Front-end (JS/HTML/CSS)
-- JS
-  - Modules organisés dans `static/`. Pas de logique métier complexe en global scope.
-  - Préférer `const`/`let` à `var`. Éviter les effets de bord.
-  - Sanitize/escape avant d’injecter dans le DOM pour prévenir les XSS.
-- HTML/CSS
-  - Sémantique HTML. Eviter l’inline JS/CSS. 
-  - Accessibilité: attributs alt/aria, contrastes suffisants.
-
-
-## Backend Python
-- Structure
-  - Architecture modulaire guidée par le principe SRP (Single Responsibility Principle).
-  - `app_render.py` joue le rôle d’orchestrateur: il enregistre les blueprints de `routes/` et initialise les composants (tâches de fond, configuration, logging). Il n’embarque plus la logique métier complète, qui est déléguée aux modules dédiés.
-- Blueprints Flask (`routes/`)
-  - Regrouper les endpoints par domaine fonctionnel.
-  - Préférer un `__init__.py` exportant explicitement les blueprints pour un import clair côté `app_render.py`.
-- Injection de dépendances
-  - Les boucles/tâches côté `background/` et `email_processing/` doivent accepter leurs dépendances (logger, clients, fonctions d’E/S) en paramètres pour faciliter les tests.
-  - Éviter l’usage non contrôlé de globaux; documenter tout global nécessaire.
-- Imports et dépendances circulaires
-  - Privilégier des imports locaux (au sein des fonctions) lorsque nécessaire pour briser les cycles.
-  - Centraliser la configuration dans `config/` et éviter la duplication de constantes.
-- Organisation des modules
-  - Fournir des points d’entrée publics stables (`orchestrator.check_new_emails_and_trigger_webhook()`, etc.).
-  - Séparer la détection de patterns, l’extraction de liens, la construction de payloads et l’envoi de webhooks en modules dédiés.
-
-
-## PHP (dossier `deployment/`)
-- Sécurité
-  - Utiliser `filter_input`/`filter_var` pour valider les entrées. Échapper les sorties (HTML entities) pour éviter XSS.
-  - Accès DB via requêtes préparées (PDO) et gestion d’erreurs appropriée.
-- Organisation
-  - Respect de PSR-12. Séparer logique, vue et configuration.
-
-
-## Base de données et migrations
-- Schéma
-  - Les fichiers SQL sont dans `deployment/database/`. 
-  - Éviter les changements manuels non scriptés en prod. Ajouter des scripts/migrations versionnés.
-- Accès
-  - Toujours utiliser des requêtes paramétrées. Jamais de concaténation directe d’inputs.
-
-
-## CI/CD (recommandations)
-- Intégration continue
-  - Exécuter lint + tests (unit + integration) sur chaque PR.
-  - Vérifier la sécurité des dépendances.
-- Déploiement
-  - Utiliser des variables d’environnement et secrets du système de CI (jamais commit).
-
-
-## Checklist PR
-Avant de demander une revue:
-- [ ] Code formaté (Black/Prettier) et linté (ruff/flake8, ESLint, PSR-12).
-- [ ] Tests ajoutés/ajustés et verts localement.
-- [ ] Sécurité: entrées validées, sorties échappées, aucun secret dans le code.
-- [ ] Logs propres, pas de données sensibles.
-- [ ] Documentation mise à jour (`docs/`), y compris variables d’environnement.
-- [ ] Commit messages clairs (Conventional Commits) et PR concise.
-
+- Lisibilité avant concision. Le code doit être simple à comprendre pour un autre développeur.
+- Commenter le pourquoi lorsqu’une logique n’est pas évidente (décision métier, compromis techniques), pas le comment évident.
+- Nommage explicite et cohérent; éviter les abréviations cryptiques.
+- Sécurité par défaut: validation et sanitation des entrées, gestion stricte des secrets.
+- DRY: factoriser les logiques communes (services, helpers, utilitaires).
+- Tests pertinents, reproductibles et intégrés au flux de travail (voir docs/testing.md).
+- Configuration pilotée par variables d’environnement et stockage de config dédié.
+- Documentation à jour et proche du code (docs/, memory-bank, commentaires ciblés).
 
 ---
-Dernière mise à jour: 2025-10-12
+
+## Portée et périmètre
+
+Le dépôt comprend principalement:
+
+- Backend Python: serveur Flask, services applicatifs et modules métier.
+- Front-end statique: `static/` et `dashboard.html` (Dashboard Webhooks).
+- Services orientés métier/configuration dans `services/`.
+- Traitement des e-mails dans `email_processing/`.
+- Tâches de fond dans `background/`.
+- Configuration centralisée dans `config/`.
+- Authentification dans `auth/`.
+- Déduplication dans `deduplication/`.
+- Journalisation dans `app_logging/`.
+- Préférences de traitement dans `preferences/`.
+- Déploiement / intégrations PHP dans `deployment/` (legacy mais maintenu).
+- Documentation dans `docs/` et contexte dans `memory-bank/`.
+
+Organisation modulaire côté backend (vue synthétique):
+
+- `app_render.py`
+  - Point d’entrée Flask / orchestrateur.
+  - Initialise les services principaux.
+  - Enregistre les blueprints `routes/`.
+  - Configure logging, CORS, tâches de fond et intégrations externes.
+
+- `routes/` (blueprints Flask)
+  - `api_webhooks.py` (config webhooks via WebhookConfigService).
+  - `api_config.py` (runtime flags, polling config via services).
+  - `api_admin.py` (tâches d’administration, check emails, redémarrage, déploiement Render).
+  - `api_processing.py` (préférences de traitement, URLs legacy supportées).
+  - `api_logs.py` (logs webhooks).
+  - `api_polling.py`, `api_test.py`, `api_make.py`, `api_utility.py`, `dashboard.py`, `health.py`.
+
+- `services/` (architecture orientée services)
+  - `ConfigService` (config centralisée, accès typé à config.settings, secrets, Render, auth dashboard, dédup).
+  - `RuntimeFlagsService` (Singleton, `runtime_flags.json`, cache TTL, accès et mise à jour des flags runtime).
+  - `WebhookConfigService` (Singleton, config webhooks, validation stricte, normalisation Make, cache + store externe, Absence Globale).
+  - `AuthService` (authentification dashboard et API, intégration Flask-Login, décorateurs `api_key_required` et similaires).
+  - `PollingConfigService` (exposé depuis `config/polling_config.py`, accès centralisé à la config de polling IMAP et timezone).
+  - `DeduplicationService` (dédup email ID et subject groups, Redis + fallback mémoire, clés issues de ConfigService).
+
+- `email_processing/`
+  - `orchestrator.py` (cycle de polling, application des règles métier, Absence Globale, fenêtres horaires, détecteurs, envoi de webhooks).
+  - `imap_client.py`, `pattern_matching.py`, `link_extraction.py`, `payloads.py`, `webhook_sender.py`.
+
+- `background/`
+  - `polling_thread.py` (boucle générique de polling IMAP avec dépendances injectées).
+  - `lock.py` (verrou singleton inter-processus).
+
+- `docs/`
+  - Référentiel de spécification (architecture, API, configuration, tests, sécurité, webhooks, stockage, etc.).
+
+---
+
+## Langages, style et formatage
+
+- Python
+  - Respect strict de PEP 8.
+  - Formatage automatique avec Black (ligne max 88) et tri des imports avec isort.
+  - Lint via flake8 ou ruff (idéalement intégré en CI).
+
+- JavaScript
+  - ES2019 minimum.
+  - Formatage via Prettier.
+  - Lint via ESLint (configuration airbnb-base ou eslint:recommended).
+
+- PHP (deployment)
+  - Respect de PSR-12.
+
+- Fichiers
+  - Encodage UTF-8, fins de ligne LF.
+  - Aucune espace en fin de ligne; un retour à la ligne final par fichier.
+
+---
+
+## Nommage, commentaires et documentation
+
+- Nommage
+  - Python: snake_case pour fonctions/variables, PascalCase pour classes.
+  - JavaScript: camelCase pour fonctions/variables, PascalCase pour classes.
+  - PHP: conventions PSR (camelCase/PascalCase selon contexte).
+  - Noms explicites décrivant l’intention (ex: email_config_valid, deduplication_service, absence_pause_enabled).
+
+- Commentaires
+  - Expliquer l’intention, les cas limites et les compromis.
+  - Éviter de commenter le code évident ou paraphraser les signatures.
+  - Documenter les décisions non triviales avec un renvoi éventuel vers `memory-bank/decisionLog.md`.
+
+- Docstrings et documentation
+  - Docstrings Python pour fonctions et classes publiques (style Google ou reST), en particulier dans `services/`, `email_processing/`, `background/`.
+  - Documentation fonctionnelle et opérationnelle dans `docs/` (architecture, API, configuration, sécurité, tests, webhooks, etc.).
+  - Tenir synchronisés: code, docs et memory-bank (productContext, decisionLog, progress, systemPatterns).
+
+---
+
+## Gestion des dépendances et configuration
+
+- Python
+  - Lister les dépendances dans `requirements.txt` (avec versions figées quand c’est pertinent) et `requirements-dev.txt` pour les outils de dev/test.
+  - Limiter l’ajout de packages; toute nouvelle dépendance doit être justifiée et documentée (impact sécurité et maintenance).
+
+- JavaScript
+  - Si un gestionnaire de paquets est utilisé (npm/pnpm/yarn), conserver un lockfile et configurer des scripts cohérents (lint, build, tests front si introduits).
+
+- Configuration
+  - Toute configuration sensible (secrets, tokens, URL externes, identifiants) provient de variables d’environnement.
+  - Les valeurs de référence présentes dans le code (prefixe REF) ne doivent pas être utilisées en production.
+  - Utiliser les services et helpers dédiés pour la lecture de configuration:
+    - `ConfigService` pour la plupart des accès config, y compris credentials dashboard, tokens API, clés Render.
+    - `RuntimeFlagsService` pour les flags de débogage ou de comportement runtime.
+    - `WebhookConfigService` pour la configuration webhook (URL, Absence Globale, etc.).
+    - `PollingConfigService` pour la configuration polling IMAP.
+  - Ne pas accéder directement aux fichiers JSON dans `debug/` depuis les routes; passer par les services ou helpers `config/app_config_store.py`.
+
+---
+
+## Sécurité applicative
+
+- Entrées utilisateur et API
+  - Valider et nettoyer systématiquement toutes les entrées côté serveur (Flask, PHP) et, si nécessaire, côté client.
+  - Éviter les injections (SQL, commande, XSS) via requêtes paramétrées, échappement correct des données affichées et contrôle strict des chemins de fichiers.
+
+- Authentification et autorisation
+  - Utiliser Flask-Login pour l’authentification UI (`dashboard.py`), via `AuthService.init_flask_login`.
+  - Protéger les endpoints sensibles avec `@login_required` et/ou des décorateurs basés sur `AuthService` (par exemple `api_key_required`, `test_api_key_required`).
+  - Ne jamais stocker de mots de passe en clair; les identifiants dashboard sont fournis via ENV.
+
+- Secrets et clés
+  - Ne jamais commit de secrets ou tokens.
+  - `FLASK_SECRET_KEY` doit être défini en production et suffisamment robuste.
+  - Les clés API (Render, Make, Gmail, etc.) doivent être gérées via ENV côté Flask ou PHP.
+
+- Webhooks
+  - Pour les appels sortants, activer la vérification SSL en production (certificats valides); la désactivation éventuelle (mode legacy/test) doit être explicitement loggée et documentée.
+  - Toute future exposition de webhooks entrants doit être protégée par tokens, HMAC ou IP allowlist, et validée en amont (voir docs/securite.md).
+
+- Redis
+  - Utiliser `REDIS_URL` avec mot de passe et TLS si possible.
+  - Ne pas exposer Redis publiquement.
+
+- Logs
+  - Ne pas logger de secrets, contenu d’email complet ni données très sensibles.
+  - Utiliser `app_logging/webhook_logger.py` pour la journalisation webhooks (avec fallback mémoire/fichier).
+
+---
+
+## Gestion des erreurs, logs et observabilité
+
+- Erreurs
+  - Lever des exceptions explicites dans les services et helpers, les attraper aux frontières (routes, tâches de fond) pour renvoyer des réponses propres.
+  - Ne pas masquer silencieusement les erreurs sans log; préférer des logs au moins au niveau warning.
+
+- Logs
+  - Centraliser la logique liée aux logs webhooks dans `app_logging/webhook_logger.py`.
+  - Conserver des logs structurés et contextualisés (ID email, détecteur, décision prise) sans contenu sensible.
+  - Respecter la configuration de niveau de log fournie par ENV (par exemple FLASK_LOG_LEVEL).
+
+- Observabilité
+  - Utiliser les handlers existants (heartbeat, SIGTERM) pour diagnostiquer les problèmes de threads de fond et redémarrages Render.
+  - Prévoir des logs clairs sur le démarrage/arrêt des tâches de fond (`background/polling_thread.py`, lock file, flags ENABLE_BACKGROUND_TASKS, DISABLE_BACKGROUND_TASKS).
+
+---
+
+## Tests (unitaires, intégration, end-to-end)
+
+Les règles détaillées de tests sont décrites dans `docs/testing.md`. Ce fichier fait foi pour:
+
+- La structure de la suite de tests.
+- Les marqueurs pytest (`unit`, `integration`, `e2e`, `redis`, `imap`, etc.).
+- Les objectifs de couverture et la configuration `.coveragerc`.
+
+Règles de haut niveau:
+
+- Pyramide de tests
+  - Majorité de tests unitaires (services, utils, helpers).
+  - Couverture significative par tests d’intégration (routes API, services ensemble).
+  - Tests E2E ciblés sur les flux critiques (polling complet, webhooks, absence globale, etc.).
+
+- Services
+  - `ConfigService`, `RuntimeFlagsService`, `WebhookConfigService`, `AuthService`, `PollingConfigService`, `DeduplicationService` doivent avoir des tests unitaires ciblés.
+  - Pour les Singletons, prévoir des helpers/fixtures pour réinitialiser l’instance (`reset_instance`) dans les tests.
+  - Tester les services aussi via les endpoints API correspondants (approche API-first) lorsque pertinent.
+
+- Traitement des e-mails
+  - Tester `email_processing/orchestrator.py` à la fois de manière unitaire (helpers) et par scénarios d’intégration/E2E.
+  - Couvrir les règles métier spécifiques (DESABO urgent vs non urgent, Absence Globale, fenêtres horaires, dédup, miroir média vers webhook custom).
+
+- Web UI
+  - Tester les comportements critiques de `static/dashboard.js` (au minimum via tests d’intégration côté Flask ou tests front si introduits).
+
+- CI
+  - L’exécution de pytest avec couverture est obligatoire en CI.
+  - Le seuil minimal de couverture et le mode de rapport sont définis dans `docs/testing.md` et `.coveragerc` (ne pas dupliquer ici les chiffres).
+
+---
+
+## Performance et optimisation
+
+- Ne pas optimiser prématurément; baser les optimisations sur des mesures (profilage, logs, métriques).
+- Éviter les boucles sur des volumes élevés avec I O bloquantes; préférer les batchs.
+- Privilégier l’usage de caches contrôlés pour les données consultées fréquemment (RuntimeFlagsService, WebhookConfigService).
+- Éviter les requêtes IMAP ou HTTP inutiles; respecter les règles de fenêtres horaires et de déduplication pour limiter la charge.
+
+---
+
+## Git, branches et messages de commit
+
+- Branches
+  - Branches par feature ou fix: `feature/<slug>` ou `fix/<slug>`.
+  - Utiliser des branches de courte durée, PRs ciblées.
+
+- Messages de commit
+  - Format recommandé type Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
+  - Messages au présent, concis et explicites; mentionner le pourquoi si utile.
+
+- Pull Requests
+  - Petites, ciblées, avec descr

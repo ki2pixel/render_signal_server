@@ -335,7 +335,10 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
 
 - `POST /api/webhooks/config` (protégé)
   - Met à jour la configuration des webhooks. Tous les champs sont optionnels et sont fusionnés avec la configuration courante.
-  - **Validation** : `webhook_url` doit être une URL **HTTPS** sinon la requête est rejetée (`400`). `absence_pause_days` doit être une liste de jours valides (monday, tuesday, wednesday, thursday, friday, saturday, sunday), et au moins un jour si `absence_pause_enabled` est `true`.
+  - **Validation** :
+    - `webhook_url` doit être une URL **HTTPS** sinon la requête est rejetée (`400`).
+    - `absence_pause_days` doit être une liste de jours valides (`monday` → `sunday`). Les valeurs sont normalisées côté serveur (`strip()` + `lower()`) avant comparaison;
+    - au moins un jour doit être présent si `absence_pause_enabled` est `true`, sinon la requête échoue (`400`).
   - Corps JSON :
     ```json
     {
@@ -353,6 +356,7 @@ Les endpoints suivants (utilisés par `dashboard.html`) sont désormais organis�
     - 400 : `{ "success": false, "message": "..." }` (erreur de validation)
     - 500 : `{ "success": false, "message": "..." }` (erreur serveur)
   - `webhook_sending_enabled` contrôle l'envoi global des webhooks personnalisés. S'il est positionné à `false`, le poller continue de traiter les emails mais n'enverra pas de requêtes HTTP sortantes tant que le flag n'est pas réactivé.
+  - Lorsque `absence_pause_enabled` est activé et que le jour courant est listé, `_is_webhook_sending_enabled()` retourne `false` et le poller sort immédiatement du cycle (log `ABSENCE_PAUSE`) sans ouvrir de connexion IMAP.
 
 ### Gestion des fenêtres horaires
 

@@ -1,7 +1,21 @@
 # Journal des Décisions (Chronologie Inversée)
 Ce document enregistre les décisions techniques et architecturales importantes prises au cours du projet.
 
-- **[2025-11-24 00:43:00] - Application stricte de l'Absence Globale (garde de cycle + normalisation)**
+- **[2025-11-30 01:43:00] - Amélioration de la robustesse de l'interface webhooks**
+  - **Décision** : Renforcer la gestion des erreurs et prévenir les problèmes d'interface dans la section webhooks du tableau de bord.
+  - **Changements clés** :
+    - Implémentation d'un garde contre la double initialisation dans `initTabs()` via `window.__tabsInitialized`
+    - Ajout de contrôles `res.ok` dans tous les appels `fetch()` pour éviter les erreurs de parsing JSON sur les réponses non-200
+    - Amélioration des messages d'erreur utilisateur pour les états d'erreur courants (503, etc.)
+    - Forçage du rechargement du cache côté serveur avant les requêtes GET pour éviter les données obsolètes
+  - **Raisons** : L'interface affichait parfois des données obsolètes et des erreurs 503 pouvaient provoquer des erreurs JavaScript.
+  - **Impacts** :
+    - Meilleure expérience utilisateur avec des retours d'erreur clairs
+    - Réduction du bruit dans la console du navigateur
+    - Évite les appels API en double
+    - Garantit que l'interface affiche toujours les données les plus récentes
+
+- **[2025-11-24 00:43:00] - Application stricte de l'Absence Globale (garde de cycle + normalisation)"
   - **Décision** : Faire appliquer l'Absence Globale dès le début du cycle de polling et renforcer la normalisation des jours configurés.
   - **Changements clés** :
     - `email_processing/orchestrator.py`

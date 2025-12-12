@@ -56,4 +56,4 @@
 - Simulation IMAP: placer un e-mail test avec expéditeur autorisé, sujet conforme, URL Dropbox.
 - Simulation sans réseau: utilisez `debug/simulate_webhooks.py` pour générer et inspecter les payloads sans IMAP ni appels HTTP réels.
   - Commande: `DISABLE_BACKGROUND_TASKS=true python debug/simulate_webhooks.py`
-  - Scénarios: Dropbox, non-Dropbox (FromSmash/SwissTransfer), Présence/Désabonnement (Make). Les POST sont mockés et imprimés.
+  - Scénarios: Dropbox, non-Dropbox (FromSmash/SwissTransfer), e-mails Media Solution / Désabonnement (DESABO) et autres types personnalisés. Les POST sont mockés et imprimés.

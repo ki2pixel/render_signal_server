@@ -1,6 +1,7 @@
 """
 Unit test: DESABO non-urgent before start -> payload webhooks_time_start equals configured start
 """
+import os
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -126,7 +127,11 @@ def test_desabo_before_window_sets_payload_start_to_configured_start(monkeypatch
     expected_store_start = (cfg.get('global_time_start') or cfg.get('webhook_time_start') or '').strip()
     # Also consider webhook_time_window active start
     expected_wtw_start = (wtw.get_time_window_info().get('start') or '').strip()
-    candidates = {s for s in [expected_store_start, expected_wtw_start] if s}
+    expected_env_start = (
+        (os.environ.get('WEBHOOKS_TIME_START') or '').strip()
+        or (os.environ.get('WEBHOOK_TIME_START') or '').strip()
+    )
+    candidates = {s for s in [expected_store_start, expected_wtw_start, expected_env_start] if s}
     if candidates:
         assert calls['payload_start'] in candidates
     else:

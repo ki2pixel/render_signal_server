@@ -2,6 +2,18 @@
 
 Cette application fournit une télécommande web sécurisée (Flask + Flask-Login) et un service de polling d'e-mails IMAP exécuté en tâche de fond.
 
+## Vue d'ensemble
+
+- **Backend orienté services** : les responsabilités de configuration, d'authentification, de flags runtime, de webhooks et de déduplication sont encapsulées dans des services dédiés (voir ci‑dessous et `services/`).
+- **Traitement des e‑mails** : orchestré par `email_processing/orchestrator.py` (polling IMAP, déduplication, détection des motifs, envoi des webhooks). Les détails métier sont approfondis dans `docs/email_polling.md` et `docs/webhooks.md`.
+- **Routes Flask** : organisées en blueprints dans `routes/` (API config, admin, logs, webhooks, test, utilitaires, dashboard, health), consommant directement les services.
+- **Configuration et stockage** : centralisés dans `config/` et `config/app_config_store.py` avec backend JSON externe + fallback fichiers (`debug/*.json`). Voir `docs/configuration.md` et `docs/storage.md`.
+- **Aspects transverses** :
+  - UI Dashboard Webhooks : `docs/ui.md`
+  - Sécurité : `docs/securite.md`
+  - Exploitation Render / monitoring : `docs/operational-guide.md`
+  - Stratégie de tests : `docs/testing.md`
+
 ## Structure modulaire (refactor 2025-10)
 
 ### Architecture orientée services (2025-11-17)
@@ -207,7 +219,7 @@ Règles de fenêtre horaire (webhooks dédiés):
   - `imap_client.py` : création de la connexion IMAP
   - `pattern_matching.py` : détection des patterns e-mail (Média Solution, DESABO), constante `URL_PROVIDERS_PATTERN`
   - `orchestrator.py` : point d'entrée unique pour le cycle de polling et helpers d'orchestration
-    - `check_new_emails_and_trigger_webhook()` : Flux natif complet (plus de délégation legacy) qui gère
+    - `check_new_emails_and_trigger_webhook()` : Flux natif complet (délégation legacy désactivée par défaut) qui gère
       - la connexion IMAP, la déduplication, l'extraction des contenus plain/HTML
       - l'inférence de `detector` (`recadrage` via `check_media_solution_pattern`, `desabonnement_journee_tarifs` via `check_desabo_conditions`)
       - le contrôle de la fenêtre horaire globale avec exceptions par détecteur :
@@ -319,6 +331,9 @@ Objectifs: séparation des responsabilités, testabilité améliorée, réductio
 - Vérification de la fenêtre horaire active
 - Acquisition du verrou de singleton
 - Initialisation des composants
+- Vérification de l'absence globale via `_is_webhook_sending_enabled()` :
+  - Normalisation des jours configurés (`strip().lower()`)
+  - Si le jour courant est listé, journalisation `ABSENCE_PAUSE` et arrêt immédiat du cycle (`return 0`) sans ouvrir la connexion IMAP
 
 #### 2. Connexion IMAP
 - Établissement de la connexion sécurisée
@@ -552,91 +567,78 @@ Ces champs permettent aux systèmes distants d'adapter leur comportement en fonc
 ## Limitations connues
 
 - Le polling IMAP en thread unique ne convient pas à de très fortes volumétries.
-- Des valeurs de référence (REF_*) existent dans le code pour faciliter le dev: à surcharger impérativement en production via env vars.
+- Des valeurs de référence (REF_*) existent dans le code pour faciliter le dev : à surcharger impérativement en production via env vars.
 
-## Diagramme de séquence (texte/ASCII)
+## Flux principal (diagramme de séquence)
 
+```mermaid
+sequenceDiagram
+    participant U as Utilisateur
+    participant UI as Dashboard Webhooks
+    participant F as Flask (thread BG)
+    participant I as IMAP
+    participant W as Webhook Receiver
+    
+    U->>UI: Ouvre /login et s'authentifie
+    UI-->>U: Affiche Dashboard Webhooks '/'
+    
+    loop Toutes les 5 min (fenêtre horaire active)
+        F->>I: Connexion, recherche, lecture des messages
+        I-->>F: Liste des nouveaux emails
+        
+        loop Pour chaque email non traité
+            F->>F: Filtre expéditeurs + dédup (Redis si dispo)
+            F->>F: check_media_solution_pattern()
+            F-->>F: Extrait URLs (Dropbox/FromSmash/SwissTransfer) + delivery_time
+            F->>W: POST payload JSON (WEBHOOK_URL / Make.com)
+            alt Succès
+                W-->>F: 200 OK
+                F->>F: Log succès
+            else Erreur
+                W--xF: 4xx/5xx
+                F->>F: Log échec (3 tentatives max)
+            end
+        end
+    end
 ```
-Participant           Action
------------           ---------------------------------------------------------
-Utilisateur           Ouvre /login et s'authentifie
-UI (dashboard)        Reçoit session -> affiche Dashboard Webhooks '/'
-
-Flask (thread BG)     background_email_poller() actif dans la fenêtre horaire
-Flask                 check_new_emails_and_trigger_webhook()
-IMAP                  Connexion, recherche, lecture des messages
-Flask                 Filtre expéditeurs + dédup (Redis si dispo) + dédup groupe sujet
-Flask                 check_media_solution_pattern() -> URLs (Dropbox/FromSmash/SwissTransfer) + delivery_time
-Flask                 POST payload JSON -> WEBHOOK_URL / Make.com
-Webhook Receiver      200 OK (ou 4xx/5xx en cas d'erreur)
-Flask                 Log succès/échec et continue la boucle
-Flask                 Lance check_new_emails_and_trigger_webhook() en thread
 ## Interface Utilisateur
 
-### État des Tâches
-- **Tâche lancée** : Message de confirmation (202)
-- **En cours** : Indicateur visuel
-- **Terminé** : Message de succès/échec
-- **Historique** : Consultation des tâches récentes
+L'architecture détaillée du Dashboard Webhooks (état des tâches, notifications, accessibilité, personnalisation, outils) est décrite dans `docs/ui.md`.
 
-### Notifications
-- En temps réel
-- Historique consultable
-- Actions rapides
-
-### Accessibilité
-- Support du clavier
-- Contraste élevé
-- Texte redimensionnable
-
-### Personnalisation
-- Thèmes (clair/sombre)
-- Préférences d'affichage
-- Filtres personnalisés
+> Ce document d'architecture se concentre principalement sur la structure backend, les services et le traitement des e‑mails. Pour les comportements précis de l'interface, référez-vous à `docs/ui.md`.
 
 ## Sécurité
 
-### Authentification
-- Sessions sécurisées
-- Expiration automatique
-- Protection CSRF
+Les aspects de sécurité (authentification, autorisation, protection des données, bonnes pratiques) sont détaillés dans `docs/securite.md` et complétés par :
 
-### Autorisation
-- Rôles et permissions
-- Vérification des accès
-- Journalisation des actions sensibles
+- `docs/webhooks.md` pour les considérations de sécurité liées aux webhooks sortants
+- `docs/configuration.md` pour la gestion sécurisée des variables d'environnement
 
-### Protection des Données
-- Chiffrement des données sensibles
-- Masquage des informations critiques
-- Nettoyage automatique des logs
+> L'architecture présentée ici fournit les points d'ancrage (services, routes, tâches de fond) sur lesquels ces règles de sécurité s'appliquent.
 
 ## Performance
 
-### Optimisations
-- Mise en cache
-- Chargement paresseux
-- Compression des réponses
+Les stratégies d'optimisation (cache, timeouts, gestion de la charge) et la surveillance opérationnelle sont abordées dans :
 
-### Surveillance
-- Métriques en temps réel
-- Alertes de performance
-- Suggestions d'optimisation
+- `docs/operational-guide.md` (comportement Render, Gunicorn, health checks)
+- `docs/testing.md` (mesures de performance et couverture de tests)
+
+> Cette section d'architecture se limite à décrire les composants techniques susceptibles d'être monitorés (poller IMAP, services, webhooks).
 
 ## Maintenance
 
-### Sauvegarde
-- Automatique
-- Chiffrée
-- Avec rétention
+Les procédures de sauvegarde, de mises à jour et de dépannage sont couvertes dans :
 
-### Mises à Jour
-- Notification des nouvelles versions
-- Mise à jour en un clic
-- Rollback automatique en cas d'échec
+- `docs/deploiement.md` (déploiement, mises à jour)
+- `docs/operational-guide.md` (comportement Render, redémarrages, monitoring)
+- `docs/depannage.md` (problèmes courants et diagnostics)
 
-### Documentation
-- Guide d'installation
-- Guide d'administration
-- Dépannage
-```
+L'objectif de ce document d'architecture est de décrire la structure du système ; les runbooks opérationnels sont centralisés dans les fichiers ci-dessus.
+
+### Références
+
+- `docs/deploiement.md` (déploiement, mises à jour)
+- `docs/operational-guide.md` (comportement Render, redémarrages, monitoring)
+- `docs/depannage.md` (problèmes courants et diagnostics)
+
+> L'objectif de ce document d'architecture est de décrire la structure du système ; les runbooks opérationnels sont centralisés dans les fichiers ci-dessus.

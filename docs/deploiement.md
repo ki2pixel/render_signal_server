@@ -100,3 +100,19 @@ Le répertoire `deployment/` contient une application PHP autonome reproduisant 
   3) Fallback local (`DEPLOY_CMD`, défaut: reload-or-restart + reload Nginx)
 - Variables d'environnement: voir `docs/configuration.md`.
 - Les logs masquent la clé du Deploy Hook et tracent l'utilisateur authentifié ayant déclenché l'action.
+
+### Détails de l'API Render `/v1/services/{serviceId}/deploys`
+
+- Méthode: `POST https://api.render.com/v1/services/{serviceId}/deploys`
+- Paramètre de chemin:
+  - `serviceId` (string, requis) : identifiant du service Render ciblé.
+- Corps JSON typique:
+  - `clearCache` (`clear` | `do_not_clear`) – contrôle le vidage du cache de build (défaut : `do_not_clear`).
+  - `commitId` (string, optionnel) – SHA Git spécifique à déployer (sinon dernier commit de la branche configurée).
+  - `imageUrl` (string, optionnel) – URL de l’image à déployer pour les services basés sur une image.
+- Codes de réponse usuels (côté Render):
+  - `201 Created` / `202 Queued` – déploiement accepté ou mis en file d’attente.
+  - `400/401/404/409/429/500/503` – erreurs de validation, d’authentification ou de plateforme.
+
+Pour la référence complète, voir la documentation Render officielle :
+https://render.com/docs/api#tag/Deploys/operation/createDeploy

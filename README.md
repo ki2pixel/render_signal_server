@@ -2,6 +2,14 @@
 
 Application Flask modulaires pour le pilotage de webhooks et le polling IMAP. Ce dépôt a été refactoré pour passer d'un fichier monolithique (`app_render.py`) à une architecture claire et testable.
 
+## Documentation
+
+- Documentation principale : `docs/README.md`
+- Architecture & services : `docs/architecture.md`
+- API HTTP : `docs/api.md`
+- Polling e‑mail & webhooks : `docs/email_polling.md`, `docs/webhooks.md`
+- Tests & qualité : `docs/testing.md`
+
 ## Surveillance et Logs
 
 ### Logs Importants
@@ -36,37 +44,44 @@ render_signal_server-main/
 ├── email_processing/
 │   ├── imap_client.py             # Connexion IMAP
 │   ├── pattern_matching.py        # Patterns (Média Solution, DESABO)
-│   ├── webhook_sender.py          # Envoi Make.com (timeouts, retries)
+│   ├── webhook_sender.py          # Envoi des webhooks externes (timeouts, retries)
 │   └── orchestrator.py            # Orchestration du traitement des emails
 ├── preferences/
 │   └── processing_prefs.py        # Préférences de traitement (validation, persistance, Redis + JSON)
 ├── routes/
 │   ├── __init__.py                # Blueprints regroupés
-│   ├── api_webhooks.py            # GET/POST /api/webhooks/config
-│   ├── api_polling.py             # POST /api/polling/toggle
-│   ├── api_processing.py          # GET/POST /api/processing_prefs
+│   ├── api_webhooks.py            # Gestion de la configuration des webhooks
+│   ├── api_polling.py             # Endpoints liés au polling IMAP
+│   ├── api_processing.py          # Préférences de traitement (GET/POST)
 │   ├── api_test.py                # /api/test/* (X-API-Key)
+│   ├── api_admin.py               # Administration (redémarrage, déploiement Render, check emails)
+│   ├── api_config.py              # Configuration runtime (fenêtres horaires, flags, polling)
+│   ├── api_utility.py             # Ping, triggers locaux, statut
+│   ├── api_make.py                # Pilotage manuel des scénarios Make (legacy)
 │   ├── dashboard.py               # UI /, /login, /logout
 │   └── health.py                  # GET /health
+├── services/                      # Services orientés métier/configuration (ConfigService, AuthService, etc.)
 ├── static/                        # JS/CSS (dashboard)
 ├── utils/
 │   ├── time_helpers.py            # parse_time_hhmm(), is_within_time_window_local()
 │   ├── text_helpers.py            # normalize_*, strip_leading_reply_prefixes(), detect_provider()
 │   └── validators.py              # env_bool(), normalize_make_webhook_url()
-├── app_render.py                  # Serveur Flask (point d'entrée), délégation vers modules
+├── app_render.py                  # Serveur Flask (point d'entrée), enregistrement des blueprints et services
 ├── dashboard.html                 # UI principale (onglets)
 ├── login.html                     # Page de login
-├── docs/                          # Documentation technique
-└── test_app_render.py             # Suite de tests (pytest)
+├── docs/                          # Documentation technique (voir docs/README.md)
+├── test_app_render.py             # Tests historiques sur app_render.py
+└── tests/                         # Suite de tests principale (pytest)
 ```
 
-Références détaillées: `docs/architecture.md`, `docs/api.md`, `docs/email_polling.md`, `docs/refactoring-roadmap.md`.
+Références détaillées : `docs/README.md`, `docs/architecture.md`, `docs/api.md`, `docs/email_polling.md`, `docs/testing.md`.
 
-## Mises à jour récentes (12/10/2025)
+## Refactoring (historique)
 
-✅ **Architecture Blueprint Finalisée** - Toutes les routes API ont été extraites dans des blueprints Flask dédiés pour une meilleure modularité et maintenabilité.
-✅ **Extraction des Modules Complétée** - La logique principale a été extraite dans des modules spécialisés (auth/, config/, email_processing/, background/, etc.)
-✅ **58/58 Tests Réussis** - Toutes les refontes préservent la compatibilité ascendante et la couverture de tests.
+Le refactoring complet vers l'architecture orientée services (services dédiés, blueprints, nettoyage d'app_render.py, montée en couverture de tests) est documenté en détail dans :
+
+- `docs/refactoring-conformity-report.md` – rapport de conformité final
+- `ACHIEVEMENT_100_PERCENT.md` – récapitulatif "100% refactoring" (historique)
 
 ## Installation (Dev)
 
@@ -79,13 +94,16 @@ pip install -r requirements.txt
 ```
 
 Créer un fichier d’environnement pour le dev (voir `docs/configuration.md` et `debug/render_signal_server.env`). Principales variables:
-- `SECRET_KEY`
-- `MAKECOM_API_KEY`
+- `FLASK_SECRET_KEY`
+- `TRIGGER_PAGE_USER`, `TRIGGER_PAGE_PASSWORD`
+- `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `IMAP_SERVER`, `IMAP_PORT`, `IMAP_USE_SSL`
 - `WEBHOOK_URL`, `WEBHOOK_SSL_VERIFY`
-- `RECADRAGE_MAKE_WEBHOOK_URL`, `AUTOREPONDEUR_MAKE_WEBHOOK_URL`
 - `POLLING_*` (jours actifs, créneaux, timezone, vacances)
 - `ENABLE_BACKGROUND_TASKS`
 - `REDIS_URL` (optionnel)
+- Variables Render (`RENDER_*`) pour le déploiement via Render
+
+Voir `docs/configuration.md` pour la liste complète et à jour.
 
 ## Exécution
 
@@ -94,7 +112,7 @@ export FLASK_APP=app_render:app
 flask run --host=0.0.0.0 --port=5000
 ```
 
-En production: Gunicorn derrière Nginx (voir `docs/deployment.md`). Le poller email doit être activé sur un seul process (lock fichier `/tmp/render_signal_server_email_poller.lock`).
+En production: Gunicorn derrière Nginx (voir `docs/deploiement.md`). Le poller email doit être activé sur un seul process (lock fichier `/tmp/render_signal_server_email_poller.lock`).
 
 ## Tests
 
@@ -102,7 +120,7 @@ En production: Gunicorn derrière Nginx (voir `docs/deployment.md`). Le poller e
 pytest test_app_render.py -v
 ```
 
-La suite actuelle comporte 58 tests. Le refactoring maintient 58/58 au vert.
+Voir `docs/testing.md` pour l'état actuel de la suite de tests et de la couverture.
 
 ## Sécurité
 

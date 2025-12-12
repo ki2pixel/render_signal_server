@@ -4,7 +4,7 @@
 - FLASK_SECRET_KEY défini (valeur forte, non commitée)
 - TRIGGER_PAGE_USER / TRIGGER_PAGE_PASSWORD définis (mots de passe forts)
 - Variables IMAP (EMAIL_ADDRESS, EMAIL_PASSWORD, IMAP_SERVER, IMAP_PORT, IMAP_USE_SSL) configurées
-- WEBHOOK_URL (et MAKECOM_WEBHOOK_URL si utilisé) configuré et joignable en HTTPS
+- WEBHOOK_URL (et, si utilisés, `RECADRAGE_MAKE_WEBHOOK_URL` / `AUTOREPONDEUR_MAKE_WEBHOOK_URL` pour les flux Make.com) configurés et joignables en HTTPS
 - PROCESS_API_TOKEN / MAKECOM_API_KEY (si requis) définis via variables d’environnement
 - SENDER_OF_INTEREST_FOR_POLLING définie (liste d’expéditeurs autorisés)
 - RENDER_DISC_PATH défini si emplacement personnalisé
@@ -52,14 +52,6 @@
 - `GET /api/get_webhook_time_window` renvoie la configuration attendue (timezone incluse).
 - `POST /api/set_webhook_time_window` accepte les formats `HHhMM`/`HH:MM`; vide+vide désactive.
 - Les payloads webhook incluent `webhooks_time_start` / `webhooks_time_end` si configurés.
-
-## Check-list de tests headless (Playwright)
-- Playwright installé sur la machine: `python -m playwright install`
-- ENV positionnées: `ENABLE_HEADLESS_RESOLUTION=true`, `HEADLESS_MODE` (false en diagnostic), `HEADLESS_TOTAL_TIMEOUT_MS`, `HEADLESS_MAX_ATTEMPTS`, `HEADLESS_TRACE=true` (si besoin)
-- Test d’une URL réelle via script ad hoc (voir `docs/email_polling.md` – Guide de test rapide)
-- Si 403/anti-bot: basculer `HEADLESS_MODE=false`, valider les consentements/cookies
-- Vérifier que `first_direct_download_url` est non nul si un téléchargement direct est disponible
-- Revenir à `HEADLESS_MODE=true` pour l’exploitation serveur
 
 ## Documentation et runbook
 - Docs mises à jour: `docs/`

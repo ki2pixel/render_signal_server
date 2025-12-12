@@ -88,6 +88,9 @@ Pour plus de détails sur la configuration avancée, consultez le fichier `deplo
 - `WEBHOOK_SSL_VERIFY` - Vérification SSL pour les appels sortants (désactivez uniquement pour le débogage, défaut: `true`)
 - `ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS` - Si `true`, envoie les webhooks même sans liens détectés (défaut: `false`)
 
+Variables avancées:
+- `ORCHESTRATOR_ALLOW_LEGACY_DELEGATION` - Si `true`, l'orchestrateur peut déléguer le cycle complet à `app_render._legacy_check_new_emails_and_trigger_webhook` si cette fonction existe. Défaut: désactivé.
+
 Notes (service):
 - La validation stricte des URLs et la normalisation Make.com sont centralisées dans `WebhookConfigService`.
 - Les valeurs sont mises en cache (TTL 60s) et invalidées lors des mises à jour via l'API.
@@ -135,6 +138,10 @@ Une fenêtre horaire dédiée est disponible pour contrôler l'envoi des webhook
 - Persistée via `WebhookConfigService` (store externe prioritaire, fallback fichier `debug/webhook_config.json`)
 - Peut être désactivée pour envoyer les webhooks à toute heure
 - Rechargée dynamiquement par le serveur sans redémarrage nécessaire
+
+Variables d'environnement (fallback):
+- `WEBHOOKS_TIME_START`, `WEBHOOKS_TIME_END` : noms canoniques.
+- `WEBHOOK_TIME_START`, `WEBHOOK_TIME_END` : rétrocompatibilité (dépréciés) ; utilisés si les variables canoniques ne sont pas définies.
 
 ### Gestion via l'interface utilisateur
 - La section "Fenêtre Horaire" du tableau de bord permet de configurer :
@@ -212,7 +219,7 @@ Le fichier `debug/processing_prefs.json` contient des paramètres de traitement 
   - **Paramètre critique** - Active l'envoi des liens de téléchargement (SwissTransfer, Dropbox, FromSmash) vers le webhook personnalisé configuré dans `WEBHOOK_URL`.
   - `true` : Active le miroir vers le webhook personnalisé (défaut depuis `routes/api_processing.py`).
   - `false` : Désactive l'envoi des liens au webhook personnalisé.
-  - Lorsqu'il est désactivé, seuls les flux Make.com reçoivent les liens médias; ce paramètre n'affecte pas la détection `delivery_links` ou la journalisation côté poller.
+  - Lorsqu'il est désactivé, seuls les flux Make.com (s'ils sont configurés) reçoivent les liens médias; ce paramètre n'affecte pas la détection `delivery_links` ou la journalisation côté poller.
 
 - `enable_subject_group_dedup` (bool) :
   - Active la déduplication par groupe de sujets

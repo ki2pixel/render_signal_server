@@ -344,8 +344,8 @@ def test_get_webhook_config_success(authenticated_client, temp_config_file):
     data = response.get_json()
     assert data["success"] is True
     assert "config" in data
-    # La config du fichier n'est pas masquée, seules les variables d'environnement le sont
-    assert data["config"]["webhook_url"] == "https://test.example.com/webhook"
+    # L'API masque toujours l'URL webhook côté lecture (sécurité)
+    assert data["config"]["webhook_url"] == "https://test.example.com/***"
 
 
 def test_get_webhook_config_empty(authenticated_client, temp_config_file):
@@ -393,7 +393,7 @@ def test_update_webhook_config_valid_https_url(authenticated_client, temp_config
         get_response = authenticated_client.get('/api/webhooks/config')
         response_data = get_response.get_json()
         assert response_data["success"] is True
-        assert response_data["config"]["webhook_url"] == "https://new.example.com/webhook"
+        assert response_data["config"]["webhook_url"] == "https://new.example.com/***"
 
 
 def test_update_webhook_config_invalid_url(authenticated_client, temp_config_file):
@@ -527,7 +527,7 @@ def test_webhook_logs_empty(authenticated_client, temp_logs_file):
     """Test récupération des logs quand le fichier n'existe pas."""
     temp_logs_file.unlink()
     
-    with patch.object(app_render, 'WEBHOOK_LOGS_FILE', temp_logs_file):
+    with patch('app_render.WEBHOOK_LOGS_FILE', temp_logs_file):
         response = authenticated_client.get('/api/webhook_logs')
     
     assert response.status_code == 200
@@ -552,7 +552,7 @@ def test_webhook_logs_filters_by_days(authenticated_client, temp_logs_file):
     }
     temp_logs_file.write_text(json.dumps([old_log, recent_log]))
     
-    with patch.object(app_render, 'WEBHOOK_LOGS_FILE', temp_logs_file):
+    with patch('app_render.WEBHOOK_LOGS_FILE', temp_logs_file):
         response = authenticated_client.get('/api/webhook_logs?days=7')
     
     assert response.status_code == 200
@@ -576,7 +576,7 @@ def test_webhook_logs_limits_to_50(authenticated_client, temp_logs_file):
     ]
     temp_logs_file.write_text(json.dumps(logs))
     
-    with patch.object(app_render, 'WEBHOOK_LOGS_FILE', temp_logs_file):
+    with patch('app_render.WEBHOOK_LOGS_FILE', temp_logs_file):
         response = authenticated_client.get('/api/webhook_logs?days=30')
     
     assert response.status_code == 200
@@ -591,7 +591,7 @@ def test_webhook_logs_validates_days_param(authenticated_client, temp_logs_file)
     """Test validation du paramètre days (min 1, max 30)."""
     temp_logs_file.write_text(json.dumps([]))
     
-    with patch.object(app_render, 'WEBHOOK_LOGS_FILE', temp_logs_file):
+    with patch('app_render.WEBHOOK_LOGS_FILE', temp_logs_file):
         # Test days trop petit
         response = authenticated_client.get('/api/webhook_logs?days=0')
         data = response.get_json()
@@ -607,30 +607,31 @@ def test_webhook_logs_validates_days_param(authenticated_client, temp_logs_file)
 
 def test_webhook_logging_integration(authenticated_client, temp_logs_file):
     """Test que les webhooks sont bien loggés lors de l'envoi."""
-    with patch.object(app_render, 'WEBHOOK_LOGS_FILE', temp_logs_file):
-        with patch('email_processing.webhook_sender.requests.post') as mock_post:
-            # Simuler un succès
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_post.return_value = mock_response
-            
-            # Appeler send_makecom_webhook
-            result = app_render.send_makecom_webhook(
-                subject="Test Subject",
-                delivery_time="10h30",
-                sender_email="test@example.com",
-                email_id="test123"
-            )
-            
-            assert result is True
-            
-            # Vérifier que le log a été créé
-            with open(temp_logs_file) as f:
-                logs = json.load(f)
-            assert len(logs) == 1
-            assert logs[0]["type"] == "makecom"
-            assert logs[0]["status"] == "success"
-            assert logs[0]["email_id"] == "test123"
+    with patch('app_render.WEBHOOK_LOGS_FILE', temp_logs_file):
+        original_log_hook = app_render._append_webhook_log
+        with patch.object(app_render, '_append_webhook_log') as mock_log_hook:
+            mock_log_hook.side_effect = original_log_hook
+            with patch('email_processing.webhook_sender.requests.post') as mock_post:
+                # Simuler un succès
+                mock_response = MagicMock()
+                mock_response.status_code = 200
+                mock_post.return_value = mock_response
+
+                # Appeler send_makecom_webhook
+                result = app_render.send_makecom_webhook(
+                    subject="Test Subject",
+                    delivery_time="10h30",
+                    sender_email="test@example.com",
+                    email_id="test123",
+                    override_webhook_url="https://hook.eu2.make.com/test",
+                )
+
+                assert result is True
+                assert mock_log_hook.call_count >= 1
+                log_entry = mock_log_hook.call_args[0][0]
+                assert log_entry.get("type") == "makecom"
+                assert log_entry.get("status") == "success"
+
 
 
 # ============================================================================

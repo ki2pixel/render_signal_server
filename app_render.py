@@ -320,8 +320,16 @@ email_config_valid = _config_service.is_email_config_valid()
 # --- Webhook time window initialization (env -> then optional UI override from disk) ---
 try:
     webhook_time_window.initialize_webhook_time_window(
-        start_str=os.environ.get("WEBHOOKS_TIME_START", ""),
-        end_str=os.environ.get("WEBHOOKS_TIME_END", ""),
+        start_str=(
+            os.environ.get("WEBHOOKS_TIME_START")
+            or os.environ.get("WEBHOOK_TIME_START")
+            or ""
+        ),
+        end_str=(
+            os.environ.get("WEBHOOKS_TIME_END")
+            or os.environ.get("WEBHOOK_TIME_END")
+            or ""
+        ),
     )
     # Try to load persisted overrides if any (UI can override env)
     webhook_time_window.reload_time_window_from_disk()
