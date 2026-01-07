@@ -19,11 +19,17 @@ function showMessage(elementId, message, type) {
 async function generateMagicLink() {
     const btn = document.getElementById('generateMagicLinkBtn');
     const output = document.getElementById('magicLinkOutput');
+    const unlimitedToggle = document.getElementById('magicLinkUnlimitedToggle');
     if (!btn || !output) return;
     output.textContent = '';
     try {
         btn.disabled = true;
-        const res = await fetch('/api/auth/magic-link', { method: 'POST' });
+        const payload = unlimitedToggle && unlimitedToggle.checked ? { unlimited: true } : {};
+        const res = await fetch('/api/auth/magic-link', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
         const data = await res.json();
         if (res.status === 401) {
             output.textContent = "Session expirée. Merci de vous reconnecter.";
@@ -35,7 +41,8 @@ async function generateMagicLink() {
             output.className = 'status-msg error';
             return;
         }
-        output.textContent = data.magic_link + ' (exp. ' + (data.expires_at || 'bientôt') + ')';
+        const expiresText = data.unlimited ? 'aucune expiration' : (data.expires_at || 'bientôt');
+        output.textContent = data.magic_link + ' (exp. ' + expiresText + ')';
         output.className = 'status-msg success';
         try {
             await navigator.clipboard.writeText(data.magic_link);

@@ -30,14 +30,14 @@ from services.config_service import ConfigService
 
 @dataclass
 class MagicLinkRecord:
-    expires_at: float
+    expires_at: Optional[float]
     consumed: bool = False
     consumed_at: Optional[float] = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "MagicLinkRecord":
         return cls(
-            expires_at=float(data.get("expires_at", 0)),
+            expires_at=float(data["expires_at"]) if data.get("expires_at") is not None else None,
             consumed=bool(data.get("consumed", False)),
             consumed_at=float(data["consumed_at"]) if data.get("consumed_at") is not None else None,
         )
@@ -107,15 +107,22 @@ class MagicLinkService:
     # --------------------------------------------------------------------- #
     # Public API
     # --------------------------------------------------------------------- #
-    def generate_token(self) -> Tuple[str, datetime]:
-        """Génère un token unique et retourne (token, expiration datetime UTC)."""
+    def generate_token(self, *, unlimited: bool = False) -> Tuple[str, Optional[datetime]]:
+        """Génère un token unique et retourne (token, expiration datetime UTC ou None)."""
         token_id = secrets.token_urlsafe(16)
-        expires_at_dt = datetime.now(timezone.utc) + timedelta(seconds=self._ttl_seconds)
-        expires_epoch = expires_at_dt.timestamp()
-        signature = self._sign_components(token_id, expires_epoch)
-        token = f"{token_id}.{int(expires_epoch)}.{signature}"
+        if unlimited:
+            expires_component = "permanent"
+            expires_at_dt = None
+        else:
+            expires_at_dt = datetime.now(timezone.utc) + timedelta(seconds=self._ttl_seconds)
+            expires_component = str(int(expires_at_dt.timestamp()))
 
-        record = MagicLinkRecord(expires_at=expires_epoch)
+        signature = self._sign_components(token_id, expires_component)
+        token = f"{token_id}.{expires_component}.{signature}"
+
+        record = MagicLinkRecord(
+            expires_at=None if unlimited else float(expires_component),
+        )
         with self._file_lock:
             state = self._load_state()
             state[token_id] = record
@@ -124,7 +131,7 @@ class MagicLinkService:
         try:
             self._logger.info(
                 "MAGIC_LINK: token generated (expires_at=%s)",
-                expires_at_dt.isoformat(),
+                expires_at_dt.isoformat() if expires_at_dt else "permanent",
             )
         except Exception:
             pass
@@ -145,16 +152,20 @@ class MagicLinkService:
             return False, "Format de token invalide."
         token_id, expires_str, provided_sig = parts
 
-        if not token_id or not expires_str.isdigit():
+        if not token_id:
             return False, "Token invalide."
 
-        expires_epoch = int(expires_str)
-        expected_sig = self._sign_components(token_id, expires_epoch)
+        unlimited = expires_str == "permanent"
+        if not unlimited and not expires_str.isdigit():
+            return False, "Token invalide."
+
+        expires_epoch = None if unlimited else int(expires_str)
+        expected_sig = self._sign_components(token_id, expires_str)
         if not compare_digest(provided_sig, expected_sig):
             return False, "Signature de token invalide."
 
         now_epoch = time.time()
-        if expires_epoch < now_epoch:
+        if expires_epoch is not None and expires_epoch < now_epoch:
             self._invalidate_token(token_id, reason="expired")
             return False, "Token expiré."
 
@@ -170,7 +181,7 @@ class MagicLinkService:
             if record_obj.consumed:
                 return False, "Token déjà utilisé."
 
-            if record_obj.expires_at < now_epoch:
+            if record_obj.expires_at is not None and record_obj.expires_at < now_epoch:
                 # Expiré mais n'a pas encore été nettoyé.
                 del state[token_id]
                 self._save_state(state)
@@ -192,8 +203,8 @@ class MagicLinkService:
     # --------------------------------------------------------------------- #
     # Helpers
     # --------------------------------------------------------------------- #
-    def _sign_components(self, token_id: str, expires_epoch: float) -> str:
-        payload = f"{token_id}.{int(expires_epoch)}".encode("utf-8")
+    def _sign_components(self, token_id: str, expires_component: str) -> str:
+        payload = f"{token_id}.{expires_component}".encode("utf-8")
         return hmac_new(self._secret_key, payload, sha256).hexdigest()
 
     def _load_state(self) -> dict:
@@ -232,7 +243,10 @@ class MagicLinkService:
             changed = False
             for key, value in list(state.items()):
                 record = value if isinstance(value, MagicLinkRecord) else MagicLinkRecord.from_dict(value)
-                if record.expires_at < now_epoch - 60 or (
+                if (
+                    record.expires_at is not None
+                    and record.expires_at < now_epoch - 60
+                ) or (
                     record.consumed and record.consumed_at and record.consumed_at < now_epoch - 60
                 ):
                     del state[key]

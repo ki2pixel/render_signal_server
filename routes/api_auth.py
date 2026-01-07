@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, current_app, url_for
+from flask import Blueprint, jsonify, current_app, url_for, request
 from flask_login import login_required, current_user
 
 from services import MagicLinkService
@@ -14,8 +14,10 @@ _magic_link_service = MagicLinkService.get_instance()
 @login_required
 def create_magic_link():
     """Génère un magic link à usage unique pour accéder au dashboard."""
+    payload = request.get_json(silent=True) or {}
+    unlimited = bool(payload.get("unlimited"))
     try:
-        token, expires_at = _magic_link_service.generate_token()
+        token, expires_at = _magic_link_service.generate_token(unlimited=unlimited)
         magic_link = url_for(
             "dashboard.consume_magic_link_token",
             token=token,
@@ -24,14 +26,15 @@ def create_magic_link():
         current_app.logger.info(
             "MAGIC_LINK: user '%s' generated a token expiring at %s",
             getattr(current_user, "id", "unknown"),
-            expires_at.isoformat(),
+            expires_at.isoformat() if expires_at else "permanent",
         )
         return (
             jsonify(
                 {
                     "success": True,
                     "magic_link": magic_link,
-                    "expires_at": expires_at.isoformat(),
+                    "expires_at": expires_at.isoformat() if expires_at else None,
+                    "unlimited": unlimited,
                 }
             ),
             201,
