@@ -33,6 +33,7 @@ class MagicLinkRecord:
     expires_at: Optional[float]
     consumed: bool = False
     consumed_at: Optional[float] = None
+    single_use: bool = True
 
     @classmethod
     def from_dict(cls, data: dict) -> "MagicLinkRecord":
@@ -40,6 +41,7 @@ class MagicLinkRecord:
             expires_at=float(data["expires_at"]) if data.get("expires_at") is not None else None,
             consumed=bool(data.get("consumed", False)),
             consumed_at=float(data["consumed_at"]) if data.get("consumed_at") is not None else None,
+            single_use=bool(data.get("single_use", True)),
         )
 
     def to_dict(self) -> dict:
@@ -47,6 +49,7 @@ class MagicLinkRecord:
             "expires_at": self.expires_at,
             "consumed": self.consumed,
             "consumed_at": self.consumed_at,
+            "single_use": self.single_use,
         }
 
 
@@ -108,7 +111,11 @@ class MagicLinkService:
     # Public API
     # --------------------------------------------------------------------- #
     def generate_token(self, *, unlimited: bool = False) -> Tuple[str, Optional[datetime]]:
-        """Génère un token unique et retourne (token, expiration datetime UTC ou None)."""
+        """Génère un token unique et retourne (token, expiration datetime UTC ou None).
+
+        Args:
+            unlimited: Lorsque True, le lien n'expire pas et reste réutilisable.
+        """
         token_id = secrets.token_urlsafe(16)
         if unlimited:
             expires_component = "permanent"
@@ -122,6 +129,7 @@ class MagicLinkService:
 
         record = MagicLinkRecord(
             expires_at=None if unlimited else float(expires_component),
+            single_use=not unlimited,
         )
         with self._file_lock:
             state = self._load_state()
@@ -178,7 +186,7 @@ class MagicLinkService:
             record_obj = (
                 record if isinstance(record, MagicLinkRecord) else MagicLinkRecord.from_dict(record)
             )
-            if record_obj.consumed:
+            if record_obj.single_use and record_obj.consumed:
                 return False, "Token déjà utilisé."
 
             if record_obj.expires_at is not None and record_obj.expires_at < now_epoch:
@@ -187,10 +195,11 @@ class MagicLinkService:
                 self._save_state(state)
                 return False, "Token expiré."
 
-            record_obj.consumed = True
-            record_obj.consumed_at = now_epoch
-            state[token_id] = record_obj
-            self._save_state(state)
+            if record_obj.single_use:
+                record_obj.consumed = True
+                record_obj.consumed_at = now_epoch
+                state[token_id] = record_obj
+                self._save_state(state)
 
         username = self._config_service.get_dashboard_user()
         try:
