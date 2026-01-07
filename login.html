@@ -127,24 +127,11 @@
                 <input type="text" id="username" name="username" required>
             </div>
             <div class="form-group">
+                <label for="password">Mot de passe</label>
                 <input type="password" id="password" name="password" required>
             </div>
             <button type="submit" class="login-button">Se connecter</button>
         </form>
-
-
-<div class="section-divider">ou</div>
-
-<form method="POST" action="{{ url_for('dashboard.login') }}">
-    <div class="form-group">
-        <label for="magic_token">Magic link reçu</label>
-        <input type="text" id="magic_token" name="magic_token" placeholder="Collez l'URL complète ou le token">
-        <div class="hint-text">
-            Collez l'URL complète ou uniquement le token reçu. Chaque lien est à usage unique et expire rapidement.
-        </div>
-    </div>
-    <button type="submit" class="magic-button">Se connecter avec un magic link</button>
-</form>
     </div>
 </body>
 </html>

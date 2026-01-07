@@ -649,9 +649,22 @@
         <div class="card" style="margin-top: 20px;">
           <div class="card-title">🔐 Accès Magic Link</div>
           <p>Générez un lien pré-authentifié à usage unique pour ouvrir rapidement le dashboard sans retaper vos identifiants. Le lien est automatiquement copié.</p>
+          <div class="inline-group" style="margin-bottom: 12px;">
+            <label class="toggle-switch">
+              <input type="checkbox" id="magicLinkUnlimitedToggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <span style="margin-left: 10px;">
+              Mode illimité (désactivé = lien one-shot avec expiration)
+            </span>
+          </div>
           <button id="generateMagicLinkBtn" class="btn btn-primary">✨ Générer un magic link</button>
           <div id="magicLinkOutput" class="status-msg" style="margin-top: 12px;"></div>
-          <div class="small-text">Important : partagez ce lien uniquement avec des personnes autorisées. Il expire après quelques minutes et s'invalide dès qu'il est utilisé.</div>
+          <div class="small-text">
+            Important : partagez ce lien uniquement avec des personnes autorisées.
+            En mode one-shot, il expire après quelques minutes et s'invalide dès qu'il est utilisé.
+            En mode illimité, aucun délai mais vous devez révoquer manuellement en cas de fuite.
+          </div>
         </div>
         <div class="card" style="margin-top: 20px;">
           <div class="card-title">🧪 Outils de Test</div>
