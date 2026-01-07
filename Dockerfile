@@ -25,18 +25,25 @@ RUN useradd --create-home --shell /bin/bash appuser \
 
 USER appuser
 
-ENV PORT=8000
+ENV PORT=8000 \
+    GUNICORN_WORKERS=2 \
+    GUNICORN_THREADS=2 \
+    GUNICORN_TIMEOUT=120 \
+    GUNICORN_GRACEFUL_TIMEOUT=30 \
+    GUNICORN_KEEP_ALIVE=75 \
+    GUNICORN_MAX_REQUESTS=15000 \
+    GUNICORN_MAX_REQUESTS_JITTER=3000
 EXPOSE 8000
 
 # Gunicorn écrit déjà ses logs sur stdout/stderr ;
 # PYTHONUNBUFFERED assure la remontée immédiate des logs applicatifs (BG_POLLER, HEARTBEAT, etc.).
 CMD gunicorn \
-    --bind 0.0.0.0:${PORT:-8000} \
-    --workers ${GUNICORN_WORKERS:-2} \
-    --threads ${GUNICORN_THREADS:-2} \
-    --timeout ${GUNICORN_TIMEOUT:-120} \
-    --graceful-timeout ${GUNICORN_GRACEFUL_TIMEOUT:-30} \
-    --keep-alive ${GUNICORN_KEEP_ALIVE:-75} \
-    --max-requests ${GUNICORN_MAX_REQUESTS:-15000} \
-    --max-requests-jitter ${GUNICORN_MAX_REQUESTS_JITTER:-3000} \
+    --bind 0.0.0.0:$PORT \
+    --workers $GUNICORN_WORKERS \
+    --threads $GUNICORN_THREADS \
+    --timeout $GUNICORN_TIMEOUT \
+    --graceful-timeout $GUNICORN_GRACEFUL_TIMEOUT \
+    --keep-alive $GUNICORN_KEEP_ALIVE \
+    --max-requests $GUNICORN_MAX_REQUESTS \
+    --max-requests-jitter $GUNICORN_MAX_REQUESTS_JITTER \
     app_render:app
