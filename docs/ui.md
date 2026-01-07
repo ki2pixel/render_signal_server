@@ -1,3 +1,14 @@
+- ## Contrôles post-déploiement (Render)
+-
+- Après chaque déploiement (via GHCR → Render ou `/api/deploy_application`), vérifier rapidement depuis le dashboard :
+- - Connexion `/login` et navigation entre les onglets (veille que les assets statiques sont bien servis par l’image Docker).
+- - Chargement des sections critiques :
+-   - **Vue Webhooks** : `GET /api/webhooks/config` reflète les valeurs Render (URL masquée, absence globale).
+-   - **Fenêtre horaire** : vérifier que les champs se remplissent correctement (`GET /api/webhooks/time-window`).
+-   - **Poller** : l’onglet Polling doit afficher l’état `enable_polling` et les jours/heures attendus.
+- - Si un échec Render est suspecté, consulter l’onglet “Administration” (API admin) pour déclencher `/api/deploy_application` en fallback.
+- - Surveiller les bandes d’alertes UI (toasts) : toute erreur d’API post-déploiement doit être investiguée (logs Render, onglet Logs).
+
 # Interface utilisateur (Dashboard Webhooks) - Architecture Orientée Services
 
 - **Template principal**: `dashboard.html`
@@ -197,6 +208,17 @@ Le dashboard utilise le thème Cork (dark mode) avec les variables CSS:
 - Cards pour chaque section
 - Animations subtiles sur les boutons
 - Toggle switches modernes pour les booléens
+
+## Contrôles post-déploiement (Render)
+
+Après chaque déploiement (pipeline GHCR → Render ou fallback `/api/deploy_application`), réaliser un “smoke test” rapide via le dashboard :
+
+1. **Connexion UI** : accéder à `/login`, vérifier que les assets statiques de l’image Docker sont servis (CSS/JS chargés, onglets fonctionnels).
+2. **Onglet Webhooks** : confirmer que `GET /api/webhooks/config` remonte les valeurs Render (URL masquée, absence globale cohérente).
+3. **Fenêtre horaire** : ouvrir l’onglet dédié, vérifier que les champs se pré-remplissent (`GET /api/webhooks/time-window`) et qu’une sauvegarde reflète les nouveaux paramètres.
+4. **Polling IMAP** : dans l’onglet Polling, contrôler l’état `enable_polling`, les jours/heures actifs et les expéditeurs surveillés.
+5. **Administration** : en cas d’échec Render, utiliser l’onglet Administration pour déclencher `/api/deploy_application` (ordre Hook → API → fallback).
+6. **Toasts & logs UI** : surveiller les alertes rouges/orange; la moindre erreur d’API post-déploiement doit être corrélée avec les logs Render.
 
 ### Contrôles de la liste d'expéditeurs (thème sombre)
 

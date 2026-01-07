@@ -7,8 +7,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
 import fakeredis
+import pytest
 
 # Ajouter le répertoire parent au path pour les imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -38,7 +38,7 @@ def mock_logger():
 @pytest.fixture
 def temp_file():
     """Fixture pour créer un fichier temporaire."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         temp_path = Path(f.name)
         yield temp_path
     if temp_path.exists():
@@ -100,9 +100,9 @@ def flask_app():
     """Fixture pour créer une instance Flask pour les tests."""
     # Import tardif pour éviter les effets de bord
     import app_render
-    
-    app_render.app.config['TESTING'] = True
-    app_render.app.config['WTF_CSRF_ENABLED'] = False
+
+    app_render.app.config["TESTING"] = True
+    app_render.app.config["WTF_CSRF_ENABLED"] = False
     return app_render.app
 
 
@@ -117,6 +117,6 @@ def flask_client(flask_app):
 def authenticated_flask_client(flask_client):
     """Fixture pour créer un client Flask authentifié."""
     with flask_client.session_transaction() as sess:
-        sess['_user_id'] = 'admin'
-        sess['_fresh'] = True
+        sess["_user_id"] = "admin"
+        sess["_fresh"] = True
     return flask_client

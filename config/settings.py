@@ -50,6 +50,11 @@ REF_EMAIL_POLLING_INTERVAL_SECONDS = 30
 # VARIABLES D'ENVIRONNEMENT (Configuration Runtime)
 # =============================================================================
 
+# --- Secret Flask (sessions + tokens signés) ---
+FLASK_SECRET_KEY = os.environ.get(
+    "FLASK_SECRET_KEY", "une-cle-secrete-tres-complexe-pour-le-developpement-a-changer"
+)
+
 # --- Authentification Dashboard ---
 TRIGGER_PAGE_USER = os.environ.get("TRIGGER_PAGE_USER", REF_TRIGGER_PAGE_USER)
 TRIGGER_PAGE_PASSWORD = os.environ.get("TRIGGER_PAGE_PASSWORD", REF_TRIGGER_PAGE_PASSWORD)
@@ -155,6 +160,12 @@ RUNTIME_FLAGS_FILE = DEBUG_DIR / "runtime_flags.json"
 # Signal local consommé par /api/check_trigger
 SIGNAL_DIR = BASE_DIR / "signal_data_app_render"
 TRIGGER_SIGNAL_FILE = SIGNAL_DIR / "local_workflow_trigger_signal.json"
+# Fichier de stockage des magic links (tokens signés)
+_MAGIC_LINK_FILE_DEFAULT = DEBUG_DIR / "magic_links.json"
+MAGIC_LINK_TOKENS_FILE = Path(os.environ.get("MAGIC_LINK_TOKENS_FILE", str(_MAGIC_LINK_FILE_DEFAULT)))
+
+# Magic link TTL (seconds)
+MAGIC_LINK_TTL_SECONDS = int(os.environ.get("MAGIC_LINK_TTL_SECONDS", 900))
 
 # --- Clés Redis ---
 WEBHOOK_LOGS_REDIS_KEY = "r:ss:webhook_logs:v1"

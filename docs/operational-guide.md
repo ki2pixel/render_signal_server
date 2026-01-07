@@ -42,16 +42,18 @@
   - `HEARTBEAT: alive (threads: {count} active, {daemon} daemon)` - Continues during inactive periods.
 
 ## Configuration Checklist
+- Render → Image-based service:
+  - Utilise l’image `ghcr.io/<owner>/<repo>:latest` poussée via GitHub Actions.
+  - Le Dockerfile définit déjà `CMD gunicorn ... app_render:app`. Ne pas surcharger la commande de démarrage.
 - Render → Environment Variables:
-  - `GUNICORN_CMD_ARGS` as above
-  - `ENABLE_BACKGROUND_TASKS=1`
+  - `ENABLE_BACKGROUND_TASKS=1` (uniquement sur un worker)
   - `BG_POLLER_LOCK_FILE=/tmp/render_signal_server_email_poller.lock`
-  - `WEBHOOKS_TIME_START/WEBHOOKS_TIME_END`
-  - `CORS_ALLOWED_ORIGINS` as needed
+  - `GUNICORN_*` (workers, threads, timeouts) si vous devez ajuster les valeurs par défaut indiquées dans le Dockerfile.
+  - `WEBHOOKS_TIME_START/WEBHOOKS_TIME_END`, `CORS_ALLOWED_ORIGINS`, secrets applicatifs (`WEBHOOK_URL`, `TRIGGER_PAGE_*`, etc.)
 - Render → Health Check:
-  - Path `/health`
-- UptimeRobot:
-  - Target `/health`, interval ≤ 5 min
+  - Path `/health` (cf. `routes/health.py`)
+- UptimeRobot (ou équivalent):
+  - Target `/health`, interval ≤ 5 min pour maintenir le service “warm”.
 
 ## Troubleshooting
 - **No restart after SIGTERM**
@@ -67,3 +69,4 @@
 ## Notes
 - Free-tier idle sleep is expected; use paid plans or frequent monitors for always-on behavior.
 - Logs avoid secrets and follow the project's `codingstandards.md`.
+- Pour relancer un déploiement manuellement : utiliser `/api/deploy_application` (priorité Deploy Hook → API → fallback), ou déclencher le workflow GitHub Actions “Build & Deploy Render Image”.

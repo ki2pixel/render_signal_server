@@ -30,3 +30,12 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
     - Déplacement des entrées antérieures à 2025-12-01 vers les archives
   - **Raisons** : Les fichiers devenaient difficiles à maintenir et contenaient beaucoup de redondances. L'archivage améliore la lisibilité tout en préservant l'historique.
   - **Impacts** : Fichiers principaux réduits à <100 lignes, historique préservé dans archives, politique de maintenance claire établie.
+
+- **[2026-01-07 11:10:00] - Passage au déploiement par image Docker (GHCR → Render)**
+  - **Décision** : Construire et publier l'application via un `Dockerfile` officiel et un workflow GitHub Actions poussant sur GHCR puis déclenchant Render (Deploy Hook ou API).
+  - **Changements clés** :
+    - Création d'un `Dockerfile` standardisé (Gunicorn, logs stdout/stderr, variables `GUNICORN_*`).
+    - Nouveau workflow `.github/workflows/render-image.yml` (build/push, déclenchement Render, fallback API).
+    - Mise à jour de `docs/deploiement.md` pour documenter le flux image-based.
+  - **Raisons** : Réduire le temps de déploiement Render en réutilisant une image pré-buildée et fiabiliser la traçabilité des logs.
+  - **Impacts** : Service Render migré vers `render-signal-server-latest.onrender.com`, pipeline reproductible, monitoring conservé.

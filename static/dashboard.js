@@ -15,6 +15,46 @@ function showMessage(elementId, message, type) {
     }, 5000);
 }
 
+
+async function generateMagicLink() {
+    const btn = document.getElementById('generateMagicLinkBtn');
+    const output = document.getElementById('magicLinkOutput');
+    if (!btn || !output) return;
+    output.textContent = '';
+    try {
+        btn.disabled = true;
+        const res = await fetch('/api/auth/magic-link', { method: 'POST' });
+        const data = await res.json();
+        if (res.status === 401) {
+            output.textContent = "Session expirée. Merci de vous reconnecter.";
+            output.className = 'status-msg error';
+            return;
+        }
+        if (!data.success || !data.magic_link) {
+            output.textContent = data.message || 'Impossible de générer le magic link.';
+            output.className = 'status-msg error';
+            return;
+        }
+        output.textContent = data.magic_link + ' (exp. ' + (data.expires_at || 'bientôt') + ')';
+        output.className = 'status-msg success';
+        try {
+            await navigator.clipboard.writeText(data.magic_link);
+            output.textContent += ' — Copié dans le presse-papiers';
+        } catch (clipErr) {
+            console.warn('Clipboard write failed', clipErr);
+        }
+    } catch (e) {
+        console.error('generateMagicLink error', e);
+        output.textContent = 'Erreur de génération du magic link.';
+        output.className = 'status-msg error';
+    } finally {
+        if (btn) btn.disabled = false;
+        setTimeout(() => {
+            if (output) output.className = 'status-msg';
+        }, 7000);
+    }
+}
+
 // -------------------- Runtime Flags (Debug) --------------------
 async function loadRuntimeFlags() {
     try {
@@ -67,11 +107,20 @@ window.addEventListener('DOMContentLoaded', () => {
     // Note: global Make toggle and vacation controls removed from UI
     // New: runtime flags
     loadRuntimeFlags();
+    initMagicLinkTools();
 
     // Buttons
     const rfBtn = document.getElementById('runtimeFlagsSaveBtn');
     if (rfBtn) rfBtn.addEventListener('click', saveRuntimeFlags);
 });
+
+
+function initMagicLinkTools() {
+    const btn = document.getElementById('generateMagicLinkBtn');
+    if (btn) {
+        btn.addEventListener('click', generateMagicLink);
+    }
+}
 
 // --- Processing Prefs (server) ---
 async function loadProcessingPrefsFromServer() {

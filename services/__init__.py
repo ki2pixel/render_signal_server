@@ -26,6 +26,7 @@ from services.runtime_flags_service import RuntimeFlagsService
 from services.webhook_config_service import WebhookConfigService
 from services.auth_service import AuthService
 from services.deduplication_service import DeduplicationService
+from services.magic_link_service import MagicLinkService
 
 __all__ = [
     "ConfigService",
@@ -33,4 +34,5 @@ __all__ = [
     "WebhookConfigService",
     "AuthService",
     "DeduplicationService",
+    "MagicLinkService",
 ]

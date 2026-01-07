@@ -26,6 +26,11 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
     - Consolidation des entrées redondantes en résumés thématiques
     - Réduction significative de la taille des fichiers principaux (>1000 lignes → <100 lignes)
     - Amélioration de la lisibilité et de la maintenabilité
+-   [2026-01-07 11:10] **Pipeline Docker/Render industrialisé**
+    - Ajout d'un `Dockerfile` standardisé (Gunicorn, variables GUNICORN\_*, logs stdout/stderr)
+    - Nouveau workflow GitHub Actions `render-image.yml` (build+push GHCR, déclenchement Render via hook/API)
+    - Documentation `docs/deploiement.md` enrichie (flux image-based, secrets requis, checklists)
+    - Déploiement Render validé sur `render-signal-server-latest.onrender.com`, logs vérifiés
 
 ## En cours
 

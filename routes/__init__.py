@@ -12,3 +12,4 @@ from .api_admin import bp as api_admin_bp  # noqa: F401
 from .api_utility import bp as api_utility_bp  # noqa: F401
 from .api_config import bp as api_config_bp  # noqa: F401
 from .api_make import bp as api_make_bp  # noqa: F401
+from .api_auth import bp as api_auth_bp  # noqa: F401

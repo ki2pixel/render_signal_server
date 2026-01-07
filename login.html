@@ -65,7 +65,8 @@
             outline: none;
             border-color: var(--cork-primary-accent);
         }
-        .login-button {
+        .login-button,
+        .magic-button {
             width: 100%;
             padding: 15px;
             font-size: 1.1em;
@@ -77,7 +78,8 @@
             background-color: var(--cork-primary-accent);
             transition: background-color 0.3s;
         }
-        .login-button:hover {
+        .login-button:hover,
+        .magic-button:hover {
             background-color: #3a53c6;
         }
         .error-message {
@@ -88,6 +90,29 @@
             border-radius: 6px;
             text-align: center;
             margin-bottom: 20px;
+        }
+        .section-divider {
+            margin: 30px 0 15px;
+            text-align: center;
+            color: var(--cork-text-secondary);
+            position: relative;
+        }
+        .section-divider::before,
+        .section-divider::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            width: 40%;
+            height: 1px;
+            background-color: var(--cork-border-color);
+        }
+        .section-divider::before { left: 0; }
+        .section-divider::after { right: 0; }
+        .hint-text {
+            font-size: 0.9em;
+            color: var(--cork-text-secondary);
+            margin-top: 8px;
+            line-height: 1.4;
         }
     </style>
 </head>
@@ -106,6 +131,20 @@
             </div>
             <button type="submit" class="login-button">Se connecter</button>
         </form>
+
+
+<div class="section-divider">ou</div>
+
+<form method="POST" action="{{ url_for('dashboard.login') }}">
+    <div class="form-group">
+        <label for="magic_token">Magic link reçu</label>
+        <input type="text" id="magic_token" name="magic_token" placeholder="Collez l'URL complète ou le token">
+        <div class="hint-text">
+            Collez l'URL complète ou uniquement le token reçu. Chaque lien est à usage unique et expire rapidement.
+        </div>
+    </div>
+    <button type="submit" class="magic-button">Se connecter avec un magic link</button>
+</form>
     </div>
 </body>
 </html>

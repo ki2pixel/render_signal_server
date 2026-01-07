@@ -9,6 +9,18 @@ Application Flask modulaires pour le pilotage de webhooks et le polling IMAP. Ce
 - API HTTP : `docs/api.md`
 - Polling e‑mail & webhooks : `docs/email_polling.md`, `docs/webhooks.md`
 - Tests & qualité : `docs/testing.md`
+- Déploiement image Render : `docs/deploiement.md`
+
+## Déploiement Render (Docker + GHCR)
+
+- L’application est construite via le `Dockerfile` racine, qui embarque Gunicorn et la configuration des threads/fils de poller (`GUNICORN_*`).
+- Le workflow GitHub Actions `.github/workflows/render-image.yml` :
+  1. Construit l’image depuis la racine du dépôt.
+  2. La pousse sur GitHub Container Registry (`ghcr.io/<owner>/<repo>:latest` + `:<sha>`).
+  3. Déclenche Render par ordre de priorité : Deploy Hook (`RENDER_DEPLOY_HOOK_URL`) → API Render (`RENDER_API_KEY`, `RENDER_SERVICE_ID`, `RENDER_DEPLOY_CLEAR_CACHE`) → fallback manuel.
+- Les secrets GHCR/Render doivent être configurés côté GitHub Actions. Render récupère ensuite l’image et injecte les variables historiques (`ENABLE_BACKGROUND_TASKS`, `WEBHOOK_URL`, etc.).
+- URL actuelle : `https://render-signal-server-latest.onrender.com` (cf. `memory-bank/activeContext.md` pour l’instance vivante).
+- Pour les environnements on-premise, les instructions “Gunicorn + Reverse Proxy” restent valables (cf. `docs/deploiement.md`).
 
 ## Surveillance et Logs
 

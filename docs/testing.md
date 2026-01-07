@@ -749,34 +749,21 @@ def test_uppercase(input_value, expected_output):
 
 Le fichier `.github/workflows/tests.yml` est configuré pour :
 1. Exécuter les tests sur chaque push et pull request
-2. Tester sur Python 3.10 (aligné sur le virtualenv partagé `/mnt/venv_ext4/venv_render_signal_server`)
+2. Tester sur Python 3.10/3.11 (aligné sur le virtualenv partagé `/mnt/venv_ext4/venv_render_signal_server`)
 3. Utiliser Redis comme service pour les tests d'intégration
 4. Générer un rapport de couverture
 5. Envoyer les résultats à Codecov
 
 ### Déploiement Automatique
 
-Pour activer le déploiement automatique après des tests réussis :
+Le workflow `.github/workflows/render-image.yml` construit et pousse l’image Docker (`Dockerfile` racine) sur GHCR, puis déclenche Render :
+1. Login GHCR (`GHCR_USERNAME`/`GHCR_TOKEN` ou `GITHUB_TOKEN`)
+2. Build & push (`latest`, `<sha>`)
+3. Déclenchement Render via Deploy Hook si disponible
+4. Fallback Render API (requiert `RENDER_API_KEY`, `RENDER_SERVICE_ID`, `RENDER_DEPLOY_CLEAR_CACHE`)
+5. À défaut, un message rappelle d’utiliser `/api/deploy_application`
 
-```yaml
-# Dans .github/workflows/deploy.yml
-name: Deploy
-
-on:
-  push:
-    branches: [main]
-  workflow_run:
-    workflows: ["Tests"]
-    types: [completed]
-
-jobs:
-  deploy:
-    if: github.ref == 'refs/heads/main' && github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      # Étapes de déploiement...
-```
+Surveiller les logs Render après le déploiement pour vérifier que le poller (`BG_POLLER`) et les `HEARTBEAT` redémarrent correctement.
 
 ## 🔍 Dépannage
 

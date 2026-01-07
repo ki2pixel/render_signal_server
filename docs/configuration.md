@@ -2,9 +2,17 @@
 
 - `RENDER_API_KEY` – Token API Render (Bearer) pour `POST /v1/services/{id}/deploys`.
 - `RENDER_SERVICE_ID` – Identifiant du service Render.
-- `RENDER_DEPLOY_HOOK_URL` – URL Deploy Hook Render (prioritaire si défini).
-- `RENDER_DEPLOY_CLEAR_CACHE` – `true|false` (contrôle le champ `clearCache` lors des appels API Render).
+- `RENDER_DEPLOY_HOOK_URL` – URL Deploy Hook Render (préfixe `https://api.render.com/deploy/`, prioritaire si défini).
+- `RENDER_DEPLOY_CLEAR_CACHE` – `clear|do_not_clear` (contrôle le champ `clearCache` lors des appels API Render).
 - `DEPLOY_CMD` – Commande fallback locale (ex: `systemctl reload-or-restart render-signal-server; nginx -s reload`).
+- `GUNICORN_WORKERS`, `GUNICORN_THREADS`, `GUNICORN_TIMEOUT`, `GUNICORN_GRACEFUL_TIMEOUT`, `GUNICORN_KEEP_ALIVE`, `GUNICORN_MAX_REQUESTS`, `GUNICORN_MAX_REQUESTS_JITTER` – valeurs injectées par Render et utilisées par le `Dockerfile`/Gunicorn. Les valeurs par défaut (2 workers, 2 threads, 120s, etc.) sont définies dans le Dockerfile et peuvent être surchargées via l’UI Render.
+
+### Secrets GitHub Actions (pipeline GHCR → Render)
+
+- `GHCR_USERNAME` – Nom d’utilisateur pour `docker login` (optionnel, défaut `github.actor`).
+- `GHCR_TOKEN` – PAT ou `GITHUB_TOKEN` autorisé pour pousser vers GHCR.
+- `RENDER_DEPLOY_HOOK_URL`, `RENDER_API_KEY`, `RENDER_SERVICE_ID`, `RENDER_DEPLOY_CLEAR_CACHE` – utilisés par `.github/workflows/render-image.yml` pour déclencher Render après push de l’image.
+- Ces secrets doivent être renseignés dans les paramètres du dépôt GitHub pour que le workflow “Build & Deploy Render Image” fonctionne.
 
 Notes:
 - L'endpoint interne `POST /api/deploy_application` choisit automatiquement le meilleur chemin: Deploy Hook → API Render → commande fallback.

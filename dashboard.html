@@ -647,6 +647,13 @@
           <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
         </div>
         <div class="card" style="margin-top: 20px;">
+          <div class="card-title">🔐 Accès Magic Link</div>
+          <p>Générez un lien pré-authentifié à usage unique pour ouvrir rapidement le dashboard sans retaper vos identifiants. Le lien est automatiquement copié.</p>
+          <button id="generateMagicLinkBtn" class="btn btn-primary">✨ Générer un magic link</button>
+          <div id="magicLinkOutput" class="status-msg" style="margin-top: 12px;"></div>
+          <div class="small-text">Important : partagez ce lien uniquement avec des personnes autorisées. Il expire après quelques minutes et s'invalide dès qu'il est utilisé.</div>
+        </div>
+        <div class="card" style="margin-top: 20px;">
           <div class="card-title">🧪 Outils de Test</div>
           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
             <div class="form-group">

@@ -74,6 +74,7 @@ from routes import (
     api_utility_bp,
     api_config_bp,
     api_make_bp,
+    api_auth_bp,
 )
 from routes.api_processing import DEFAULT_PROCESSING_PREFS as _DEFAULT_PROCESSING_PREFS
 DEFAULT_PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS
@@ -110,7 +111,7 @@ except ImportError:
 app = Flask(__name__, template_folder='.', static_folder='static')
 # NOUVEAU: Une clé secrète est OBLIGATOIRE pour les sessions.
 # Pour la production, utilisez une valeur complexe stockée dans les variables d'environnement.
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "une-cle-secrete-tres-complexe-pour-le-developpement-a-changer")
+app.secret_key = settings.FLASK_SECRET_KEY
 
 # =============================================================================
 # SERVICES INITIALIZATION (Phase 2 - Architecture Orientée Services)
@@ -153,6 +154,7 @@ app.register_blueprint(api_admin_bp)
 app.register_blueprint(api_utility_bp)
 app.register_blueprint(api_config_bp)
 app.register_blueprint(api_make_bp)
+app.register_blueprint(api_auth_bp)
 
 # --- CORS (for test tools calling from another origin) ---
 # Allowlist origins, comma-separated in env CORS_ALLOWED_ORIGINS (e.g., "https://webhook.kidpixel.fr,https://example.com")

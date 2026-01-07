@@ -118,6 +118,15 @@ Le répertoire `deployment/` contient une application PHP autonome reproduisant 
 - `RENDER_API_KEY`, `RENDER_SERVICE_ID` : requis si l'on déclenche via API Render. Les valeurs sont les mêmes que celles exposées par `ConfigService.get_render_config()` / `config/settings.py`.
 - `RENDER_DEPLOY_CLEAR_CACHE` (optionnel) : `clear` ou `do_not_clear`. Valeur par défaut `do_not_clear`.
 
+| Secret GitHub | Usage | Note |
+| --- | --- | --- |
+| `GHCR_USERNAME` | Identité `docker login` | défaut : `github.actor` |
+| `GHCR_TOKEN` | Authentifie le push GHCR | PAT perso ou `GITHUB_TOKEN` avec droits packages |
+| `RENDER_DEPLOY_HOOK_URL` | Déploiement Render prioritaire | doit commencer par `https://api.render.com/deploy/` |
+| `RENDER_API_KEY` | Authentification API Render | requis pour fallback API |
+| `RENDER_SERVICE_ID` | Service cible Render | correspond à l'ID affiché dans le dashboard Render |
+| `RENDER_DEPLOY_CLEAR_CACHE` | Paramètre `clearCache` | `clear` ou `do_not_clear` |
+
 ### Variables Render
 
 - Côté Render, ne changez pas la commande de démarrage : le Dockerfile exécute déjà `gunicorn ... app_render:app` et respecte les valeurs `GUNICORN_*`.
