@@ -538,6 +538,7 @@ cp app_render_backup_step<X>.py app_render.py
 - [ ] Vérifier 58/58 tests passent
 - [ ] Mettre à jour `memory-bank/decisionLog.md`
 - [ ] Mettre à jour `memory-bank/progress.md`
+- [ ] Consulter les archives si nécessaire : `memory-bank/archive/decisionLog_2025Q4.md` et `memory-bank/archive/progress_2025Q4.md`
 - [ ] Commiter les changements (si utilisation Git)
 - [ ] Célébrer le succès ! 🎉
 
@@ -573,7 +574,7 @@ cp app_render_backup_step<X>.py app_render.py
 Refactoring clôturé le 2025-10-13 avec succès.
 
 - **Résultats finaux** : `app_render.py` ≈ 492 lignes, **100% des routes** migrées en blueprints, **58/58 tests** au vert, architecture modulaire stabilisée.
-- **Suivi** : Voir `memory-bank/decisionLog.md` et `memory-bank/progress.md` pour les entrées de clôture et la synthèse.
+- **Suivi** : Voir `memory-bank/decisionLog.md` et `memory-bank/progress.md` pour les entrées récentes. Pour l'historique détaillé Q4 2025 et antérieur, consulter `memory-bank/archive/decisionLog_2025Q4.md` et `memory-bank/archive/progress_2025Q4.md`.
 
 Cette roadmap reste en lecture seule pour référence historique. Les futures évolutions suivront le flux normal de features/fixes.
 

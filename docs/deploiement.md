@@ -2,13 +2,20 @@
 
 ## Gunicorn + Reverse Proxy
 
-1. Installer les dépendances
+1. Préparer l’environnement Python (prioritaire)
+```
+source /mnt/venv_ext4/venv_render_signal_server/bin/activate
+```
+
+> Alternative locale : si le montage partagé n’est pas accessible (CI, poste externe), créez un virtualenv dédié (`python3 -m venv .venv && source .venv/bin/activate`) avant d’installer les dépendances.
+
+2. Installer les dépendances dans l’environnement actif
 ```
 pip install -r requirements.txt
 pip install gunicorn
 ```
 
-2. Lancer via systemd (exemple)
+3. Lancer via systemd (exemple)
 ```
 [Unit]
 Description=render-signal-server
@@ -22,14 +29,14 @@ Environment="FLASK_SECRET_KEY=..."
 Environment="TRIGGER_PAGE_USER=..."
 Environment="TRIGGER_PAGE_PASSWORD=..."
 # ... autres ENV (voir configuration.md)
-ExecStart=/opt/render_signal_server/.venv/bin/gunicorn -w 2 -b 127.0.0.1:10000 app_render:app
+ExecStart=/mnt/venv_ext4/venv_render_signal_server/bin/gunicorn -w 2 -b 127.0.0.1:10000 app_render:app
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-3. Reverse proxy (Nginx – extrait)
+4. Reverse proxy (Nginx – extrait)
 ```
 location / {
     proxy_pass http://127.0.0.1:10000;
@@ -91,7 +98,47 @@ Le répertoire `deployment/` contient une application PHP autonome reproduisant 
 - Tester `GET /api/get_webhook_time_window` puis `POST /api/set_webhook_time_window` depuis l'UI `trigger_page.html`.
 - Vérifier que les payloads webhook incluent `webhooks_time_start` / `webhooks_time_end` lorsque configurés.
 
-## Déploiement Render via API interne
+## Déploiement Render via image Docker (GHCR → Render)
+
+### Vue d'ensemble
+
+- Le dépôt fournit désormais un `Dockerfile` racine qui construit l'application Flask/Gunicorn avec la configuration standard (`app_render.py`, services orientés métier, tâches de fond).
+- Un workflow GitHub Actions (`.github/workflows/render-image.yml`) :
+  1. Construit l'image Docker.
+  2. La pousse sur GitHub Container Registry (GHCR) avec les tags `latest` et `<commit-sha>`.
+  3. Déclenche un déploiement Render image-based via:
+     - Le Deploy Hook (`RENDER_DEPLOY_HOOK_URL`) si disponible.
+     - Sinon, l'API Render `/v1/services/{serviceId}/deploys` avec `imageUrl`.
+
+### Pré-requis secrets (GitHub)
+
+- `GHCR_TOKEN` (facultatif) : token PAT ou `GITHUB_TOKEN`. Utilisé pour `docker login`. À défaut, `GITHUB_TOKEN` suffit si authorisations packages activées.
+- `GHCR_USERNAME` (facultatif) : nom d'utilisateur PAT. Par défaut `github.actor`.
+- `RENDER_DEPLOY_HOOK_URL` : URL Render Deploy Hook (préfixe `https://api.render.com/deploy/`). Optionnel si API utilisée.
+- `RENDER_API_KEY`, `RENDER_SERVICE_ID` : requis si l'on déclenche via API Render. Les valeurs sont les mêmes que celles exposées par `ConfigService.get_render_config()` / `config/settings.py`.
+- `RENDER_DEPLOY_CLEAR_CACHE` (optionnel) : `clear` ou `do_not_clear`. Valeur par défaut `do_not_clear`.
+
+### Variables Render
+
+- Côté Render, ne changez pas la commande de démarrage : le Dockerfile exécute déjà `gunicorn ... app_render:app` et respecte les valeurs `GUNICORN_*`.
+- Conservez les variables applicatives historiques (`ENABLE_BACKGROUND_TASKS`, `WEBHOOK_URL`, etc.). Elles sont injectées par Render lors du déploiement de l'image.
+- Les logs (stdout/stderr) continuent à exposer `BG_POLLER`, `HEARTBEAT`, `MAKE_WATCHER`, etc., conformément à `docs/operational-guide.md`.
+
+### Flux de déploiement
+
+1. Push sur `main` (ou tag `v*`/`release-*`).
+2. GitHub Actions construit et pousse l'image sur `ghcr.io/<owner>/<repo>:latest` et `...:<sha>`.
+3. Si `RENDER_DEPLOY_HOOK_URL` est défini, Render déploie la nouvelle image.
+4. Sinon, l'action utilise `RENDER_API_KEY` + `RENDER_SERVICE_ID` + `imageUrl` (tag `sha`).
+5. En cas d'échec, l'étape finale notifie et vous pouvez utiliser `POST /api/deploy_application` pour relancer (voir section ci-dessous pour l'ordre Hook/API/fallback local).
+
+### Vérifications
+
+- Voir `Render Dashboard → Events/Logs` pour confirmer que le déploiement provient de `api` ou `deploy_hook`.
+- S'assurer que l'image tirée (affichée dans Render) correspond à `ghcr.io/...:<sha>` attendu.
+- Côté application, vérifier les logs de démarrage (Gunicorn + `Process: SIGTERM` + `HEARTBEAT`) pour confirmer la montée de version.
+
+## Déploiement Render via API interne (fallback manuel)
 
 - Endpoint: `POST /api/deploy_application` (protégé)
 - Ordre de tentative:

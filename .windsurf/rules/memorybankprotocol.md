@@ -71,6 +71,17 @@ memory_bank_updates:
     action: "Append the new entry using insert_content. Never overwrite. Include timestamp."
     format: "[YYYY-MM-DD HH:MM:SS] - [Summary of Progress Update]"
 
+archive_policy:
+  trigger: "When decisionLog.md or progress.md exceed 90 days d'historique actif OU deviennent difficilement lisibles (>~500 lignes)."
+  retention: "Les fichiers principaux ne doivent conserver que les entrées des 90 derniers jours. L'historique complet est archivé par trimestre."
+  actions:
+    - "Créer (si absent) le dossier `memory-bank/archive/` et un fichier trimestriel (ex: decisionLog_2025Q4.md, progress_2025Q4.md)."
+    - "Déplacer les entrées plus anciennes que la période active vers le fichier d'archive correspondant (copier les sections puis les supprimer du fichier principal)."
+    - "Ajouter/mettre à jour dans les fichiers principaux une section `Archives disponibles` listant les fichiers d'archives pertinents."
+    - "Ajouter/mettre à jour une section `Highlights <période>` résumant les décisions clés conservées."
+    - "Documenter la politique d'archivage et la date d'application dans decisionLog.md/progress.md."
+    - "Mettre à jour la documentation ou les références (docs/refactoring-roadmap.md, docs/refactoring-conformity-report.md, etc.) qui pointent vers ces fichiers."
+
 umb: # Update Memory Bank command
   trigger: "^(Update Memory Bank|UMB)$"
   instructions:

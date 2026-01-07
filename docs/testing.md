@@ -66,7 +66,7 @@ render_signal_server-main/
 
 ### Prérequis
 
-- Python 3.9+
+- Python 3.10+
 - pip 20.0+
 - Redis (optionnel, pour les tests d'intégration complets)
 
@@ -77,9 +77,8 @@ render_signal_server-main/
 git clone https://github.com/votre-utilisateur/render_signal_server.git
 cd render_signal_server
 
-# Créer un environnement virtuel (recommandé)
-python -m venv venv
-source venv/bin/activate  # Sur Windows: .\venv\Scripts\activate
+# Activer l'environnement virtuel partagé (prioritaire)
+source /mnt/venv_ext4/venv_render_signal_server/bin/activate  # Monte déjà provisionné sur les postes d'équipe
 
 # Installer les dépendances de développement
 pip install -r requirements-dev.txt
@@ -750,7 +749,7 @@ def test_uppercase(input_value, expected_output):
 
 Le fichier `.github/workflows/tests.yml` est configuré pour :
 1. Exécuter les tests sur chaque push et pull request
-2. Tester sur Python 3.9 et 3.10
+2. Tester sur Python 3.10 (aligné sur le virtualenv partagé `/mnt/venv_ext4/venv_render_signal_server`)
 3. Utiliser Redis comme service pour les tests d'intégration
 4. Générer un rapport de couverture
 5. Envoyer les résultats à Codecov

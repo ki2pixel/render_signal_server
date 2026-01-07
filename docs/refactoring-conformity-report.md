@@ -156,7 +156,7 @@ Impact: Résolu. Centralisation et helpers créés:
 ## 6) Traçabilité
 - Source: `app_render.py` (1543 lignes). Références de lignes incluses ci-dessus.
 - Roadmap: `docs/refactoring-roadmap.md` (v1.0, 2025-10-12).
-- Historique: `memory-bank/progress.md` et `memory-bank/decisionLog.md`.
+- Historique: `memory-bank/progress.md` et `memory-bank/decisionLog.md` (entrées récentes). Pour l'historique détaillé Q4 2025 et antérieur, voir `memory-bank/archive/progress_2025Q4.md` et `memory-bank/archive/decisionLog_2025Q4.md`.
 
 ---
 
@@ -173,7 +173,7 @@ Impact: Résolu. Centralisation et helpers créés:
 - [ ] Backup: `cp app_render.py app_render_backup_step<X>.py`
 - [ ] Compilation: `python3 -m py_compile app_render.py`
 - [ ] Tests: `pytest test_app_render.py -v`
-- [ ] Mise à jour: `memory-bank/decisionLog.md`, `memory-bank/progress.md`
+- [ ] Mise à jour: `memory-bank/decisionLog.md`, `memory-bank/progress.md` (entrées récentes). Pour l'historique détaillé, voir `memory-bank/archive/decisionLog_2025Q4.md` et `memory-bank/archive/progress_2025Q4.md`.
 
 ### Migration d’une route vers blueprint
 - [ ] Créer handler dans `routes/<module>.py` (Blueprint)

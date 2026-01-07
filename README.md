@@ -85,12 +85,26 @@ Le refactoring complet vers l'architecture orientée services (services dédiés
 
 ## Installation (Dev)
 
-Prérequis: Python 3.10+, Redis (optionnel).
+Prérequis : Python 3.10+, Redis (optionnel).
+
+**Environnement virtuel prioritaire (partagé)**  
+Pour économiser l’espace disque local et mutualiser les dépendances, utilise le virtualenv partagé monté sur `/mnt/venv_ext4/venv_render_signal_server` :
+
+```bash
+python3 -m venv /mnt/venv_ext4/venv_render_signal_server
+source /mnt/venv_ext4/venv_render_signal_server/bin/activate
+python -m pip install -r requirements.txt
+```
+
+Assure-toi que `which python` et `python -m pip --version` pointent vers `/mnt/venv_ext4/venv_render_signal_server/bin` avant de lancer la moindre commande Flask/pytest.
+
+**Alternative locale**  
+Si tu n’as pas accès au montage `/mnt/venv_ext4`, tu peux encore créer un virtualenv local à la racine :
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 Créer un fichier d’environnement pour le dev (voir `docs/configuration.md` et `debug/render_signal_server.env`). Principales variables:

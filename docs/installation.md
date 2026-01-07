@@ -8,16 +8,18 @@
 
 ## Installation
 
-1. Créer un environnement virtuel
+1. Créer un environnement virtuel (prioritaire)
 ```
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv /mnt/venv_ext4/venv_render_signal_server
+source /mnt/venv_ext4/venv_render_signal_server/bin/activate
 ```
 
-2. Installer les dépendances
+2. Installer les dépendances dans ce virtualenv partagé
 ```
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
+
+> Alternative locale : si le montage `/mnt/venv_ext4` n’est pas disponible, créez un virtualenv local à la racine (`python3 -m venv .venv && source .venv/bin/activate`) avant d’installer les dépendances.
 
 3. Définir les variables d'environnement minimales (voir `configuration.md`). Exemple (dev):
 ```
