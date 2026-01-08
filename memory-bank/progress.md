@@ -19,6 +19,9 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 ---
 
 ## Terminé
+-   [2026-01-08 14:10] **Correctif déploiement Render: NameError BASE_DIR**
+    - Réordonnancement de `config/settings.py` pour définir `BASE_DIR` avant son usage dans `WEBHOOK_LINKS_FILE`
+    - Validation locale: import `from config import settings` OK
 -   [2026-01-08 13:47] **Amélioration des pages de test PHP pour compatibilité R2**
     - Audit et correction de `test-direct.php` et `test.php` pour faciliter les tests end-to-end d'offload R2
     - Ajout de diagnostics automatiques pour `webhook_links.json` (schéma, entrées legacy, comptage par provider)
