@@ -142,6 +142,62 @@ La fonctionnalité de miroir des médias permet d'envoyer automatiquement les li
   - FromSmash
 - **Journalisation** : Toutes les tentatives d'envoi sont journalisées dans les logs du serveur
 
+### Offload Cloudflare R2 (Réduction de bande passante)
+
+L'intégration Cloudflare R2 permet de transférer automatiquement les fichiers volumineux vers un bucket R2, réduisant drastiquement la bande passante consommée par Render.
+
+#### Fonctionnement
+
+1. Lorsqu'un lien Dropbox/FromSmash/SwissTransfer est détecté dans un email, le serveur envoie une requête légère (~2 Ko) à un Worker Cloudflare.
+2. Le Worker télécharge le fichier directement depuis la source (mode "pull") et le stocke dans R2.
+3. Le Worker retourne l'URL publique R2 (via CDN).
+4. Le webhook est enrichi avec le champ `r2_url` dans chaque entrée `delivery_links`.
+
+#### Avantages
+
+- **Économie de bande passante Render** : Render n'a plus besoin de télécharger/uploader les fichiers volumineux.
+- **Téléchargements plus rapides** : Les fichiers sont servis depuis le CDN Cloudflare.
+- **Archivage centralisé** : Tous les fichiers sont stockés dans un bucket unique.
+
+#### Configuration
+
+Variables d'environnement requises :
+
+```bash
+R2_FETCH_ENABLED=true
+R2_FETCH_ENDPOINT=https://r2-fetch.your-worker.workers.dev
+R2_PUBLIC_BASE_URL=https://media.yourdomain.com
+R2_BUCKET_NAME=render-signal-media
+```
+
+#### Format du payload enrichi
+
+Lorsque R2 est activé, chaque lien contient un champ `r2_url` optionnel :
+
+```json
+{
+  "delivery_links": [
+    {
+      "provider": "dropbox",
+      "raw_url": "https://www.dropbox.com/s/abc123/file.zip?dl=0",
+      "direct_url": "https://www.dropbox.com/s/abc123/file.zip?dl=1",
+      "r2_url": "https://media.yourdomain.com/dropbox/a1b2c3d4/e5f6g7h8/file.zip"
+    }
+  ]
+}
+```
+
+**Recommandation pour les récepteurs** : Prioriser `r2_url` si présent, sinon utiliser `direct_url`.
+
+#### Documentation complète
+
+Voir [docs/r2_offload.md](./r2_offload.md) pour :
+- Architecture détaillée
+- Guide de déploiement Worker Cloudflare
+- Configuration du CDN public
+- Monitoring et troubleshooting
+- Coûts et ROI
+
 ## Webhooks sortants – Format recommandé
 
 Headers HTTP (conseillé):
@@ -159,7 +215,12 @@ Body JSON (exemple généré par `build_custom_webhook_payload()`):
   "bodyPreview": "Résumé du message",
   "email_content": "Contenu complet normalisé",
   "delivery_links": [
-    {"provider": "dropbox", "raw_url": "https://www.dropbox.com/s/.../file1"},
+    {
+      "provider": "dropbox",
+      "raw_url": "https://www.dropbox.com/s/.../file1",
+      "direct_url": "https://www.dropbox.com/s/.../file1?dl=1",
+      "r2_url": "https://media.example.com/dropbox/.../file1.zip"
+    },
     {"provider": "fromsmash", "raw_url": "https://fromsmash.com/ABCdef"},
     {"provider": "swisstransfer", "raw_url": "https://www.swisstransfer.com/d/UUID"}
   ],
@@ -174,11 +235,15 @@ Body JSON (exemple généré par `build_custom_webhook_payload()`):
 Notes:
 - `email.id` est un hash MD5 calculé à partir de `Message-ID|Subject|Date` (voir `generate_email_id()`).
 - `delivery_time` suit la normalisation décrite dans `email_polling.md` (section `check_media_solution_pattern`).
-- `delivery_links` agrège les URLs de fournisseurs supportés (Dropbox, FromSmash, SwissTransfer). `direct_url` peut être `null` si aucun lien direct n'a pu être déterminé.
+- `delivery_links` agrège les URLs de fournisseurs supportés (Dropbox, FromSmash, SwissTransfer).
+  - `direct_url` est optionnel (et peut être `null`) si aucun lien direct n'a pu être déterminé.
+  - `r2_url` est optionnel et n'est présent que si l'offload Cloudflare R2 a réussi.
 - `first_direct_download_url` est le premier lien direct parmi les `delivery_links` trouvés (ou `null`).
 - `webhooks_time_start` et `webhooks_time_end` reflètent la Fenêtre Horaire Globale configurée.
   - Exception (autorépondeur/Make): si un email d'autorépondeur non urgent est détecté avant l'Heure de début configurée, `webhooks_time_start` est défini à l'heure de début (ex. "12h00"). Pour un cas urgent, hors fenêtre, l'envoi est ignoré (pas de bypass).
 - Pour rétro-compatibilité, vous pouvez continuer d'exposer un champ `dropbox_urls` si votre récepteur l'exige.
+
+Recommandation côté récepteur (ordre de préférence): `r2_url` (si présent) → `direct_url` → `raw_url`.
 
 ## Compatibilité rétro (dropbox_urls, dropbox_first_url)
 

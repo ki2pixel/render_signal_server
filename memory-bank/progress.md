@@ -19,7 +19,24 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 ---
 
 ## Terminé
-
+-   [2026-01-08 13:47] **Amélioration des pages de test PHP pour compatibilité R2**
+    - Audit et correction de `test-direct.php` et `test.php` pour faciliter les tests end-to-end d'offload R2
+    - Ajout de diagnostics automatiques pour `webhook_links.json` (schéma, entrées legacy, comptage par provider)
+    - Résolution de l'erreur de redéclaration de classe WebhookHandler par consolidation des helpers
+    - Ajout de `getWebhookLinksSnapshot()` dans `WebhookHandler` pour snapshot des dernières entrées
+    - Validation fonctionnelle des pages avec exemples utilisateur
+-   [2026-01-08 12:45] **Correctif Dropbox `/scl/fo/` best-effort**
+    - Suppression du skip backend (R2TransferService + orchestrator) pour laisser le Worker tenter l'offload
+    - Timeout spécifique 120s pour dossiers Dropbox, normalisation stricte appliquée avant persistance `webhook_links.json`
+    - Worker Cloudflare renforcé : User-Agent navigateur, fallback contrôlé vers `dl.dropboxusercontent.com` (hors `/scl/fo/`), validation ZIP (taille minimale + magic bytes `PK`) avant upload R2
+    - Tests mis à jour (`tests/test_r2_transfer_service.py`) + documentation clarifiée (`docs/r2_dropbox_limitations.md`)
+    - Curl manuel validé (265 MB ZIP téléchargé, logs Worker confirmés)
+-   [2026-01-08 01:30] **Intégration Cloudflare R2 Offload terminée**
+    - Service singleton `R2TransferService` avec normalisation Dropbox et persistance paires source/R2
+    - Workers Cloudflare déployés : `r2-fetch-worker` (fetch + détection HTML) et `r2-cleanup-worker` (auto-suppression 24h)
+    - Intégration orchestrator avec enrichissement payload webhook (`r2_url` optionnel)
+    - Tests unitaires complets (422 lignes) et documentation (`docs/r2_offload.md`, `docs/r2_dropbox_limitations.md`)
+    - Économie potentielle de ~$5/mois pour 50 GB transférés, limitation identifiée pour dossiers partagés Dropbox (fallback gracieux)
 -   [2026-01-06 11:27] **Réduction de la dette historique des Memory Bank**
     - Mise en œuvre de la politique d'archivage pour decisionLog.md et progress.md
     - Création du dossier archive/ avec fichiers trimestriels

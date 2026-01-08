@@ -812,6 +812,33 @@ Surveiller les logs Render après le déploiement pour vérifier que le poller (
 
 *Dernière mise à jour : 2025-11-18*
 
+## 🆕 Nouveaux Tests (2026-01-08)
+
+### Tests R2 Transfer Service
+
+Le service `R2TransferService` dispose maintenant de tests unitaires complets dans `tests/test_r2_transfer_service.py` (419 lignes) :
+
+- **Tests de normalisation URL** : Validation des transformations Dropbox (ajout `?dl=1`, nettoyage des paramètres)
+- **Tests de génération de clés d'objet** : Vérification du format `provider/hash/subdir/filename`
+- **Tests de persistance** : Mock du système de fichiers et verrouillage `fcntl` pour `webhook_links.json`
+- **Tests d'intégration Worker** : Simulation des appels HTTP vers le Worker Cloudflare
+- **Tests de timeout** : Gestion des timeouts spécifiques pour les dossiers Dropbox `/scl/fo/` (120s)
+- **Tests de validation ZIP** : Vérification des magic bytes `PK` et taille minimale
+
+**Marqueurs spécifiques** : `@pytest.mark.r2` pour isoler les tests nécessitant une configuration R2.
+
+### Tests Magic Links (À Implémenter)
+
+Les tests pour le service `MagicLinkService` sont actuellement manquants et devraient être ajoutés :
+
+- **Tests de génération** : Validation HMAC SHA-256, TTL configurable, tokens uniques
+- **Tests de consommation** : Usage unique vs permanent, expiration automatique
+- **Tests de sécurité** : Protection contre timing attacks (`hmac.compare_digest`)
+- **Tests d'intégration** : Flux complet via `/api/auth/magic-link` et `/login/magic/<token>`
+- **Tests de nettoyage** : Nettoyage automatique des tokens expirés/consommés
+
+**Recommandation** : Créer `tests/test_magic_link_service.py` avec au moins 200 lignes de tests couvrant tous les scénarios critiques.
+
 ### Stratégies d'Amélioration
 
 #### 1. Analyse des Zones à Améliorer

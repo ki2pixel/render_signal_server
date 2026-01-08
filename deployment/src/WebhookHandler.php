@@ -266,6 +266,26 @@ class WebhookHandler
     }
 
     /**
+     * Retourne les 5 dernières entrées du fichier webhook_links.json (mode legacy PHP).
+     */
+    private function getWebhookLinksSnapshot()
+    {
+        $file = dirname(__DIR__) . '/data/webhook_links.json';
+        if (!file_exists($file)) {
+            return [];
+        }
+        $raw = @file_get_contents($file);
+        if ($raw === false) {
+            return [];
+        }
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+        return array_slice(array_reverse($decoded), 0, 5);
+    }
+
+    /**
      * Validate webhook data structure
      *
      * @param array $data Webhook data
@@ -439,17 +459,17 @@ class WebhookHandler
             ]
         ];
 
-        // Si on a des URLs, on les enregistre en base
+        // Si on a des URLs, on les enregistre en base (legacy JSON pour compat test)
         if (!empty($allUrls)) {
             try {
-                // On utilise le logger existant de la classe
                 $this->jsonLogger->logMultipleDropboxUrls($allUrls);
                 $result['logged_count'] = count($allUrls);
             } catch (Exception $e) {
-                // On ne bloque pas le test en cas d'erreur de log
                 $result['log_error'] = $e->getMessage();
             }
         }
+
+        $result['webhook_links_snapshot'] = $this->getWebhookLinksSnapshot();
 
         return $result;
     }

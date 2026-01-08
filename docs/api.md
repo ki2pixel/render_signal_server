@@ -14,6 +14,7 @@ L'application utilise une architecture orientée services avec les composants pr
 | `DeduplicationService` | `services/deduplication_service.py` | Gestion de la déduplication (Redis ou mémoire) |
 | `AuthService` | `services/auth_service.py` | Authentification et autorisation |
 | `PollingConfigService` | `services/polling_config_service.py` | Configuration du polling IMAP |
+| `R2TransferService` | `services/r2_transfer_service.py` | Offload Cloudflare R2 (fetch distant + persistance des paires source/R2) |
 
 ## Organisation des routes
 
@@ -75,6 +76,47 @@ Toutes les routes de l'API (sauf `/health` et `/login`) nécessitent une authent
   - Paramètres : `username`, `password` (form-data ou JSON)
   - Réponse en cas de succès : Redirection vers `/`
   - Réponse en cas d'échec : Page de login avec message d'erreur
+
+### Authentification par Magic Link
+
+#### Génération d'un Magic Link
+
+- `POST /api/auth/magic-link` (protégé)
+  - **Nécessite une session utilisateur valide**
+  - Corps JSON optionnel :
+    ```json
+    {
+      "unlimited": false
+    }
+    ```
+    - `unlimited` (booléen, optionnel) : Si `true`, génère un lien permanent (sans expiration)
+  
+  - Réponse en cas de succès (201) :
+    ```json
+    {
+      "success": true,
+      "magic_link": "https://example.com/dashboard/magic-link/token.1234567890.abcdef123456",
+      "expires_at": "2024-12-31T23:59:59+00:00",
+      "unlimited": false
+    }
+    ```
+  
+  - Réponses d'erreur :
+    - 401 : Non authentifié
+    - 403 : Accès refusé (si l'utilisateur n'a pas les droits)
+    - 500 : Erreur serveur
+
+#### Utilisation d'un Magic Link
+
+- `GET /dashboard/magic-link/<token>`
+  - Valide et consomme le token de magic link
+  - Redirige vers le tableau de bord si le token est valide
+  - Affiche une page d'erreur si le token est invalide ou expiré
+  
+  - Réponses :
+    - 302 : Redirection vers le tableau de bord (succès)
+    - 400 : Token invalide ou expiré
+    - 403 : Accès refusé (lien déjà utilisé ou révoqué)
 
 ### Déconnexion
 
@@ -226,6 +268,12 @@ Remplacez `DOMAIN` par l'URL Render, et `<USERNAME>/<PASSWORD>` par vos identifi
     {
       "provider": "swisstransfer",
       "raw_url": "https://www.swisstransfer.com/d/..."
+    },
+    {
+      "provider": "dropbox",
+      "raw_url": "https://www.dropbox.com/s/abc123/file.zip?dl=0",
+      "direct_url": "https://www.dropbox.com/s/abc123/file.zip?dl=1",
+      "r2_url": "https://media.example.com/dropbox/a1b2c3d4/e5f6g7h8/file.zip"
     }
   ],
   "first_direct_download_url": null,
@@ -237,7 +285,7 @@ Remplacez `DOMAIN` par l'URL Render, et `<USERNAME>/<PASSWORD>` par vos identifi
 Notes :
 
 - Les champs reflètent `email_processing/payloads.py::build_custom_webhook_payload()`.
-- `delivery_links` ne contient que des URLs brutes (`raw_url`). La résolution « direct_url » a été supprimée.
+- `delivery_links` contient toujours `raw_url` et peut aussi inclure `direct_url` (si déterminée) et `r2_url` (si offload Cloudflare R2 réussi).
 - `dropbox_*` sont fournis pour compatibilité legacy.
 
 ## Gestion des erreurs

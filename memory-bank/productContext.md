@@ -56,6 +56,7 @@ Le projet a récemment subi un important refactoring pour améliorer sa maintena
 -   **Couverture de tests** >70% (seuil CI) avec 257 tests passants
 -   **Documentation** à jour dans `TESTING_STATUS.md`
 -   **CI/CD** configurée avec GitHub Actions (seuil de couverture à 70%)
+-   **Authentification Dashboard** : Ajout d'un flux "magic link" (2026-01-07) permettant de générer des URL pré-authentifiées (usage unique ou permanent) via `MagicLinkService`, l'API `/api/auth/magic-link` et l'UI (`login.html`, `dashboard.html`, `static/dashboard.js`). Les tokens sont signés avec `FLASK_SECRET_KEY`, stockés dans `MAGIC_LINK_TOKENS_FILE` et révoqués après utilisation (mode one-shot) ou sur demande (mode permanent).
 
 ### Prochaines étapes potentielles
 

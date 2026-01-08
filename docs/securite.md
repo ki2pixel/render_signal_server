@@ -21,6 +21,88 @@
 - Sanitize systématique des entrées si vous ajoutez de nouvelles routes.
 - Ne logguez pas les mots de passe ; masquez les secrets dans les logs.
 
+## Magic Links
+
+### Génération sécurisée
+- Les tokens sont signés avec HMAC-SHA256 en utilisant `FLASK_SECRET_KEY`
+- Chaque token contient un identifiant unique, une date d'expiration et une signature
+- Les tokens sont générés de manière aléatoire avec `secrets.token_urlsafe()`
+
+### Validation robuste
+- Vérification de la signature à chaque utilisation
+- Vérification de la date d'expiration (sauf pour les liens permanents)
+- Protection contre les attaques par timing avec `hmac.compare_digest()`
+
+### Gestion du cycle de vie
+- Les liens à usage unique sont immédiatement invalidés après utilisation
+- Les liens expirés sont automatiquement nettoyés du stockage
+- Les liens permanents doivent être révoqués manuellement si compromis
+
+### Bonnes pratiques
+1. **Durée de vie limitée** :
+   - Les liens standards expirent après 15 minutes (configurable via `MAGIC_LINK_TTL_SECONDS`)
+   - Privilégier les liens à usage unique pour un accès temporaire
+
+2. **Stockage sécurisé** :
+   - Les tokens sont stockés dans un fichier JSON protégé (`magic_link_tokens.json`)
+   - Accès exclusif avec verrouillage pour éviter les conditions de course
+
+3. **Journalisation** :
+   - Toutes les tentatives d'utilisation de magic links sont journalisées
+   - Les échecs de validation sont enregistrés avec le motif d'échec
+
+4. **Configuration recommandée** :
+   ```env
+   # Durée de vie des liens en secondes (900 = 15 minutes)
+   MAGIC_LINK_TTL_SECONDS=900
+   
+   # Fichier de stockage des tokens
+   MAGIC_LINK_TOKENS_FILE=./magic_link_tokens.json
+   ```
+
+5. **Réponse aux incidents** :
+   - En cas de fuite d'un lien, le révoquer immédiatement
+   - Pour les liens permanents, régénérer `FLASK_SECRET_KEY` pour invalider tous les tokens existants
+
 ## Redis
 - Utiliser `REDIS_URL` avec mot de passe et TLS si possible.
 - Éviter l'exposition publique de Redis.
+
+## Cloudflare R2 (Offload fichiers)
+
+### Configuration sécurisée
+- Les clés Cloudflare R2 ne doivent jamais être commitées dans le code
+- Utiliser uniquement les variables d'environnement Render pour les secrets
+- `R2_FETCH_ENDPOINT` doit pointer vers un Worker Cloudflare sécurisé
+- `R2_PUBLIC_BASE_URL` doit être un domaine HTTPS validé
+
+### Validation des URLs sources
+- Le Worker valide les domaines sources autorisés pour éviter les abus :
+  - `dropbox.com`, `fromsmash.com`, `swisstransfer.com`, `wetransfer.com`
+- Seules les URLs provenant de ces domaines sont acceptées
+- Logs détaillés en cas de rejet de domaine non autorisé
+
+### Sécurité du Worker Cloudflare
+- Rate limiting configuré via `wrangler.toml` pour éviter les abus
+- Validation stricte des payloads JSON entrants
+- Timeout de 120 secondes maximum pour les transferts
+- Logs sécurisés (pas de secrets exposés côté client)
+
+### Gestion des erreurs et fallback
+- En cas d'échec R2, le système revient aux URLs sources originales
+- Aucun blocage du flux principal si R2 est indisponible
+- Logs détaillés pour le debugging sans exposition de secrets
+
+### Bonnes pratiques R2
+1. **Rotation des secrets** : Régénérer périodiquement les clés Cloudflare R2
+2. **Monitoring** : Surveiller les logs Worker pour détecter les abus potentiels  
+3. **Domaines autorisés** : Maintenir la liste des domaines sources à jour
+4. **Rate limiting** : Ajuster le rate limiting selon le volume d'usage
+
+Variables d'environnement sensibles :
+```env
+# NE PAS COMMITER - seulement dans Render
+R2_ACCESS_KEY_ID=votre_access_key_cloudflare
+R2_SECRET_ACCESS_KEY=votre_secret_key_cloudflare  
+R2_ACCOUNT_ID=votre_account_id_cloudflare
+```

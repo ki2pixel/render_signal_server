@@ -51,6 +51,25 @@ location / {
 
 Le répertoire `deployment/` contient une application PHP autonome reproduisant le scénario Make.com (IMAP, extraction d'URL Dropbox, logs MySQL, dashboard). Elle est indépendante du serveur Flask. Voir `deployment/README.md` et `deployment/deployment-guide.md` pour l'installer côté PHP si nécessaire.
 
+### Pages de test (diagnostic R2)
+
+Les pages suivantes servent de support de diagnostic pour valider end-to-end l'offload R2 et l'état de `deployment/data/webhook_links.json` :
+
+- `deployment/public_html/test.php`
+  - Test IMAP + DB (flux complet côté PHP)
+  - Test « provider-only » (extraction locale Dropbox/FromSmash/SwissTransfer sans écriture DB)
+  - Affiche un diagnostic `webhook_links.json` : conformité schéma, entrées legacy, comptage par provider, dernières entrées.
+
+- `deployment/public_html/test-direct.php`
+  - Test direct d'extraction d'URLs (sans IMAP)
+  - Affiche aussi le diagnostic `webhook_links.json`.
+
+Pour éviter des conflits d'inclusion PHP, la logique de diagnostic est consolidée dans un seul helper :
+
+- `deployment/src/WebhookTestUtils.php` (fonction `loadWebhookLinksDiagnostics()`)
+
+Ces pages sont prévues pour un usage admin/diagnostic uniquement.
+
 ### Configuration DirectAdmin (Gmail OAuth)
 
 - **Auto-prepend** : activer dans `.htaccess` (ou via DirectAdmin) :
@@ -71,11 +90,53 @@ Le répertoire `deployment/` contient une application PHP autonome reproduisant 
   - Lancer `POST action=auto-check&force=1` pour créer/mettre à jour `deployment/data/gmail_oauth_last_check.json` et `.../gmail_oauth_check_history.jsonl`.
   - Protéger l'endpoint via `GMAIL_OAUTH_CHECK_KEY` (et idéalement Auth HTTP/IP allowlist).
 
+## Configuration des Magic Links
+
+### Variables d'environnement requises
+
+- `FLASK_SECRET_KEY` (obligatoire) : Clé secrète utilisée pour signer les tokens. Doit être identique sur tous les workers.
+  ```
+  FLASK_SECRET_KEY=votre_cle_secrete_tres_longue_et_aleatoire
+  ```
+
+### Variables d'environnement optionnelles
+
+- `MAGIC_LINK_TTL_SECONDS` (optionnel, défaut: 900 - 15 minutes) :
+  Durée de validité des liens à usage unique en secondes.
+  ```
+  MAGIC_LINK_TTL_SECONDS=900
+  ```
+
+- `MAGIC_LINK_TOKENS_FILE` (optionnel, défaut: `./magic_link_tokens.json`) :
+  Chemin vers le fichier de stockage des tokens. Doit être accessible en écriture par l'utilisateur du service.
+  ```
+  MAGIC_LINK_TOKENS_FILE=/var/lib/render_signal_server/magic_link_tokens.json
+  ```
+
+### Recommandations de sécurité
+
+1. **Stockage sécurisé** :
+   - Placez le fichier des tokens dans un répertoire protégé (ex: `/var/lib/render_signal_server/`)
+   - Définissez des permissions restrictives :
+     ```bash
+     chown www-data:www-data /var/lib/render_signal_server/magic_link_tokens.json
+     chmod 600 /var/lib/render_signal_server/magic_link_tokens.json
+     ```
+
+2. **Rotation des clés** :
+   - Régénérez périodiquement `FLASK_SECRET_KEY` pour invalider les tokens existants
+   - Planifiez une rotation tous les 3-6 mois ou selon votre politique de sécurité
+
+3. **Surveillance** :
+   - Surveillez la taille du fichier de tokens pour détecter les abus
+   - Configurez des alertes pour les échecs d'authentification par magic link
+
 ## Vérifications post-déploiement
 - Accès HTTPS au domaine et au login `/login`.
 - `GET /api/ping` renvoie `200`.
 - Les tâches de fond démarrent (logs `BACKGROUND_TASKS`).
 - Les variables d'environnement sensibles sont présentes.
+- Vérifiez que le fichier de tokens est accessible et a les bonnes permissions.
 
 ### Observabilité & Signaux
 

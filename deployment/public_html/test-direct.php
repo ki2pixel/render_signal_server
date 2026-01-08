@@ -14,9 +14,11 @@ require_once dirname(__DIR__) . '/src/WebhookHandler.php';
 require_once dirname(__DIR__) . '/src/DropboxUrlProcessor.php';
 require_once dirname(__DIR__) . '/src/FromSmashUrlProcessor.php';
 require_once dirname(__DIR__) . '/src/SwissTransferUrlProcessor.php';
+require_once dirname(__DIR__) . '/src/WebhookTestUtils.php';
 
 $result = null;
 $error = null;
+$linksDiagnostics = null;
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -35,6 +37,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = $e->getMessage();
     }
 }
+
+$linksDiagnostics = loadWebhookLinksDiagnostics();
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -54,9 +58,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .result { margin: 20px 0; padding: 15px; border-radius: 5px; }
         .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
         .url-list { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; }
         .url-item { margin: 5px 0; word-break: break-all; }
         pre { background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        .diag-header { display: flex; align-items: center; gap: 10px; }
+        .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
+        .badge-ok { background: #d4edda; color: #155724; }
+        .badge-warning { background: #fff3cd; color: #856404; }
+        .badge-error { background: #f8d7da; color: #721c24; }
+        details summary { cursor: pointer; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -128,6 +140,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 <h4>📊 Réponse complète:</h4>
                 <pre><?php echo htmlspecialchars(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)); ?></pre>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($linksDiagnostics): ?>
+            <?php
+                $diagStatus = $linksDiagnostics['status'] ?? 'error';
+                $badgeClass = [
+                    'ok' => 'badge-ok',
+                    'warning' => 'badge-warning',
+                    'error' => 'badge-error',
+                ][$diagStatus] ?? 'badge-warning';
+            ?>
+            <div class="result info">
+                <div class="diag-header">
+                    <h3 style="margin: 0;">📁 Diagnostic webhook_links.json</h3>
+                    <span class="badge <?php echo $badgeClass; ?>">
+                        <?php echo htmlspecialchars(strtoupper($diagStatus)); ?>
+                    </span>
+                </div>
+                <p style="margin-top: 10px;"><?php echo htmlspecialchars($linksDiagnostics['message']); ?></p>
+                <p style="margin: 5px 0;"><strong>Chemin :</strong> <code><?php echo htmlspecialchars($linksDiagnostics['file']); ?></code></p>
+                <?php if (!empty($linksDiagnostics['provider_counts'])): ?>
+                    <p><strong>Comptage par provider :</strong></p>
+                    <ul>
+                        <?php foreach ($linksDiagnostics['provider_counts'] as $provider => $count): ?>
+                            <li><?php echo htmlspecialchars($provider); ?> : <?php echo (int)$count; ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+
+                <?php if ($linksDiagnostics['has_legacy_entries']): ?>
+                    <div class="result warning" style="margin-top: 10px;">
+                        <strong>Legacy détecté :</strong> certaines entrées utilisent encore l'ancien champ <code>url</code>.
+                        Mettez à jour le fichier ou supprimez ces entrées avant de valider un test R2.
+                    </div>
+                <?php endif; ?>
+
+                <?php if (!empty($linksDiagnostics['schema_issues'])): ?>
+                    <div class="result warning" style="margin-top: 10px;">
+                        <strong>Incohérences de schéma détectées :</strong>
+                        <ul>
+                            <?php foreach ($linksDiagnostics['schema_issues'] as $issue): ?>
+                                <li><?php echo htmlspecialchars($issue); ?></li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                <?php endif; ?>
+
+                <details style="margin-top: 10px;">
+                    <summary>Voir les 5 dernières entrées</summary>
+                    <?php if (!empty($linksDiagnostics['last_entries'])): ?>
+                        <pre><?php echo htmlspecialchars(json_encode($linksDiagnostics['last_entries'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)); ?></pre>
+                    <?php else: ?>
+                        <p style="margin-top: 10px;">Aucune entrée enregistrée.</p>
+                    <?php endif; ?>
+                </details>
+
+                <details style="margin-top: 10px;">
+                    <summary>Contenu JSON complet</summary>
+                    <pre><?php echo htmlspecialchars($linksDiagnostics['raw_json'] ?? ''); ?></pre>
+                </details>
+
+                <p style="margin-top: 15px; font-size: 14px;">
+                    <strong>Checklist test R2 :</strong>
+                    <ol style="margin: 10px 0 0 20px;">
+                        <li>Coller l'email dans le formulaire ci-dessus et vérifier les URLs détectées.</li>
+                        <li>Déclencher le traitement complet côté backend (poller Flask) pour générer un <code>r2_url</code>.</li>
+                        <li>Recharger cette page pour afficher la nouvelle entrée et confirmer la présence de <code>source_url</code> + <code>r2_url</code>.</li>
+                        <li>Contrôler les logs <code>R2_TRANSFER</code> côté Flask/Render pour confirmer l'offload.</li>
+                    </ol>
+                </p>
             </div>
         <?php endif; ?>
 

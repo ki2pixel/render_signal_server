@@ -34,6 +34,59 @@ L'interface communique avec les services backend via des appels API REST. Les pr
 - `PollingConfigService` : Configuration du polling IMAP
 - `DeduplicationService` : Gestion de la déduplication
 - `AuthService` : Authentification et autorisation
+- `MagicLinkService` : Génération et validation des magic links
+
+## Authentification par Magic Links (2026-01-08)
+
+### Vue d'ensemble
+
+Le dashboard supporte désormais l'authentification par magic links pour simplifier l'accès admin récurrent :
+
+- **Génération de liens** : Via l'interface `/login` (bouton "Générer un Magic Link")
+- **Modes supportés** : 
+  - One-shot (TTL configurable, usage unique)
+  - Permanent (illimité, révocation manuelle)
+- **Stockage sécurisé** : Tokens signés HMAC-SHA256 avec `FLASK_SECRET_KEY`
+- **Interface utilisateur** : Champ token sur la page de login, bouton copie automatique
+
+### Flux utilisateur
+
+1. **Génération** (admin connecté) :
+   - Accéder à `/login` → bouton "Générer un Magic Link"
+   - Cocher "Illimité" pour un lien permanent
+   - Copier automatiquement le lien généré
+
+2. **Utilisation** :
+   - Visiter l'URL du magic link (redirection automatique)
+   - Ou saisir manuellement le token dans le champ "Magic Token" sur `/login`
+   - Authentification automatique si le token est valide
+
+3. **Sécurité** :
+   - Tokens one-shot expirés après utilisation
+   - Tokens permanents stockés dans `MAGIC_LINK_TOKENS_FILE`
+   - Nettoyage automatique des tokens expirés
+
+### Configuration
+
+Variables d'environnement :
+```bash
+MAGIC_LINK_TTL_SECONDS=3600    # TTL pour les tokens one-shot (1h par défaut)
+MAGIC_LINK_TOKENS_FILE=/app/data/magic_links.json
+FLASK_SECRET_KEY=votre-clé-secrète-robuste  # Requis pour la signature
+```
+
+### API
+
+- `POST /api/auth/magic-link` : Générer un nouveau magic link (protégé par session)
+- `GET /login/magic/<token>` : Consommer un magic link (redirection automatique)
+
+### Logs
+
+Les événements sont loggés avec le préfixe `MAGIC_LINK` :
+```
+MAGIC_LINK: token generated (expires_at=2026-01-08T14:30:00Z)
+MAGIC_LINK: token abc123 consommé par admin_user
+```
 
 ## Sections du Dashboard
 
@@ -174,6 +227,62 @@ Permet de configurer l'URL de webhook principale et les options associées :
 - Mini-graph: `#metricsMiniChart`
 - Source: `GET /api/webhook_logs?days=1`
 - Calcul côté client (approximation à partir des logs récents)
+
+## 10. Sécurité et Accès
+
+### 10.1 Accès par Magic Link
+
+La section "Accès Magic Link" permet de générer des liens d'authentification sécurisés pour accéder au tableau de bord sans identifiants.
+
+#### Fonctionnalités
+
+- **Génération de liens** : Crée des liens d'accès temporaires ou permanents
+- **Deux modes d'utilisation** :
+  - **Lien à usage unique** : Expire après utilisation (par défaut)
+  - **Lien permanent** : Reste actif jusqu'à révocation manuelle
+- **Sécurité** :
+  - Chaque lien est signé avec HMAC-SHA256
+  - Les liens à usage unique sont automatiquement invalidés après utilisation
+  - Les liens expirés sont automatiquement nettoyés
+  - Les liens peuvent être révoqués à tout moment
+
+#### Interface Utilisateur
+
+- **Bouton de génération** : "✨ Générer un magic link"
+- **Option "Mode illimité"** : Permet de basculer entre les liens à usage unique et permanents
+- **Zone d'affichage** : Affiche le lien généré avec son statut d'expiration
+- **Copie automatique** : Le lien est automatiquement copié dans le presse-papiers
+
+#### Comportement
+
+1. **Génération** :
+   - Cliquer sur "Générer un magic link"
+   - Le lien est généré et affiché
+   - Un message de confirmation s'affiche
+
+2. **Utilisation** :
+   - Ouvrir le lien dans un navigateur
+   - Si valide, l'utilisateur est automatiquement connecté au tableau de bord
+   - Pour les liens à usage unique, le lien est immédiatement invalidé après utilisation
+
+3. **Expiration** :
+   - Liens à usage unique : 15 minutes par défaut (configurable via `MAGIC_LINK_TTL_SECONDS`)
+   - Liens permanents : Pas d'expiration, doivent être révoqués manuellement
+
+#### Bonnes pratiques
+
+- Ne partager les liens qu'avec des personnes autorisées
+- Préférer les liens à usage unique pour un accès temporaire
+- Révoquer immédiatement tout lien compromis
+- Ne pas utiliser de liens permanents pour un accès de longue durée
+- Vérifier régulièrement la liste des liens actifs
+
+#### Dépannage
+
+- **Lien expiré** : Générer un nouveau lien
+- **Lien déjà utilisé** : Les liens à usage unique ne peuvent être utilisés qu'une seule fois
+- **Erreur de signature** : Le lien a peut-être été altéré, générer un nouveau lien
+- **Accès refusé** : Vérifier les autorisations de l'utilisateur
 
 ## Conventions JavaScript
 

@@ -643,6 +643,70 @@ def check_new_emails_and_trigger_webhook() -> int:
                         pass
 
                 delivery_links = link_extraction.extract_provider_links_from_text(combined_text_for_detection or '')
+                
+                # R2 Transfer: enrich delivery_links with R2 URLs if enabled
+                try:
+                    from services import R2TransferService
+                    r2_service = R2TransferService.get_instance()
+                    
+                    if r2_service.is_enabled() and delivery_links:
+                        for link_item in delivery_links:
+                            if not isinstance(link_item, dict):
+                                continue
+                            
+                            source_url = link_item.get('raw_url')
+                            provider = link_item.get('provider')
+                            
+                            if source_url and provider:
+                                try:
+                                    normalized_source_url = r2_service.normalize_source_url(
+                                        source_url, provider
+                                    )
+                                    remote_fetch_timeout = 15
+                                    if (
+                                        provider == "dropbox"
+                                        and "/scl/fo/" in normalized_source_url.lower()
+                                    ):
+                                        remote_fetch_timeout = 120
+
+                                    r2_url = r2_service.request_remote_fetch(
+                                        source_url=normalized_source_url,
+                                        provider=provider,
+                                        email_id=email_id,
+                                        timeout=remote_fetch_timeout
+                                    )
+                                    
+                                    if r2_url:
+                                        link_item['r2_url'] = r2_url
+                                        # Persister la paire source/R2
+                                        r2_service.persist_link_pair(
+                                            source_url=normalized_source_url,
+                                            r2_url=r2_url,
+                                            provider=provider,
+                                            email_id=email_id
+                                        )
+                                        logger.info(
+                                            "R2_TRANSFER: Successfully transferred %s link to R2 for email %s",
+                                            provider,
+                                            email_id
+                                        )
+                                    else:
+                                        logger.warning(
+                                            "R2_TRANSFER: Failed to transfer %s link to R2 for email %s (no URL returned)",
+                                            provider,
+                                            email_id
+                                        )
+                                except Exception as r2_ex:
+                                    logger.warning(
+                                        "R2_TRANSFER: Error transferring %s link for email %s: %s",
+                                        provider,
+                                        email_id,
+                                        str(r2_ex)
+                                    )
+                                    # Continue avec le lien source original
+                except Exception as r2_service_ex:
+                    logger.debug("R2_TRANSFER: Service unavailable or disabled: %s", str(r2_service_ex))
+                
                 # Group dedup check for custom webhook
                 group_id = ar.generate_subject_group_id(subject or '')
                 if ar.is_subject_group_processed(group_id):

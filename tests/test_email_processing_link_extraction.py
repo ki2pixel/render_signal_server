@@ -119,6 +119,23 @@ class TestExtractProviderLinksFromText:
         providers = [link["provider"] for link in result]
         assert "dropbox" in providers
         assert "fromsmash" in providers
+
+    @pytest.mark.unit
+    def test_extract_unescapes_html_entities(self):
+        """Vérifie que les URLs extraites ne conservent pas les entités HTML (ex: &amp;)."""
+        text = (
+            '<a href="https://www.dropbox.com/scl/fi/abc123/file.png?rlkey=foo&amp;dl=0">'
+            "Télécharger"
+            "</a>"
+        )
+
+        result = link_extraction.extract_provider_links_from_text(text)
+
+        assert len(result) == 1
+        assert result[0]["provider"] == "dropbox"
+        assert "&amp;" not in result[0]["raw_url"]
+        assert "rlkey=foo" in result[0]["raw_url"]
+        assert "&dl=0" in result[0]["raw_url"]
     
     @pytest.mark.unit
     def test_extract_case_insensitive(self):

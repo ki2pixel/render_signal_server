@@ -15,59 +15,60 @@ require_once dirname(__DIR__) . '/src/WebhookHandler.php';
 require_once dirname(__DIR__) . '/src/DropboxUrlProcessor.php';
 require_once dirname(__DIR__) . '/src/FromSmashUrlProcessor.php';
 require_once dirname(__DIR__) . '/src/SwissTransferUrlProcessor.php';
+require_once dirname(__DIR__) . '/src/WebhookTestUtils.php';
 
 $result = null;
 $error = null;
 // For provider-only test (no DB writes, no IMAP)
 $provResult = null; // array with keys: dropbox, fromsmash, swisstransfer, all
 $provError = null;
+$linksDiagnostics = null;
 
-// Handle form submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sender']) && isset($_POST['subject']) && isset($_POST['date'])) {
-    try {
-        $sender = $_POST['sender'] ?? '';
-        $subject = $_POST['subject'] ?? '';
-        $date = $_POST['date'] ?? '';
-        
-        if (empty($sender) || empty($subject) || empty($date)) {
-            throw new Exception('All fields are required');
+// Handle form submissions
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? null;
+
+    if ($action === 'provider_only') {
+        try {
+            $content = filter_input(INPUT_POST, 'email_content', FILTER_UNSAFE_RAW) ?? '';
+            if (trim($content) === '') {
+                throw new Exception('The email content field is required');
+            }
+
+            $urlsDropbox = DropboxUrlProcessor::processAllDropboxUrls($content);
+            $urlsSmash = FromSmashUrlProcessor::processAllFromSmashUrls($content);
+            $urlsSwiss = SwissTransferUrlProcessor::processAllSwissTransferUrls($content);
+
+            $all = array_values(array_unique(array_merge($urlsDropbox, $urlsSmash, $urlsSwiss)));
+
+            $provResult = [
+                'dropbox' => $urlsDropbox,
+                'fromsmash' => $urlsSmash,
+                'swisstransfer' => $urlsSwiss,
+                'all' => $all,
+            ];
+        } catch (Exception $e) {
+            $provError = $e->getMessage();
         }
+    } elseif ($action === 'manual_imap') {
+        try {
+            $sender = $_POST['sender'] ?? '';
+            $subject = $_POST['subject'] ?? '';
+            $date = $_POST['date'] ?? '';
 
-// Handle provider-only extraction submission (isolated, no DB)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email_content'])) {
-    try {
-        // Sanitize raw input (we'll escape on output as well)
-        $content = filter_input(INPUT_POST, 'email_content', FILTER_UNSAFE_RAW) ?? '';
-        if (trim($content) === '') {
-            throw new Exception('The email content field is required');
+            if (empty($sender) || empty($subject) || empty($date)) {
+                throw new Exception('All fields are required');
+            }
+
+            $handler = new WebhookHandler();
+            $result = $handler->manualProcess($sender, $subject, $date);
+        } catch (Exception $e) {
+            $error = $e->getMessage();
         }
-
-        // Extract per provider
-        $urlsDropbox = DropboxUrlProcessor::processAllDropboxUrls($content);
-        $urlsSmash = FromSmashUrlProcessor::processAllFromSmashUrls($content);
-        $urlsSwiss = SwissTransferUrlProcessor::processAllSwissTransferUrls($content);
-
-        // Merge unique for a consolidated view
-        $all = array_values(array_unique(array_merge($urlsDropbox, $urlsSmash, $urlsSwiss)));
-
-        $provResult = [
-            'dropbox' => $urlsDropbox,
-            'fromsmash' => $urlsSmash,
-            'swisstransfer' => $urlsSwiss,
-            'all' => $all,
-        ];
-    } catch (Exception $e) {
-        $provError = $e->getMessage();
     }
 }
-        
-        $handler = new WebhookHandler();
-        $result = $handler->manualProcess($sender, $subject, $date);
-        
-    } catch (Exception $e) {
-        $error = $e->getMessage();
-    }
-}
+
+$linksDiagnostics = loadWebhookLinksDiagnostics();
 ?>
 
 <!DOCTYPE html>
@@ -90,10 +91,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email_content'])) {
         .result { margin: 20px 0; padding: 15px; border-radius: 5px; }
         .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
         .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
         .url-list { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; }
         .url-item { margin: 5px 0; word-break: break-all; }
         pre { background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        .diag-header { display: flex; align-items: center; gap: 10px; }
+        .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
+        .badge-ok { background: #d4edda; color: #155724; }
+        .badge-warning { background: #fff3cd; color: #856404; }
+        .badge-error { background: #f8d7da; color: #721c24; }
+        details summary { cursor: pointer; font-weight: bold; }
         .example-data { background: #fff3cd; padding: 15px; border-radius: 5px; border: 1px solid #ffeaa7; margin: 15px 0; }
     </style>
 </head>
@@ -112,6 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email_content'])) {
         </div>
 
         <form method="post">
+            <input type="hidden" name="action" value="manual_imap">
             <div class="form-group">
                 <label for="sender">Sender Email Address:</label>
                 <input type="email" 
@@ -152,6 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email_content'])) {
         <h2>🧪 Provider-only Extraction (No DB, No IMAP)</h2>
         <p class="info" style="padding: 10px; border-radius: 5px;">Paste any email body below. This test runs local extraction only and does not write to the database.</p>
         <form method="post">
+            <input type="hidden" name="action" value="provider_only">
             <div class="form-group">
                 <label for="email_content">Email Content (raw):</label>
                 <textarea id="email_content" name="email_content" rows="8" placeholder="Paste email content containing provider links here (Dropbox, FromSmash, SwissTransfer)"><?php echo isset($_POST['email_content']) ? htmlspecialchars($_POST['email_content']) : '' ; ?></textarea>
@@ -240,6 +250,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email_content'])) {
                         <p style="color:#6c757d;">No URLs detected.</p>
                     <?php endif; ?>
                 </div>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($linksDiagnostics): ?>
+            <?php
+                $diagStatus = $linksDiagnostics['status'] ?? 'error';
+                $badgeClass = [
+                    'ok' => 'badge-ok',
+                    'warning' => 'badge-warning',
+                    'error' => 'badge-error',
+                ][$diagStatus] ?? 'badge-warning';
+            ?>
+            <div class="result info">
+                <div class="diag-header">
+                    <h3 style="margin: 0;">📁 Diagnostic webhook_links.json</h3>
+                    <span class="badge <?php echo $badgeClass; ?>">
+                        <?php echo htmlspecialchars(strtoupper($diagStatus)); ?>
+                    </span>
+                </div>
+                <p style="margin-top: 10px;"><?php echo htmlspecialchars($linksDiagnostics['message']); ?></p>
+                <p style="margin: 5px 0;"><strong>Chemin :</strong> <code><?php echo htmlspecialchars($linksDiagnostics['file']); ?></code></p>
+                <?php if (!empty($linksDiagnostics['provider_counts'])): ?>
+                    <p><strong>Comptage par provider :</strong></p>
+                    <ul>
+                        <?php foreach ($linksDiagnostics['provider_counts'] as $provider => $count): ?>
+                            <li><?php echo htmlspecialchars($provider); ?> : <?php echo (int)$count; ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+
+                <?php if ($linksDiagnostics['has_legacy_entries']): ?>
+                    <div class="result warning" style="margin-top: 10px;">
+                        <strong>Legacy détecté :</strong> certaines entrées utilisent encore l'ancien champ <code>url</code>.
+                        Supprimez-les ou laissez le backend Python les remplacer avant de valider un offload R2.
+                    </div>
+                <?php endif; ?>
+
+                <?php if (!empty($linksDiagnostics['schema_issues'])): ?>
+                    <div class="result warning" style="margin-top: 10px;">
+                        <strong>Incohérences de schéma détectées :</strong>
+                        <ul>
+                            <?php foreach ($linksDiagnostics['schema_issues'] as $issue): ?>
+                                <li><?php echo htmlspecialchars($issue); ?></li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                <?php endif; ?>
+
+                <details style="margin-top: 10px;">
+                    <summary>Voir les 5 dernières entrées</summary>
+                    <?php if (!empty($linksDiagnostics['last_entries'])): ?>
+                        <pre><?php echo htmlspecialchars(json_encode($linksDiagnostics['last_entries'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)); ?></pre>
+                    <?php else: ?>
+                        <p style="margin-top: 10px;">Aucune entrée enregistrée.</p>
+                    <?php endif; ?>
+                </details>
+
+                <details style="margin-top: 10px;">
+                    <summary>Contenu JSON complet</summary>
+                    <pre><?php echo htmlspecialchars($linksDiagnostics['raw_json'] ?? ''); ?></pre>
+                </details>
+
+                <p style="margin-top: 15px; font-size: 14px;">
+                    <strong>Checklist test R2 :</strong>
+                    <ol style="margin: 10px 0 0 20px;">
+                        <li>Utiliser le formulaire ci-dessus pour confirmer que le lien est détecté et loggé côté PHP.</li>
+                        <li>Déposer le même email dans la messagerie pour que le poller Flask lance l'offload R2.</li>
+                        <li>Actualiser cette page pour vérifier l'apparition de <code>source_url</code>/<code>r2_url</code> dans le JSON.</li>
+                        <li>Contrôler les logs Render (<code>R2_TRANSFER</code>) et Cloudflare Worker pour confirmer l'upload/cleanup.</li>
+                    </ol>
+                </p>
             </div>
         <?php endif; ?>
 

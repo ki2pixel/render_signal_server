@@ -146,6 +146,23 @@ DISABLE_EMAIL_ID_DEDUP = env_bool("DISABLE_EMAIL_ID_DEDUP", False)
 # Autoriser l'envoi du webhook custom même sans liens détectés (contrôlé par l'UI)
 ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = env_bool("ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS", False)
 
+# --- Cloudflare R2 Offload Configuration ---
+# Active le transfert automatique des fichiers vers R2 pour réduire la bande passante Render
+R2_FETCH_ENABLED = env_bool("R2_FETCH_ENABLED", False)
+# URL du Worker Cloudflare pour le fetch distant
+R2_FETCH_ENDPOINT = os.environ.get("R2_FETCH_ENDPOINT", "")
+# URL publique du CDN R2 (custom domain ou Worker proxy)
+R2_PUBLIC_BASE_URL = os.environ.get("R2_PUBLIC_BASE_URL", "")
+# Nom du bucket R2 Cloudflare
+R2_BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "")
+# Chemin du fichier webhook_links.json (paires source_url/r2_url)
+WEBHOOK_LINKS_FILE = os.environ.get(
+    "WEBHOOK_LINKS_FILE",
+    str(BASE_DIR / "deployment" / "data" / "webhook_links.json")
+)
+# Limite maximale d'entrées dans webhook_links.json (rotation automatique)
+R2_LINKS_MAX_ENTRIES = int(os.environ.get("R2_LINKS_MAX_ENTRIES", 1000))
+
 # --- Chemins des Fichiers de Configuration/Debug ---
 BASE_DIR = Path(__file__).resolve().parent.parent  # Racine du projet
 DEBUG_DIR = BASE_DIR / "debug"

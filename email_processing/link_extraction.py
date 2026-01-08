@@ -11,6 +11,7 @@ Cette extraction réutilise le regex `URL_PROVIDERS_PATTERN` défini dans
 """
 from __future__ import annotations
 
+import html
 from typing import List
 from typing_extensions import TypedDict
 
@@ -43,6 +44,10 @@ def extract_provider_links_from_text(text: str) -> List[ProviderLink]:
     seen_urls = set()
     for m in URL_PROVIDERS_PATTERN.finditer(text):
         raw = m.group(1).strip()
+        try:
+            raw = html.unescape(raw)
+        except Exception:
+            pass
         if not raw:
             continue
         

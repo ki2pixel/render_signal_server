@@ -72,6 +72,15 @@ def build_custom_webhook_payload(
 
     Mirrors legacy fields for backward compatibility.
     Adds legacy Dropbox-specific aliases (`dropbox_urls`, `dropbox_first_url`).
+    
+    Note: delivery_links items may contain an optional 'r2_url' field if R2TransferService
+    successfully transferred the file to Cloudflare R2. The structure is:
+        {
+            'provider': 'dropbox',
+            'raw_url': 'https://...',
+            'direct_url': 'https://...' or None,
+            'r2_url': 'https://media.example.com/...' (optional)
+        }
     """
     dropbox_urls_legacy = _extract_dropbox_urls_legacy(delivery_links)
     

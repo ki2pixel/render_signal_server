@@ -13,6 +13,7 @@ Services disponibles:
 - WebhookConfigService: Configuration webhooks avec validation
 - AuthService: Authentification unifiée (dashboard + API)
 - DeduplicationService: Déduplication emails et subject groups
+- R2TransferService: Transfert de fichiers vers Cloudflare R2
 
 Usage:
     from services import ConfigService, AuthService
@@ -27,6 +28,7 @@ from services.webhook_config_service import WebhookConfigService
 from services.auth_service import AuthService
 from services.deduplication_service import DeduplicationService
 from services.magic_link_service import MagicLinkService
+from services.r2_transfer_service import R2TransferService
 
 __all__ = [
     "ConfigService",
@@ -35,4 +37,5 @@ __all__ = [
     "AuthService",
     "DeduplicationService",
     "MagicLinkService",
+    "R2TransferService",
 ]

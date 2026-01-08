@@ -99,6 +99,26 @@ Les éléments suivants sont gérés par l'écosystème PHP (`deployment/`) et d
 - En cas de rotation de secrets, mettre à jour `env.local.php` puis relancer un `POST action=dry-run` via `GmailOAuthTest.php` pour vérifier.
 
 
+## Artefacts R2 Offload (deployment/)
+
+L'offload Cloudflare R2 (côté Flask) persiste un historique des transferts dans :
+
+- `deployment/data/webhook_links.json`
+
+Ce fichier contient une liste d'objets au format :
+
+- `source_url` (URL source normalisée)
+- `r2_url` (URL publique R2)
+- `provider`
+- `created_at`
+- `email_id` (optionnel)
+
+Ce fichier est utilisé :
+
+- Côté backend Python pour conserver la relation `source_url` → `r2_url` (réutilisable sur des emails futurs)
+- Côté pages PHP de test (`deployment/public_html/test.php`, `deployment/public_html/test-direct.php`) pour afficher un diagnostic de conformité et les dernières entrées.
+
+
 ## Dépannage
 
 ### Erreurs courantes

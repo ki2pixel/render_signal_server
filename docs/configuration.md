@@ -34,6 +34,27 @@ Notes:
 
 La configuration est gérée via une API PHP sécurisée avec un système de fallback sur des fichiers JSON locaux. Cette solution remplace l'ancienne approche basée sur MySQL.
 
+### Variables Magic Links
+
+- `MAGIC_LINK_TTL_SECONDS` : Durée de validité des liens à usage unique (défaut: 900 secondes = 15 minutes)
+- `MAGIC_LINK_TOKENS_FILE` : Chemin du fichier de stockage des tokens (défaut: `./magic_link_tokens.json`)
+- `FLASK_SECRET_KEY` : Clé secrète HMAC pour signer les tokens (obligatoire, doit être robuste)
+
+### Variables Cloudflare R2 (Offload fichiers)
+
+- `R2_FETCH_ENABLED` : Activation du service R2 (true/false, défaut: false)
+- `R2_FETCH_ENDPOINT` : URL du Worker Cloudflare pour fetch distant (ex: `https://r2-fetch.your-worker.workers.dev`)
+- `R2_PUBLIC_BASE_URL` : URL publique du CDN R2 (ex: `https://media.yourdomain.com`)
+- `R2_BUCKET_NAME` : Nom du bucket R2 (ex: `render-signal-media`)
+- `WEBHOOK_LINKS_FILE` : Chemin du fichier `webhook_links.json` (défaut: `deployment/data/webhook_links.json`)
+- `R2_LINKS_MAX_ENTRIES` : Nombre maximum d'entrées dans webhook_links.json (rotation automatique, défaut: 1000)
+
+### Variables sensibles R2 (non à commiter)
+
+- `R2_ACCESS_KEY_ID` : Clé d'accès Cloudflare R2
+- `R2_SECRET_ACCESS_KEY` : Clé secrète Cloudflare R2
+- `R2_ACCOUNT_ID` : ID du compte Cloudflare
+
 ### Architecture du système de configuration
 
 1. **Backend API** (préféré) :
@@ -70,11 +91,22 @@ La configuration est gérée via une API PHP sécurisée avec un système de fal
 
 Pour plus de détails sur la configuration avancée, consultez le fichier `deployment/README.md`.
 
-## Authentification UI
+## Authentification
 
+### Authentification de base
 - `TRIGGER_PAGE_USER` – identifiant pour la connexion UI
 - `TRIGGER_PAGE_PASSWORD` – mot de passe UI
-- `FLASK_SECRET_KEY` – clé secrète Flask (sessions). Ex: chaîne aléatoire robuste.
+- `FLASK_SECRET_KEY` – clé secrète Flask (sessions et signature des tokens Magic Link). Doit être une chaîne aléatoire robuste.
+
+### Magic Links
+- `MAGIC_LINK_TTL_SECONDS` – durée de validité des liens à usage unique en secondes (défaut: 900 - 15 minutes)
+- `MAGIC_LINK_TOKENS_FILE` – chemin vers le fichier de stockage des tokens (défaut: `./magic_link_tokens.json`)
+- `MAGIC_LINK_ENABLED` – active/désactive la fonctionnalité de Magic Links (défaut: `true`)
+
+#### Recommandations pour les Magic Links
+- Le fichier de tokens doit être stocké dans un répertoire sécurisé avec des permissions restrictives
+- Pour une sécurité optimale, définissez un `MAGIC_LINK_TTL_SECONDS` court (ex: 300 pour 5 minutes)
+- Régénérez périodiquement `FLASK_SECRET_KEY` pour invalider tous les tokens existants
 
 ## IMAP / E-mail
 - `EMAIL_ADDRESS`

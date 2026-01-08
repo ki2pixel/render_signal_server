@@ -33,6 +33,15 @@ Ce document recense les patrons de conception et les standards récurrents dans 
 
 - **Journalisation structurée** : Les événements importants sont enregistrés avec un format structuré pour faciliter l'analyse et le débogage. Les journaux incluent des métadonnées telles que l'ID de l'e-mail, le type de détecteur et les décisions de traitement prises.
 
+## Authentification par Magic Link (2026-01-07)
+
+- **Service dédié** : `MagicLinkService` (singleton) gère la génération/consommation de tokens, stockage JSON (`MAGIC_LINK_TOKENS_FILE`) et signatures HMAC (`FLASK_SECRET_KEY`).
+- **Modes supportés** :
+  - One-shot (TTL configurable via `MAGIC_LINK_TTL_SECONDS`, flag `single_use=True`), auto-révocation après consommation.
+  - Permanent (`single_use=False`, expiration `None`), destiné aux accès fréquents; nécessite révocation manuelle en cas d'incident.
+- **Flux UI/API** : Endpoint `/api/auth/magic-link` protégé par session admin, bouton dédié dans `dashboard.html` + `static/dashboard.js` avec option "illimitée" et copie auto.
+- **Sécurité** : Logs contextualisés (user, expiration), nettoyage régulier des tokens expirés, signature forte HMAC SHA-256, stockage verrouillé par `RLock`.
+
 ## Refactoring terminologique : "Presence Pause" → "Absence Globale" (2025-11-21)
 
 - **Configuration persistante** : La fonctionnalité Absence Globale utilise des champs JSON persistants (`absence_pause_enabled`, `absence_pause_days`) dans `debug/webhook_config.json`.
