@@ -74,6 +74,7 @@ class R2TransferService:
         self._fetch_endpoint = fetch_endpoint or os.environ.get("R2_FETCH_ENDPOINT", "")
         self._public_base_url = public_base_url or os.environ.get("R2_PUBLIC_BASE_URL", "")
         self._bucket_name = bucket_name or os.environ.get("R2_BUCKET_NAME", "")
+        self._fetch_token = os.environ.get("R2_FETCH_TOKEN", "")
         
         # Déterminer le chemin du fichier de liens
         if links_file:
@@ -150,6 +151,9 @@ class R2TransferService:
         """
         if not self.is_enabled():
             return None
+
+        if not self._fetch_token or not self._fetch_token.strip():
+            return None
         
         if not source_url or not provider:
             return None
@@ -183,6 +187,7 @@ class R2TransferService:
                 headers={
                     "Content-Type": "application/json",
                     "User-Agent": "render-signal-server/r2-transfer",
+                    "X-R2-FETCH-TOKEN": self._fetch_token,
                 }
             )
             elapsed = time.time() - start_time

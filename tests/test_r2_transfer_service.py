@@ -40,6 +40,7 @@ def r2_service(temp_links_file):
     # Activer le service pour les tests
     with patch.dict(os.environ, {"R2_FETCH_ENABLED": "true"}):
         service._enabled = True
+        service._fetch_token = "test-token"
     
     yield service
     
@@ -71,6 +72,7 @@ class TestR2TransferServiceInit:
             "R2_FETCH_ENDPOINT": "https://env-worker.example.com",
             "R2_PUBLIC_BASE_URL": "https://env-cdn.example.com",
             "R2_BUCKET_NAME": "env-bucket",
+            "R2_FETCH_TOKEN": "env-token",
             "R2_FETCH_ENABLED": "true",
         }):
             service = R2TransferService.get_instance(links_file=temp_links_file)
@@ -78,6 +80,7 @@ class TestR2TransferServiceInit:
             assert service._fetch_endpoint == "https://env-worker.example.com"
             assert service._public_base_url == "https://env-cdn.example.com"
             assert service._bucket_name == "env-bucket"
+            assert service._fetch_token == "env-token"
             assert service.is_enabled() is True
         
         R2TransferService.reset_instance()

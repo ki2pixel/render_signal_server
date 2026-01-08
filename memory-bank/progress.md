@@ -19,6 +19,15 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 ---
 
 ## Terminé
+-   [2026-01-08 19:05] **Worker R2 Fetch sécurisé (token) + tests PHP "vrai r2_url"**
+    - Worker Cloudflare: authentification obligatoire via header `X-R2-FETCH-TOKEN`.
+    - Backend Render: `R2TransferService` envoie le token (ENV `R2_FETCH_TOKEN`) et refuse l'offload si absent.
+    - Tests: mise à jour `tests/test_r2_transfer_service.py` pour prendre en compte le token.
+    - Pages PHP: ajout d'un mode "Offload via Worker" dans `test.php` et `test-direct.php`.
+-   [2026-01-08 17:25] **Compatibilité R2 côté webhook PHP : persistance des paires `source_url`/`r2_url`**
+    - `deployment/src/JsonLogger.php` étendu pour supporter l'écriture des paires R2 (en plus des entrées legacy `url`).
+    - `deployment/src/WebhookHandler.php` mis à jour pour enregistrer les paires quand `delivery_links[*].r2_url` est présent.
+    - `deployment/src/WebhookTestUtils.php` rendu compatible avec des fichiers `webhook_links.json` mixtes (legacy + R2).
 -   [2026-01-08 14:10] **Correctif déploiement Render: NameError BASE_DIR**
     - Réordonnancement de `config/settings.py` pour définir `BASE_DIR` avant son usage dans `WEBHOOK_LINKS_FILE`
     - Validation locale: import `from config import settings` OK

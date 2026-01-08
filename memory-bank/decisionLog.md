@@ -21,6 +21,24 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Entrées récentes (post-archives)
 
+ - **[2026-01-08 19:05:00] - Sécurisation du Worker R2 Fetch (token) + tests PHP "vrai r2_url"**
+   - **Décision** : Protéger le Worker Cloudflare R2 Fetch par un token obligatoire (header `X-R2-FETCH-TOKEN`) et propager ce token côté Render (Python) et côté serveur PHP mutualisé.
+   - **Changements clés** :
+     - Worker (`deployment/cloudflare-worker/worker.js`) : refus si token absent/invalide et échec si `R2_FETCH_TOKEN` n'est pas configuré.
+     - Backend Render (`services/r2_transfer_service.py`) : envoi du header `X-R2-FETCH-TOKEN` (ENV `R2_FETCH_TOKEN`) et fail-closed si token absent.
+     - Pages de test PHP : ajout d'un mode "Offload via Worker" (récupère un vrai `r2_url` puis POST Make-style vers `index.php`).
+   - **Raisons** : Empêcher l'abus public du service de fetch/upload (sinon n'importe qui peut déclencher des transferts) tout en permettant des tests end-to-end réalistes.
+   - **Impacts** : Ajout d'une dépendance de configuration (`R2_FETCH_TOKEN`) côté Worker/Render/PHP. Sans token, l'offload est automatiquement désactivé.
+
+ - **[2026-01-08 17:25:00] - Logging des paires R2 côté PHP (webhook receiver) + diagnostics compatibles legacy**
+   - **Décision** : Étendre le logger PHP (`deployment/src/JsonLogger.php`) et le receiver (`deployment/src/WebhookHandler.php`) pour enregistrer aussi les paires `source_url`/`r2_url` quand elles sont présentes dans `delivery_links` (payload enrichi côté Python).
+   - **Changements clés** :
+     - Ajout des méthodes `JsonLogger::logR2LinkPair()` et `JsonLogger::logDeliveryLinkPairs()`.
+     - Appel de `logDeliveryLinkPairs()` dans `WebhookHandler::processWebhook()` (et flow `recadrage`) avant le logging legacy des URLs.
+     - Amélioration de `deployment/src/WebhookTestUtils.php` pour supporter des fichiers `webhook_links.json` mixtes (entrées legacy `url` et entrées R2) sans faux positifs.
+   - **Raisons** : Les pages/tests PHP ajoutaient des entrées legacy en fin de fichier, masquant les entrées R2 et empêchant de valider visuellement la présence des paires.
+   - **Impacts** : `webhook_links.json` peut désormais contenir les 2 formats; les diagnostics affichent explicitement le comptage R2 vs legacy.
+
 - **[2026-01-08 13:47:00] - Consolidation des helpers PHP pour les pages de test R2**
   - **Décision** : Résoudre l'erreur de redéclaration de classe WebhookHandler en consolidant la logique de diagnostic dans un seul fichier helper.
   - **Changements clés** :
