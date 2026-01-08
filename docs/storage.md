@@ -105,18 +105,69 @@ L'offload Cloudflare R2 (côté Flask) persiste un historique des transferts dan
 
 - `deployment/data/webhook_links.json`
 
-Ce fichier contient une liste d'objets au format :
+### Schéma supporté (mixte legacy + R2)
 
-- `source_url` (URL source normalisée)
-- `r2_url` (URL publique R2)
-- `provider`
-- `created_at`
-- `email_id` (optionnel)
+Ce fichier contient une liste d'objets et supporte **deux formats** pour la rétrocompatibilité :
 
-Ce fichier est utilisé :
+#### Format R2 (nouveau, recommandé)
+```json
+{
+  "source_url": "https://www.dropbox.com/s/abc123/file.zip?dl=1",
+  "r2_url": "https://media.yourdomain.com/dropbox/a1b2c3d4/e5f6g7h8/file.zip",
+  "provider": "dropbox",
+  "created_at": "2026-01-08T14:30:00.123456Z",
+  "email_id": "md5-hash-email-id",
+  "original_filename": "61 Camille.zip"
+}
+```
 
-- Côté backend Python pour conserver la relation `source_url` → `r2_url` (réutilisable sur des emails futurs)
-- Côté pages PHP de test (`deployment/public_html/test.php`, `deployment/public_html/test-direct.php`) pour afficher un diagnostic de conformité et les dernières entrées.
+#### Format legacy (historique)
+```json
+{
+  "url": "https://www.dropbox.com/s/abc123/file.zip?dl=0",
+  "timestamp": "2025-10-17T10:30:00+02:00",
+  "source": "webhook"
+}
+```
+
+### Champs du format R2
+
+- `source_url` (string, obligatoire) : URL source normalisée
+- `r2_url` (string, obligatoire) : URL publique R2 du fichier transféré
+- `provider` (string) : Nom du provider (`dropbox`, `fromsmash`, `swisstransfer`, `unknown`)
+- `created_at` (string, ISO 8601) : Timestamp de création (UTC)
+- `email_id` (string, optionnel) : ID de l'email source pour traçabilité
+- `original_filename` (string, optionnel) : Nom de fichier d'origine extrait depuis Content-Disposition
+
+### Utilisation du fichier
+
+Ce fichier est utilisé par :
+
+- **Backend Python** (`R2TransferService`) : pour conserver la relation `source_url` → `r2_url` et réutiliser les URLs R2 sur des emails futurs
+- **Pages PHP de test** (`deployment/public_html/test.php`, `deployment/public_html/test-direct.php`) : pour afficher un diagnostic de conformité et les dernières entrées
+- **JsonLogger PHP** : pour logger les paires R2 via `logR2LinkPair()` et `logDeliveryLinkPairs()`
+
+### Gestion côté PHP
+
+Le logger PHP (`deployment/src/JsonLogger.php`) gère automatiquement les deux formats :
+
+```php
+// Logger une paire R2 (nouveau format)
+$jsonLogger->logR2LinkPair($sourceUrl, $r2Url, $provider, $emailId, $originalFilename);
+
+// Logger les paires depuis delivery_links (mixte)
+$jsonLogger->logDeliveryLinkPairs($deliveryLinks, $emailId);
+
+// Logger une URL legacy (compatibilité)
+$jsonLogger->logDropboxUrl($url, 'webhook');
+```
+
+### Rotation et maintenance
+
+- **Rotation automatique** : Le fichier conserve les 1000 dernières entrées par défaut (`R2_LINKS_MAX_ENTRIES`)
+- **Taille maximale** : 5 MB par défaut (`JSON_LOG_MAX_BYTES`)
+- **Backup automatique** : En cas de dépassement, le fichier est archivé avec timestamp
+- **Diagnostics** : Les pages PHP affichent le comptage par format (legacy vs R2) et par provider
 
 
 ## Dépannage

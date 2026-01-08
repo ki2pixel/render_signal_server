@@ -238,6 +238,7 @@ def test_normalize_text():
   - `DeduplicationService` : Prévention des doublons
   - `AuthService` : Authentification et autorisation
   - `PollingConfigService` : Configuration du polling
+  - `R2TransferService` : Offload Cloudflare R2, authentification token, timeout étendu
   - `tests/test_absence_pause.py` : vérifie la normalisation des jours (`strip().lower()`) et la garde de cycle (`ABSENCE_PAUSE`), garantissant que le poller s'arrête avant toute connexion IMAP les jours d'absence.
 
 ### 🔄 Tests d'Intégration (`@pytest.mark.integration`)
@@ -324,6 +325,7 @@ def test_complete_email_processing_flow(
 - Scénarios DESABO (urgent/non urgent)
 - Gestion des erreurs et reprises
 - Notifications et webhooks
+- **Offload R2 end-to-end** : flux complet avec Worker Cloudflare, token authentification, et enrichissement payload
 
 ### 🎲 Tests de Propriété (`@pytest.mark.property`)
 
@@ -357,6 +359,139 @@ def test_normalize_no_accents_property(text):
 - Validation des entrées
 - Conversion de formats
 - Gestion des cas limites
+- **Tests R2** : validation token, timeout Dropbox, best-effort handling
+
+### 🧪 Tests Spécifiques R2 Offload
+
+#### Tests Unitaires R2 (`@pytest.mark.r2_unit`)
+
+Tests isolés du service `R2TransferService` :
+
+```python
+@pytest.mark.r2_unit
+@pytest.mark.unit
+def test_r2_service_disabled_without_token():
+    """Test que le service R2 est désactivé si R2_FETCH_TOKEN n'est pas défini."""
+    service = R2TransferService()
+    assert not service.is_enabled()
+
+@pytest.mark.r2_unit
+@pytest.mark.unit
+def test_r2_service_token_validation():
+    """Test la validation du token R2."""
+    service = R2TransferService()
+    with patch.dict(os.environ, {'R2_FETCH_TOKEN': 'test-token'}):
+        assert service.is_enabled()
+        assert service._fetch_token == 'test-token'
+
+@pytest.mark.r2_unit
+@pytest.mark.unit
+def test_r2_dropbox_folder_timeout():
+    """Test le timeout étendu pour les dossiers Dropbox /scl/fo/."""
+    service = R2TransferService()
+    dropbox_folder_url = "https://www.dropbox.com/scl/fo/abc123/xyz?rlkey=..."
+    normal_url = "https://www.dropbox.com/s/def456/file.zip?dl=0"
+    
+    assert service._get_timeout_for_url(dropbox_folder_url) == 120
+    assert service._get_timeout_for_url(normal_url) == 30
+```
+
+#### Tests d'Intégration R2 (`@pytest.mark.r2_integration`)
+
+Tests d'intégration avec le Worker Cloudflare mock :
+
+```python
+@pytest.mark.r2_integration
+@pytest.mark.integration
+def test_r2_worker_authentication_success(responses):
+    """Test l'authentification réussie auprès du Worker R2."""
+    responses.add(
+        responses.POST,
+        "https://r2-fetch.example.com",
+        json={
+            "success": True,
+            "r2_url": "https://media.example.com/dropbox/abc123/file.zip",
+            "original_filename": "test.zip"
+        },
+        status=200
+    )
+    
+    service = R2TransferService()
+    result = service.request_remote_fetch(
+        "https://www.dropbox.com/s/abc123/file.zip?dl=1",
+        "dropbox/abc123/file.zip"
+    )
+    
+    assert result["success"] is True
+    assert "r2_url" in result
+    assert result["original_filename"] == "test.zip"
+
+@pytest.mark.r2_integration
+@pytest.mark.integration
+def test_r2_worker_authentication_failure(responses):
+    """Test l'échec d'authentification auprès du Worker R2."""
+    responses.add(
+        responses.POST,
+        "https://r2-fetch.example.com",
+        json={"success": False, "error": "Unauthorized"},
+        status=401
+    )
+    
+    service = R2TransferService()
+    result = service.request_remote_fetch(
+        "https://www.dropbox.com/s/abc123/file.zip?dl=1",
+        "dropbox/abc123/file.zip"
+    )
+    
+    assert result["success"] is False
+    assert "error" in result
+```
+
+#### Tests End-to-End R2 (`@pytest.mark.r2_e2e`)
+
+Tests complets du flux R2 avec orchestrator :
+
+```python
+@pytest.mark.r2_e2e
+@pytest.mark.e2e
+def test_complete_r2_offload_flow(
+    imap_server_mock,
+    r2_worker_mock,
+    webhook_receiver
+):
+    """Test le flux complet d'offload R2 depuis l'email jusqu'au webhook."""
+    # 1. Email avec lien Dropbox
+    test_email = {
+        'subject': 'Test R2 Offload',
+        'body': 'Please download: https://www.dropbox.com/s/abc123/file.zip?dl=0'
+    }
+    
+    # 2. Configuration du mock IMAP
+    imap_server_mock.add_email(test_email)
+    
+    # 3. Configuration du mock Worker R2
+    r2_worker_mock.add_response({
+        "success": True,
+        "r2_url": "https://media.example.com/dropbox/xyz789/file.zip",
+        "original_filename": "file.zip"
+    })
+    
+    # 4. Déclenchement du traitement
+    response = test_client.post('/api/check_emails_and_download')
+    assert response.status_code == 202
+    
+    # 5. Vérification du webhook enrichi
+    webhook_receiver.wait_for_request(timeout=10.0)
+    payload = webhook_receiver.get_latest_request().get_json()
+    
+    assert 'delivery_links' in payload
+    assert len(payload['delivery_links']) == 1
+    
+    link = payload['delivery_links'][0]
+    assert 'r2_url' in link
+    assert link['r2_url'] == 'https://media.example.com/dropbox/xyz789/file.zip'
+    assert link['original_filename'] == 'file.zip'
+```
 
 ### 🏷️ Marqueurs de Test
 
@@ -513,9 +648,10 @@ python -m webbrowser htmlcov/index.html  # Multiplateforme
 - `services/deduplication_service.py` : 75% (Redis + fallback mémoire)
 - `services/config_service.py` : 85% (gestion de la configuration)
 - `services/auth_service.py` : 80% (authentification et autorisation)
+- `services/r2_transfer_service.py` : 90% (offload R2, authentification token, timeout étendu Dropbox)
 
 #### Traitement des Emails
-- `email_processing/orchestrator.py` : 72% (flux principal de traitement)
+- `email_processing/orchestrator.py` : 72% (flux principal de traitement, intégration R2)
 - `email_processing/pattern_matching.py` : 88% (détection des modèles d'emails)
 - `email_processing/link_extraction.py` : 85% (extraction des liens)
 

@@ -21,6 +21,14 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Entrées récentes (post-archives)
 
+ - **[2026-01-08 20:15:00] - Préservation du nom de fichier d'origine pour les fichiers offloadés R2**
+   - **Décision** : Conserver le nom original des fichiers (ex: `61 Camille.zip`) côté R2 en stockant un `Content-Disposition` au moment de l'upload (metadata HTTP), plutôt que de dépendre du nom dérivé de l'`object_key`.
+   - **Changements clés** :
+     - Worker `r2-fetch-worker` : extraction du nom via header `Content-Disposition` du provider, sanitation stricte, ajout de `httpMetadata.contentDisposition` et `customMetadata.originalFilename` lors du `R2_BUCKET.put()`.
+     - Le Worker retourne aussi `original_filename` dans sa réponse JSON pour diagnostic/traçabilité.
+   - **Raisons** : Améliorer la traçabilité et l'UX au téléchargement (nom “humain” et identique à la source) sans fragiliser les URLs (clés hash stables).
+   - **Impacts** : Le nom “humain” est servi au téléchargement si le proxy public propage le header `Content-Disposition`. Les anciens objets nécessitent un re-upload pour bénéficier de la metadata.
+
  - **[2026-01-08 19:05:00] - Sécurisation du Worker R2 Fetch (token) + tests PHP "vrai r2_url"**
    - **Décision** : Protéger le Worker Cloudflare R2 Fetch par un token obligatoire (header `X-R2-FETCH-TOKEN`) et propager ce token côté Render (Python) et côté serveur PHP mutualisé.
    - **Changements clés** :

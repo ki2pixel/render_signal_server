@@ -55,6 +55,26 @@ class JsonLogger
         return $url;
     }
 
+    private function sanitizeOriginalFilename($value)
+    {
+        $value = is_string($value) ? trim($value) : '';
+        if ($value === '') {
+            return null;
+        }
+
+        $value = preg_replace('/[\x00-\x1F\x7F]/u', '', $value);
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+
+        if (strlen($value) > 255) {
+            $value = substr($value, 0, 255);
+        }
+
+        return $value;
+    }
+
     /**
      * Append a single URL entry to the JSON file
      * @param string $url
@@ -94,6 +114,83 @@ class JsonLogger
                 $count++;
             }
         }
+        return $count;
+    }
+
+    public function logR2LinkPair($sourceUrl, $r2Url, $provider, $emailId = null, $originalFilename = null)
+    {
+        $cleanSourceUrl = $this->sanitizeUrl($sourceUrl);
+        $cleanR2Url = $this->sanitizeUrl($r2Url);
+        if ($cleanSourceUrl === null || $cleanR2Url === null) {
+            return false;
+        }
+
+        if (!$this->ensureFileExists()) {
+            error_log('JsonLogger: data file not writable');
+            return false;
+        }
+
+        $providerStr = is_string($provider) ? trim($provider) : '';
+        if ($providerStr === '' || preg_match('/^[a-z0-9_-]{1,32}$/i', $providerStr) !== 1) {
+            $providerStr = 'unknown';
+        }
+
+        $entry = [
+            'source_url' => $cleanSourceUrl,
+            'r2_url' => $cleanR2Url,
+            'provider' => $providerStr,
+            'created_at' => gmdate('c'),
+        ];
+
+        if (is_string($emailId)) {
+            $emailIdStr = trim($emailId);
+            if ($emailIdStr !== '') {
+                $entry['email_id'] = $emailIdStr;
+            }
+        }
+
+        $cleanOriginalFilename = $this->sanitizeOriginalFilename($originalFilename);
+        if ($cleanOriginalFilename !== null) {
+            $entry['original_filename'] = $cleanOriginalFilename;
+        }
+
+        return $this->appendEntry($entry);
+    }
+
+    public function logDeliveryLinkPairs($deliveryLinks, $emailId = null)
+    {
+        $count = 0;
+
+        foreach ((array)$deliveryLinks as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $r2Url = isset($item['r2_url']) ? $item['r2_url'] : null;
+            if (!is_string($r2Url) || trim($r2Url) === '') {
+                continue;
+            }
+
+            $provider = isset($item['provider']) ? $item['provider'] : 'unknown';
+
+            $sourceUrl = null;
+            if (isset($item['direct_url']) && is_string($item['direct_url']) && trim($item['direct_url']) !== '') {
+                $sourceUrl = $item['direct_url'];
+            } elseif (isset($item['raw_url']) && is_string($item['raw_url']) && trim($item['raw_url']) !== '') {
+                $sourceUrl = $item['raw_url'];
+            }
+
+            if ($sourceUrl === null) {
+                continue;
+            }
+
+            $originalFilename = isset($item['original_filename']) ? $item['original_filename'] : null;
+
+            if ($this->logR2LinkPair($sourceUrl, $r2Url, $provider, $emailId, $originalFilename)) {
+                $count++;
+            }
+        }
+
         return $count;
     }
 

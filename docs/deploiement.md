@@ -58,17 +58,42 @@ Les pages suivantes servent de support de diagnostic pour valider end-to-end l'o
 - `deployment/public_html/test.php`
   - Test IMAP + DB (flux complet côté PHP)
   - Test « provider-only » (extraction locale Dropbox/FromSmash/SwissTransfer sans écriture DB)
+  - **Test "Offload via Worker"** : permet d'obtenir un vrai `r2_url` depuis le Worker Cloudflare et de simuler un webhook Make-style
   - Affiche un diagnostic `webhook_links.json` : conformité schéma, entrées legacy, comptage par provider, dernières entrées.
 
 - `deployment/public_html/test-direct.php`
   - Test direct d'extraction d'URLs (sans IMAP)
+  - **Test "Offload via Worker"** : similaire à test.php mais sans passer par IMAP
   - Affiche aussi le diagnostic `webhook_links.json`.
 
 Pour éviter des conflits d'inclusion PHP, la logique de diagnostic est consolidée dans un seul helper :
 
-- `deployment/src/WebhookTestUtils.php` (fonction `loadWebhookLinksDiagnostics()`)
+- `deployment/src/WebhookTestUtils.php` (fonctions `loadWebhookLinksDiagnostics()`, `fetchR2UrlViaWorker()`)
 
-Ces pages sont prévues pour un usage admin/diagnostic uniquement.
+#### Configuration requise pour les tests R2
+
+Pour utiliser le mode "Offload via Worker" dans les pages PHP, configurez les variables d'environnement suivantes dans `deployment/data/env.local.php` :
+
+```php
+<?php
+// Configuration R2 Worker pour tests PHP
+putenv('R2_FETCH_ENDPOINT=https://r2-fetch.your-worker.workers.dev');
+putenv('R2_FETCH_TOKEN=votre-secret-token-partage');
+putenv('R2_BUCKET_NAME=render-signal-media');
+putenv('R2_PUBLIC_BASE_URL=https://media.yourdomain.com');
+?>
+```
+
+**Sécurité** : Le token `R2_FETCH_TOKEN` doit être identique à celui configuré dans le Worker Cloudflare et dans les variables d'environnement Render.
+
+#### Fonctionnement des tests R2
+
+1. **Extraction** : Les pages détectent les URLs Dropbox/FromSmash/SwissTransfer dans le contenu fourni
+2. **Offload** : Pour chaque URL, `fetchR2UrlViaWorker()` appelle le Worker Cloudflare avec le token d'authentification
+3. **Simulation** : Si l'offload réussit, les pages simulent l'envoi d'un webhook avec les `delivery_links` enrichies (`r2_url`, `original_filename`)
+4. **Diagnostics** : Les résultats détaillés (succès/échec, payloads, réponses Worker) sont affichés pour le débogage
+
+Ces pages sont prévues pour un usage admin/diagnostic uniquement et nécessitent une configuration correcte du Worker R2.
 
 ### Configuration DirectAdmin (Gmail OAuth)
 

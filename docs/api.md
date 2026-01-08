@@ -267,13 +267,23 @@ Remplacez `DOMAIN` par l'URL Render, et `<USERNAME>/<PASSWORD>` par vos identifi
   "delivery_links": [
     {
       "provider": "swisstransfer",
-      "raw_url": "https://www.swisstransfer.com/d/..."
+      "raw_url": "https://www.swisstransfer.com/d/...",
+      "direct_url": "https://www.swisstransfer.com/d/...",
+      "r2_url": "https://media.example.com/swisstransfer/f9e8d7c6/b5a4c3d2/file"
     },
     {
       "provider": "dropbox",
       "raw_url": "https://www.dropbox.com/s/abc123/file.zip?dl=0",
       "direct_url": "https://www.dropbox.com/s/abc123/file.zip?dl=1",
-      "r2_url": "https://media.example.com/dropbox/a1b2c3d4/e5f6g7h8/file.zip"
+      "r2_url": "https://media.example.com/dropbox/a1b2c3d4/e5f6g7h8/file.zip",
+      "original_filename": "61 Camille.zip"
+    },
+    {
+      "provider": "fromsmash",
+      "raw_url": "https://fromsmash.com/ABC123",
+      "direct_url": "https://fromsmash.com/ABC123",
+      "r2_url": "https://media.example.com/fromsmash/c4d5e6f7/a8b9c0d1/file",
+      "original_filename": "archive.zip"
     }
   ],
   "first_direct_download_url": null,
@@ -285,8 +295,16 @@ Remplacez `DOMAIN` par l'URL Render, et `<USERNAME>/<PASSWORD>` par vos identifi
 Notes :
 
 - Les champs reflètent `email_processing/payloads.py::build_custom_webhook_payload()`.
-- `delivery_links` contient toujours `raw_url` et peut aussi inclure `direct_url` (si déterminée) et `r2_url` (si offload Cloudflare R2 réussi).
-- `dropbox_*` sont fournis pour compatibilité legacy.
+- `delivery_links` contient toujours `raw_url` et peut aussi inclure :
+  - `direct_url` : URL de téléchargement direct (si déterminée)
+  - `r2_url` : URL Cloudflare R2 si l'offload a réussi (prioritaire pour le téléchargement)
+  - `original_filename` : Nom de fichier d'origine extrait depuis Content-Disposition (disponible si R2 réussi)
+- **Stratégie de priorité recommandée pour les récepteurs** :
+  1. Utiliser `r2_url` si présent (téléchargement plus rapide, économe en bande passante)
+  2. Sinon utiliser `direct_url` (téléchargement direct depuis la source)
+  3. En fallback utiliser `raw_url` (URL originale)
+- Les champs `dropbox_*` sont fournis pour compatibilité legacy.
+- La présence de `r2_url` dépend du succès de l'offload R2 (voir `docs/r2_offload.md`)
 
 ## Gestion des erreurs
 

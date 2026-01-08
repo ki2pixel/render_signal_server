@@ -19,6 +19,11 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 ---
 
 ## Terminé
+-   [2025-01-08 20:15] **Préservation du nom de fichier d'origine (Content-Disposition) pour les objets R2**
+    - Worker `r2-fetch-worker` : extraction du nom source via `Content-Disposition`, sanitation, et écriture `httpMetadata.contentDisposition` + `customMetadata.originalFilename` lors de l'upload.
+    - Objectif : télécharger le fichier offloadé avec son nom d'origine (ex: `61 Camille.zip`) au lieu d'un nom dérivé de la clé.
+    - PHP backend: `JsonLogger` étendu pour persister `original_filename` dans `webhook_links.json`, pages de test mises à jour.
+    - Commit: toutes les modifications commitées (commit 041cb4d).
 -   [2026-01-08 19:05] **Worker R2 Fetch sécurisé (token) + tests PHP "vrai r2_url"**
     - Worker Cloudflare: authentification obligatoire via header `X-R2-FETCH-TOKEN`.
     - Backend Render: `R2TransferService` envoie le token (ENV `R2_FETCH_TOKEN`) et refuse l'offload si absent.

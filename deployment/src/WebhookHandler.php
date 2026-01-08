@@ -193,6 +193,15 @@ class WebhookHandler
                     if (!empty($processedUrls)) {
                         $loggedCount = $this->jsonLogger->logMultipleDropboxUrls($processedUrls);
                         $result['processed_urls'] = $processedUrls;
+
+                        if (isset($webhookData['delivery_links']) && is_array($webhookData['delivery_links'])) {
+                            $emailId = isset($webhookData['microsoft_graph_email_id']) ? $webhookData['microsoft_graph_email_id'] : null;
+                            $r2LoggedCount = $this->jsonLogger->logDeliveryLinkPairs($webhookData['delivery_links'], $emailId);
+                            if ($r2LoggedCount > 0) {
+                                $result['r2_pairs_logged_count'] = $r2LoggedCount;
+                            }
+                        }
+
                         // Add a trailing note in message for observability
                         $result['message'] .= "; {$loggedCount} delivery link(s) logged";
                         error_log("Webhook processed successfully: {$loggedCount} URLs logged");
@@ -250,6 +259,14 @@ class WebhookHandler
 
             // Log URLs to database
             $loggedCount = $this->jsonLogger->logMultipleDropboxUrls($processedUrls);
+
+            if (isset($webhookData['delivery_links']) && is_array($webhookData['delivery_links'])) {
+                $emailId = isset($webhookData['microsoft_graph_email_id']) ? $webhookData['microsoft_graph_email_id'] : null;
+                $r2LoggedCount = $this->jsonLogger->logDeliveryLinkPairs($webhookData['delivery_links'], $emailId);
+                if ($r2LoggedCount > 0) {
+                    $result['r2_pairs_logged_count'] = $r2LoggedCount;
+                }
+            }
 
             $result['success'] = true;
             $result['message'] = "Successfully processed {$loggedCount} delivery link(s)";

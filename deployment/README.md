@@ -239,6 +239,33 @@ Use `test.php` to manually test email processing without webhooks.
 
 Use `test-direct.php` to directly submit email `subject`, `sender_address`, and `email_content` without going through IMAP. This calls `WebhookHandler::testEmailProcessing()` and inserts detected provider URLs (Dropbox, FromSmash, SwissTransfer) into the database for verification.
 
+#### R2 Offload Testing
+
+Both test pages now include **R2 Offload testing capabilities** to validate end-to-end the Cloudflare R2 integration:
+
+- **"Offload via Worker" mode** : Allows testing the complete flow from URL extraction to R2 transfer
+- **Real Worker communication** : Calls the Cloudflare R2 Fetch Worker with authentication token
+- **Webhook simulation** : Simulates Make-style webhook delivery with enriched `delivery_links` (including `r2_url` and `original_filename`)
+- **Detailed diagnostics** : Shows success/failure status, worker payloads, and response details
+
+**Required configuration** (add to `deployment/data/env.local.php`):
+```php
+<?php
+// R2 Worker configuration for testing
+putenv('R2_FETCH_ENDPOINT=https://r2-fetch.your-worker.workers.dev');
+putenv('R2_FETCH_TOKEN=votre-secret-token-partage');
+putenv('R2_BUCKET_NAME=render-signal-media');
+putenv('R2_PUBLIC_BASE_URL=https://media.yourdomain.com');
+?>
+```
+
+**Key helpers**:
+- `fetchR2UrlViaWorker()` : Handles Worker communication with token authentication
+- `logR2LinkPair()` : Persists source/R2 URL pairs in `webhook_links.json`
+- `logDeliveryLinkPairs()` : Processes enriched webhook payloads
+
+These testing features require proper R2 Worker configuration and are intended for administrative/diagnostic use only.
+
 ## 🐛 Troubleshooting
 
 ### Common Issues

@@ -23,12 +23,185 @@ $error = null;
 $provResult = null; // array with keys: dropbox, fromsmash, swisstransfer, all
 $provError = null;
 $linksDiagnostics = null;
+$webhookPost = null;
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? null;
 
-    if ($action === 'provider_only') {
+    if ($action === 'simulate_webhook') {
+        try {
+            $content = filter_input(INPUT_POST, 'email_content', FILTER_UNSAFE_RAW) ?? '';
+            if (trim($content) === '') {
+                throw new Exception('The email content field is required');
+            }
+
+            $senderEmail = $_POST['sender_email'] ?? 'achats@media-solution.fr';
+            $subject = $_POST['subject_sim'] ?? 'Test R2 Simulation';
+            $emailId = $_POST['microsoft_graph_email_id'] ?? '';
+            $publicBaseUrl = (string)(getenv('R2_PUBLIC_BASE_URL') ?: '');
+            if (trim($publicBaseUrl) === '') {
+                throw new Exception('R2_PUBLIC_BASE_URL non configuré sur le serveur PHP (env.local.php / auto_prepend_file).');
+            }
+
+            $urlsDropbox = DropboxUrlProcessor::processAllDropboxUrls($content);
+            $urlsSmash = FromSmashUrlProcessor::processAllFromSmashUrls($content);
+            $urlsSwiss = SwissTransferUrlProcessor::processAllSwissTransferUrls($content);
+            $all = array_values(array_unique(array_merge($urlsDropbox, $urlsSmash, $urlsSwiss)));
+
+            if (empty($all)) {
+                throw new Exception('Aucune URL détectée pour construire delivery_links.');
+            }
+
+            $deliveryLinks = [];
+            foreach ($all as $url) {
+                $provider = detectProviderFromUrl($url);
+                $r2Url = buildMockR2Url($url, $provider, $publicBaseUrl);
+                if ($r2Url === null) {
+                    continue;
+                }
+                $deliveryLinks[] = [
+                    'provider' => $provider,
+                    'raw_url' => $url,
+                    'direct_url' => $url,
+                    'r2_url' => $r2Url,
+                ];
+            }
+
+            if (empty($deliveryLinks)) {
+                throw new Exception('Impossible de construire des delivery_links valides (r2_url manquant).');
+            }
+
+            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $host = $_SERVER['HTTP_HOST'] ?? '';
+            $basePath = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/');
+            $defaultTarget = $scheme . '://' . $host . ($basePath === '' ? '' : $basePath) . '/index.php';
+            $targetUrl = (string)(getenv('TEST_WEBHOOK_TARGET_URL') ?: $defaultTarget);
+
+            $payload = [
+                'sender_email' => $senderEmail,
+                'subject' => $subject,
+                'delivery_links' => $deliveryLinks,
+            ];
+            if (is_string($emailId) && trim($emailId) !== '') {
+                $payload['microsoft_graph_email_id'] = trim($emailId);
+            }
+
+            $webhookPost = postJson($targetUrl, $payload);
+            $result = [
+                'success' => (bool)($webhookPost['json']['success'] ?? $webhookPost['ok']),
+                'message' => 'Webhook JSON envoyé vers index.php (simulation R2).',
+                'processed_urls' => $all,
+                'webhook_target' => $targetUrl,
+                'webhook_payload' => $payload,
+                'webhook_response' => $webhookPost,
+            ];
+        } catch (Exception $e) {
+            $error = $e->getMessage();
+        }
+    } elseif ($action === 'offload_worker') {
+        try {
+            $content = filter_input(INPUT_POST, 'email_content', FILTER_UNSAFE_RAW) ?? '';
+            if (trim($content) === '') {
+                throw new Exception('The email content field is required');
+            }
+
+            $senderEmail = $_POST['sender_email'] ?? 'achats@media-solution.fr';
+            $subject = $_POST['subject_sim'] ?? 'Test R2 Worker Offload';
+            $emailId = $_POST['microsoft_graph_email_id'] ?? '';
+
+            $endpoint = (string)(getenv('R2_FETCH_ENDPOINT') ?: '');
+            $token = (string)(getenv('R2_FETCH_TOKEN') ?: '');
+            if (trim($endpoint) === '' || trim($token) === '') {
+                throw new Exception('R2_FETCH_ENDPOINT / R2_FETCH_TOKEN non configurés sur le serveur PHP (env.local.php).');
+            }
+
+            $urlsDropbox = DropboxUrlProcessor::processAllDropboxUrls($content);
+            $urlsSmash = FromSmashUrlProcessor::processAllFromSmashUrls($content);
+            $urlsSwiss = SwissTransferUrlProcessor::processAllSwissTransferUrls($content);
+            $all = array_values(array_unique(array_merge($urlsDropbox, $urlsSmash, $urlsSwiss)));
+            if (empty($all)) {
+                throw new Exception('Aucune URL détectée pour lancer l\'offload via Worker.');
+            }
+
+            $maxLinks = (int)($_POST['max_links'] ?? 3);
+            if ($maxLinks <= 0) {
+                $maxLinks = 3;
+            }
+            $urlsToProcess = array_slice($all, 0, $maxLinks);
+
+            $deliveryLinks = [];
+            $offloadResults = [];
+            foreach ($urlsToProcess as $url) {
+                $provider = detectProviderFromUrl($url);
+                $offload = fetchR2UrlViaWorker($url, $provider, $emailId, 180);
+                $offloadResults[] = [
+                    'source_url' => $url,
+                    'provider' => $provider,
+                    'ok' => (bool)($offload['ok'] ?? false),
+                    'r2_url' => $offload['r2_url'] ?? null,
+                    'error' => $offload['error'] ?? null,
+                    'worker_payload' => $offload['payload'] ?? null,
+                    'worker_response' => $offload['response'] ?? null,
+                ];
+
+                if (!($offload['ok'] ?? false)) {
+                    continue;
+                }
+
+                $deliveryLinks[] = [
+                    'provider' => $provider,
+                    'raw_url' => $url,
+                    'direct_url' => $url,
+                    'r2_url' => $offload['r2_url'],
+                    'original_filename' => $offload['original_filename'] ?? null,
+                ];
+            }
+
+            if (empty($deliveryLinks)) {
+                $result = [
+                    'success' => false,
+                    'message' => 'Offload Worker: aucun r2_url obtenu (voir détails).',
+                    'processed_urls' => $all,
+                    'worker_endpoint' => (string)(getenv('R2_FETCH_ENDPOINT') ?: ''),
+                    'offload_results' => $offloadResults,
+                ];
+                $action = null;
+            }
+
+            if (!$result) {
+                $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+                $host = $_SERVER['HTTP_HOST'] ?? '';
+                $basePath = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/');
+                $defaultTarget = $scheme . '://' . $host . ($basePath === '' ? '' : $basePath) . '/index.php';
+                $targetUrl = (string)(getenv('TEST_WEBHOOK_TARGET_URL') ?: $defaultTarget);
+
+                $payload = [
+                    'sender_email' => $senderEmail,
+                    'subject' => $subject,
+                    'delivery_links' => $deliveryLinks,
+                ];
+                if (is_string($emailId) && trim($emailId) !== '') {
+                    $payload['microsoft_graph_email_id'] = trim($emailId);
+                }
+
+                $webhookPost = postJson($targetUrl, $payload);
+                $result = [
+                    'success' => (bool)($webhookPost['json']['success'] ?? $webhookPost['ok']),
+                    'message' => 'Offload via Worker OK + webhook JSON envoyé vers index.php.',
+                    'processed_urls' => $all,
+                    'worker_endpoint' => (string)(getenv('R2_FETCH_ENDPOINT') ?: ''),
+                    'offload_results' => $offloadResults,
+                    'delivery_links_sent' => $deliveryLinks,
+                    'webhook_target' => $targetUrl,
+                    'webhook_payload' => $payload,
+                    'webhook_response' => $webhookPost,
+                ];
+            }
+        } catch (Exception $e) {
+            $error = $e->getMessage();
+        }
+    } elseif ($action === 'provider_only') {
         try {
             $content = filter_input(INPUT_POST, 'email_content', FILTER_UNSAFE_RAW) ?? '';
             if (trim($content) === '') {
@@ -167,6 +340,36 @@ $linksDiagnostics = loadWebhookLinksDiagnostics();
                 <textarea id="email_content" name="email_content" rows="8" placeholder="Paste email content containing provider links here (Dropbox, FromSmash, SwissTransfer)"><?php echo isset($_POST['email_content']) ? htmlspecialchars($_POST['email_content']) : '' ; ?></textarea>
             </div>
             <button type="submit">🔎 Extract URLs (No DB)</button>
+        </form>
+
+        <hr style="margin: 30px 0;">
+
+        <h2>🧪 Simulate Webhook Payload with R2 Links (POST JSON)</h2>
+        <p class="info" style="padding: 10px; border-radius: 5px;">This test builds a Make-style payload (<code>delivery_links</code>) and posts it to <code>index.php</code>. It is designed to validate that <code>source_url</code>/<code>r2_url</code> pairs are persisted in <code>webhook_links.json</code>.</p>
+        <form method="post">
+            <div class="form-group">
+                <label for="sender_email">Sender (authorized):</label>
+                <input type="text" id="sender_email" name="sender_email" value="<?php echo htmlspecialchars($_POST['sender_email'] ?? 'achats@media-solution.fr'); ?>" placeholder="achats@media-solution.fr" required>
+            </div>
+            <div class="form-group">
+                <label for="subject_sim">Subject:</label>
+                <input type="text" id="subject_sim" name="subject_sim" value="<?php echo htmlspecialchars($_POST['subject_sim'] ?? 'Test R2 Simulation'); ?>" placeholder="Test R2 Simulation" required>
+            </div>
+            <div class="form-group">
+                <label for="microsoft_graph_email_id">Email ID (optional):</label>
+                <input type="text" id="microsoft_graph_email_id" name="microsoft_graph_email_id" value="<?php echo htmlspecialchars($_POST['microsoft_graph_email_id'] ?? ''); ?>" placeholder="ex: AAMkAGI2...">
+            </div>
+            <div class="form-group">
+                <label for="max_links">Max links (worker offload):</label>
+                <input type="text" id="max_links" name="max_links" value="<?php echo htmlspecialchars($_POST['max_links'] ?? '3'); ?>" placeholder="3">
+            </div>
+            <div class="form-group">
+                <label for="email_content_sim">Email Content (raw):</label>
+                <textarea id="email_content_sim" name="email_content" rows="8" placeholder="Paste email content containing provider links here"><?php echo isset($_POST['email_content']) ? htmlspecialchars($_POST['email_content']) : '' ; ?></textarea>
+                <small style="color: #6c757d;">Simulation requires <code>R2_PUBLIC_BASE_URL</code>. Worker offload requires <code>R2_FETCH_ENDPOINT</code> + <code>R2_FETCH_TOKEN</code>.</small>
+            </div>
+            <button type="submit" name="action" value="simulate_webhook" style="background: #28a745;">🧪 Send JSON Webhook (Simulate R2)</button>
+            <button type="submit" name="action" value="offload_worker" style="margin-left: 10px; background: #6f42c1;">☁️ Offload via Worker (Real r2_url)</button>
         </form>
 
         <?php if ($error): ?>

@@ -219,10 +219,23 @@ Body JSON (exemple généré par `build_custom_webhook_payload()`):
       "provider": "dropbox",
       "raw_url": "https://www.dropbox.com/s/.../file1",
       "direct_url": "https://www.dropbox.com/s/.../file1?dl=1",
-      "r2_url": "https://media.example.com/dropbox/.../file1.zip"
+      "r2_url": "https://media.example.com/dropbox/.../file1.zip",
+      "original_filename": "61 Camille.zip"
     },
-    {"provider": "fromsmash", "raw_url": "https://fromsmash.com/ABCdef"},
-    {"provider": "swisstransfer", "raw_url": "https://www.swisstransfer.com/d/UUID"}
+    {
+      "provider": "fromsmash",
+      "raw_url": "https://fromsmash.com/ABCdef",
+      "direct_url": "https://fromsmash.com/ABCdef",
+      "r2_url": "https://media.example.com/fromsmash/.../archive.zip",
+      "original_filename": "archive.zip"
+    },
+    {
+      "provider": "swisstransfer",
+      "raw_url": "https://www.swisstransfer.com/d/UUID",
+      "direct_url": "https://www.swisstransfer.com/d/UUID",
+      "r2_url": "https://media.example.com/swisstransfer/.../file.zip",
+      "original_filename": "transfer.zip"
+    }
   ],
   "first_direct_download_url": null,
   "dropbox_urls": [
@@ -238,6 +251,7 @@ Notes:
 - `delivery_links` agrège les URLs de fournisseurs supportés (Dropbox, FromSmash, SwissTransfer).
   - `direct_url` est optionnel (et peut être `null`) si aucun lien direct n'a pu être déterminé.
   - `r2_url` est optionnel et n'est présent que si l'offload Cloudflare R2 a réussi.
+  - `original_filename` est disponible uniquement si l'offload R2 a réussi et que le nom de fichier a pu être extrait.
 - `first_direct_download_url` est le premier lien direct parmi les `delivery_links` trouvés (ou `null`).
 - `webhooks_time_start` et `webhooks_time_end` reflètent la Fenêtre Horaire Globale configurée.
   - Exception (autorépondeur/Make): si un email d'autorépondeur non urgent est détecté avant l'Heure de début configurée, `webhooks_time_start` est défini à l'heure de début (ex. "12h00"). Pour un cas urgent, hors fenêtre, l'envoi est ignoré (pas de bypass).

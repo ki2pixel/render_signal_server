@@ -59,6 +59,9 @@ R2_FETCH_ENABLED=true
 # URL du Worker Cloudflare (endpoint fetch)
 R2_FETCH_ENDPOINT=https://r2-fetch.your-worker.workers.dev
 
+# Token d'authentification pour le Worker (obligatoire)
+R2_FETCH_TOKEN=votre-secret-token-partage
+
 # URL publique du CDN R2 (pour construire les liens retournés)
 R2_PUBLIC_BASE_URL=https://media.yourdomain.com
 
@@ -107,9 +110,53 @@ Créez un fichier `worker.js` :
 
 export default {
   async fetch(request, env) {
-    // Vérifier la méthode
+    // Configuration CORS pour autoriser les requêtes depuis Render
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, User-Agent, X-R2-FETCH-TOKEN',
+    };
+
+    // Gestion des requêtes OPTIONS (preflight CORS)
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders,
+      });
+    }
+
+    // Vérifier la méthode HTTP
     if (request.method !== 'POST') {
-      return new Response('Method not allowed', { status: 405 });
+      return new Response(
+        JSON.stringify({ success: false, error: 'Method not allowed' }),
+        {
+          status: 405,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Vérifier le token d'authentification
+    const expectedToken = (env && env.R2_FETCH_TOKEN) ? String(env.R2_FETCH_TOKEN) : '';
+    if (!expectedToken || expectedToken.trim() === '') {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Worker not configured (R2_FETCH_TOKEN missing)' }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    const providedToken = request.headers.get('X-R2-FETCH-TOKEN') || '';
+    if (providedToken !== expectedToken) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Unauthorized' }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
     }
 
     try {
@@ -121,7 +168,7 @@ export default {
       if (!source_url || !object_key) {
         return new Response(
           JSON.stringify({ success: false, error: 'Missing required fields' }),
-          { status: 400, headers: { 'Content-Type': 'application/json' } }
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
@@ -138,12 +185,48 @@ export default {
             success: false,
             error: `Source fetch failed: ${sourceResponse.status}`,
           }),
-          { status: 502, headers: { 'Content-Type': 'application/json' } }
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      // Uploader vers R2
-      await env.R2_BUCKET.put(object_key, sourceResponse.body, {
+      // Extraire le nom de fichier depuis Content-Disposition si disponible
+      const parseFilenameFromContentDisposition = (value) => {
+        if (!value || typeof value !== 'string') {
+          return null;
+        }
+
+        const header = value.trim();
+        if (!header) {
+          return null;
+        }
+
+        const filenameStarMatch = header.match(/filename\*\s*=\s*([^;]+)/i);
+        if (filenameStarMatch) {
+          const raw = filenameStarMatch[1].trim();
+          const parts = raw.split("''");
+          const encoded = (parts.length > 1 ? parts.slice(1).join("''") : raw)
+            .replace(/^"|"$/g, '')
+            .trim();
+          try {
+            return decodeURIComponent(encoded);
+          } catch {
+            return encoded;
+          }
+        }
+
+        const filenameMatch = header.match(/filename\s*=\s*"?([^";]+)"?/i);
+        if (filenameMatch) {
+          return filenameMatch[1].trim();
+        }
+
+        return null;
+      };
+
+      const contentDisposition = sourceResponse.headers.get('Content-Disposition');
+      const originalFilename = parseFilenameFromContentDisposition(contentDisposition);
+
+      // Uploader vers R2 avec métadonnées enrichies
+      const putOptions = {
         httpMetadata: {
           contentType: sourceResponse.headers.get('Content-Type') || 'application/octet-stream',
         },
@@ -153,7 +236,17 @@ export default {
           emailId: email_id || 'unknown',
           uploadedAt: new Date().toISOString(),
         },
-      });
+      };
+
+      // Ajouter Content-Disposition et originalFilename si disponibles
+      if (contentDisposition) {
+        putOptions.httpMetadata.contentDisposition = contentDisposition;
+      }
+      if (originalFilename) {
+        putOptions.customMetadata.originalFilename = originalFilename;
+      }
+
+      await env.R2_BUCKET.put(object_key, sourceResponse.body, putOptions);
 
       // Construire l'URL publique R2
       const r2_url = `${env.R2_PUBLIC_BASE_URL}/${object_key}`;
@@ -163,8 +256,9 @@ export default {
           success: true,
           r2_url: r2_url,
           object_key: object_key,
+          original_filename: originalFilename,
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     } catch (error) {
       return new Response(
@@ -172,7 +266,7 @@ export default {
           success: false,
           error: error.message,
         }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
   },
@@ -192,6 +286,7 @@ bucket_name = "render-signal-media"
 
 [vars]
 R2_PUBLIC_BASE_URL = "https://media.yourdomain.com"
+R2_FETCH_TOKEN = "votre-secret-token-partage"
 ```
 
 ### Déploiement
@@ -458,9 +553,11 @@ cpu_ms = 50000
 
 ### "Error transferring link: timeout"
 
-- Vérifier le timeout côté orchestrator (30s par défaut, 120s pour certains liens Dropbox `/scl/fo/`).
+- Vérifier le timeout côté orchestrator (30s par défaut, **120s pour les liens Dropbox `/scl/fo/`**).
 - Vérifier la latence réseau entre Render et Cloudflare.
 - Optimiser le Worker (éviter les boucles, utiliser streaming).
+
+**Note sur les liens Dropbox `/scl/fo/`** : Ces liens de dossiers partagés sont maintenant traités en **best-effort** avec un timeout étendu à 120s. Si le téléchargement échoue (page HTML/login), le Worker retourne une erreur et le flux continue avec l'URL source originale.
 
 ### Fichier webhook_links.json corrompu
 
