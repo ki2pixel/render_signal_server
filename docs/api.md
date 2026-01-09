@@ -24,6 +24,7 @@ L'API est structurée en blueprints Flask pour une meilleure organisation et mai
 |-----------|---------|------------------|-------------|
 | `health` | `routes/health.py` | - | Vérification de l'état du service |
 | `dashboard` | `routes/dashboard.py` | `AuthService` | Interface utilisateur |
+| `api_auth` | `routes/api_auth.py` | `MagicLinkService` | Génération de magic links (POST `/api/auth/magic-link`) |
 | `api_webhooks` | `routes/api_webhooks.py` | `WebhookConfigService` | Gestion des webhooks |
 | `api_polling` | `routes/api_polling.py` | `PollingConfigService` | Configuration du polling IMAP |
 | `api_processing` | `routes/api_processing.py` | `ConfigService` | Préférences de traitement |
@@ -269,7 +270,8 @@ Remplacez `DOMAIN` par l'URL Render, et `<USERNAME>/<PASSWORD>` par vos identifi
       "provider": "swisstransfer",
       "raw_url": "https://www.swisstransfer.com/d/...",
       "direct_url": "https://www.swisstransfer.com/d/...",
-      "r2_url": "https://media.example.com/swisstransfer/f9e8d7c6/b5a4c3d2/file"
+      "r2_url": "https://media.example.com/swisstransfer/f9e8d7c6/b5a4c3d2/file",
+      "original_filename": "archive.zip"
     },
     {
       "provider": "dropbox",
@@ -298,7 +300,7 @@ Notes :
 - `delivery_links` contient toujours `raw_url` et peut aussi inclure :
   - `direct_url` : URL de téléchargement direct (si déterminée)
   - `r2_url` : URL Cloudflare R2 si l'offload a réussi (prioritaire pour le téléchargement)
-  - `original_filename` : Nom de fichier d'origine extrait depuis Content-Disposition (disponible si R2 réussi)
+  - `original_filename` : Nom de fichier d'origine extrait depuis `Content-Disposition` (servi par le Worker via `httpMetadata.contentDisposition`)
 - **Stratégie de priorité recommandée pour les récepteurs** :
   1. Utiliser `r2_url` si présent (téléchargement plus rapide, économe en bande passante)
   2. Sinon utiliser `direct_url` (téléchargement direct depuis la source)

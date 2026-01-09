@@ -17,15 +17,21 @@ import logging
 import os
 import secrets
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from hashlib import sha256
 from hmac import compare_digest, new as hmac_new
 from pathlib import Path
 from threading import RLock
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from services.config_service import ConfigService
+
+try:
+    import fcntl  # type: ignore
+except Exception:  # pragma: no cover - platform dependent
+    fcntl = None  # type: ignore
 
 
 @dataclass
@@ -66,6 +72,7 @@ class MagicLinkService:
         storage_path: Path,
         ttl_seconds: int,
         config_service: Optional[ConfigService] = None,
+        external_store: Any = None,
         logger: Optional[logging.Logger] = None,
     ) -> None:
         if not secret_key:
@@ -75,6 +82,11 @@ class MagicLinkService:
         self._storage_path = Path(storage_path)
         self._ttl_seconds = max(60, int(ttl_seconds or 0))  # minimum 1 minute
         self._config_service = config_service or ConfigService()
+        self._external_store = external_store
+        self._external_store_enabled = bool(
+            os.environ.get("EXTERNAL_CONFIG_BASE_URL")
+            and os.environ.get("CONFIG_API_TOKEN")
+        )
         self._logger = logger or logging.getLogger(__name__)
         self._file_lock = RLock()
 
@@ -92,11 +104,17 @@ class MagicLinkService:
                 if not kwargs:
                     from config import settings
 
+                    try:
+                        from config import app_config_store as _app_config_store
+                    except Exception:  # pragma: no cover - defensive
+                        _app_config_store = None
+
                     kwargs = {
                         "secret_key": settings.FLASK_SECRET_KEY,
                         "storage_path": settings.MAGIC_LINK_TOKENS_FILE,
                         "ttl_seconds": settings.MAGIC_LINK_TTL_SECONDS,
                         "config_service": ConfigService(),
+                        "external_store": _app_config_store,
                     }
                 cls._instance = cls(**kwargs)
             return cls._instance
@@ -217,33 +235,114 @@ class MagicLinkService:
         return hmac_new(self._secret_key, payload, sha256).hexdigest()
 
     def _load_state(self) -> dict:
-        if not self._storage_path.exists():
-            return {}
-        try:
-            with self._storage_path.open("r", encoding="utf-8") as f:
-                raw = json.load(f)
-            # Nettoyer les entrées invalides
-            cleaned = {}
-            for key, value in raw.items():
-                try:
-                    cleaned[key] = (
-                        value if isinstance(value, MagicLinkRecord) else MagicLinkRecord.from_dict(value)
-                    )
-                except Exception:
-                    continue
-            return cleaned
-        except Exception:
-            return {}
+        state = self._load_state_from_external_store()
+        if state is not None:
+            return state
+
+        return self._load_state_from_file()
 
     def _save_state(self, state: dict) -> None:
         serializable = {
             key: (value.to_dict() if isinstance(value, MagicLinkRecord) else value)
             for key, value in state.items()
         }
+
+        if self._save_state_to_external_store(serializable):
+            return
+
+        self._save_state_to_file(serializable)
+
+    def _load_state_from_external_store(self) -> Optional[dict]:
+        if not self._external_store_enabled or self._external_store is None:
+            return None
+        try:
+            try:
+                raw = self._external_store.get_config_json(  # type: ignore[attr-defined]
+                    "magic_link_tokens",
+                    file_fallback=self._storage_path,
+                )
+            except TypeError:
+                raw = self._external_store.get_config_json("magic_link_tokens")  # type: ignore[attr-defined]
+            if not isinstance(raw, dict):
+                return {}
+            return self._clean_state(raw)
+        except Exception:
+            return None
+
+    def _save_state_to_external_store(self, serializable: dict) -> bool:
+        if not self._external_store_enabled or self._external_store is None:
+            return False
+        try:
+            try:
+                return bool(
+                    self._external_store.set_config_json(  # type: ignore[attr-defined]
+                        "magic_link_tokens",
+                        serializable,
+                        file_fallback=self._storage_path,
+                    )
+                )
+            except TypeError:
+                return bool(
+                    self._external_store.set_config_json("magic_link_tokens", serializable)  # type: ignore[attr-defined]
+                )
+        except Exception:
+            return False
+
+    def _load_state_from_file(self) -> dict:
+        if not self._storage_path.exists():
+            return {}
+        try:
+            with self._interprocess_file_lock():
+                with self._storage_path.open("r", encoding="utf-8") as f:
+                    raw = json.load(f)
+            if not isinstance(raw, dict):
+                return {}
+            return self._clean_state(raw)
+        except Exception:
+            return {}
+
+    def _save_state_to_file(self, serializable: dict) -> None:
         tmp_path = self._storage_path.with_suffix(".tmp")
-        with tmp_path.open("w", encoding="utf-8") as f:
-            json.dump(serializable, f, indent=2, sort_keys=True)
-        os.replace(tmp_path, self._storage_path)
+        with self._interprocess_file_lock():
+            with tmp_path.open("w", encoding="utf-8") as f:
+                json.dump(serializable, f, indent=2, sort_keys=True)
+            os.replace(tmp_path, self._storage_path)
+
+    def _clean_state(self, raw: dict) -> dict:
+        cleaned: dict = {}
+        for key, value in raw.items():
+            if not isinstance(key, str) or not key:
+                continue
+            try:
+                cleaned[key] = (
+                    value
+                    if isinstance(value, MagicLinkRecord)
+                    else MagicLinkRecord.from_dict(value)
+                )
+            except Exception:
+                continue
+        return cleaned
+
+    @contextmanager
+    def _interprocess_file_lock(self):
+        if fcntl is None:
+            yield
+            return
+
+        lock_path = self._storage_path.with_suffix(self._storage_path.suffix + ".lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with lock_path.open("a+", encoding="utf-8") as lock_file:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    try:
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                    except Exception:
+                        pass
+        except Exception:
+            yield
 
     def _cleanup_expired_tokens(self) -> None:
         now_epoch = time.time()

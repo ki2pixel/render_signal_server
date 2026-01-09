@@ -20,7 +20,7 @@ actions:
 
   # ÉTAPE 2 : Lister les fichiers de documentation pour connaître la structure actuelle.
   - tool: file_lister
-    description: "Lister tous les fichiers du répertoire /docs/workflow."
+    description: "Lister tous les fichiers du répertoire /docs."
     input: "./docs"
     output: DOCS_FILE_STRUCTURE
 

@@ -31,6 +31,8 @@ Cette application fournit une télécommande web sécurisée (Flask + Flask-Logi
 | `WebhookConfigService` (Singleton) | `services/webhook_config_service.py` | Gère la config webhook (validation HTTPS forcée, normalisation Make.com, cache + store externe) @app_render.py#299-310 |
 | `DeduplicationService` | `services/deduplication_service.py` | Orchestration du dedup email/subject (Redis + fallback mémoire) injectée dans le poller @app_render.py#425-437 |
 | `PollingConfigService` | `config/polling_config.py` | Exposé comme service léger pour lire jours/heures actifs, timezone et flag UI `enable_polling` @config/polling_config.py#202-295 |
+| `R2TransferService` (Singleton) | `services/r2_transfer_service.py` | Offload Cloudflare R2 (normalisation Dropbox, fetch distant signé `X-R2-FETCH-TOKEN`, persistance des paires `source_url`/`r2_url` + `original_filename`) @email_processing/orchestrator.py#645-711 |
+| `MagicLinkService` (Singleton) | `services/magic_link_service.py` | Génération/validation de magic links signés HMAC, TTL configurable, stockage JSON verrouillé, expose l’endpoint `/api/auth/magic-link` @routes/api_auth.py |
 
 > `PollingConfigService` réside dans `config/polling_config.py` pour rester proche des helpers historiques; `app_render.py` l’instancie et l’injecte dans le poller et le watcher Make @app_render.py#278-735.
 
@@ -40,6 +42,7 @@ Bootstrap `app_render.py` (ordre d'initialisation, simplifié):
 - Initialisation des Singletons (`RuntimeFlagsService`, `WebhookConfigService`) avec logs d’état et fallback externe @app_render.py#284-310
 - Initialisation du `DeduplicationService` (Redis/Fallback) @app_render.py#425-437
 - Initialisation de la fenêtre horaire (ENV → overrides UI via fichier/store) @app_render.py#324-332
+- Initialisation conditionnelle de `R2TransferService` (variables `R2_FETCH_*`) et du stockage des tokens Magic Link (permissions disque vérifiées dès le boot) pour surfacer les erreurs de configuration avant le premier cycle opératoire.
 - Observabilité: heartbeat périodique, handler SIGTERM, contrôles d’activation des threads (poller + watcher Make) @app_render.py#230-735
 
 Orchestrateur (2025-11-18): helpers module-level extraits (`_is_webhook_sending_enabled`, `_load_webhook_global_time_window`, `_fetch_and_parse_email`), `TypedDict ParsedEmail`, constantes `IMAP_*`, `DETECTOR_*`, `ROUTE_*`, parsing plain+HTML @email_processing/orchestrator.py#26-188.
@@ -48,6 +51,25 @@ Règles de fenêtre horaire (webhooks dédiés):
 - DESABO non urgent: bypass hors fenêtre et envoi immédiat.
 - DESABO urgent: ne contourne pas la fenêtre → skip hors fenêtre.
 - RECADRAGE hors fenêtre: skip + marquage lu/traité (évite retrait à l’ouverture de fenêtre).
+
+### Intégration Cloudflare R2 & Workers (2026-01-08)
+
+- **Service dédié** : `R2TransferService` (Singleton) encapsule la normalisation Dropbox, la génération des clés d’objets, l’appel au Worker Cloudflare (`X-R2-FETCH-TOKEN` obligatoire) et la persistance des paires `source_url`/`r2_url` (JSON verrouillé via `fcntl`).
+- **Orchestrateur** : `email_processing/orchestrator.py` enrichit `delivery_links` si `R2_FETCH_ENABLED=true`, propage `original_filename` (extrait depuis `Content-Disposition`) et journalise les succès/échecs (`R2_TRANSFER:*`).
+- **Workers Cloudflare** :
+  - `deployment/cloudflare-worker/worker.js` – Fetch distant (timeout 30s / 120s pour `/scl/fo/`), validation HTML/ZIP, stockage R2 avec metadata (`expiresAt`, `originalFilename`).
+  - `deployment/cloudflare-worker/cleanup.js` – Suppression automatique (24h) basée sur les metadatas.
+- **Backends PHP** : `deployment/src/JsonLogger.php` a été étendu pour écrire les paires R2, les pages de test (`test.php`, `test-direct.php`) disposent d’un mode « Offload via Worker » avec diagnostics complets.
+- **Garanties** : économies de bande passante Render (~$5/mois pour 50 GB), fallback gracieux (si l’offload échoue, le webhook conserve uniquement `raw_url`/`direct_url`).
+
+### Authentification Magic Link (2026-01-07)
+
+- **Service** : `MagicLinkService` génère des tokens signés HMAC SHA-256 (`FLASK_SECRET_KEY`, TTL configurable via `MAGIC_LINK_TTL_SECONDS`) et les stocke dans `MAGIC_LINK_TOKENS_FILE` (JSON + verrou `RLock`).
+- **Routes/UI** :
+  - API : `POST /api/auth/magic-link` (session requise) pour générer un lien one-shot ou permanent (`unlimited=true`).
+  - Dashboard : pages `login.html` / `dashboard.html` ajoutent un bouton « ✨ Générer un magic link », copie automatique, champ “Magic Token”.
+  - Route de consommation : `GET /dashboard/magic-link/<token>` valide/invalide le token puis crée la session Flask-Login.
+- **Sécurité** : logs `MAGIC_LINK:*`, nettoyage auto des tokens expirés, recommandations permissions (`chmod 600` sur le fichier de tokens).
 
 ## Dernières Évolutions (2025-11-18)
 

@@ -56,9 +56,9 @@ if (isDropboxFolderShare) {
 
 ### Mode Best-Effort pour les dossiers Dropbox `/scl/fo/`
 
-**Nouveau comportement (2026-01-08)** : Les liens Dropbox `/scl/fo/` ne sont plus ignorés par le backend. Le système tente désormais l'offload R2 en mode best-effort :
+**Nouveau comportement (2026-01-08)** : Les liens Dropbox `/scl/fo/` ne sont plus ignorés par le backend. Le système tente désormais l'offload R2 en mode best-effort (implémenté dans `email_processing/orchestrator.py`, bloc R2 Transfer) :
 
-- **Timeout spécifique** : 120 secondes pour les dossiers Dropbox (vs 30s par défaut)
+- **Timeout spécifique** : 120 secondes pour les dossiers Dropbox (vs 30s par défaut), appliqué avant l'appel à `R2TransferService.request_remote_fetch()`
 - **User-Agent navigateur** : Le Worker utilise un User-Agent Chrome moderne pour éviter les blocages
 - **Maintien sur `dropbox.com`** : Pas de fallback vers `dl.dropboxusercontent.com` pour les `/scl/fo/` (évite les erreurs 403)
 - **Validation stricte** : Vérification de la taille minimale et des magic bytes ZIP avant upload

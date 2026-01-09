@@ -28,6 +28,8 @@ Notes:
 - `ConfigService` expose des accesseurs typés (`get_email_config()`, `get_api_token()`, `get_render_config()`, etc.).
 - `RuntimeFlagsService` (Singleton) gère `get_all_flags()` et `update_flags()` avec persistence JSON et cache TTL 60s.
 - `WebhookConfigService` (Singleton) centralise la configuration webhooks (validation HTTPS, normalisation Make.com, cache + store externe optionnel). Les champs couvrent aussi la « fenêtre horaire des webhooks » (`webhook_time_start`, `webhook_time_end`, ainsi que `global_time_start/global_time_end` pour synchronisation UI legacy). La persistance privilégie le store externe (si configuré) avec fallback fichier `debug/webhook_config.json`.
+- `R2TransferService` (Singleton) active l’offload Cloudflare R2 lorsque `R2_FETCH_ENABLED=true`, vérifie la présence de `R2_FETCH_ENDPOINT`/`R2_FETCH_TOKEN`, normalise les URLs Dropbox et persiste les paires `source_url`/`r2_url` dans `WEBHOOK_LINKS_FILE`.
+- `MagicLinkService` (Singleton) consomme `FLASK_SECRET_KEY`, `MAGIC_LINK_TTL_SECONDS` et `MAGIC_LINK_TOKENS_FILE` pour générer/valider les magic links et assure la création + verrouillage du fichier de tokens au démarrage.
 # Configuration (variables d'environnement)
 
 ## Stockage de la configuration
@@ -42,18 +44,24 @@ La configuration est gérée via une API PHP sécurisée avec un système de fal
 
 ### Variables Cloudflare R2 (Offload fichiers)
 
-- `R2_FETCH_ENABLED` : Activation du service R2 (true/false, défaut: false)
-- `R2_FETCH_ENDPOINT` : URL du Worker Cloudflare pour fetch distant (ex: `https://r2-fetch.your-worker.workers.dev`)
-- `R2_PUBLIC_BASE_URL` : URL publique du CDN R2 (ex: `https://media.yourdomain.com`)
-- `R2_BUCKET_NAME` : Nom du bucket R2 (ex: `render-signal-media`)
-- `WEBHOOK_LINKS_FILE` : Chemin du fichier `webhook_links.json` (défaut: `deployment/data/webhook_links.json`)
-- `R2_LINKS_MAX_ENTRIES` : Nombre maximum d'entrées dans webhook_links.json (rotation automatique, défaut: 1000)
+| Variable | Description |
+| --- | --- |
+| `R2_FETCH_ENABLED` | Active/désactive l’offload (défaut `false`). |
+| `R2_FETCH_ENDPOINT` | URL du Worker Cloudflare (ex: `https://r2-fetch.<zone>.workers.dev`). |
+| `R2_FETCH_TOKEN` | Token secret envoyé dans `X-R2-FETCH-TOKEN` (obligatoire côté Render, Worker, pages PHP). |
+| `R2_PUBLIC_BASE_URL` | Domaine public servant les objets R2 (CDN/Workers). |
+| `R2_BUCKET_NAME` | Bucket R2 cible (ex: `render-signal-media`). |
+| `WEBHOOK_LINKS_FILE` | Fichier de persistance des paires `source_url`/`r2_url` (défaut `deployment/data/webhook_links.json`). |
+| `R2_LINKS_MAX_ENTRIES` | Nombre max d’entrées conservées avant rotation (défaut `1000`). |
+| `JSON_LOG_MAX_BYTES` | Limite taille fichier côté PHP avant rotation (défaut `5*1024*1024`). |
+| `R2_FETCH_TIMEOUT_DROPBOX_SCL_FO` | (Optionnel) Timeout spécifique pour les dossiers Dropbox `/scl/fo/` (défaut interne 120s). |
 
 ### Variables sensibles R2 (non à commiter)
 
-- `R2_ACCESS_KEY_ID` : Clé d'accès Cloudflare R2
-- `R2_SECRET_ACCESS_KEY` : Clé secrète Cloudflare R2
-- `R2_ACCOUNT_ID` : ID du compte Cloudflare
+- `R2_FETCH_TOKEN`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_ACCOUNT_ID`
 
 ### Architecture du système de configuration
 

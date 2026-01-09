@@ -59,12 +59,12 @@ Les pages suivantes servent de support de diagnostic pour valider end-to-end l'o
   - Test IMAP + DB (flux complet côté PHP)
   - Test « provider-only » (extraction locale Dropbox/FromSmash/SwissTransfer sans écriture DB)
   - **Test "Offload via Worker"** : permet d'obtenir un vrai `r2_url` depuis le Worker Cloudflare et de simuler un webhook Make-style
-  - Affiche un diagnostic `webhook_links.json` : conformité schéma, entrées legacy, comptage par provider, dernières entrées.
+  - Affiche un diagnostic `webhook_links.json` : conformité schéma, entrées legacy vs R2, comptage par provider, dernières entrées, présence d'`original_filename`.
 
 - `deployment/public_html/test-direct.php`
   - Test direct d'extraction d'URLs (sans IMAP)
   - **Test "Offload via Worker"** : similaire à test.php mais sans passer par IMAP
-  - Affiche aussi le diagnostic `webhook_links.json`.
+  - Affiche aussi le diagnostic `webhook_links.json` enrichi (paires R2, nom de fichier original, différenciation legacy/R2).
 
 Pour éviter des conflits d'inclusion PHP, la logique de diagnostic est consolidée dans un seul helper :
 
@@ -91,7 +91,8 @@ putenv('R2_PUBLIC_BASE_URL=https://media.yourdomain.com');
 1. **Extraction** : Les pages détectent les URLs Dropbox/FromSmash/SwissTransfer dans le contenu fourni
 2. **Offload** : Pour chaque URL, `fetchR2UrlViaWorker()` appelle le Worker Cloudflare avec le token d'authentification
 3. **Simulation** : Si l'offload réussit, les pages simulent l'envoi d'un webhook avec les `delivery_links` enrichies (`r2_url`, `original_filename`)
-4. **Diagnostics** : Les résultats détaillés (succès/échec, payloads, réponses Worker) sont affichés pour le débogage
+4. **Journalisation** : `deployment/src/JsonLogger.php` écrit chaque paire via `logR2LinkPair()` / `logDeliveryLinkPairs()` afin de conserver une trace alignée avec Render (sans champ `email_id`, déduplication stricte).
+5. **Diagnostics** : Les résultats détaillés (succès/échec, payloads, réponses Worker, entrées `webhook_links.json`) sont affichés pour le débogage
 
 Ces pages sont prévues pour un usage admin/diagnostic uniquement et nécessitent une configuration correcte du Worker R2.
 
@@ -162,6 +163,7 @@ Ces pages sont prévues pour un usage admin/diagnostic uniquement et nécessiten
 - Les tâches de fond démarrent (logs `BACKGROUND_TASKS`).
 - Les variables d'environnement sensibles sont présentes.
 - Vérifiez que le fichier de tokens est accessible et a les bonnes permissions.
+- **R2** : déclencher une capture d’e-mail contenant un lien Dropbox et vérifier (logs + `deployment/public_html/test.php`) que `r2_url` et `original_filename` sont persistés dans `deployment/data/webhook_links.json`. En cas d’échec, confirmer que `R2_FETCH_TOKEN` côté Render/Worker est identique.
 
 ### Observabilité & Signaux
 
@@ -218,6 +220,8 @@ Ces pages sont prévues pour un usage admin/diagnostic uniquement et nécessiten
 - Côté Render, ne changez pas la commande de démarrage : le Dockerfile exécute déjà `gunicorn ... app_render:app` et respecte les valeurs `GUNICORN_*`.
 - Conservez les variables applicatives historiques (`ENABLE_BACKGROUND_TASKS`, `WEBHOOK_URL`, etc.). Elles sont injectées par Render lors du déploiement de l'image.
 - Les logs (stdout/stderr) continuent à exposer `BG_POLLER`, `HEARTBEAT`, `MAKE_WATCHER`, etc., conformément à `docs/operational-guide.md`.
+- **Nouveau** : configurez systématiquement les variables d'offload R2 côté Render (`R2_FETCH_ENABLED`, `R2_FETCH_ENDPOINT`, `R2_FETCH_TOKEN`, `R2_PUBLIC_BASE_URL`, `R2_BUCKET_NAME`, `WEBHOOK_LINKS_FILE`). Sans token ou endpoint, l'intégration R2 reste désactivée et les webhooks ne contiendront pas `r2_url`.
+- Vérifiez que `WEBHOOK_LINKS_FILE` pointe vers un volume persistant si vous souhaitez analyser l'historique des paires R2 après un redéploiement.
 
 ### Flux de déploiement
 

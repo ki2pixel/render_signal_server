@@ -297,6 +297,55 @@ La résolution headless (Playwright) a été retirée. Les variables d'environne
 
 <!-- Section de test headless supprimée (Playwright retiré) -->
 
+## Intégration Cloudflare R2 (Offload fichiers)
+
+### Flux d'enrichissement dans l'orchestrateur
+
+Lorsque `R2_FETCH_ENABLED=true`, l'orchestrateur (`email_processing/orchestrator.py`) enrichit automatiquement les `delivery_links` avec les URLs Cloudflare R2 :
+
+1. **Détection** : Extraction des liens Dropbox/FromSmash/SwissTransfer depuis l'email
+2. **Offload** : Appel à `R2TransferService.request_remote_fetch()` pour chaque lien
+3. **Enrichissement** : Ajout des champs `r2_url` et `original_filename` dans `delivery_links`
+4. **Persistance** : Stockage des paires `source_url`/`r2_url` dans `deployment/data/webhook_links.json`
+
+### Logs R2 dans l'orchestrateur
+
+Les événements R2 sont journalisés avec le préfixe `R2_TRANSFER:` :
+
+```text
+R2_TRANSFER: Successfully transferred dropbox link to R2 for email abc123 (r2_url=https://media.example.com/...)
+R2_TRANSFER: Failed to transfer fromsmash link for email def456 (error: timeout)
+R2_TRANSFER: Best-effort handling for Dropbox /scl/fo/ link (timeout=120s)
+```
+
+### Payload webhook enrichi
+
+Chaque entrée `delivery_links` peut contenir :
+- `r2_url` : URL CDN Cloudflare (prioritaire pour le téléchargement)
+- `original_filename` : Nom de fichier extrait depuis `Content-Disposition`
+
+```json
+{
+  "delivery_links": [
+    {
+      "provider": "dropbox",
+      "raw_url": "https://www.dropbox.com/s/abc123/file.zip?dl=0",
+      "direct_url": "https://www.dropbox.com/s/abc123/file.zip?dl=1",
+      "r2_url": "https://media.example.com/dropbox/a1b2c3d4/e5f6g7h8/file.zip",
+      "original_filename": "61 Camille.zip"
+    }
+  ]
+}
+```
+
+### Comportement en cas d'échec R2
+
+- L'orchestrateur continue le traitement avec les URLs sources
+- Le webhook est envoyé sans les champs R2
+- Aucun blocage du flux principal
+
+Pour plus de détails, voir `docs/r2_offload.md`.
+
 ## Bonnes pratiques
 
 - Surveiller les logs d'erreurs IMAP et le taux d'échecs.

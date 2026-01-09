@@ -8,6 +8,7 @@ import pytest
 from pathlib import Path
 import tempfile
 import json
+import os
 
 # Import des services
 from services import (
@@ -16,6 +17,7 @@ from services import (
     WebhookConfigService,
     AuthService,
     DeduplicationService,
+    MagicLinkService,
 )
 
 
@@ -38,9 +40,11 @@ def reset_singletons():
     """Réinitialise les singletons avant chaque test."""
     RuntimeFlagsService.reset_instance()
     WebhookConfigService.reset_instance()
+    MagicLinkService.reset_instance()
     yield
     RuntimeFlagsService.reset_instance()
     WebhookConfigService.reset_instance()
+    MagicLinkService.reset_instance()
 
 
 # =============================================================================
@@ -302,6 +306,109 @@ def test_auth_service_api_token():
     if expected_token:
         assert auth.verify_api_token(expected_token) is True
         assert auth.verify_api_token("wrong-token") is False
+
+
+# =============================================================================
+# Tests MagicLinkService
+# =============================================================================
+
+
+def test_magic_link_service_unlimited_token_is_reusable(temp_json_file):
+    """Un token illimité ne doit pas être consommé (réutilisable)."""
+    service = MagicLinkService(
+        secret_key="test-secret",
+        storage_path=temp_json_file,
+        ttl_seconds=60,
+        config_service=ConfigService(),
+    )
+
+    token, expires_at = service.generate_token(unlimited=True)
+    assert isinstance(token, str)
+    assert expires_at is None
+
+    ok, username1 = service.consume_token(token)
+    assert ok is True
+    assert isinstance(username1, str)
+
+    ok, username2 = service.consume_token(token)
+    assert ok is True
+    assert username2 == username1
+
+
+def test_magic_link_service_external_store_shares_state_across_instances():
+    """Le store externe doit permettre à une autre instance de consommer le token."""
+
+    class InMemoryExternalStore:
+        def __init__(self):
+            self._db = {}
+
+        def get_config_json(self, key: str, *, file_fallback=None):
+            return self._db.get(key, {})
+
+        def set_config_json(self, key: str, value: dict, *, file_fallback=None) -> bool:
+            self._db[key] = value
+            return True
+
+    os.environ["EXTERNAL_CONFIG_BASE_URL"] = "https://example.invalid"
+    os.environ["CONFIG_API_TOKEN"] = "test-token"
+
+    store = InMemoryExternalStore()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        path_a = Path(tmp_dir) / "a.json"
+        path_b = Path(tmp_dir) / "b.json"
+
+        instance_a = MagicLinkService(
+            secret_key="test-secret",
+            storage_path=path_a,
+            ttl_seconds=60,
+            config_service=ConfigService(),
+            external_store=store,
+        )
+        token, _ = instance_a.generate_token(unlimited=True)
+
+        instance_b = MagicLinkService(
+            secret_key="test-secret",
+            storage_path=path_b,
+            ttl_seconds=60,
+            config_service=ConfigService(),
+            external_store=store,
+        )
+        ok, _ = instance_b.consume_token(token)
+        assert ok is True
+
+
+def test_magic_link_service_legacy_external_store_signature_supported():
+    """Compat: external_store dont les méthodes n'acceptent pas file_fallback."""
+
+    class LegacyExternalStore:
+        def __init__(self):
+            self._db = {}
+
+        def get_config_json(self, key: str):
+            return self._db.get(key, {})
+
+        def set_config_json(self, key: str, value: dict) -> bool:
+            self._db[key] = value
+            return True
+
+    os.environ["EXTERNAL_CONFIG_BASE_URL"] = "https://example.invalid"
+    os.environ["CONFIG_API_TOKEN"] = "test-token"
+
+    store = LegacyExternalStore()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        storage_path = Path(tmp_dir) / "tokens.json"
+
+        service = MagicLinkService(
+            secret_key="test-secret",
+            storage_path=storage_path,
+            ttl_seconds=60,
+            config_service=ConfigService(),
+            external_store=store,
+        )
+        token, _ = service.generate_token(unlimited=True)
+
+        ok, _ = service.consume_token(token)
+        assert ok is True
 
 
 # =============================================================================

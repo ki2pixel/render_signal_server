@@ -19,6 +19,12 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 ---
 
 ## Terminé
+-   [2026-01-09 17:50] **Correction de la duplication dans webhook_links.json pour les liens R2**
+    - Backend Python : mise à jour de `orchestrator.py` pour gérer le tuple `(r2_url, original_filename)` et propager `original_filename`
+    - Filtrage des liens d'assets Dropbox (logos/avatars) dans `link_extraction.py`
+    - PHP : suppression de la persistance de `email_id` et déduplication des entrées dans `JsonLogger.php`
+    - Mise à jour des tests unitaires pour valider le nouveau schéma de données
+    - Validation : 83/83 tests passants, couverture maintenue à ~41.16%
 -   [2025-01-08 20:15] **Préservation du nom de fichier d'origine (Content-Disposition) pour les objets R2**
     - Worker `r2-fetch-worker` : extraction du nom source via `Content-Disposition`, sanitation, et écriture `httpMetadata.contentDisposition` + `customMetadata.originalFilename` lors de l'upload.
     - Objectif : télécharger le fichier offloadé avec son nom d'origine (ex: `61 Camille.zip`) au lieu d'un nom dérivé de la clé.

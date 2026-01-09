@@ -172,7 +172,9 @@ R2_BUCKET_NAME=render-signal-media
 
 #### Format du payload enrichi
 
-Lorsque R2 est activé, chaque lien contient un champ `r2_url` optionnel :
+Lorsque R2 est activé, chaque lien peut contenir :
+- `r2_url` (lien CDN R2)
+- `original_filename` (nom d'origine fourni par le Worker lorsque `Content-Disposition` est disponible)
 
 ```json
 {
@@ -187,7 +189,17 @@ Lorsque R2 est activé, chaque lien contient un champ `r2_url` optionnel :
 }
 ```
 
-**Recommandation pour les récepteurs** : Prioriser `r2_url` si présent, sinon utiliser `direct_url`.
+**Recommandations côté récepteur** :
+1. Prioriser `r2_url` si présent pour bénéficier du CDN Cloudflare.
+2. Utiliser `original_filename` pour présenter un nom humain (utile pour les téléchargements manuels ou l’archivage).
+3. Fallback sur `direct_url` ou `raw_url` si `r2_url` est absent.
+
+#### Miroir PHP et diagnostics
+
+- Lorsque `processing_prefs.mirror_media_to_custom` est activé, l’endpoint PHP reçoit le même payload enrichi (`r2_url`, `original_filename` inclus).
+- `deployment/src/JsonLogger.php` consigne désormais chaque paire source/R2 via `logR2LinkPair()` / `logDeliveryLinkPairs()`. Le fichier `deployment/data/webhook_links.json` conserve uniquement la paire unique la plus récente (déduplication stricte).
+- Les pages de test `deployment/public_html/test.php` et `test-direct.php` affichent un diagnostic complet : comptage par provider, différenciation entrées legacy vs R2, présence d’`original_filename`, et résultat de l’appel Worker (“Offload via Worker”).
+- Ces diagnostics facilitent la corrélation entre les webhooks Make.com et la persistance côté PHP sans devoir consulter les logs Render.
 
 #### Documentation complète
 

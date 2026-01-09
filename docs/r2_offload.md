@@ -388,18 +388,21 @@ Le fichier `deployment/data/webhook_links.json` est mis à jour automatiquement 
     "source_url": "https://www.dropbox.com/s/abc123/file.zip?dl=1",
     "r2_url": "https://media.yourdomain.com/dropbox/a1b2c3d4/e5f6g7h8/file.zip",
     "provider": "dropbox",
-    "email_id": "md5-hash-email-id",
+    "original_filename": "61 Camille.zip",
     "created_at": "2026-01-08T00:30:00.123456Z"
   },
   {
     "source_url": "https://fromsmash.com/ABC123",
     "r2_url": "https://media.yourdomain.com/fromsmash/f9e8d7c6/b5a4c3d2/file",
     "provider": "fromsmash",
-    "email_id": "md5-hash-email-id-2",
     "created_at": "2026-01-08T01:15:00.987654Z"
   }
 ]
 ```
+
+- `original_filename` est renseigné lorsque le Worker extrait un `Content-Disposition`.  
+- `email_id` n’est plus persisté (suppression du champ redondant côté PHP).  
+- La déduplication est stricte : si une paire `(source_url, r2_url, provider)` existe déjà, elle n’est pas réinsérée (voir `R2TransferService.persist_link_pair()`).
 
 ### Rotation automatique
 
@@ -411,7 +414,9 @@ Configurer via `R2_LINKS_MAX_ENTRIES`.
 
 ## Payload Webhook enrichi
 
-Lorsque R2 est activé, chaque entrée `delivery_links` peut contenir un champ `r2_url` :
+Lorsque R2 est activé, chaque entrée `delivery_links` peut contenir :
+- `r2_url` : lien CDN Cloudflare
+- `original_filename` : nom de fichier humain renvoyé par le Worker si disponible
 
 ```json
 {
@@ -422,7 +427,8 @@ Lorsque R2 est activé, chaque entrée `delivery_links` peut contenir un champ `
       "provider": "dropbox",
       "raw_url": "https://www.dropbox.com/s/abc123/file.zip?dl=0",
       "direct_url": "https://www.dropbox.com/s/abc123/file.zip?dl=1",
-      "r2_url": "https://media.yourdomain.com/dropbox/a1b2c3d4/e5f6g7h8/file.zip"
+      "r2_url": "https://media.yourdomain.com/dropbox/a1b2c3d4/e5f6g7h8/file.zip",
+      "original_filename": "61 Camille.zip"
     }
   ],
   "first_direct_download_url": "https://www.dropbox.com/s/abc123/file.zip?dl=1",
@@ -431,9 +437,18 @@ Lorsque R2 est activé, chaque entrée `delivery_links` peut contenir un champ `
 }
 ```
 
-**Recommandation pour les récepteurs** :
+**Recommandations pour les récepteurs** :
 
-Prioriser `r2_url` si présent (téléchargement plus rapide), sinon utiliser `direct_url` ou `raw_url`.
+1. Prioriser `r2_url` si présent (téléchargement plus rapide).  
+2. Utiliser `original_filename` pour afficher un nom cohérent dans les interfaces ou lors des téléchargements manuels.  
+3. Fallback sur `direct_url` ou `raw_url` si `r2_url` est absent.
+
+### Flux Make.com et miroir PHP
+
+- Les webhooks Make.com contiennent les champs `delivery_links[*].r2_url` et `delivery_links[*].original_filename`.  
+- Si `processing_prefs.mirror_media_to_custom` est activé, le miroir PHP reçoit le même payload puis persiste les paires source/R2 dans `deployment/data/webhook_links.json`.  
+- Les pages de test (`deployment/public_html/test*.php`) affichent désormais un diagnostic enrichi : comptage par provider, présence d’`original_filename` et détection des entrées legacy vs R2.  
+- `deployment/src/JsonLogger.php` journalise explicitement les nouvelles paires (méthodes `logR2LinkPair()`/`logDeliveryLinkPairs()`), ce qui facilite la corrélation entre Render et l’infrastructure PHP.
 
 ---
 
