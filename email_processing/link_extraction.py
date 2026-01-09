@@ -41,6 +41,52 @@ def extract_provider_links_from_text(text: str) -> List[ProviderLink]:
     if not text:
         return results
 
+    def _should_skip_provider_url(provider: str, url: str) -> bool:
+        if provider != "dropbox":
+            return False
+        if not url:
+            return False
+
+        # Dropbox peut inclure dans certains emails des assets de preview (ex: avatar/logo).
+        # Cas observé: .../scl/fi/.../MS.png?...&raw=1
+        try:
+            parsed = html.unescape(url)
+        except Exception:
+            parsed = url
+
+        try:
+            from urllib.parse import urlsplit, parse_qs
+
+            parts = urlsplit(parsed)
+            host = (parts.hostname or "").lower()
+            path = (parts.path or "")
+            path_lower = path.lower()
+            if not host.endswith("dropbox.com"):
+                return False
+
+            filename = path_lower.split("/")[-1]
+            if not filename:
+                return False
+
+            qs = parse_qs(parts.query or "")
+            raw_values = qs.get("raw", [])
+            has_raw_one = any(str(v).strip() == "1" for v in raw_values)
+
+            if path_lower.startswith("/scl/fi/") and has_raw_one:
+                is_image = filename.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
+                if not is_image:
+                    return False
+
+                # Heuristique volontairement restrictive pour éviter de filtrer des livrables.
+                logo_like_prefixes = ("ms", "logo", "avatar", "profile")
+                base = filename.rsplit(".", 1)[0]
+                if base in logo_like_prefixes or any(base.startswith(p) for p in logo_like_prefixes):
+                    return True
+
+            return False
+        except Exception:
+            return False
+
     seen_urls = set()
     for m in URL_PROVIDERS_PATTERN.finditer(text):
         raw = m.group(1).strip()
@@ -53,6 +99,9 @@ def extract_provider_links_from_text(text: str) -> List[ProviderLink]:
         
         provider = _detect_provider(raw)
         if not provider:
+            continue
+
+        if _should_skip_provider_url(provider, raw):
             continue
             
         # Déduplication: garder la première occurrence de chaque URL

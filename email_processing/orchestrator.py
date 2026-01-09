@@ -669,7 +669,7 @@ def check_new_emails_and_trigger_webhook() -> int:
                                     ):
                                         remote_fetch_timeout = 120
 
-                                    r2_url = r2_service.request_remote_fetch(
+                                    r2_url, original_filename = r2_service.request_remote_fetch(
                                         source_url=normalized_source_url,
                                         provider=provider,
                                         email_id=email_id,
@@ -678,12 +678,14 @@ def check_new_emails_and_trigger_webhook() -> int:
                                     
                                     if r2_url:
                                         link_item['r2_url'] = r2_url
+                                        if isinstance(original_filename, str) and original_filename.strip():
+                                            link_item['original_filename'] = original_filename.strip()
                                         # Persister la paire source/R2
                                         r2_service.persist_link_pair(
                                             source_url=normalized_source_url,
                                             r2_url=r2_url,
                                             provider=provider,
-                                            email_id=email_id
+                                            original_filename=original_filename,
                                         )
                                         logger.info(
                                             "R2_TRANSFER: Successfully transferred %s link to R2 for email %s",

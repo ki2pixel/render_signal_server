@@ -117,7 +117,7 @@ class JsonLogger
         return $count;
     }
 
-    public function logR2LinkPair($sourceUrl, $r2Url, $provider, $emailId = null, $originalFilename = null)
+    public function logR2LinkPair($sourceUrl, $r2Url, $provider, $originalFilename = null)
     {
         $cleanSourceUrl = $this->sanitizeUrl($sourceUrl);
         $cleanR2Url = $this->sanitizeUrl($r2Url);
@@ -142,22 +142,29 @@ class JsonLogger
             'created_at' => gmdate('c'),
         ];
 
-        if (is_string($emailId)) {
-            $emailIdStr = trim($emailId);
-            if ($emailIdStr !== '') {
-                $entry['email_id'] = $emailIdStr;
-            }
-        }
-
         $cleanOriginalFilename = $this->sanitizeOriginalFilename($originalFilename);
         if ($cleanOriginalFilename !== null) {
             $entry['original_filename'] = $cleanOriginalFilename;
         }
 
-        return $this->appendEntry($entry);
+        return $this->appendEntryDedup($entry, ['source_url', 'r2_url', 'provider']);
     }
 
-    public function logDeliveryLinkPairs($deliveryLinks, $emailId = null)
+    public function hasR2PairsInDeliveryLinks($deliveryLinks)
+    {
+        foreach ((array)$deliveryLinks as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $r2Url = isset($item['r2_url']) ? $item['r2_url'] : null;
+            if (is_string($r2Url) && trim($r2Url) !== '') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public function logDeliveryLinkPairs($deliveryLinks)
     {
         $count = 0;
 
@@ -186,7 +193,7 @@ class JsonLogger
 
             $originalFilename = isset($item['original_filename']) ? $item['original_filename'] : null;
 
-            if ($this->logR2LinkPair($sourceUrl, $r2Url, $provider, $emailId, $originalFilename)) {
+            if ($this->logR2LinkPair($sourceUrl, $r2Url, $provider, $originalFilename)) {
                 $count++;
             }
         }
@@ -283,6 +290,101 @@ class JsonLogger
         } catch (Throwable $e) {
             try { flock($fp, LOCK_UN); fclose($fp); } catch (Throwable $e2) {}
             error_log('JsonLogger append error: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    private function appendEntryDedup(array $entry, array $dedupKeys)
+    {
+        $fp = @fopen($this->dataFile, 'c+');
+        if (!$fp) {
+            error_log('JsonLogger: cannot open data file for append');
+            return false;
+        }
+
+        try {
+            if (!flock($fp, LOCK_EX)) {
+                error_log('JsonLogger: cannot lock data file');
+                fclose($fp);
+                return false;
+            }
+
+            $size = filesize($this->dataFile);
+            $json = '';
+            if ($size > 0) {
+                $json = fread($fp, $size);
+            }
+
+            $arr = json_decode($json, true);
+            if (!is_array($arr)) {
+                $arr = [];
+            }
+
+            $matches = true;
+            foreach (array_reverse($arr) as $existing) {
+                if (!is_array($existing)) {
+                    continue;
+                }
+                $matches = true;
+                foreach ($dedupKeys as $key) {
+                    if (!array_key_exists($key, $existing) || !array_key_exists($key, $entry)) {
+                        $matches = false;
+                        break;
+                    }
+                    if ((string)$existing[$key] !== (string)$entry[$key]) {
+                        $matches = false;
+                        break;
+                    }
+                }
+                if ($matches) {
+                    flock($fp, LOCK_UN);
+                    fclose($fp);
+                    return true;
+                }
+            }
+
+            $arr[] = $entry;
+
+            $maxEntries = $this->getMaxEntries();
+            $maxBytes = $this->getMaxBytes();
+            $needRotate = false;
+            if ($maxEntries > 0 && count($arr) > $maxEntries) {
+                $needRotate = true;
+            }
+
+            $serialized = json_encode($arr, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+            if ($maxBytes > 0 && strlen($serialized) > $maxBytes) {
+                $needRotate = true;
+            }
+
+            if ($needRotate) {
+                $backup = $this->dataDir . '/webhook_links-' . date('Ymd-His') . '.json';
+                fflush($fp);
+                flock($fp, LOCK_UN);
+                fclose($fp);
+                @rename($this->dataFile, $backup);
+                $fresh = [$entry];
+                return @file_put_contents(
+                    $this->dataFile,
+                    json_encode($fresh, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n",
+                    LOCK_EX
+                ) !== false;
+            }
+
+            ftruncate($fp, 0);
+            rewind($fp);
+            $ok = fwrite($fp, $serialized) !== false;
+            fflush($fp);
+            flock($fp, LOCK_UN);
+            fclose($fp);
+            return (bool)$ok;
+        } catch (Throwable $e) {
+            try {
+                flock($fp, LOCK_UN);
+                fclose($fp);
+            } catch (Throwable $e2) {
+            }
+            error_log('JsonLogger append dedup error: ' . $e->getMessage());
             return false;
         }
     }

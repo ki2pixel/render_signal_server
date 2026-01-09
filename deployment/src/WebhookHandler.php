@@ -191,12 +191,19 @@ class WebhookHandler
                     }
 
                     if (!empty($processedUrls)) {
-                        $loggedCount = $this->jsonLogger->logMultipleDropboxUrls($processedUrls);
+                        $hasR2Pairs = false;
+                        if (isset($webhookData['delivery_links']) && is_array($webhookData['delivery_links'])) {
+                            $hasR2Pairs = $this->jsonLogger->hasR2PairsInDeliveryLinks($webhookData['delivery_links']);
+                        }
+
+                        $loggedCount = 0;
+                        if (!$hasR2Pairs) {
+                            $loggedCount = $this->jsonLogger->logMultipleDropboxUrls($processedUrls);
+                        }
                         $result['processed_urls'] = $processedUrls;
 
                         if (isset($webhookData['delivery_links']) && is_array($webhookData['delivery_links'])) {
-                            $emailId = isset($webhookData['microsoft_graph_email_id']) ? $webhookData['microsoft_graph_email_id'] : null;
-                            $r2LoggedCount = $this->jsonLogger->logDeliveryLinkPairs($webhookData['delivery_links'], $emailId);
+                            $r2LoggedCount = $this->jsonLogger->logDeliveryLinkPairs($webhookData['delivery_links']);
                             if ($r2LoggedCount > 0) {
                                 $result['r2_pairs_logged_count'] = $r2LoggedCount;
                             }
@@ -258,11 +265,18 @@ class WebhookHandler
             }
 
             // Log URLs to database
-            $loggedCount = $this->jsonLogger->logMultipleDropboxUrls($processedUrls);
+            $hasR2Pairs = false;
+            if (isset($webhookData['delivery_links']) && is_array($webhookData['delivery_links'])) {
+                $hasR2Pairs = $this->jsonLogger->hasR2PairsInDeliveryLinks($webhookData['delivery_links']);
+            }
+
+            $loggedCount = 0;
+            if (!$hasR2Pairs) {
+                $loggedCount = $this->jsonLogger->logMultipleDropboxUrls($processedUrls);
+            }
 
             if (isset($webhookData['delivery_links']) && is_array($webhookData['delivery_links'])) {
-                $emailId = isset($webhookData['microsoft_graph_email_id']) ? $webhookData['microsoft_graph_email_id'] : null;
-                $r2LoggedCount = $this->jsonLogger->logDeliveryLinkPairs($webhookData['delivery_links'], $emailId);
+                $r2LoggedCount = $this->jsonLogger->logDeliveryLinkPairs($webhookData['delivery_links']);
                 if ($r2LoggedCount > 0) {
                     $result['r2_pairs_logged_count'] = $r2LoggedCount;
                 }

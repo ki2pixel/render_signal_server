@@ -155,3 +155,16 @@ class TestExtractProviderLinksFromText:
         assert len(result) == 1
         assert result[0]["provider"] == "dropbox"
         assert "?dl=0" in result[0]["raw_url"]
+
+    @pytest.mark.unit
+    def test_filters_dropbox_logo_assets(self):
+        """Vérifie que les URLs Dropbox d'assets (logo/avatar) ne sont pas extraites."""
+        text = """
+        Lien dossier: https://www.dropbox.com/scl/fo/abc123/XYZ?rlkey=test&dl=0
+        Logo: https://www.dropbox.com/scl/fi/7ajqltb0jkb8640o3qy9w/MS.png?rlkey=foo&raw=1
+        """
+        result = link_extraction.extract_provider_links_from_text(text)
+
+        assert len(result) == 1
+        assert result[0]["provider"] == "dropbox"
+        assert "/scl/fo/" in result[0]["raw_url"]

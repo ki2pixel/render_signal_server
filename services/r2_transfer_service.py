@@ -134,7 +134,7 @@ class R2TransferService:
         provider: str,
         email_id: Optional[str] = None,
         timeout: int = 30,
-    ) -> Optional[str]:
+    ) -> Tuple[Optional[str], Optional[str]]:
         """Demande à R2 de télécharger le fichier depuis l'URL source (mode pull).
         
         Cette méthode envoie une requête au Worker Cloudflare qui effectue le fetch
@@ -147,19 +147,19 @@ class R2TransferService:
             timeout: Timeout en secondes pour la requête
             
         Returns:
-            URL publique R2 du fichier si succès, None si échec
+            Tuple (r2_url, original_filename) si succès, (None, None) si échec
         """
         if not self.is_enabled():
-            return None
+            return None, None
 
         if not self._fetch_token or not self._fetch_token.strip():
-            return None
+            return None, None
         
         if not source_url or not provider:
-            return None
+            return None, None
         
         if requests is None:
-            return None
+            return None, None
         
         try:
             normalized_url = self.normalize_source_url(source_url, provider)
@@ -196,30 +196,33 @@ class R2TransferService:
                 data = response.json()
                 if data.get("success") and data.get("r2_url"):
                     r2_url = data["r2_url"]
-                    return r2_url
+                    original_filename = data.get("original_filename")
+                    if original_filename is not None and not isinstance(original_filename, str):
+                        original_filename = None
+                    return r2_url, original_filename
                 else:
                     # Worker a répondu mais sans URL valide
-                    return None
+                    return None, None
             else:
                 # Erreur HTTP du Worker
-                return None
+                return None, None
                 
         except requests.exceptions.Timeout:
             # Timeout : le Worker met trop de temps
-            return None
+            return None, None
         except requests.exceptions.RequestException:
             # Erreur réseau générique
-            return None
+            return None, None
         except Exception:
             # Erreur inattendue
-            return None
+            return None, None
     
     def persist_link_pair(
         self,
         source_url: str,
         r2_url: str,
         provider: str,
-        email_id: Optional[str] = None,
+        original_filename: Optional[str] = None,
     ) -> bool:
         """Persiste la paire source_url/r2_url dans webhook_links.json.
         
@@ -230,7 +233,7 @@ class R2TransferService:
             source_url: URL source du fichier
             r2_url: URL R2 publique du fichier
             provider: Nom du provider
-            email_id: ID de l'email source (optionnel)
+            original_filename: Nom de fichier original (best-effort, optionnel)
             
         Returns:
             True si succès, False si échec
@@ -270,9 +273,22 @@ class R2TransferService:
                         "provider": provider,
                         "created_at": datetime.now(timezone.utc).isoformat(),
                     }
-                    
-                    if email_id:
-                        entry["email_id"] = email_id
+
+                    if isinstance(original_filename, str):
+                        cleaned_original_filename = original_filename.strip()
+                        if cleaned_original_filename:
+                            entry["original_filename"] = cleaned_original_filename
+
+                    # Déduplication: si la même paire existe déjà, ne pas la réinsérer.
+                    for existing in reversed(links):
+                        if not isinstance(existing, dict):
+                            continue
+                        if (
+                            existing.get("source_url") == entry["source_url"]
+                            and existing.get("r2_url") == entry["r2_url"]
+                            and existing.get("provider") == entry["provider"]
+                        ):
+                            return True
                     
                     # Ajouter l'entrée
                     links.append(entry)

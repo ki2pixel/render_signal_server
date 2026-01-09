@@ -110,17 +110,19 @@ class TestR2TransferServiceFetch:
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "success": True,
-            "r2_url": "https://media.example.com/dropbox/abc123/file.zip"
+            "r2_url": "https://media.example.com/dropbox/abc123/file.zip",
+            "original_filename": "61 Camille.zip",
         }
         mock_requests.post.return_value = mock_response
         
-        result = r2_service.request_remote_fetch(
+        r2_url, original_filename = r2_service.request_remote_fetch(
             source_url="https://www.dropbox.com/s/abc123/file.zip",
             provider="dropbox",
             email_id="test-email-id",
         )
         
-        assert result == "https://media.example.com/dropbox/abc123/file.zip"
+        assert r2_url == "https://media.example.com/dropbox/abc123/file.zip"
+        assert original_filename == "61 Camille.zip"
         
         # Vérifier l'appel au Worker
         mock_requests.post.assert_called_once()
@@ -141,17 +143,19 @@ class TestR2TransferServiceFetch:
         mock_response.json.return_value = {
             "success": True,
             "r2_url": "https://media.example.com/dropbox/abc123/folder.zip",
+            "original_filename": "Lot 66.zip",
         }
         mock_requests.post.return_value = mock_response
 
         url = "https://www.dropbox.com/scl/fo/abc123/xyz?rlkey=test&dl=0"
-        result = r2_service.request_remote_fetch(
+        r2_url, original_filename = r2_service.request_remote_fetch(
             source_url=url,
             provider="dropbox",
             email_id="test-email-id",
         )
 
-        assert result == "https://media.example.com/dropbox/abc123/folder.zip"
+        assert r2_url == "https://media.example.com/dropbox/abc123/folder.zip"
+        assert original_filename == "Lot 66.zip"
         mock_requests.post.assert_called_once()
         payload = mock_requests.post.call_args[1]["json"]
         assert payload["source_url"].startswith(
@@ -166,64 +170,70 @@ class TestR2TransferServiceFetch:
         mock_response.status_code = 500
         mock_requests.post.return_value = mock_response
         
-        result = r2_service.request_remote_fetch(
+        r2_url, original_filename = r2_service.request_remote_fetch(
             source_url="https://www.dropbox.com/s/abc123/file.zip",
             provider="dropbox",
         )
         
-        assert result is None
+        assert r2_url is None
+        assert original_filename is None
     
     @patch('services.r2_transfer_service.requests')
     def test_fetch_timeout(self, mock_requests, r2_service):
         """Teste le cas d'un timeout."""
         mock_requests.post.side_effect = mock_requests.exceptions.Timeout()
         
-        result = r2_service.request_remote_fetch(
+        r2_url, original_filename = r2_service.request_remote_fetch(
             source_url="https://www.dropbox.com/s/abc123/file.zip",
             provider="dropbox",
             timeout=5,
         )
         
-        assert result is None
+        assert r2_url is None
+        assert original_filename is None
     
     @patch('services.r2_transfer_service.requests')
     def test_fetch_network_error(self, mock_requests, r2_service):
         """Teste le cas d'une erreur réseau."""
         mock_requests.post.side_effect = mock_requests.exceptions.RequestException()
         
-        result = r2_service.request_remote_fetch(
+        r2_url, original_filename = r2_service.request_remote_fetch(
             source_url="https://www.dropbox.com/s/abc123/file.zip",
             provider="dropbox",
         )
         
-        assert result is None
+        assert r2_url is None
+        assert original_filename is None
     
     def test_fetch_disabled_service(self, r2_service):
         """Teste le cas où le service est désactivé."""
         r2_service._enabled = False
         
-        result = r2_service.request_remote_fetch(
+        r2_url, original_filename = r2_service.request_remote_fetch(
             source_url="https://www.dropbox.com/s/abc123/file.zip",
             provider="dropbox",
         )
         
-        assert result is None
+        assert r2_url is None
+        assert original_filename is None
     
     def test_fetch_invalid_params(self, r2_service):
         """Teste avec des paramètres invalides."""
         # URL vide
-        result = r2_service.request_remote_fetch(
+        r2_url, original_filename = r2_service.request_remote_fetch(
             source_url="",
             provider="dropbox",
         )
-        assert result is None
+        assert r2_url is None
+        assert original_filename is None
         
         # Provider vide
-        result = r2_service.request_remote_fetch(
+        r2_url, original_filename = r2_service.request_remote_fetch(
             source_url="https://www.dropbox.com/s/abc123/file.zip",
             provider="",
         )
-        assert result is None
+        assert r2_url is None
+        assert original_filename is None
 
 
 class TestR2TransferServicePersistence:
@@ -235,7 +245,7 @@ class TestR2TransferServicePersistence:
             source_url="https://www.dropbox.com/s/abc123/file.zip",
             r2_url="https://media.example.com/dropbox/abc123/file.zip",
             provider="dropbox",
-            email_id="test-email-id",
+            original_filename="57 Camille.zip",
         )
         
         assert success is True
@@ -248,7 +258,8 @@ class TestR2TransferServicePersistence:
         assert links[0]['source_url'] == "https://www.dropbox.com/s/abc123/file.zip?dl=1"
         assert links[0]['r2_url'] == "https://media.example.com/dropbox/abc123/file.zip"
         assert links[0]['provider'] == "dropbox"
-        assert links[0]['email_id'] == "test-email-id"
+        assert links[0]['original_filename'] == "57 Camille.zip"
+        assert 'email_id' not in links[0]
         assert 'created_at' in links[0]
     
     def test_persist_multiple_links(self, r2_service, temp_links_file):
