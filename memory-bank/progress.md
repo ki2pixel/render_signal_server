@@ -19,6 +19,30 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 ---
 
 ## Terminé
+-   [2026-01-14 11:21] **Lot 2 - Résilience & Architecture**
+    - Verrou distribué Redis implémenté dans `background/lock.py` (clé `render_signal:poller_lock`, TTL 5 min) avec fallback fcntl + WARNING si Redis indisponible.
+    - Fallback R2 garanti dans `email_processing/orchestrator.py` : conservation explicite de `raw_url`/`direct_url`, try/except large sur `request_remote_fetch`, log WARNING en cas d’échec, flux continu sans interruption.
+    - Watchdog IMAP (anti-zombie) dans `email_processing/imap_client.py` : ajout paramètre `timeout=30` passé à `imaplib.IMAP4_SSL`/`IMAP4`.
+    - Tests unitaires Redis lock créés (`tests/test_lock_redis.py`) avec mocks et format Given/When/Then; tests existants adaptés pour neutraliser `REDIS_URL`.
+    - Validation : 386 passed, 13 skipped, 0 failed (exécuté dans `/mnt/venv_ext4/venv_render_signal_server`), couverture 70.12%.
+-   [2026-01-13 18:30] **Audit et mise à jour complète de la documentation**
+    - Mise à jour de `README.md` avec nouvelles fonctionnalités (Absence Globale, MagicLinkService, R2TransferService, Docker GHCR)
+    - Actualisation de `docs/README.md` avec services étendus et plan documentaire réorganisé
+    - Extension de `docs/architecture.md` avec MagicLinkService/R2TransferService et sous-sections authentification/flux Docker
+    - Remplacement terminologique `TRIGGER_PAGE_*` → `DASHBOARD_*` dans toute la documentation
+    - Documentation des suppressions (Presence/Make automations) dans `docs/api.md` et `docs/webhooks.md`
+    - Validation conformité `codingstandards.md` : structure Markdown, hiérarchie des titres, lisibilité
+    - Impact : Documentation synchronisée avec l'état actuel du projet (services 2026, déploiement GHCR, authentification modernisée)
+-   [2026-01-13 18:45] **Restructuration du dossier docs/**
+    - Création des sous-dossiers `architecture/`, `operations/`, `features/`, `configuration/`, `quality/`, `integrations/`, `archive/`
+    - Déplacement des fichiers existants vers la nouvelle arborescence (overview, api, email_polling, webhooks, déploiement, installation, testing, intégrations R2, etc.)
+    - Mise à jour de `README.md` et `docs/README.md` pour refléter la structure
+    - Archivage de `audit_documentation_files.md` dans `docs/archive/`
+    - Bénéfices : documentation organisée par domaines, séparation claire actif/historique, navigation facilitée
+-   [2026-01-09 21:55] **Stabilisation des magic links permanents (stockage partagé)**
+    - `MagicLinkService` supporte désormais un backend externe (API PHP) avec fallback fichier verrouillé.
+    - Configuration sécurisée via `CONFIG_API_TOKEN`, `CONFIG_API_STORAGE_DIR`, `FLASK_SECRET_KEY` et tests unitaires (`tests/test_services.py`).
+    - Documentation opératoire clarifiée (ENV Render + serveur PHP) et vérifications curl réalisées.
 -   [2026-01-09 17:50] **Correction de la duplication dans webhook_links.json pour les liens R2**
     - Backend Python : mise à jour de `orchestrator.py` pour gérer le tuple `(r2_url, original_filename)` et propager `original_filename`
     - Filtrage des liens d'assets Dropbox (logos/avatars) dans `link_extraction.py`
@@ -71,6 +95,10 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
     - Nouveau workflow GitHub Actions `render-image.yml` (build+push GHCR, déclenchement Render via hook/API)
     - Documentation `docs/deploiement.md` enrichie (flux image-based, secrets requis, checklists)
     - Déploiement Render validé sur `render-signal-server-latest.onrender.com`, logs vérifiés
+-   [2026-01-14 11:55] **Lot 3 - Performance & Validation**
+    - Anti-OOM parsing HTML : limite stricte 1MB sur `text/html` dans `email_processing/orchestrator.py` avec log WARNING "HTML content truncated (exceeded 1MB limit)".
+    - Test d’intégration résilience R2 ajouté (`tests/test_r2_resilience.py`) : en cas d’échec Worker (exception / None), le webhook est envoyé et `raw_url` est conservée, `r2_url` absent/None.
+    - Validation : `pytest -q tests/test_r2_resilience.py` OK puis suite complète OK (389 passed, 13 skipped, 0 failed) dans `/mnt/venv_ext4/venv_render_signal_server`.
 
 ## En cours
 

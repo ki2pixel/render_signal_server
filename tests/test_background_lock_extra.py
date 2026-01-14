@@ -11,6 +11,7 @@ from background import lock
 
 @pytest.mark.unit
 def test_acquire_singleton_lock_blockingioerror(monkeypatch, tmp_path):
+    monkeypatch.delenv("REDIS_URL", raising=False)
     # Monkeypatch fcntl.flock to raise BlockingIOError
     class FakeFcntl:
         LOCK_EX = 2
@@ -27,6 +28,7 @@ def test_acquire_singleton_lock_blockingioerror(monkeypatch, tmp_path):
 
 @pytest.mark.unit
 def test_acquire_singleton_lock_generic_exception(monkeypatch, tmp_path):
+    monkeypatch.delenv("REDIS_URL", raising=False)
     # Monkeypatch open to raise generic exception
     def bad_open(*args, **kwargs):
         raise RuntimeError("disk error")

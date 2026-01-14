@@ -25,6 +25,7 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import os
 import json
 import hashlib
@@ -35,6 +36,17 @@ import urllib.parse
 from pathlib import Path
 from typing import Dict, Optional, Any, List, Tuple
 from datetime import datetime, timezone
+
+
+logger = logging.getLogger(__name__)
+
+
+ALLOWED_REMOTE_FETCH_DOMAINS = {
+    "dropbox.com",
+    "fromsmash.com",
+    "swisstransfer.com",
+    "wetransfer.com",
+}
 
 try:
     import requests
@@ -163,6 +175,30 @@ class R2TransferService:
         
         try:
             normalized_url = self.normalize_source_url(source_url, provider)
+
+            try:
+                parsed = urllib.parse.urlsplit(normalized_url)
+                domain = (parsed.hostname or "").lower().strip(".")
+            except Exception:
+                domain = ""
+
+            if not domain:
+                logger.warning(
+                    "SECURITY: Blocked attempt to fetch from unauthorized domain (domain missing)"
+                )
+                return None, None
+
+            if not any(
+                domain == allowed or domain.endswith("." + allowed)
+                for allowed in ALLOWED_REMOTE_FETCH_DOMAINS
+            ):
+                logger.warning(
+                    "SECURITY: Blocked attempt to fetch from unauthorized domain (domain=%s, provider=%s, email_id=%s)",
+                    domain,
+                    provider,
+                    email_id or "n/a",
+                )
+                return None, None
 
             # Générer un nom d'objet unique basé sur le hash de l'URL source
             object_key = self._generate_object_key(normalized_url, provider)

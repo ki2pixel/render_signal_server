@@ -29,6 +29,8 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
+import threading
 import time
 from pathlib import Path
 from typing import Dict, Optional, Any, Tuple
@@ -57,6 +59,7 @@ class WebhookConfigService:
             file_path: Chemin du fichier JSON
             external_store: Module app_config_store optionnel
         """
+        self._lock = threading.RLock()
         self._file_path = file_path
         self._external_store = external_store
         self._cache: Optional[Dict[str, Any]] = None
@@ -119,15 +122,13 @@ class WebhookConfigService:
         if not ok:
             return False, msg
         
-        # Charger config actuelle
-        config = self._load_from_disk()
-        config["webhook_url"] = normalized_url
-        
-        # Sauvegarder
-        if self._save_to_disk(config):
-            self._invalidate_cache()
-            return True, "Webhook URL mise à jour avec succès."
-        return False, "Erreur lors de la sauvegarde."
+        with self._lock:
+            config = self._load_from_disk()
+            config["webhook_url"] = normalized_url
+            if self._save_to_disk(config):
+                self._invalidate_cache()
+                return True, "Webhook URL mise à jour avec succès."
+            return False, "Erreur lors de la sauvegarde."
     
     def has_webhook_url(self) -> bool:
         """Vérifie si une URL webhook est configurée."""
@@ -155,13 +156,13 @@ class WebhookConfigService:
         Returns:
             True si sauvegarde réussie
         """
-        config = self._load_from_disk()
-        config["absence_pause_enabled"] = bool(enabled)
-        
-        if self._save_to_disk(config):
-            self._invalidate_cache()
-            return True
-        return False
+        with self._lock:
+            config = self._load_from_disk()
+            config["absence_pause_enabled"] = bool(enabled)
+            if self._save_to_disk(config):
+                self._invalidate_cache()
+                return True
+            return False
     
     def get_absence_pause_days(self) -> list[str]:
         """Retourne la liste des jours de pause.
@@ -190,15 +191,13 @@ class WebhookConfigService:
         if invalid_days:
             return False, f"Jours invalides: {', '.join(invalid_days)}"
         
-        # Charger config actuelle
-        config = self._load_from_disk()
-        config["absence_pause_days"] = normalized_days
-        
-        # Sauvegarder
-        if self._save_to_disk(config):
-            self._invalidate_cache()
-            return True, "Jours de pause mis à jour avec succès."
-        return False, "Erreur lors de la sauvegarde."
+        with self._lock:
+            config = self._load_from_disk()
+            config["absence_pause_days"] = normalized_days
+            if self._save_to_disk(config):
+                self._invalidate_cache()
+                return True, "Jours de pause mis à jour avec succès."
+            return False, "Erreur lors de la sauvegarde."
     
     # =========================================================================
     # Configuration SSL et Enabled
@@ -222,13 +221,13 @@ class WebhookConfigService:
         Returns:
             True si sauvegarde réussie
         """
-        config = self._load_from_disk()
-        config["webhook_ssl_verify"] = bool(enabled)
-        
-        if self._save_to_disk(config):
-            self._invalidate_cache()
-            return True
-        return False
+        with self._lock:
+            config = self._load_from_disk()
+            config["webhook_ssl_verify"] = bool(enabled)
+            if self._save_to_disk(config):
+                self._invalidate_cache()
+                return True
+            return False
     
     def is_webhook_sending_enabled(self) -> bool:
         """Vérifie si l'envoi de webhooks est activé globalement.
@@ -248,13 +247,13 @@ class WebhookConfigService:
         Returns:
             True si succès
         """
-        config = self._load_from_disk()
-        config["webhook_sending_enabled"] = bool(enabled)
-        
-        if self._save_to_disk(config):
-            self._invalidate_cache()
-            return True
-        return False
+        with self._lock:
+            config = self._load_from_disk()
+            config["webhook_sending_enabled"] = bool(enabled)
+            if self._save_to_disk(config):
+                self._invalidate_cache()
+                return True
+            return False
     
     # =========================================================================
     # Fenêtre Horaire
@@ -283,16 +282,15 @@ class WebhookConfigService:
         Returns:
             True si succès
         """
-        config = self._load_from_disk()
-        
-        for key in ["webhook_time_start", "webhook_time_end", "global_time_start", "global_time_end"]:
-            if key in updates:
-                config[key] = updates[key]
-        
-        if self._save_to_disk(config):
-            self._invalidate_cache()
-            return True
-        return False
+        with self._lock:
+            config = self._load_from_disk()
+            for key in ["webhook_time_start", "webhook_time_end", "global_time_start", "global_time_end"]:
+                if key in updates:
+                    config[key] = updates[key]
+            if self._save_to_disk(config):
+                self._invalidate_cache()
+                return True
+            return False
     
     # =========================================================================
     # Validation
@@ -342,55 +340,55 @@ class WebhookConfigService:
         Returns:
             Tuple (success, message)
         """
-        config = self._load_from_disk()
+        with self._lock:
+            config = self._load_from_disk()
 
-        if "absence_pause_enabled" in updates:
-            updates["absence_pause_enabled"] = bool(updates.get("absence_pause_enabled"))
+            if "absence_pause_enabled" in updates:
+                updates["absence_pause_enabled"] = bool(updates.get("absence_pause_enabled"))
 
-        if "absence_pause_days" in updates:
-            days_val = updates.get("absence_pause_days")
-            if not isinstance(days_val, list):
-                return False, "absence_pause_days invalide: doit être une liste"
-            valid_days = [
-                "monday",
-                "tuesday",
-                "wednesday",
-                "thursday",
-                "friday",
-                "saturday",
-                "sunday",
-            ]
-            normalized_days = [
-                str(d).strip().lower() for d in days_val if isinstance(d, str)
-            ]
-            invalid_days = [d for d in normalized_days if d not in valid_days]
-            if invalid_days:
-                return False, f"absence_pause_days invalide: {', '.join(invalid_days)}"
-            updates["absence_pause_days"] = normalized_days
+            if "absence_pause_days" in updates:
+                days_val = updates.get("absence_pause_days")
+                if not isinstance(days_val, list):
+                    return False, "absence_pause_days invalide: doit être une liste"
+                valid_days = [
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday",
+                    "sunday",
+                ]
+                normalized_days = [
+                    str(d).strip().lower() for d in days_val if isinstance(d, str)
+                ]
+                invalid_days = [d for d in normalized_days if d not in valid_days]
+                if invalid_days:
+                    return False, f"absence_pause_days invalide: {', '.join(invalid_days)}"
+                updates["absence_pause_days"] = normalized_days
 
-        enabled_effective = bool(
-            updates.get("absence_pause_enabled", config.get("absence_pause_enabled", False))
-        )
-        days_effective = updates.get("absence_pause_days", config.get("absence_pause_days", []))
-        if enabled_effective and (not isinstance(days_effective, list) or not days_effective):
-            return False, "absence_pause_enabled=true requiert au moins un jour dans absence_pause_days"
-        
-        # Valider les URLs si présentes
-        for key in ["webhook_url"]:
-            if key in updates and updates[key]:
-                normalized = normalize_make_webhook_url(updates[key])
-                ok, msg = self.validate_webhook_url(normalized)
-                if not ok:
-                    return False, f"{key} invalide: {msg}"
-                updates[key] = normalized
-        
-        # Appliquer les mises à jour
-        config.update(updates)
-        
-        if self._save_to_disk(config):
-            self._invalidate_cache()
-            return True, "Configuration mise à jour."
-        return False, "Erreur lors de la sauvegarde."
+            enabled_effective = bool(
+                updates.get("absence_pause_enabled", config.get("absence_pause_enabled", False))
+            )
+            days_effective = updates.get("absence_pause_days", config.get("absence_pause_days", []))
+            if enabled_effective and (not isinstance(days_effective, list) or not days_effective):
+                return False, "absence_pause_enabled=true requiert au moins un jour dans absence_pause_days"
+            
+            # Valider les URLs si présentes
+            for key in ["webhook_url"]:
+                if key in updates and updates[key]:
+                    normalized = normalize_make_webhook_url(updates[key])
+                    ok, msg = self.validate_webhook_url(normalized)
+                    if not ok:
+                        return False, f"{key} invalide: {msg}"
+                    updates[key] = normalized
+            
+            # Appliquer les mises à jour
+            config.update(updates)
+            if self._save_to_disk(config):
+                self._invalidate_cache()
+                return True, "Configuration mise à jour."
+            return False, "Erreur lors de la sauvegarde."
     
     # =========================================================================
     # Gestion du Cache
@@ -399,22 +397,24 @@ class WebhookConfigService:
     def _get_cached_config(self) -> Dict[str, Any]:
         """Récupère la config depuis le cache ou recharge."""
         now = time.time()
-        
-        if (
-            self._cache is not None
-            and self._cache_timestamp is not None
-            and (now - self._cache_timestamp) < self._cache_ttl
-        ):
-            return self._cache
-        
-        self._cache = self._load_from_disk()
-        self._cache_timestamp = now
-        return self._cache
+
+        with self._lock:
+            if (
+                self._cache is not None
+                and self._cache_timestamp is not None
+                and (now - self._cache_timestamp) < self._cache_ttl
+            ):
+                return dict(self._cache)
+
+            self._cache = self._load_from_disk()
+            self._cache_timestamp = now
+            return dict(self._cache)
     
     def _invalidate_cache(self) -> None:
         """Invalide le cache."""
-        self._cache = None
-        self._cache_timestamp = None
+        with self._lock:
+            self._cache = None
+            self._cache_timestamp = None
     
     def reload(self) -> None:
         """Force le rechargement."""
@@ -468,13 +468,22 @@ class WebhookConfigService:
             except Exception:
                 pass
         
-        # Fallback sur fichier local
+        tmp_path = None
         try:
             self._file_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self._file_path, "w", encoding="utf-8") as f:
+            tmp_path = self._file_path.with_name(self._file_path.name + ".tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, self._file_path)
             return True
         except Exception:
+            try:
+                if tmp_path is not None and tmp_path.exists():
+                    tmp_path.unlink()
+            except Exception:
+                pass
             return False
     
     def __repr__(self) -> str:

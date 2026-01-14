@@ -73,7 +73,17 @@ Variables d'environnement :
 MAGIC_LINK_TTL_SECONDS=3600    # TTL pour les tokens one-shot (1h par défaut)
 MAGIC_LINK_TOKENS_FILE=/app/data/magic_links.json
 FLASK_SECRET_KEY=votre-clé-secrète-robuste  # Requis pour la signature
+EXTERNAL_CONFIG_BASE_URL=webhook.kidpixel.fr   # Active le store partagé
+CONFIG_API_TOKEN=token-ultra-secret                  # Jeton HMAC pour l'API PHP
+CONFIG_API_STORAGE_DIR=/home/kidp0/.../data/app_config # Emplacement serveur PHP
 ```
+
+Lorsque `EXTERNAL_CONFIG_BASE_URL` + `CONFIG_API_TOKEN` sont définis, `MagicLinkService`
+stocke les tokens permanents dans l’API PHP (`deployment/config/config_api.php`) qui
+écrit sous `CONFIG_API_STORAGE_DIR`. Le fallback fichier JSON local reste utilisé si
+l’API est indisponible (ex: maintenance du serveur PHP ou variable manquante). Ce
+fonctionnement partagé garantit que les tokes illimités survivent aux redéploiements
+Render multi-workers.
 
 ### API
 

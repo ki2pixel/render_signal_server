@@ -59,7 +59,7 @@ R2_FETCH_ENABLED=true
 # URL du Worker Cloudflare (endpoint fetch)
 R2_FETCH_ENDPOINT=https://r2-fetch.your-worker.workers.dev
 
-# Token d'authentification pour le Worker (obligatoire)
+# Token d'authentification pour le Worker (obligatoire et partagé Worker+Render+PHP)
 R2_FETCH_TOKEN=votre-secret-token-partage
 
 # URL publique du CDN R2 (pour construire les liens retournés)
@@ -69,6 +69,7 @@ R2_PUBLIC_BASE_URL=https://media.yourdomain.com
 R2_BUCKET_NAME=render-signal-media
 ```
 
+> ⚠️ **Fail-Closed côté backend** : `R2TransferService` refuse de lancer un offload si `R2_FETCH_TOKEN` ou `R2_FETCH_ENDPOINT` sont absents. Les pages PHP (`test.php`, `test-direct.php`) et le Worker exigent également ce token via le header `X-R2-FETCH-TOKEN`.
 #### Variables optionnelles
 
 ```bash
@@ -410,6 +411,23 @@ Par défaut, le fichier conserve les **1000 dernières entrées**. Au-delà, les
 
 Configurer via `R2_LINKS_MAX_ENTRIES`.
 
+### Journalisation multi-plateforme
+
+- **Backend Python (`services/r2_transfer_service.py`)** :
+  - Log `R2_TRANSFER` pour chaque succès/échec (raison explicite: HTML détecté, token manquant, timeout Dropbox `/scl/fo/`, etc.).
+  - Lorsque `R2_FETCH_TOKEN` est absent, le service logge et n’essaie pas d’offload (fail-closed).
+- **Worker Cloudflare (`deployment/cloudflare-worker/worker.js`)** :
+  - `wrangler tail r2-fetch-worker` permet de voir les validations Content-Disposition et le stockage des métadonnées (`original_filename`, `contentDisposition`).
+  - Chaque upload inclut `customMetadata.originalFilename` + `httpMetadata.contentDisposition` pour préserver le nom d’origine lors du téléchargement public.
+- **PHP (`deployment/src/JsonLogger.php`, `deployment/src/WebhookHandler.php`)** :
+  - `logDeliveryLinkPairs()` parcourt les `delivery_links` reçues depuis Render/Make et persiste toutes les paires `(source_url, r2_url)` avec `original_filename`, sans duplication.
+  - Les pages de diagnostic `test.php` et `test-direct.php` affichent désormais:
+    - Le comptage séparé Legacy vs R2.
+    - Les derniers `original_filename` vus.
+    - L’état du fichier (taille, permissions) pour vérifier la rotation contrôlée (`R2_LINKS_MAX_ENTRIES`, `JSON_LOG_MAX_BYTES`).
+- **Webhook Receiver (Make/webhook custom)** :
+  - Les payloads enrichis incluent à la fois `raw_url/direct_url` et `r2_url`. Il est recommandé d’utiliser `r2_url` lorsqu’il est présent et de basculer automatiquement sur `raw_url` sinon.
+
 ---
 
 ## Payload Webhook enrichi
@@ -489,6 +507,77 @@ Si le transfert R2 échoue (timeout, Worker indisponible, quota dépassé) :
 - L'orchestrator **log un warning** mais **continue le traitement**.
 - Le webhook est envoyé avec uniquement les URLs sources (sans `r2_url`).
 - Aucun blocage du flux principal.
+
+### Améliorations Lot 2 - Fallback Garanti (2026-01-14)
+
+Le Lot 2 a renforcé le fallback R2 pour garantir un flux continu :
+
+#### Conservation explicite des URLs sources
+```python
+# Avant la tentative R2
+fallback_raw_url = source_url
+fallback_direct_url = link_item.get('direct_url') or source_url
+
+# Conservation garantie même si R2 échoue
+link_item['raw_url'] = fallback_raw_url
+link_item['direct_url'] = fallback_direct_url
+```
+
+#### Try/except large
+```python
+try:
+    r2_result = r2_service.request_remote_fetch(
+        source_url=normalized_source_url,
+        provider=provider,
+        email_id=email_id,
+        timeout=remote_fetch_timeout
+    )
+except Exception:
+    r2_result = None
+    # WARNING loggé mais flux continue avec URLs sources
+```
+
+#### Bénéfices
+- **Flux ininterrompu** : Les webhooks sont toujours envoyés
+- **Économie maintenue** : Offload fonctionne quand disponible
+- **Traçabilité** : Logs WARNING pour monitoring des taux d'échec
+- **Timeouts adaptatifs** : 120s pour Dropbox `/scl/fo/`, 15s par défaut
+
+#### Logs de surveillance
+```bash
+# Succès R2
+R2_TRANSFER: success url=... r2_url=... size=...
+
+# Échec avec fallback garanti
+R2_TRANSFER: failed url=... error=timeout (fallback to source URLs)
+R2_TRANSFER: failed url=... error=worker_unavailable (fallback to source URLs)
+```
+
+### Résilience et Fallback (Lot 3 - 2026-01-14)
+
+#### Comportement en cas d'échec Worker R2
+
+Le système est conçu pour être résilient : une panne du Worker Cloudflare R2 n'interrompt jamais le flux principal de traitement :
+
+1. **Exception Worker** : Si `request_remote_fetch()` lève une exception
+   - Log de l'erreur WARNING
+   - Conservation de `raw_url` et `direct_url` originaux
+   - Le webhook est envoyé sans champ `r2_url`
+
+2. **Retour None** : Si le Worker retourne `None` (timeout, auth failed)
+   - Même comportement que ci-dessus
+   - Aucun champ R2 ajouté au payload
+
+3. **Validation** : Tests d'intégration `tests/test_r2_resilience.py` valident ces scénarios
+
+#### Logs de résilience
+
+```text
+R2_TRANSFER: Failed to transfer dropbox link for email abc123 (error: worker down)
+# Webhook envoyé avec raw_url conservée, r2_url absent
+```
+
+Cette approche "best-effort" garantit que les webhooks sont toujours envoyés, avec ou sans enrichissement R2.
 
 ### Désactivation rapide
 

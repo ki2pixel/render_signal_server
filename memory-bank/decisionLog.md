@@ -21,6 +21,41 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Entrées récentes (post-archives)
 
+- **[2026-01-14 11:55:00] - Lot 3 : Performance & Validation**
+  - **Décision** : Ajouter un garde-fou anti-OOM en tronquant strictement le HTML `text/html` à 1MB avant parsing/exploitation, et ajouter un test d’intégration prouvant le fallback R2 (worker down) sans interruption du flux.
+  - **Raisons** : Prévenir les OOM kills sur petits conteneurs (512MB) en cas d’e-mails HTML énormes/malformés ; garantir que la panne du Worker R2 n’empêche pas l’envoi des webhooks (fallback vers lien source).
+  - **Impacts** : `email_processing/orchestrator.py` limite les bytes HTML et logge un WARNING unique ; ajout `tests/test_r2_resilience.py` (exception/None) ; tests validés via `/mnt/venv_ext4/venv_render_signal_server`.
+
+- **[2026-01-14 11:21:00] - Lot 2 : Résilience & Architecture**
+  - **Décision** : Implémenter un verrou distribué Redis avec fallback fcntl, garantir le fallback R2 en cas d’échec, et ajouter un watchdog IMAP timeout.
+  - **Raisons** : Audit de résilience classé "B". Risques de multi-polling sur Render multi-conteneurs, blocages IMAP zombies, et interruption du flux en cas d’indisponibilité R2.
+  - **Impacts** : Verrou Redis (clé `render_signal:poller_lock`, TTL 5 min) avec fallback fcntl + WARNING; fallback R2 garanti (conservation URLs sources, try/except, log WARNING, flux continu); watchdog IMAP (timeout 30s); tests unitaires Redis lock créés; validation 386 passed, 13 skipped, 0 failed, couverture 70.12%.
+
+- **[2026-01-14 02:55:00] - Durcissement Sécurité (Audit Lot 1)**
+  - **Décision** : Masquer systématiquement les PII dans les logs, implémenter l'écriture atomique pour les fichiers JSON de config, et valider les domaines R2 côté Python.
+  - **Raisons** : Audit de sécurité classé "C". Risques de fuite de données en cas d'accès aux logs et de corruption de config lors des écritures concurrentes.
+  - **Impacts** : Logs anonymisés (hashs), thread-safety améliorée sur les Singletons, prévention SSRF sur le service R2.
+
+- **[2026-01-13 18:30:00] - Audit et mise à jour complète de la documentation**
+  - **Décision** : Mettre à jour toute la documentation listée dans `audit_documentation_files.md` pour refléter les nouvelles briques MagicLinkService et R2TransferService conformément aux standards décrits dans `.windsurf/rules/codingstandards.md`.
+  - **Changements clés** :
+    - `README.md` : Ajout section "Nouvelles fonctionnalités" avec Absence Globale, Authentification Magic Link, Offload Cloudflare R2, Déploiement Docker GHCR; mise à jour architecture avec 8 services; remplacement `TRIGGER_PAGE_*` → `DASHBOARD_*`.
+    - `docs/README.md` : Réorganisation plan documentaire avec sections "Intégrations", ajout MagicLinkService/R2TransferService dans tableau services, nouvelles fonctionnalités 2026.
+    - `docs/architecture.md` : Extension tableau services avec descriptions améliorées, ajout sous-sections "Authentification Magic Link" et "Flux Docker GHCR & Déploiement Render".
+    - Terminologie : Remplacement systématique `TRIGGER_PAGE_*` → `DASHBOARD_*` et `trigger_page.html` → `dashboard.html` dans toute la documentation.
+    - Documentation suppressions : Ajout sections "Fonctionnalités supprimées" dans `docs/api.md` et `docs/webhooks.md` pour Presence/Make automations.
+  - **Raisons** : Synchroniser la documentation avec l'état actuel du projet, éliminer les incohérences critiques identifiées dans l'audit, appliquer les standards de codage et documentation.
+  - **Impacts** : Documentation à jour et cohérente, meilleure lisibilité pour les développeurs, alignement avec architecture orientée services et déploiement moderne.
+
+- **[2026-01-09 21:45:00] - Stockage partagé des magic links via API PHP externe**
+  - **Décision** : Modifier `MagicLinkService` pour lire/écrire les tokens depuis un backend partagé (API PHP `config_api.php`) quand `EXTERNAL_CONFIG_BASE_URL` et `CONFIG_API_TOKEN` sont configurés, avec fallback fichier verrouillé.
+  - **Changements clés** :
+    - Ajout d’un helper de stockage externe dans `services/magic_link_service.py` (GET/SET JSON `magic_link_tokens`), verrou fichier inter-processus pour le fallback.
+    - Mise à jour des tests unitaires (`tests/test_services.py`) pour couvrir les scénarios illimités + store externe/legacy.
+    - `deployment/config/config_api.php` lit désormais `CONFIG_API_TOKEN` / `CONFIG_API_STORAGE_DIR` depuis `env.local.php` et variables d’environnement (aucun secret commité).
+  - **Raisons** : Assurer la persistance des tokens permanents sur Render (multi-workers, filesystem éphémère/free tier) et permettre l’administration via le serveur PHP existant.
+  - **Impacts** : Les magic links illimités survivent aux redeploys; configuration alignée entre Render et le serveur PHP (`env.local.php`), documentation opératoire mise à jour.
+
  - **[2026-01-08 20:15:00] - Préservation du nom de fichier d'origine pour les fichiers offloadés R2**
    - **Décision** : Conserver le nom original des fichiers (ex: `61 Camille.zip`) côté R2 en stockant un `Content-Disposition` au moment de l'upload (metadata HTTP), plutôt que de dépendre du nom dérivé de l'`object_key`.
    - **Changements clés** :

@@ -2,9 +2,14 @@
 description: Analyse la Memory Bank, inspecte le code source impacté, et met à jour TOUTE la documentation associée.
 ---
 
-# Workflow: Docs Updater (Context-Aware with Code Verification)
-# Commande: /docs-updater
-# Description: Analyse la Memory Bank, inspecte le code source impacté, et met à jour TOUTE la documentation associée.
+## Rappel outils obligatoires (section 2.1 Basic Tools)
+- **`read_file`**: Always read related files before making changes. For large files, be mindful to read only the necessary range.
+- **`edit` / `multi_edit`**: Primary means for code changes.  
+  - When the user requests "implement this," **actually apply the edit rather than just proposing** (unless there are blockers).
+  - Keep each edit to a semantically coherent unit of change.
+- **`grep_search` / `code_search`**:
+  - Use `grep_search` for locating strings and symbols.
+  - Use `code_search` for exploring implementation meaning and patterns.
 
 actions:
   # ÉTAPE 1 : Extraire le résumé des changements récents depuis la Memory Bank.
@@ -20,9 +25,13 @@ actions:
 
   # ÉTAPE 2 : Lister les fichiers de documentation pour connaître la structure actuelle.
   - tool: file_lister
-    description: "Lister tous les fichiers du répertoire /docs."
+    description: "Lister tous les fichiers et sous-dossiers du répertoire /docs pour refléter l’arborescence thématique."
     input: "./docs"
     output: DOCS_FILE_STRUCTURE
+
+  # Directive outils : après cette étape, exécuter systématiquement `code_search` pour localiser les portions de code à analyser,
+  # enchaîner avec `read_file` pour lire les extraits visés (plage limitée si >1000 lignes), utiliser `grep_search` pour cibler
+  # des symboles précis, puis appliquer les corrections via `edit`/`multi_edit` par unités cohérentes.
 
   # ÉTAPE 3 (HYPOTHÈSE) : L'IA identifie les fichiers de code source pertinents à inspecter.
   - tool: ai_impact_assessor
@@ -98,3 +107,7 @@ actions:
 
       ---
       *Ces suggestions sont basées à la fois sur le contexte du projet et sur le contenu réel du code. Veuillez les examiner pour assurer la cohérence globale.*
+      *Mentionner explicitement les sous-dossiers architecture/, operations/, features/, configuration/, quality/, integrations/, archive/ si certaines mises à jour s’y appliquent.*
+
+notes:
+  - "Toujours inclure dans la réponse finale le diff complet ou la version intégrale corrigée de chaque fichier modifié afin que l’utilisateur puisse appliquer les changements manuellement."

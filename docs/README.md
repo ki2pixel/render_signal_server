@@ -7,37 +7,38 @@ La documentation est organisée pour répondre aux besoins des développeurs, op
 ## 📚 Plan de documentation
 
 ### Architecture et Conception
-- `architecture.md` - Vue d'ensemble de l'architecture orientée services
-- `api.md` - Documentation complète de l'API REST
-- `ui.md` - Détails du Dashboard Webhooks (frontend)
+- `architecture/overview.md` - Vue d'ensemble de l'architecture orientée services
+- `architecture/api.md` - Documentation complète de l'API REST
+- `features/ui.md` - Détails du dashboard (frontend)
 
 ### Traitement des e-mails & Webhooks
-- `email_polling.md` - Polling IMAP et orchestrateur de traitement
-- `webhooks.md` - Flux webhooks sortants, Absence Globale et fenêtres horaires
+- `features/email_polling.md` - Polling IMAP et orchestrateur de traitement
+- `features/webhooks.md` - Flux webhooks sortants, Absence Globale et fenêtres horaires
+- `features/resilience_lot2.md` - Résilience & Architecture (Lot 2) : Verrou Redis, Fallback R2, Watchdog IMAP
 
 ### Déploiement et Opérations
-- `installation.md` - Guide d'installation et configuration initiale
-- `deploiement.md` - Déploiement Flask (Gunicorn/Nginx) et couche PHP associée
-- `operational-guide.md` - Comportement Render Free, Gunicorn et health checks
-- `checklist_production.md` - Check-list de mise en production
-- `depannage.md` - Guide de dépannage (problèmes courants)
-- `securite.md` - Principes de sécurité applicative
-- `API_Render_trigger_deploy.md` - Détails de l'API Render pour le déclenchement des déploiements
+- `operations/deploiement.md` - Déploiement Flask (Gunicorn/Nginx) et couche PHP associée
+- `operations/operational-guide.md` - Comportement Render Free, Gunicorn et health checks
+- `operations/multi-container-deployment.md` - Guide déploiement multi-conteneurs avec Redis (Lot 2)
+- `operations/checklist_production.md` - Check-list de mise en production
+- `operations/depannage.md` - Guide de dépannage (problèmes courants)
 
 ### Configuration & Stockage
-- `configuration.md` - Référence des paramètres de configuration et variables d'environnement
-- `storage.md` - Backend JSON externe, fallback fichiers, artefacts Gmail OAuth
-- `gmail-oauth-setup.md` - Configuration détaillée de l'authentification Gmail OAuth
+- `configuration/configuration.md` - Référence des paramètres de configuration et variables d'environnement
+- `configuration/storage.md` - Backend JSON externe, fallback fichiers, artefacts Gmail OAuth
+- `configuration/installation.md` - Guide d'installation et configuration initiale
 
 ### Tests & Qualité
-- `testing.md` - Stratégie de tests, exécution et couverture de code
-- `../TESTING_STATUS.md` - Snapshot historique de la suite de tests (2025-10-13)
+- `quality/testing.md` - Stratégie de tests, exécution et couverture de code
+
+### Intégrations
+- `integrations/r2_offload.md` - Offload Cloudflare R2 pour économiser la bande passante
+- `integrations/r2_dropbox_limitations.md` - Limitations et solutions pour les dossiers Dropbox partagés
+- `integrations/gmail-oauth-setup.md` - Configuration détaillée de l'authentification Gmail OAuth
 
 ### Refactoring & Historique
-- `refactoring-roadmap.md` - Roadmap de refactoring (historique)
-- `refactoring-conformity-report.md` - Rapport de conformité finale (historique)
-- `refactoring/` - Détails par phase et exemples d'utilisation des services
-- `../ACHIEVEMENT_100_PERCENT.md` - Badge "100% refactoring" (historique)
+- `archive/refactoring/` - Historique détaillé des phases de refactoring (incluant roadmap & conformity report)
+- `archive/achievements/ACHIEVEMENT_100_PERCENT.md` - Badge "100% refactoring" (historique)
 
 ## 🚀 Aperçu rapide
 
@@ -50,6 +51,8 @@ La documentation est organisée pour répondre aux besoins des développeurs, op
 - **`WebhookConfigService`** - Configuration et validation des webhooks (Singleton)
 - **`DeduplicationService`** - Prévention des doublons (Redis + fallback mémoire)
 - **`PollingConfigService`** - Configuration du polling IMAP
+- **`MagicLinkService`** - Gestion des magic links pour authentification sans mot de passe (Singleton)
+- **`R2TransferService`** - Offload Cloudflare R2 pour économiser la bande passante (Singleton)
 
 #### Avantages Clés
 - **Maintenabilité** : Séparation claire des responsabilités
@@ -63,6 +66,7 @@ La documentation est organisée pour répondre aux besoins des développeurs, op
 - Récupération robuste des emails (reconnexion automatique)
 - Détection intelligente des types d'emails
 - Gestion des fenêtres temporelles
+- **Absence Globale** : Blocage configurable des envois par jour de semaine
 - Déduplication avancée (ID + groupe de sujets)
 - Journalisation détaillée
 
@@ -70,17 +74,47 @@ La documentation est organisée pour répondre aux besoins des développeurs, op
 - **IMAP** : Support de multiples fournisseurs
 - **Webhooks** : Envoi asynchrone avec gestion des erreurs
 - **Redis** : Cache et déduplication (optionnel)
+- **Cloudflare R2** : Offload automatique des fichiers volumineux via `R2TransferService`
 
 ### 🧪 Qualité et Tests
-- **Tests unitaires** : 83/83 tests passants (100%)
-- **Couverture de code** : ~67.3% (en amélioration continue)
+- **Tests unitaires** : 386/399 tests passants (96.7%) - Post-Lot 2
+- **Couverture de code** : 70.12% (objectif : 80%+) - Post-Lot 2
 - **Intégration continue** : Pipelines automatisés
+- **Nouveaux tests** : Redis lock avec format Given/When/Then
 
 ### 🔒 Sécurité
-- Authentification sécurisée
-- Validation des entrées
-- Journalisation des actions sensibles
-- Gestion sécurisée des secrets
+- **Authentification sécurisée** : Sessions Flask-Login et Magic Links signés HMAC SHA-256
+- **Validation des entrées** : Contrôles stricts et sanitization
+- **Journalisation des actions sensibles** : Logs structurés et traçabilité
+- **Gestion sécurisée des secrets** : Variables d'environnement uniquement
+
+### 🚀 Nouvelles fonctionnalités (2026)
+
+#### 🎯 Absence Globale
+- Blocage complet des webhooks sur des jours spécifiques
+- Configuration via dashboard ou API `/api/webhooks/config`
+- Priorité maximale, ignore les autres règles
+
+#### 🔐 Authentification Magic Link
+- Service `MagicLinkService` pour tokens signés HMAC
+- Endpoint `/api/auth/magic-link` (session requise)
+- Support one-shot et permanent, stockage partagé via API PHP
+
+#### ☁️ Offload Cloudflare R2
+- Service `R2TransferService` pour économiser bande passante
+- Worker Cloudflare avec authentification `X-R2-FETCH-TOKEN`
+- Persistance paires `source_url`/`r2_url` dans `webhook_links.json`
+
+#### 🐳 Déploiement Docker GHCR
+- Workflow GitHub Actions pour build/push GHCR
+- Déclenchement Render via Deploy Hook ou API
+- Image Docker avec Gunicorn et logs centralisés
+
+#### 🛡️ Résilience & Architecture (Lot 2)
+- **Verrou distribué Redis** : Clé `render_signal:poller_lock`, TTL 5 min, fallback fcntl
+- **Fallback R2 garanti** : Conservation URLs sources, flux continu même si R2 échoue
+- **Watchdog IMAP** : Timeout 30s paramétrable, prévention connexions zombies
+- **Tests Redis** : Format Given/When/Then avec marqueur `@pytest.mark.redis`
 
 ## 📅 Historique des Évolutions
 

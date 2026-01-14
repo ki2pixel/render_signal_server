@@ -21,6 +21,13 @@
 - Sanitize systématique des entrées si vous ajoutez de nouvelles routes.
 - Ne logguez pas les mots de passe ; masquez les secrets dans les logs.
 
+### Anonymisation des journaux (Lot 1)
+- Tous les points de log du poller IMAP et des webhooks passent par `utils.text_helpers.mask_sensitive_data()` :
+  - `type="email"` tronque l'adresse (`s***@domaine`).
+  - `type="subject"` conserve les trois premiers mots + hash court (`prefix... [abc123]`).
+  - `type="content"` journalise uniquement la longueur.
+- Le masquage est appliqué dans `email_processing/orchestrator.py` (lecture IMAP, allowlist, décisions) et `email_processing/webhook_sender.py` (logs Make.com/dashboard). Vérifiez que vos ajouts de logs sensibles utilisent la même fonction pour éviter toute fuite de PII.
+
 ## Magic Links
 
 ### Génération sécurisée
@@ -77,9 +84,9 @@
 - `R2_PUBLIC_BASE_URL` doit être un domaine HTTPS validé
 
 ### Validation des URLs sources
-- Le Worker valide les domaines sources autorisés pour éviter les abus :
+- Le Worker et la couche Python valident les domaines sources autorisés pour éviter les abus :
   - `dropbox.com`, `fromsmash.com`, `swisstransfer.com`, `wetransfer.com`
-- Seules les URLs provenant de ces domaines sont acceptées
+- Seules les URLs provenant de ces domaines sont acceptées (anti-SSRF côté service R2 + allowlist côté Worker)
 - Logs détaillés en cas de rejet de domaine non autorisé
 
 ### Sécurité du Worker Cloudflare

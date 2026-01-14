@@ -5,11 +5,13 @@ Application Flask modulaires pour le pilotage de webhooks et le polling IMAP. Ce
 ## Documentation
 
 - Documentation principale : `docs/README.md`
-- Architecture & services : `docs/architecture.md`
-- API HTTP : `docs/api.md`
-- Polling e‑mail & webhooks : `docs/email_polling.md`, `docs/webhooks.md`
-- Tests & qualité : `docs/testing.md`
-- Déploiement image Render : `docs/deploiement.md`
+- Architecture & services : `docs/architecture/overview.md`
+- API HTTP : `docs/architecture/api.md`
+- Pôles Fonctionnels : `docs/features/` (`email_polling.md`, `webhooks.md`, `ui.md`)
+- Configuration & Stockage : `docs/configuration/` (`configuration.md`, `storage.md`, `installation.md`)
+- Déploiement & Opérations : `docs/operations/` (`deploiement.md`, `operational-guide.md`, `checklist_production.md`, `depannage.md`)
+- Tests & qualité : `docs/quality/testing.md`
+- Intégrations : `docs/integrations/` (`r2_offload.md`, `r2_dropbox_limitations.md`, `gmail-oauth-setup.md`)
 
 ## Déploiement Render (Docker + GHCR)
 
@@ -36,6 +38,34 @@ Application Flask modulaires pour le pilotage de webhooks et le polling IMAP. Ce
 - Consultez les logs pour les entrées `WARNING` et `ERROR` pour détecter les problèmes potentiels.
 
 Consultez [la documentation opérationnelle](docs/operational-guide.md) pour plus de détails sur la configuration et le dépannage.
+
+## Nouvelles fonctionnalités (2026)
+
+### 🎯 Absence Globale
+- **Fonctionnalité** : Blocage complet de l'envoi de webhooks sur des jours spécifiques de la semaine
+- **Configuration** : Via l'interface dashboard ou API (`/api/webhooks/config`)
+- **Priorité** : Plus haute priorité, ignore les autres règles (fenêtre horaire, bypass DESABO)
+- **Implémentation** : Service `WebhookConfigService` avec champs `absence_pause_enabled`/`absence_pause_days`
+
+### 🔐 Authentification par Magic Link
+- **Service** : `MagicLinkService` (singleton) pour générer/valider des tokens signés HMAC SHA-256
+- **Stockage** : Tokens dans `MAGIC_LINK_TOKENS_FILE` (JSON verrouillé) avec TTL configurable
+- **API** : Endpoint `/api/auth/magic-link` (session requise) pour générer liens one-shot ou permanents
+- **Interface** : Dashboard `dashboard.html` avec bouton de génération et copie automatique
+- **Sécurité** : Logs `MAGIC_LINK:*`, nettoyage auto tokens expirés, support stockage partagé via API PHP
+
+### ☁️ Offload Cloudflare R2
+- **Service** : `R2TransferService` (singleton) pour économiser la bande passante Render
+- **Architecture** : Worker Cloudflare `deployment/cloudflare-worker/worker.js` avec authentification `X-R2-FETCH-TOKEN`
+- **Fonctionnalités** : Normalisation Dropbox, fetch distant, persistance paires `source_url`/`r2_url` dans `webhook_links.json`
+- **Intégration** : Orchestrator `email_processing/orchestrator.py#645-711` enrichit `delivery_links` si `R2_FETCH_ENABLED=true`
+- **Économies** : ~$5/mois pour 50 GB transférés, auto-nettoyage 24h via `cleanup.js`
+
+### 🐳 Déploiement Docker GHCR
+- **Pipeline** : Workflow GitHub Actions `.github/workflows/render-image.yml` (build/push GHCR, déclenchement Render)
+- **Image** : `Dockerfile` racine avec Gunicorn, variables `GUNICORN_*`, logs stdout/stderr
+- **Déploiement** : URL `https://render-signal-server-latest.onrender.com` via Deploy Hook ou API Render
+- **Avantages** : Temps de déploiement réduit, image pré-buildée, logs centralisés
 
 ## Architecture
 
@@ -70,9 +100,18 @@ render_signal_server-main/
 │   ├── api_config.py              # Configuration runtime (fenêtres horaires, flags, polling)
 │   ├── api_utility.py             # Ping, triggers locaux, statut
 │   ├── api_make.py                # Pilotage manuel des scénarios Make (legacy)
+│   ├── api_auth.py                # Authentification Magic Link
 │   ├── dashboard.py               # UI /, /login, /logout
 │   └── health.py                  # GET /health
 ├── services/                      # Services orientés métier/configuration (ConfigService, AuthService, etc.)
+│   ├── config_service.py          # Gestion centralisée de la configuration
+│   ├── auth_service.py            # Authentification et autorisation
+│   ├── runtime_flags_service.py   # Gestion dynamique des fonctionnalités (Singleton)
+│   ├── webhook_config_service.py  # Configuration et validation des webhooks (Singleton)
+│   ├── deduplication_service.py   # Prévention des doublons (Redis + fallback mémoire)
+│   ├── polling_config_service.py  # Configuration du polling IMAP
+│   ├── r2_transfer_service.py     # Offload Cloudflare R2 (Singleton)
+│   └── magic_link_service.py      # Gestion des magic links (Singleton)
 ├── static/                        # JS/CSS (dashboard)
 ├── utils/
 │   ├── time_helpers.py            # parse_time_hhmm(), is_within_time_window_local()
@@ -121,12 +160,14 @@ python -m pip install -r requirements.txt
 
 Créer un fichier d’environnement pour le dev (voir `docs/configuration.md` et `debug/render_signal_server.env`). Principales variables:
 - `FLASK_SECRET_KEY`
-- `TRIGGER_PAGE_USER`, `TRIGGER_PAGE_PASSWORD`
+- `DASHBOARD_USER`, `DASHBOARD_PASSWORD` (anciennement `TRIGGER_PAGE_*`)
 - `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `IMAP_SERVER`, `IMAP_PORT`, `IMAP_USE_SSL`
 - `WEBHOOK_URL`, `WEBHOOK_SSL_VERIFY`
 - `POLLING_*` (jours actifs, créneaux, timezone, vacances)
 - `ENABLE_BACKGROUND_TASKS`
 - `REDIS_URL` (optionnel)
+- Variables R2 (`R2_FETCH_*`) pour l'offload Cloudflare
+- Variables Magic Link (`MAGIC_LINK_TTL_SECONDS`, `MAGIC_LINK_TOKENS_FILE`)
 - Variables Render (`RENDER_*`) pour le déploiement via Render
 
 Voir `docs/configuration.md` pour la liste complète et à jour.

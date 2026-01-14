@@ -2,31 +2,26 @@
 description: Améliorer un Prompt avec le Contexte du Projet (V3)
 ---
 
-# Améliorer un Prompt avec le Contexte du Projet (V3)
+## Workflow /enhance — Améliorer un Prompt avec le Contexte du Projet
 
-description: Prend un prompt utilisateur "brut", l'analyse en 3 niveaux (stratégique, tactique, implémentation), et propose une version hyper-contextualisée pour validation avant exécution.
+1. **Chargement du contexte**  
+   - Utiliser `read_file` pour charger tous les fichiers requis du `memory-bank/` conformément au protocole.
 
----
+2. **Analyse du prompt brut**  
+   - Examiner la requête utilisateur et clarifier l'intention (aucun outil particulier requis ici).
 
-1.  Follow the protocol in your rules to load the full project context from the `memory-bank`.
+3. **Analyse contextuelle à trois niveaux**  
+   - **Niveau stratégique** : continuer à utiliser `read_file` pour approfondir les fichiers de la memory bank pertinents.  
+   - **Niveau tactique** : parcourir la documentation sous `docs/` en combinant `code_search` (pour identifier les fichiers/documents pertinents) puis `read_file` pour les consulter.  
+   - **Niveau implémentation** :  
+     1. Utiliser `code_search` (ou `grep_search` si le symbole est connu) pour identifier les 1 à 3 fichiers les plus pertinents.  
+     2. Ouvrir ces fichiers avec `read_file` pour collecter les noms de fonctions, variables et bibliothèques nécessaires.
 
-2.  Act as an expert "Prompt Engineer". Your goal is to improve the user's request that was provided after the `/enhance` command.
+4. **Synthèse du prompt amélioré**  
+   - Rédiger le nouveau prompt en citant explicitement les éléments identifiés. (Si une modification de fichier est requise pour documenter la synthèse, utiliser `edit`/`multi_edit`.)
 
-3.  First, analyze the user's raw request to understand its core intent.
+5. **Validation utilisateur**  
+   - Présenter uniquement le prompt amélioré avec la formulation imposée.
 
-4.  **Perform a three-level contextual analysis:**
-    **a. Level 1 (Strategic Context):** Review the `memory-bank` to understand high-level goals, technical standards, and current focus.
-    **b. Level 2 (Tactical Details):** Review the project's documentation (especially files in `docs/`) to understand the official specifications and guidelines.
-    **c. Level 3 (Implementation Context):** Based on the user's request and the context gathered so far, **identify the 1 to 3 most relevant source code files** and perform a quick read of them. The goal is to grasp the current implementation details (function names, variable names, libraries used, and overall logic).
-
-5.  **Synthesize all information** from these three levels to rewrite the user's request into a single, comprehensive "enhanced prompt". This new prompt must be:
-    *   **Précis** : Mentionner les noms de fonctions, de variables et les bibliothèques exactes trouvées dans le code source.
-    *   **Contextuel** : Faire référence aux standards du projet.
-    *   **Clair** : Reformuler les ambiguïtés en objectifs clairs.
-    *   **Actionnable** : Définir clairement la tâche à accomplir, en tenant compte de l'existant.
-
-6.  Present **only** this "enhanced prompt" to me for validation, without explaining your internal thought process. Frame it clearly: "Voici une version améliorée de votre prompt que je propose. Dois-je l'exécuter ? (oui/non)".
-
-7.  Do not proceed without my explicit confirmation ("oui", "yes", "vas-y", etc.).
-
-8.  Once I confirm, execute the enhanced prompt as if I had just submitted it myself.
+6. **Exécution après validation**  
+   - Une fois la confirmation reçue, suivre les règles générales en continuant d'utiliser `code_search`, `read_file`, `edit`/`multi_edit` (et `grep_search` au besoin) pour mettre en œuvre les actions demandées.

@@ -57,10 +57,20 @@ render_signal_server-main/
 
 ### 📊 Métriques Clés
 
-- **Couverture de code** : 67.3% (objectif : 80%+)
-- **Tests passants** : 282/290 (97.2%)
-- **Temps d'exécution** : ~45s (sans les tests lents)
-- **Dernière exécution** : 2025-11-18 14:30:45
+- **Couverture de code** : 70.12% (objectif : 80%+) - Post-Lot 2
+- **Tests passants** : 389/402 (96.8%) - Post-Lot 3
+- **Temps d'exécution** : ~65s (avec tests Redis et R2 résilience)
+- **Dernière exécution** : 2026-01-14 11:55:00 (Lot 3)
+
+#### Évolution Lot 2
+- **Nouveaux tests** : `test_lock_redis.py` avec format Given/When/Then
+- **Marqueurs** : `@pytest.mark.redis` pour tests nécessitant Redis
+- **Couverture** : Amélioration de 67.3% → 70.12% (+2.82 points)
+
+#### Évolution Lot 3
+- **Nouveaux tests** : `test_r2_resilience.py` avec scénarios d'échec Worker (exception/None)
+- **Performance** : Ajout tests anti-OOM HTML (>1MB tronqué + WARNING)
+- **Couverture** : Maintenue à 70.12% (+3 tests, même couverture)
 
 ## ⚙️ Installation
 
@@ -946,7 +956,7 @@ Surveiller les logs Render après le déploiement pour vérifier que le poller (
 
 ---
 
-*Dernière mise à jour : 2025-11-18*
+*Dernière mise à jour : 2026-01-14 (Lot 3)*
 
 ## 🆕 Nouveaux Tests (2026-01-08)
 
@@ -962,6 +972,39 @@ Le service `R2TransferService` dispose maintenant de tests unitaires complets da
 - **Tests de validation ZIP** : Vérification des magic bytes `PK` et taille minimale
 
 **Marqueurs spécifiques** : `@pytest.mark.r2` pour isoler les tests nécessitant une configuration R2.
+
+### 🆕 Tests de Résilience R2 (Lot 3 - 2026-01-14)
+
+#### Tests d'Intégration R2 Résilience (`tests/test_r2_resilience.py`)
+
+Tests validant que le flux principal continue même en cas d'échec du Worker R2 :
+
+```python
+@pytest.mark.integration
+def test_r2_worker_failure_does_not_break_webhook_send_exception(monkeypatch):
+    """Test qu'une exception dans le Worker R2 n'empêche pas l'envoi du webhook."""
+    # Given: Worker R2 lève une exception
+    # When: Traitement d'un email avec lien Dropbox
+    # Then: Webhook envoyé avec raw_url conservée, r2_url absent/None
+
+@pytest.mark.integration  
+def test_r2_worker_failure_does_not_break_webhook_send_none(monkeypatch):
+    """Test qu'un retour None du Worker R2 n'empêche pas l'envoi du webhook."""
+    # Given: Worker R2 retourne None
+    # When: Traitement d'un email avec lien Dropbox  
+    # Then: Webhook envoyé avec raw_url conservée, r2_url absent/None
+
+@pytest.mark.integration
+def test_html_body_over_1mb_is_truncated_and_warning_logged(monkeypatch):
+    """Test que le HTML >1MB est tronqué avec un WARNING."""
+    # Given: Email avec partie HTML >1MB
+    # When: Traitement complet
+    # Then: HTML tronqué, WARNING loggé, webhook envoyé
+```
+
+**Objectif** : Garantir la résilience du flux principal en cas de panne du service R2.
+**Validation** : `pytest -q tests/test_r2_resilience.py` - 3 tests passants.
+**Performance** : Ajout de la protection anti-OOM pour le parsing HTML (>1MB tronqué).
 
 ### Tests Magic Links (À Implémenter)
 

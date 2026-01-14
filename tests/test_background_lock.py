@@ -7,7 +7,8 @@ from pathlib import Path
 from background import lock
 
 
-def test_acquire_singleton_lock_creates_and_writes_pid(temp_dir):
+def test_acquire_singleton_lock_creates_and_writes_pid(monkeypatch, temp_dir):
+    monkeypatch.delenv("REDIS_URL", raising=False)
     lock_file = temp_dir / "poller.lock"
     # Ensure file does not exist initially
     assert not lock_file.exists()

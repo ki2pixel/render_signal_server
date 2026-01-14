@@ -1,5 +1,3 @@
-{{ ... }}
-
 La logique de polling est orchestrée par `email_processing/orchestrator.py`.
 
 ### Structure de l’orchestrateur (mise à jour 2025-11-18)
@@ -97,14 +95,14 @@ Fenêtre « vacances » (optionnelle) :
 - `IMAP: Error connecting to server` - Échec de connexion (avec détails)
 
 #### Traitement des Emails
-- `POLLER: Email read from IMAP` - Email récupéré (sujet, expéditeur)
-- `POLLER: Processing email: <sujet>` - Début du traitement d'un email
+- `POLLER: Email read from IMAP` - Email récupéré (sujet, expéditeur masqués via `mask_sensitive_data`)
+- `POLLER: Processing email: <sujet>` - Début du traitement d'un email (sujet tronqué + hash de contrôle)
 - `POLLER: Email processed successfully` - Traitement réussi
 
 #### Filtrage et Déduplication
 - `DEDUP_EMAIL: Skipping duplicate email ID` - Email déjà traité
 - `DEDUP_GROUP: Skipping duplicate subject group` - Groupe de sujets déjà traité
-- `IGNORED: Sender not in allowed list` - Expéditeur non autorisé
+- `IGNORED: Sender not in allowed list` - Expéditeur non autorisé (adresse masquée)
 - `IGNORED: Outside active time window` - En dehors de la plage horaire active
 - `IGNORED: DESABO urgent skipped outside window (email <id>)` - DESABO urgent ignoré hors fenêtre webhook
 - `IGNORED: RECADRAGE skipped outside window and marked processed (email <id>)` - RECADRAGE ignoré hors fenêtre et marqué traité
@@ -193,7 +191,7 @@ DEDUP_EMAIL: Error checking email ID - Redis connection error
 ```
 **Solution** : Vérifier la connexion à Redis ou le fallback en mémoire.
 
-Ces logs utilisent des métadonnées uniquement (pas de contenu d'email) pour respecter la confidentialité.
+Ces logs utilisent des métadonnées uniquement (pas de contenu d'email) et appliquent systématiquement `mask_sensitive_data()` pour respecter la confidentialité.
 
 ### Déduplication par groupe de sujet (webhooks)
 
@@ -223,6 +221,17 @@ Objectif: n'envoyer qu'un seul webhook par « série » d'emails portant un suje
     - S'applique uniquement si Redis est disponible. Le fallback mémoire n'a pas de TTL.
 
 ## Extraction et normalisation
+
+### Limitation HTML anti-OOM (Lot 3)
+
+Pour prévenir les OOM kills sur les conteneurs avec faible mémoire (512MB), le parsing HTML est strictement limité :
+
+- **Constante** : `MAX_HTML_BYTES = 1024 * 1024` (1MB) dans `email_processing/orchestrator.py`
+- **Comportement** : Le contenu HTML dépassant 1MB est tronqué avec un log WARNING unique
+- **Message de log** : `"HTML content truncated (exceeded 1MB limit)"`
+- **Impact** : Le traitement continue avec le HTML tronqué, les liens sont toujours extraits si présents dans la portion conservée
+
+Cette protection s'applique à toutes les parties HTML des emails (multipart et single-part).
 
 - `check_media_solution_pattern(subject, email_content)`
   - Valide la présence d'au moins une URL de livraison prise en charge et d'un sujet type « Média Solution - Missions Recadrage - Lot ... ».

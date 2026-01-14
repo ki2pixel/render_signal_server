@@ -2,11 +2,11 @@
 
 ## Architecture de stockage
 
-L'application utilise une architecture de stockage hiérarchique pour la persistance des configurations :
+L'application utilise une architecture de stockage hiérarchique pour la persistance des configurations et des artefacts critiques :
 
-1. **Backend JSON externe** (recommandé en production) - Nouveau système
-2. **Fichiers locaux** (fallback pour le développement et compatibilité)
-3. **MySQL** (déprécié, supprimé dans la version actuelle)
+1. **Backend JSON externe** (recommandé en production) – API PHP `config_api.php` utilisée par `WebhookConfigService`, `MagicLinkService`, etc. pour supporter les déploiements multi-workers (Render + serveur PHP).
+2. **Fichiers locaux** (fallback pour le développement et compatibilité).
+3. **MySQL** (déprécié, supprimé dans la version actuelle).
 
 ## Backend JSON externe
 
@@ -23,6 +23,7 @@ Pour activer le stockage externe, définissez ces variables d'environnement :
 - **Préférences de traitement** : Règles de filtrage et de traitement des e-mails
 - **Fenêtres horaires** : Configuration des plages d'exécution
 - **Flags runtime** : Paramètres de débogage et fonctionnalités expérimentales
+- **Magic Link tokens** : `MagicLinkService` lit/écrit la clé `magic_link_tokens` via l’API pour stocker les tokens permanents dans `deployment/data/app_config/magic_link_tokens.json`.
 
 ### Fonctionnement
 
@@ -43,7 +44,8 @@ Pour activer le stockage externe, définissez ces variables d'environnement :
 
 4. **Intégration applicative (services)** :
    - `WebhookConfigService` peut lire/écrire via le store externe si disponible, avec fallback fichier `debug/webhook_config.json` et cache mémoire TTL 60s (invalidation à l'update).
-   - Les endpoints de fenêtre horaire (`/api/get_webhook_time_window`, `/api/set_webhook_time_window`) synchronisent best‑effort `global_time_start/global_time_end` avec la clé `webhook_config` du store externe.
+   - Les endpoints de fenêtre horaire (`/api/get_webhook_time_window`, `/api/set_webhook_time_window`) synchronisent best-effort `global_time_start/global_time_end` avec la clé `webhook_config` du store externe.
+   - `MagicLinkService` interroge `config_api.php` pour la clé `magic_link_tokens` lorsque `EXTERNAL_CONFIG_BASE_URL` + `CONFIG_API_TOKEN` sont définis, avec fallback fichier JSON local si l’API est indisponible.
 
 5. **Journalisation** :
    - Toutes les opérations de lecture/écriture sont journalisées

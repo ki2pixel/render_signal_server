@@ -16,7 +16,7 @@ import os
 import json
 from pathlib import Path
 from utils.time_helpers import parse_time_hhmm, is_within_time_window_local
-from utils.text_helpers import strip_leading_reply_prefixes
+from utils.text_helpers import mask_sensitive_data, strip_leading_reply_prefixes
 
 
 # =============================================================================
@@ -46,6 +46,8 @@ WEEKDAY_NAMES = [
     "saturday",
     "sunday",
 ]
+
+MAX_HTML_BYTES = 1024 * 1024
 
 
 # =============================================================================
@@ -256,7 +258,11 @@ def _fetch_and_parse_email(mail, num: bytes, logger, decode_fn, extract_sender_f
                     if ctype == 'text/plain':
                         body_plain = part.get_payload(decode=True).decode('utf-8', errors='ignore')
                     elif ctype == 'text/html':
-                        body_html = part.get_payload(decode=True).decode('utf-8', errors='ignore')
+                        html_payload = part.get_payload(decode=True) or b''
+                        if isinstance(html_payload, (bytes, bytearray)) and len(html_payload) > MAX_HTML_BYTES:
+                            logger.warning("HTML content truncated (exceeded 1MB limit)")
+                            html_payload = html_payload[:MAX_HTML_BYTES]
+                        body_html = html_payload.decode('utf-8', errors='ignore')
             else:
                 body_plain = msg.get_payload(decode=True).decode('utf-8', errors='ignore')
         except Exception as e:
@@ -480,7 +486,13 @@ def check_new_emails_and_trigger_webhook() -> int:
                 sender_addr = ar.extract_sender_email(from_raw).lower()
                 if os.environ.get('ORCH_TEST_RERAISE') == '1':
                     try:
-                        print(f"DEBUG_TEST parsed subject='{subject}' sender='{sender_addr}'")
+                        print(
+                            "DEBUG_TEST parsed subject='%s' sender='%s'"
+                            % (
+                                mask_sensitive_data(subject or "", "subject"),
+                                mask_sensitive_data(sender_addr or "", "email"),
+                            )
+                        )
                     except Exception:
                         pass
                 # Observability: log when an email has been read and parsed (no sensitive content)
@@ -488,8 +500,8 @@ def check_new_emails_and_trigger_webhook() -> int:
                     logger.info(
                         "POLLER: Email read from IMAP: num=%s, subject='%s', sender='%s'",
                         num.decode() if isinstance(num, bytes) else str(num),
-                        subject or 'N/A',
-                        sender_addr or 'N/A',
+                        mask_sensitive_data(subject or "", "subject") or 'N/A',
+                        mask_sensitive_data(sender_addr or "", "email") or 'N/A',
                     )
                 except Exception:
                     pass
@@ -502,16 +514,28 @@ def check_new_emails_and_trigger_webhook() -> int:
                     allowed = []
                 if os.environ.get('ORCH_TEST_RERAISE') == '1':
                     try:
-                        print(f"DEBUG_TEST allowlist allowed={allowed} sender={sender_addr}")
+                        allowed_masked = [mask_sensitive_data(s or "", "email") for s in allowed][:3]
+                        print(
+                            "DEBUG_TEST allowlist allowed_count=%s allowed_sample=%s sender=%s"
+                            % (
+                                len(allowed),
+                                allowed_masked,
+                                mask_sensitive_data(sender_addr or "", "email"),
+                            )
+                        )
                     except Exception:
                         pass
                 if allowed and sender_addr not in allowed:
-                    logger.info("POLLER: Skipping email %s (sender %s not in allowlist)", num.decode() if isinstance(num, bytes) else str(num), sender_addr)
+                    logger.info(
+                        "POLLER: Skipping email %s (sender %s not in allowlist)",
+                        num.decode() if isinstance(num, bytes) else str(num),
+                        mask_sensitive_data(sender_addr or "", "email"),
+                    )
                     try:
                         logger.info(
                             "IGNORED: Sender not in allowlist for email %s (sender=%s)",
                             num.decode() if isinstance(num, bytes) else str(num),
-                            sender_addr,
+                            mask_sensitive_data(sender_addr or "", "email"),
                         )
                     except Exception:
                         pass
@@ -546,7 +570,7 @@ def check_new_emails_and_trigger_webhook() -> int:
                         logger.info(
                             "IGNORED: Skipping webhook because subject is a reply/forward (email_id=%s, subject='%s')",
                             email_id,
-                            original_subject,
+                            mask_sensitive_data(original_subject or "", "subject"),
                         )
                         ar.mark_email_id_as_processed_redis(email_id)
                         ar.mark_email_as_read_imap(mail, num)
@@ -563,6 +587,8 @@ def check_new_emails_and_trigger_webhook() -> int:
                 # Extract text/plain and text/html content for pattern checks and link extraction
                 full_text = ""
                 html_text = ""
+                html_bytes_total = 0
+                html_truncated_logged = False
                 try:
                     if msg.is_multipart():
                         for part in msg.walk():
@@ -571,13 +597,31 @@ def check_new_emails_and_trigger_webhook() -> int:
                             if 'attachment' in disp:
                                 continue
                             payload = part.get_payload(decode=True) or b''
-                            decoded = payload.decode(part.get_content_charset() or 'utf-8', errors='ignore')
                             if ctype == 'text/plain':
+                                decoded = payload.decode(part.get_content_charset() or 'utf-8', errors='ignore')
                                 full_text += decoded
                             elif ctype == 'text/html':
+                                if isinstance(payload, (bytes, bytearray)):
+                                    remaining = MAX_HTML_BYTES - html_bytes_total
+                                    if remaining <= 0:
+                                        if not html_truncated_logged:
+                                            logger.warning("HTML content truncated (exceeded 1MB limit)")
+                                            html_truncated_logged = True
+                                        continue
+                                    if len(payload) > remaining:
+                                        payload = payload[:remaining]
+                                        if not html_truncated_logged:
+                                            logger.warning("HTML content truncated (exceeded 1MB limit)")
+                                            html_truncated_logged = True
+                                    html_bytes_total += len(payload)
+                                decoded = payload.decode(part.get_content_charset() or 'utf-8', errors='ignore')
                                 html_text += decoded
                     else:
                         payload = msg.get_payload(decode=True) or b''
+                        if isinstance(payload, (bytes, bytearray)) and (msg.get_content_type() or 'text/plain') == 'text/html':
+                            if len(payload) > MAX_HTML_BYTES:
+                                logger.warning("HTML content truncated (exceeded 1MB limit)")
+                                payload = payload[:MAX_HTML_BYTES]
                         decoded = payload.decode(msg.get_content_charset() or 'utf-8', errors='ignore')
                         # Fallback: if single-part, treat as plain, but keep HTML if content-type hints it
                         ctype_single = msg.get_content_type() or 'text/plain'
@@ -656,6 +700,12 @@ def check_new_emails_and_trigger_webhook() -> int:
                             
                             source_url = link_item.get('raw_url')
                             provider = link_item.get('provider')
+                            if source_url:
+                                fallback_raw_url = source_url
+                                fallback_direct_url = link_item.get('direct_url') or source_url
+                                link_item['raw_url'] = source_url
+                                if not link_item.get('direct_url'):
+                                    link_item['direct_url'] = fallback_direct_url
                             
                             if source_url and provider:
                                 try:
@@ -669,13 +719,24 @@ def check_new_emails_and_trigger_webhook() -> int:
                                     ):
                                         remote_fetch_timeout = 120
 
-                                    r2_url, original_filename = r2_service.request_remote_fetch(
-                                        source_url=normalized_source_url,
-                                        provider=provider,
-                                        email_id=email_id,
-                                        timeout=remote_fetch_timeout
-                                    )
-                                    
+                                    r2_result = None
+                                    try:
+                                        r2_result = r2_service.request_remote_fetch(
+                                            source_url=normalized_source_url,
+                                            provider=provider,
+                                            email_id=email_id,
+                                            timeout=remote_fetch_timeout
+                                        )
+                                    except Exception:
+                                        r2_result = None
+
+                                    r2_url = None
+                                    original_filename = None
+                                    if isinstance(r2_result, tuple) and len(r2_result) == 2:
+                                        r2_url, original_filename = r2_result
+                                    elif r2_result is None:
+                                        r2_url = None
+
                                     if r2_url:
                                         link_item['r2_url'] = r2_url
                                         if isinstance(original_filename, str) and original_filename.strip():
@@ -694,17 +755,18 @@ def check_new_emails_and_trigger_webhook() -> int:
                                         )
                                     else:
                                         logger.warning(
-                                            "R2_TRANSFER: Failed to transfer %s link to R2 for email %s (no URL returned)",
-                                            provider,
-                                            email_id
+                                            "R2 transfer failed, falling back to source url"
                                         )
-                                except Exception as r2_ex:
+                                        if source_url:
+                                            link_item['raw_url'] = fallback_raw_url
+                                            link_item['direct_url'] = fallback_direct_url
+                                except Exception:
                                     logger.warning(
-                                        "R2_TRANSFER: Error transferring %s link for email %s: %s",
-                                        provider,
-                                        email_id,
-                                        str(r2_ex)
+                                        "R2 transfer failed, falling back to source url"
                                     )
+                                    if source_url:
+                                        link_item['raw_url'] = fallback_raw_url
+                                        link_item['direct_url'] = fallback_direct_url
                                     # Continue avec le lien source original
                 except Exception as r2_service_ex:
                     logger.debug("R2_TRANSFER: Service unavailable or disabled: %s", str(r2_service_ex))
@@ -795,7 +857,16 @@ def check_new_emails_and_trigger_webhook() -> int:
                 # Test-only: surface decision inputs
                 if os.environ.get('ORCH_TEST_RERAISE') == '1':
                     try:
-                        print(f"DEBUG_TEST within={within} detector={detector_val} start='{s_str}' end='{e_str}' subj='{(subject or '')[:60]}'")
+                        print(
+                            "DEBUG_TEST within=%s detector=%s start='%s' end='%s' subj='%s'"
+                            % (
+                                within,
+                                detector_val,
+                                s_str,
+                                e_str,
+                                mask_sensitive_data(subject or "", "subject"),
+                            )
+                        )
                     except Exception:
                         pass
 

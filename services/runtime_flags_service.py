@@ -34,6 +34,8 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
+import threading
 import time
 from pathlib import Path
 from typing import Dict, Optional, Any
@@ -63,6 +65,7 @@ class RuntimeFlagsService:
             file_path: Chemin du fichier JSON
             defaults: Dictionnaire des valeurs par défaut
         """
+        self._lock = threading.RLock()
         self._file_path = file_path
         self._defaults = defaults
         self._cache: Optional[Dict[str, bool]] = None
@@ -131,18 +134,13 @@ class RuntimeFlagsService:
         Returns:
             True si sauvegarde réussie, False sinon
         """
-        # Charger les flags actuels
-        flags = self._load_from_disk()
-        
-        # Appliquer le changement
-        flags[key] = bool(value)
-        
-        # Sauvegarder
-        if self._save_to_disk(flags):
-            # Invalider le cache pour forcer rechargement
-            self._invalidate_cache()
-            return True
-        return False
+        with self._lock:
+            flags = self._load_from_disk()
+            flags[key] = bool(value)
+            if self._save_to_disk(flags):
+                self._invalidate_cache()
+                return True
+            return False
     
     def get_all_flags(self) -> Dict[str, bool]:
         """Retourne tous les flags actuels.
@@ -161,18 +159,14 @@ class RuntimeFlagsService:
         Returns:
             True si sauvegarde réussie, False sinon
         """
-        # Charger les flags actuels
-        flags = self._load_from_disk()
-        
-        # Appliquer tous les changements
-        for key, value in updates.items():
-            flags[key] = bool(value)
-        
-        # Sauvegarder atomiquement
-        if self._save_to_disk(flags):
-            self._invalidate_cache()
-            return True
-        return False
+        with self._lock:
+            flags = self._load_from_disk()
+            for key, value in updates.items():
+                flags[key] = bool(value)
+            if self._save_to_disk(flags):
+                self._invalidate_cache()
+                return True
+            return False
     
     # =========================================================================
     # Gestion du Cache
@@ -185,24 +179,24 @@ class RuntimeFlagsService:
             Dictionnaire des flags
         """
         now = time.time()
-        
-        # Cache valide ?
-        if (
-            self._cache is not None
-            and self._cache_timestamp is not None
-            and (now - self._cache_timestamp) < self._cache_ttl
-        ):
-            return self._cache
-        
-        # Cache expiré ou inexistant: recharger
-        self._cache = self._load_from_disk()
-        self._cache_timestamp = now
-        return self._cache
+
+        with self._lock:
+            if (
+                self._cache is not None
+                and self._cache_timestamp is not None
+                and (now - self._cache_timestamp) < self._cache_ttl
+            ):
+                return dict(self._cache)
+
+            self._cache = self._load_from_disk()
+            self._cache_timestamp = now
+            return dict(self._cache)
     
     def _invalidate_cache(self) -> None:
         """Invalide le cache pour forcer un rechargement au prochain accès."""
-        self._cache = None
-        self._cache_timestamp = None
+        with self._lock:
+            self._cache = None
+            self._cache_timestamp = None
     
     def reload(self) -> None:
         """Force le rechargement des flags depuis le disque."""
@@ -249,16 +243,22 @@ class RuntimeFlagsService:
         Returns:
             True si succès, False sinon
         """
+        tmp_path = None
         try:
-            # Créer le dossier parent si nécessaire
             self._file_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Écrire le fichier
-            with open(self._file_path, "w", encoding="utf-8") as f:
+            tmp_path = self._file_path.with_name(self._file_path.name + ".tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
-            
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, self._file_path)
             return True
         except Exception:
+            try:
+                if tmp_path is not None and tmp_path.exists():
+                    tmp_path.unlink()
+            except Exception:
+                pass
             return False
     
     # =========================================================================

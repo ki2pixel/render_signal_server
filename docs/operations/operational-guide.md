@@ -50,6 +50,8 @@
   - `BG_POLLER_LOCK_FILE=/tmp/render_signal_server_email_poller.lock`
   - `GUNICORN_*` (workers, threads, timeouts) si vous devez ajuster les valeurs par défaut indiquées dans le Dockerfile.
   - `WEBHOOKS_TIME_START/WEBHOOKS_TIME_END`, `CORS_ALLOWED_ORIGINS`, secrets applicatifs (`WEBHOOK_URL`, `TRIGGER_PAGE_*`, etc.)
+  - `EXTERNAL_CONFIG_BASE_URL`, `CONFIG_API_TOKEN`, `CONFIG_API_STORAGE_DIR` pour activer le stockage partagé `MagicLinkService` + Webhook/Magic config via l’API PHP. Sans ces variables, l’app retombe sur les fichiers `debug/*.json`.
+  - `R2_FETCH_ENDPOINT`, `R2_FETCH_TOKEN`, `R2_PUBLIC_BASE_URL`, `R2_BUCKET_NAME` : obligatoires pour l’offload Cloudflare R2 (les workers et le backend Python échouent volontairement si `R2_FETCH_TOKEN` est absent).
 - Render → Health Check:
   - Path `/health` (cf. `routes/health.py`)
 - UptimeRobot (ou équivalent):

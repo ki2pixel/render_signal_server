@@ -41,6 +41,11 @@ La configuration est gérée via une API PHP sécurisée avec un système de fal
 - `MAGIC_LINK_TTL_SECONDS` : Durée de validité des liens à usage unique (défaut: 900 secondes = 15 minutes)
 - `MAGIC_LINK_TOKENS_FILE` : Chemin du fichier de stockage des tokens (défaut: `./magic_link_tokens.json`)
 - `FLASK_SECRET_KEY` : Clé secrète HMAC pour signer les tokens (obligatoire, doit être robuste)
+- `EXTERNAL_CONFIG_BASE_URL` : (optionnel) URL de l’API PHP `config_api.php`. Active le stockage partagé des tokens permanents via `MagicLinkService`.
+- `CONFIG_API_TOKEN` : (optionnel) Jeton HMAC pour appeler `config_api.php`. Doit être identique côté Render et côté PHP (`deployment/config/config_api.php`).
+- `CONFIG_API_STORAGE_DIR` : (optionnel) Répertoire de stockage côté PHP (ex: `/home/kidp0/domains/.../data/app_config`). Permet au serveur PHP de persister `magic_link_tokens.json` hors webroot.
+
+Lorsque les trois variables optionnelles sont définies, `MagicLinkService` lit/écrit les tokens dans l’API PHP pour supporter plusieurs workers Render et survivre aux redeploys. En cas d’erreur réseau ou de variable manquante, il retombe automatiquement sur `MAGIC_LINK_TOKENS_FILE`.
 
 ### Variables Cloudflare R2 (Offload fichiers)
 
@@ -84,6 +89,7 @@ La configuration est gérée via une API PHP sécurisée avec un système de fal
 #### Variables d'environnement
 - `EXTERNAL_CONFIG_BASE_URL` - URL de base de l'API de configuration (ex: `https://votre-domaine.tld`)
 - `CONFIG_API_TOKEN` - Jeton d'authentification sécurisé pour l'API
+- `CONFIG_API_STORAGE_DIR` - Chemin côté serveur PHP où les JSON sont écrits (`deployment/config/config_api.php` lit cette valeur ; utile pour `magic_link_tokens`, `webhook_config`, etc.)
 
 #### Sécurité
 - Le jeton d'API doit être fort et unique
@@ -102,8 +108,8 @@ Pour plus de détails sur la configuration avancée, consultez le fichier `deplo
 ## Authentification
 
 ### Authentification de base
-- `TRIGGER_PAGE_USER` – identifiant pour la connexion UI
-- `TRIGGER_PAGE_PASSWORD` – mot de passe UI
+- `DASHBOARD_USER` – identifiant pour la connexion UI
+- `DASHBOARD_PASSWORD` – mot de passe UI
 - `FLASK_SECRET_KEY` – clé secrète Flask (sessions et signature des tokens Magic Link). Doit être une chaîne aléatoire robuste.
 
 ### Magic Links

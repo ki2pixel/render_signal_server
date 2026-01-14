@@ -24,8 +24,8 @@ python -m pip install -r requirements.txt
 3. Définir les variables d'environnement minimales (voir `configuration.md`). Exemple (dev):
 ```
 export FLASK_SECRET_KEY="change-me"
-export TRIGGER_PAGE_USER="admin"
-export TRIGGER_PAGE_PASSWORD="votre_mot_de_passe"
+export DASHBOARD_USER="admin"
+export DASHBOARD_PASSWORD="votre_mot_de_passe"
 # Email / IMAP
 export EMAIL_ADDRESS="..."
 export EMAIL_PASSWORD="..."

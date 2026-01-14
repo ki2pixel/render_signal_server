@@ -498,3 +498,11 @@ async def receive_webhook(payload: WebhookPayload):
 # Contrôle des scénarios Make
 
 Note: le contrôle des scénarios Make (activation/désactivation) s'effectue via `routes/api_make.py` (`POST /api/make/toggle_all`) ou manuellement dans l'interface Make.com. Le tableau de bord n'expose pas de boutons de pilotage automatique.
+
+## Fonctionnalités supprimées
+
+### Automation Make (Presence)
+- **Statut** : Supprimée en 2025-11-18 lors du refactoring
+- **Raison** : Simplification de la maintenance et réduction de la complexité
+- **Remplacement** : Utilisation directe des webhooks personnalisés via l interface dashboard
+- **Impact** : Les endpoints automatisés ne sont plus disponibles

@@ -15,6 +15,7 @@ from typing import Callable, Optional
 import requests
 
 from config import settings
+from utils.text_helpers import mask_sensitive_data
 
 
 def send_makecom_webhook(
@@ -78,13 +79,13 @@ def send_makecom_webhook(
     for attempt in range(1, attempts + 1):
         try:
             log.info(
-                "MAKECOM: Sending webhook (attempt %s/%s) for email %s - Subject: '%s', Delivery: %s, Sender: %s",
+                "MAKECOM: Sending webhook (attempt %s/%s) for email %s - Subject: %s, Delivery: %s, Sender: %s",
                 attempt,
                 attempts,
                 email_id,
-                subject,
+                mask_sensitive_data(subject or "", "subject"),
                 delivery_time,
-                sender_email,
+                mask_sensitive_data(sender_email or "", "email"),
             )
 
             response = requests.post(
@@ -109,7 +110,7 @@ def send_makecom_webhook(
                         "status": "success" if ok else "error",
                         "status_code": response.status_code,
                         "target_url": target_url[:50] + "..." if len(target_url) > 50 else target_url,
-                        "subject": subject[:100] if subject else None,
+                        "subject": mask_sensitive_data(subject or "", "subject") or None,
                     }
                     if not ok:
                         log_entry["error"] = log_text
@@ -141,7 +142,7 @@ def send_makecom_webhook(
                             "status": "error",
                             "error": str(e)[:200],
                             "target_url": target_url[:50] + "..." if len(target_url) > 50 else target_url,
-                            "subject": subject[:100] if subject else None,
+                            "subject": mask_sensitive_data(subject or "", "subject") or None,
                         }
                     )
                 except Exception:

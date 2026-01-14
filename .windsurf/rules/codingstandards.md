@@ -13,7 +13,7 @@ globs:
 - Nommage explicite et cohérent; éviter les abréviations cryptiques.
 - Sécurité par défaut: validation et sanitation des entrées, gestion stricte des secrets.
 - DRY: factoriser les logiques communes (services, helpers, utilitaires).
-- Tests pertinents, reproductibles et intégrés au flux de travail (voir docs/testing.md).
+- Tests pertinents, reproductibles et intégrés au flux de travail (voir docs/quality/testing.md).
 - Configuration pilotée par variables d’environnement et stockage de config dédié.
 - Documentation à jour et proche du code (docs/, memory-bank, commentaires ciblés).
 
@@ -34,7 +34,7 @@ Le dépôt comprend principalement:
 - Journalisation dans `app_logging/`.
 - Préférences de traitement dans `preferences/`.
 - Déploiement / intégrations PHP dans `deployment/` (legacy mais maintenu).
-- Documentation dans `docs/` et contexte dans `memory-bank/`.
+- Documentation structurée dans `docs/` (architecture, operations, features, configuration, quality, integrations, archive) et contexte dans `memory-bank/`.
 
 Organisation modulaire côté backend (vue synthétique):
 
@@ -69,7 +69,7 @@ Organisation modulaire côté backend (vue synthétique):
   - `lock.py` (verrou singleton inter-processus).
 
 - `docs/`
-  - Référentiel de spécification (architecture, API, configuration, tests, sécurité, webhooks, stockage, etc.).
+  - Référentiel de spécification organisé par thèmes : `architecture/`, `operations/`, `features/`, `configuration/`, `quality/`, `integrations/`, `archive/`.
 
 ---
 
@@ -153,7 +153,7 @@ Organisation modulaire côté backend (vue synthétique):
 
 - Webhooks
   - Pour les appels sortants, activer la vérification SSL en production (certificats valides); la désactivation éventuelle (mode legacy/test) doit être explicitement loggée et documentée.
-  - Toute future exposition de webhooks entrants doit être protégée par tokens, HMAC ou IP allowlist, et validée en amont (voir docs/securite.md).
+  - Toute future exposition de webhooks entrants doit être protégée par tokens, HMAC ou IP allowlist, et validée en amont (voir docs/operations/security.md).
 
 - Redis
   - Utiliser `REDIS_URL` avec mot de passe et TLS si possible.
@@ -184,7 +184,7 @@ Organisation modulaire côté backend (vue synthétique):
 
 ## Tests (unitaires, intégration, end-to-end)
 
-Les règles détaillées de tests sont décrites dans `docs/testing.md`. Ce fichier fait foi pour:
+Les règles détaillées de tests sont décrites dans `docs/quality/testing.md`. Ce fichier fait foi pour:
 
 - La structure de la suite de tests.
 - Les marqueurs pytest (`unit`, `integration`, `e2e`, `redis`, `imap`, etc.).
@@ -211,7 +211,7 @@ Règles de haut niveau:
 
 - CI
   - L’exécution de pytest avec couverture est obligatoire en CI.
-  - Le seuil minimal de couverture et le mode de rapport sont définis dans `docs/testing.md` et `.coveragerc` (ne pas dupliquer ici les chiffres).
+  - Le seuil minimal de couverture et le mode de rapport sont définis dans `docs/quality/testing.md` et `.coveragerc` (ne pas dupliquer ici les chiffres).
 
 ---
 
@@ -235,4 +235,4 @@ Règles de haut niveau:
   - Messages au présent, concis et explicites; mentionner le pourquoi si utile.
 
 - Pull Requests
-  - Petites, ciblées, avec descr
+  - Petites, ciblées, avec description claire.

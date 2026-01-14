@@ -12,6 +12,11 @@
 - Pas d'envoi webhook
   - `WEBHOOK_URL` non défini ou non joignable.
   - Erreurs réseau côté serveur cible.
+- Les modifications UI (fenêtre horaire, absence, runtime flags) ne prennent pas effet
+  - Vérifier les logs `SVC: RuntimeFlagsService` / `SVC: WebhookConfigService` pour détecter une erreur d'écriture (doivent signaler l'utilisation d'un `RLock` + fichier `.tmp`).
+  - Confirmer que `debug/runtime_flags.json` et `debug/webhook_config.json` sont accessibles en écriture (permissions) avant de relancer la requête API.
+  - Si `EXTERNAL_CONFIG_BASE_URL`/`CONFIG_API_TOKEN` sont configurés, inspecter l'API PHP `config_api.php` (hébergement, droits disque) : le store externe est prioritaire, le fallback fichier n'est utilisé qu'en cas d'échec.
+  - Ne pas éditer manuellement les fichiers JSON pendant que l'app tourne : utilisez toujours les services (`/api/config/*`, `/api/webhooks/*`) qui gèrent l'atomicité et invalident le cache.
 
 ### Erreurs SSL lors des appels webhook
 

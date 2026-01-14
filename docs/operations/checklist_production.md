@@ -2,7 +2,7 @@
 
 ## Secrets et configuration
 - FLASK_SECRET_KEY défini (valeur forte, non commitée)
-- TRIGGER_PAGE_USER / TRIGGER_PAGE_PASSWORD définis (mots de passe forts)
+- DASHBOARD_USER / DASHBOARD_PASSWORD définis (mots de passe forts)
 - Variables IMAP (EMAIL_ADDRESS, EMAIL_PASSWORD, IMAP_SERVER, IMAP_PORT, IMAP_USE_SSL) configurées
 - WEBHOOK_URL (et, si utilisés, `RECADRAGE_MAKE_WEBHOOK_URL` / `AUTOREPONDEUR_MAKE_WEBHOOK_URL` pour les flux Make.com) configurés et joignables en HTTPS
 - PROCESS_API_TOKEN / MAKECOM_API_KEY (si requis) définis via variables d’environnement
@@ -33,6 +33,8 @@
 ## Observabilité et logs
 - `FLASK_LOG_LEVEL` approprié (INFO/WARNING en prod)
 - Journaux: AUTH, BG_POLLER, IMAP_DEBUG visibles et surveillés
+- Vérifier qu'aucun log n'affiche de PII brute (sujets/adresses doivent être masqués via `mask_sensitive_data`)
+- S'assurer que la validation d'allowlist R2 est activée (`dropbox.com`, `fromsmash.com`, `swisstransfer.com`, `wetransfer.com`) pour éviter les SSRF
 - Alerting basique (échec récurrent IMAP/webhooks)
 
 ## Données et persistance

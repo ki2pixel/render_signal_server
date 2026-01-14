@@ -506,7 +506,7 @@ Ces endpoints peuvent être supprimés définitivement si aucune intégration ex
 ## Sécurité
 
 - Les routes marquées (protégé) nécessitent une session utilisateur (Flask-Login).
-- Configurez `FLASK_SECRET_KEY`, `TRIGGER_PAGE_USER`, `TRIGGER_PAGE_PASSWORD` via env vars.
+- Configurez `FLASK_SECRET_KEY`, `DASHBOARD_USER`, `DASHBOARD_PASSWORD` via env vars.
 
 ## Exemples de tests (curl)
 
@@ -700,3 +700,11 @@ En plus des endpoints de test déjà documentés, les suivants sont disponibles:
 
 - `POST /api/test/update_runtime_flags`
   - Equivalent CORS de `/api/update_runtime_flags`.
+
+## Fonctionnalités supprimées
+
+### Automation Make (Presence)
+- **Statut** : Supprimée en 2025-11-18 lors du refactoring
+- **Raison** : Simplification de la maintenance et réduction de la complexité
+- **Remplacement** : Utilisation directe des webhooks personnalisés via l interface dashboard
+- **Impact** : Les endpoints PRESENCE_* et MAKE_* automatisés ne sont plus disponibles

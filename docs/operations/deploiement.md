@@ -26,8 +26,8 @@ User=www-data
 Group=www-data
 WorkingDirectory=/opt/render_signal_server
 Environment="FLASK_SECRET_KEY=..."
-Environment="TRIGGER_PAGE_USER=..."
-Environment="TRIGGER_PAGE_PASSWORD=..."
+Environment="DASHBOARD_USER=..."
+Environment="DASHBOARD_PASSWORD=..."
 # ... autres ENV (voir configuration.md)
 ExecStart=/mnt/venv_ext4/venv_render_signal_server/bin/gunicorn -w 2 -b 127.0.0.1:10000 app_render:app
 Restart=always
@@ -157,6 +157,22 @@ Ces pages sont prévues pour un usage admin/diagnostic uniquement et nécessiten
    - Surveillez la taille du fichier de tokens pour détecter les abus
    - Configurez des alertes pour les échecs d'authentification par magic link
 
+### Stockage partagé via API PHP (optionnel mais recommandé sur Render)
+
+Lorsque l'application tourne sur Render (filesystem éphémère, multi-workers), activez l'API PHP `config_api.php` comme backend de stockage :
+
+- Variables supplémentaires à définir côté Render :
+  ```bash
+  EXTERNAL_CONFIG_BASE_URL=https://webhook.kidpixel.fr
+  CONFIG_API_TOKEN=token-ultra-secret
+  CONFIG_API_STORAGE_DIR=/home/kidp0/domains/.../data/app_config
+  ```
+- `MagicLinkService` écrit alors les tokens (one-shot + permanents) dans `deployment/data/app_config/magic_link_tokens.json` via l'API PHP. Le fichier local `MAGIC_LINK_TOKENS_FILE` ne sert plus que de fallback.
+- Sur le serveur PHP:
+  - `deployment/config/config_api.php` doit charger `CONFIG_API_TOKEN` + `CONFIG_API_STORAGE_DIR` via `env.local.php`.
+  - Vérifiez que le répertoire `app_config/` est hors `public_html` et possède des permissions 750 / fichiers 640.
+- En cas d'indisponibilité du backend PHP (maintenance, jeton invalide), `MagicLinkService` retombe automatiquement sur le fichier local avec verrou inter-processus, et logge un warning `MAGIC_LINK: external store unavailable`.
+
 ## Vérifications post-déploiement
 - Accès HTTPS au domaine et au login `/login`.
 - `GET /api/ping` renvoie `200`.
@@ -183,7 +199,7 @@ Ces pages sont prévues pour un usage admin/diagnostic uniquement et nécessiten
 
 ### Notes UI (fenêtre horaire des webhooks)
 
-- Tester `GET /api/get_webhook_time_window` puis `POST /api/set_webhook_time_window` depuis l'UI `trigger_page.html`.
+- Tester `GET /api/get_webhook_time_window` puis `POST /api/set_webhook_time_window` depuis l'UI `dashboard.html`.
 - Vérifier que les payloads webhook incluent `webhooks_time_start` / `webhooks_time_end` lorsque configurés.
 
 ## Déploiement Render via image Docker (GHCR → Render)

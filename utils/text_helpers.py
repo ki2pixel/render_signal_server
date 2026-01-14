@@ -13,6 +13,7 @@ Usage:
     # => "media solution - lot 42"
 """
 
+import hashlib
 import re
 import unicodedata
 from typing import Optional
@@ -118,3 +119,34 @@ def detect_provider(url: str) -> Optional[str]:
     if "swisstransfer.com" in url_lower:
         return "swisstransfer"
     return "unknown"
+
+
+def mask_sensitive_data(text: str, type: str = "email") -> str:
+    if not text:
+        if type == "content":
+            return "Content length: 0 chars"
+        return ""
+
+    value = str(text).strip()
+    t = (type or "").strip().lower()
+
+    if t == "email":
+        if "@" not in value:
+            return "***"
+        local, sep, domain = value.partition("@")
+        if not sep or not local or not domain:
+            return "***"
+        return f"{local[0]}***@{domain}"
+
+    if t == "subject":
+        words = re.findall(r"\S+", value)
+        prefix = " ".join(words[:3]).strip()
+        short_hash = hashlib.sha256(value.encode("utf-8", errors="ignore")).hexdigest()[:6]
+        if not prefix:
+            prefix = "(empty)"
+        return f"{prefix}... [{short_hash}]"
+
+    if t == "content":
+        return f"Content length: {len(value)} chars"
+
+    return "[redacted]"

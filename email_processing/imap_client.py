@@ -20,13 +20,18 @@ from config.settings import (
     IMAP_SERVER,
     IMAP_USE_SSL,
 )
+from utils.text_helpers import mask_sensitive_data
 
 
-def create_imap_connection(logger: Optional[Logger]) -> Optional[Union[imaplib.IMAP4_SSL, imaplib.IMAP4]]:
+def create_imap_connection(
+    logger: Optional[Logger],
+    timeout: int = 30,
+) -> Optional[Union[imaplib.IMAP4_SSL, imaplib.IMAP4]]:
     """Crée une connexion IMAP sécurisée au serveur email.
 
     Args:
         logger: Instance de logger Flask (app.logger) ou None
+        timeout: Timeout pour la connexion IMAP (défaut: 30 secondes)
 
     Returns:
         Connection IMAP (IMAP4_SSL ou IMAP4) si succès, None si échec
@@ -45,11 +50,11 @@ def create_imap_connection(logger: Optional[Logger]) -> Optional[Union[imaplib.I
 
     try:
         if IMAP_USE_SSL:
-            mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT)
+            mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT, timeout=timeout)
         else:
             # Connexion non-sécurisée (déconseillé)
             logger.warning("IMAP: Connexion non-SSL utilisée (vulnérable)")
-            mail = imaplib.IMAP4(IMAP_SERVER, IMAP_PORT)
+            mail = imaplib.IMAP4(IMAP_SERVER, IMAP_PORT, timeout=timeout)
 
         # Authentification (ne jamais logger le mot de passe)
         mail.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
@@ -57,7 +62,13 @@ def create_imap_connection(logger: Optional[Logger]) -> Optional[Union[imaplib.I
         return mail
 
     except imaplib.IMAP4.error as e:
-        logger.error("IMAP: Échec d'authentification pour %s sur %s:%s - %s", EMAIL_ADDRESS, IMAP_SERVER, IMAP_PORT, e)
+        logger.error(
+            "IMAP: Échec d'authentification pour %s sur %s:%s - %s",
+            mask_sensitive_data(EMAIL_ADDRESS or "", "email"),
+            IMAP_SERVER,
+            IMAP_PORT,
+            e,
+        )
         return None
     except Exception as e:
         logger.error("IMAP: Erreur de connexion à %s:%s - %s", IMAP_SERVER, IMAP_PORT, e)
