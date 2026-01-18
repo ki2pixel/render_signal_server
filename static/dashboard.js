@@ -164,6 +164,10 @@ function bindEvents() {
  * Charge les données initiales
  */
 async function loadInitialData() {
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        console.log('[loadInitialData] Function called');
+    }
+    
     try {
         // Charger en parallèle les données initiales
         await Promise.all([
@@ -274,11 +278,15 @@ async function togglePolling() {
 
 // -------------------- Time Window --------------------
 async function loadTimeWindow() {
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        console.log('[loadTimeWindow] Function called');
+    }
+    
     const applyWindowValues = (startValue = '', endValue = '') => {
         const startInput = document.getElementById('webhooksTimeStart');
         const endInput = document.getElementById('webhooksTimeEnd');
         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.log('[loadTimeWindow] Applying values:', { startValue, endValue });
+            console.log('[loadTimeWindow] Applying values:', { startValue, endValue, startInput: !!startInput, endInput: !!endInput });
         }
         if (startInput) startInput.value = startValue || '';
         if (endInput) endInput.value = endValue || '';
