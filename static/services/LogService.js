@@ -63,9 +63,7 @@ export class LogService {
             const logs = await ApiService.get(`/api/webhook_logs?days=${daysToLoad}`);
             this.renderLogs(logs.logs || []);
         } catch (e) {
-            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                console.error('Erreur chargement logs:', e);
-            }
+            console.error('Erreur chargement logs:', e);
             this.renderLogs([]);
         }
     }

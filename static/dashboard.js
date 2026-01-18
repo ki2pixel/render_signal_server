@@ -8,9 +8,7 @@ import { TabManager } from './components/TabManager.js';
 
 window.DASHBOARD_BUILD = 'modular-2026-01-18';
 
-if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    console.log('[build] static/dashboard.js loaded:', window.DASHBOARD_BUILD);
-}
+console.log('[build] static/dashboard.js loaded:', window.DASHBOARD_BUILD);
 
 // Variables globales pour le gestionnaire d'onglets
 let tabManager = null;
@@ -164,9 +162,7 @@ function bindEvents() {
  * Charge les données initiales
  */
 async function loadInitialData() {
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        console.log('[loadInitialData] Function called');
-    }
+    console.log('[loadInitialData] Function called - hostname:', window.location.hostname);
     
     try {
         // Charger en parallèle les données initiales
@@ -219,9 +215,7 @@ async function generateMagicLink() {
             output.className = 'status-msg error';
         }
     } catch (e) {
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.error('generateMagicLink error', e);
-        }
+        console.error('generateMagicLink error', e);
         output.textContent = 'Erreur de génération du magic link.';
         output.className = 'status-msg error';
     } finally {
@@ -248,9 +242,7 @@ async function loadPollingStatus() {
             }
         }
     } catch (e) {
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.error('Erreur chargement statut polling:', e);
-        }
+        console.error('Erreur chargement statut polling:', e);
         const statusText = document.getElementById('pollingStatusText');
         if (statusText) statusText.textContent = '⚠️ Erreur de chargement';
     }
@@ -278,16 +270,12 @@ async function togglePolling() {
 
 // -------------------- Time Window --------------------
 async function loadTimeWindow() {
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        console.log('[loadTimeWindow] Function called');
-    }
+    console.log('[loadTimeWindow] Function called - hostname:', window.location.hostname);
     
     const applyWindowValues = (startValue = '', endValue = '') => {
         const startInput = document.getElementById('webhooksTimeStart');
         const endInput = document.getElementById('webhooksTimeEnd');
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.log('[loadTimeWindow] Applying values:', { startValue, endValue, startInput: !!startInput, endInput: !!endInput });
-        }
+        console.log('[loadTimeWindow] Applying values:', { startValue, endValue, startInput: !!startInput, endInput: !!endInput });
         if (startInput) startInput.value = startValue || '';
         if (endInput) endInput.value = endValue || '';
         renderTimeWindowDisplay(startValue || '', endValue || '');
@@ -296,9 +284,7 @@ async function loadTimeWindow() {
     try {
         // 0) Source principale : configuration webhooks persistée
         const configResponse = await ApiService.get('/api/webhooks/config');
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.log('[loadTimeWindow] /api/webhooks/config response:', configResponse);
-        }
+        console.log('[loadTimeWindow] /api/webhooks/config response:', configResponse);
         if (configResponse.success && configResponse.config) {
             const cfg = configResponse.config;
             if (cfg.webhook_time_start || cfg.webhook_time_end) {
@@ -307,40 +293,30 @@ async function loadTimeWindow() {
             }
         }
     } catch (e) {
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.warn('Impossible de charger la fenêtre horaire via /api/webhooks/config:', e);
-        }
+        console.warn('Impossible de charger la fenêtre horaire via /api/webhooks/config:', e);
     }
     
     try {
         // 1) Préférence: configuration persistée (webhook config service)
         const persisted = await ApiService.get('/api/webhooks/time-window');
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.log('[loadTimeWindow] /api/webhooks/time-window response:', persisted);
-        }
+        console.log('[loadTimeWindow] /api/webhooks/time-window response:', persisted);
         if (persisted.success && (persisted.webhooks_time_start || persisted.webhooks_time_end)) {
             applyWindowValues(persisted.webhooks_time_start, persisted.webhooks_time_end);
             return;
         }
     } catch (e) {
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.warn('Impossible de charger la fenêtre horaire via /api/webhooks/time-window:', e);
-        }
+        console.warn('Impossible de charger la fenêtre horaire via /api/webhooks/time-window:', e);
     }
     
     try {
         // 2) Fallback: ancienne source (time window override)
         const data = await ApiService.get('/api/get_webhook_time_window');
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.log('[loadTimeWindow] /api/get_webhook_time_window response:', data);
-        }
+        console.log('[loadTimeWindow] /api/get_webhook_time_window response:', data);
         if (data.success) {
             applyWindowValues(data.webhooks_time_start, data.webhooks_time_end);
         }
     } catch (e) {
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.error('Erreur chargement fenêtre horaire (fallback):', e);
-        }
+        console.error('Erreur chargement fenêtre horaire (fallback):', e);
     }
 }
 
@@ -528,9 +504,7 @@ async function loadRuntimeFlags() {
             });
         }
     } catch (e) {
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.error('loadRuntimeFlags error', e);
-        }
+        console.error('loadRuntimeFlags error', e);
     }
 }
 
@@ -589,9 +563,7 @@ async function loadProcessingPrefsFromServer() {
             });
         }
     } catch (e) {
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.error('loadProcessingPrefs error', e);
-        }
+        console.error('loadProcessingPrefs error', e);
     }
 }
 
@@ -649,9 +621,7 @@ function loadLocalPreferences() {
             }
         });
     } catch (e) {
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.warn('Erreur chargement préférences locales:', e);
-        }
+        console.warn('Erreur chargement préférences locales:', e);
     }
 }
 
@@ -672,9 +642,7 @@ function saveLocalPreferences() {
         
         localStorage.setItem('dashboard_prefs_v1', JSON.stringify(prefs));
     } catch (e) {
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.warn('Erreur sauvegarde préférences locales:', e);
-        }
+        console.warn('Erreur sauvegarde préférences locales:', e);
     }
 }
 

@@ -44,9 +44,7 @@ export class WebhookService {
                 return config;
             }
         } catch (e) {
-            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                console.error('Erreur chargement configuration webhooks:', e);
-            }
+            console.error('Erreur chargement configuration webhooks:', e);
             throw e;
         }
     }
@@ -130,9 +128,7 @@ export class WebhookService {
             const data = await ApiService.get(`/api/webhook_logs?days=${days}`);
             return data.logs || [];
         } catch (e) {
-            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                console.error('Erreur chargement logs webhooks:', e);
-            }
+            console.error('Erreur chargement logs webhooks:', e);
             return [];
         }
     }

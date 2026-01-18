@@ -259,9 +259,7 @@ export class TabManager {
             // Marquer l'onglet comme chargé
             this.markTabAsLoaded(tabId);
         } catch (error) {
-            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                console.warn(`Erreur lors du chargement de l'onglet ${tabId}:`, error);
-            }
+            console.warn(`Erreur lors du chargement de l'onglet ${tabId}:`, error);
         }
     }
 
