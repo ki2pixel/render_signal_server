@@ -1324,6 +1324,167 @@ pytest --collect-only
 pytest --co -q
 ```
 
+## 🛡️ Tests de Résilience (Lot 2/3 - 2026-01-14)
+
+### Objectifs
+
+Les tests de résilience valident que le système continue de fonctionner même en cas de défaillances externes ou de conditions limites.
+
+### Tests Redis Lock
+
+#### Fichier : `tests/test_lock_redis.py`
+
+```python
+@pytest.mark.unit
+@pytest.mark.redis
+def test_acquire_singleton_lock_uses_redis_when_redis_url_present():
+    """Given: REDIS_URL is present and Redis SET returns True
+       When: acquiring the singleton lock
+       Then: Redis path is used and file lock is not created"""
+    
+@pytest.mark.unit  
+@pytest.mark.redis
+def test_acquire_singleton_lock_fallback_to_file_when_redis_unavailable():
+    """Given: REDIS_URL present but Redis connection fails
+       When: acquiring the singleton lock
+       Then: falls back to file-based lock with WARNING log"""
+
+@pytest.mark.unit
+@pytest.mark.redis
+def test_redis_lock_ttl_configuration():
+    """Given: REDIS_LOCK_TTL_SECONDS is set to custom value
+       When: acquiring lock
+       Then: TTL is applied correctly"""
+```
+
+#### Marqueurs et Exécution
+```bash
+# Exécuter uniquement les tests Redis lock
+pytest -m "redis and test_lock_redis"
+
+# Exécuter avec mock Redis (plus rapide)
+pytest tests/test_lock_redis.py -v
+```
+
+### Tests R2 Resilience
+
+#### Fichier : `tests/test_r2_resilience.py`
+
+```python
+@pytest.mark.integration
+def test_r2_resilience_worker_down_continues_flow():
+    """Given: R2 service configured but worker throws exception
+       When: Processing email with delivery links
+       Then: Webhook sent with raw_url, r2_url is None"""
+
+@pytest.mark.integration  
+def test_r2_resilience_worker_returns_none():
+    """Given: R2 service returns None (timeout/failure)
+       When: Processing email with Dropbox links
+       Then: Flow continues, WARNING logged, webhook sent"""
+
+@pytest.mark.integration
+def test_r2_resilience_timeout_handling():
+    """Given: Remote fetch times out (120s for /scl/fo/)
+       When: Processing large Dropbox folder
+       Then: Graceful fallback, URLs sources preserved"""
+```
+
+#### Scénarios Couverts
+- **Exception levée** : Worker R2 inaccessible
+- **Retour None** : Timeout ou erreur traitement
+- **Timeout adaptatif** : 120s Dropbox, 15s autres providers
+- **Fallback garanti** : Conservation URLs sources
+
+### Tests Anti-OOM
+
+#### Fichier : `tests/test_email_processing_orchestrator_extra.py`
+
+```python
+@pytest.mark.unit
+def test_html_content_truncated_when_exceeds_1mb():
+    """Given: HTML content larger than 1MB
+       When: Extracting text from HTML
+       Then: Content truncated to 1MB, WARNING logged"""
+
+@pytest.mark.unit
+def test_html_content_under_limit_unchanged():
+    """Given: HTML content under 1MB
+       When: Extracting text from HTML  
+       Then: Content unchanged, no WARNING"""
+
+@pytest.mark.unit
+def test_html_parsing_safe_with_truncated_content():
+    """Given: Truncated HTML content (mid-tag)
+       When: Parsing with BeautifulSoup
+       Then: Safe parsing, no crashes"""
+```
+
+#### Validation Anti-OOM
+- **Limite stricte** : 1MB maximum pour HTML
+- **Parsing sécurisé** : BeautifulSoup sur contenu tronqué
+- **Logs WARNING** : "HTML content truncated (exceeded 1MB limit)"
+- **Protection OOM** : Conteneurs 512MB protégés
+
+### Tests Watchdog IMAP
+
+#### Fichier : `tests/test_imap_client_extra.py`
+
+```python
+@pytest.mark.unit
+def test_imap_connection_uses_configured_timeout():
+    """Given: IMAP_TIMEOUT_SECONDS=30
+       When: Creating IMAP connection
+       Then: Timeout parameter passed to IMAP4_SSL/IMAP4"""
+
+@pytest.mark.unit
+def test_imap_connection_default_timeout():
+    """Given: No IMAP_TIMEOUT_SECONDS configured
+       When: Creating IMAP connection  
+       Then: Default timeout 30s applied"""
+
+@pytest.mark.integration
+@pytest.mark.imap
+def test_imap_timeout_prevents_zombie_connections():
+    """Given: IMAP server unresponsive
+       When: Connection attempt with timeout
+       Then: Exception raised, no zombie connection"""
+```
+
+### Exécution Tests Résilience
+
+```bash
+# Suite complète résilience
+pytest -m "redis or integration" tests/test_lock_redis.py tests/test_r2_resilience.py
+
+# Tests anti-OOM uniquement
+pytest tests/test_email_processing_orchestrator_extra.py::test_html_content_truncated_when_exceeds_1mb -v
+
+# Tests watchdog IMAP
+pytest tests/test_imap_client_extra.py -k "timeout" -v
+
+# Rapport couverture résilience
+pytest --cov=. --cov-report=html tests/test_lock_redis.py tests/test_r2_resilience.py
+```
+
+### Résultats Lot 2/3
+
+| Métrique | Avant Lot 2 | Après Lot 2 | Après Lot 3 |
+|----------|--------------|-------------|-------------|
+| Tests passants | 386 | 386 | 389 |
+| Tests skippés | 13 | 13 | 13 |
+| Couverture | 67.3% | 70.12% | 70.12% |
+| Temps exécution | ~60s | ~65s | ~65s |
+
+### Bonnes Pratiques Résilience
+
+1. **Given/When/Then** : Format clair pour tous les tests
+2. **Mocks contrôlés** : `fakeredis` pour Redis, `responses` pour HTTP
+3. **Marqueurs spécifiques** : `@pytest.mark.redis`, `@pytest.mark.integration`
+4. **Logs validation** : Vérification des messages WARNING
+5. **Scénarios limites** : Edge cases et conditions d'erreur
+6. **Documentation** : Chaque test explique le scénario de défaillance
+
 ## Ressources
 
 - [Documentation pytest](https://docs.pytest.org/)

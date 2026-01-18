@@ -4,235 +4,269 @@ description:
 globs: 
 ---
 
-# Coding Standards – Proposition Temporaire pour render_signal_server
+# Coding Standards – render_signal_server (v2026-01-18)
 
 ## Principes directeurs
 
-- Lisibilité avant concision. Le code doit être simple à comprendre pour un autre développeur.
-- Commenter le pourquoi lorsqu’une logique n’est pas évidente (décision métier, compromis techniques), pas le comment évident.
-- Nommage explicite et cohérent; éviter les abréviations cryptiques.
-- Sécurité par défaut: validation et sanitation des entrées, gestion stricte des secrets.
-- DRY: factoriser les logiques communes (services, helpers, utilitaires).
-- Tests pertinents, reproductibles et intégrés au flux de travail (voir docs/quality/testing.md).
-- Configuration pilotée par variables d’environnement et stockage de config dédié.
-- Documentation à jour et proche du code (docs/, memory-bank, commentaires ciblés).
+Lisibilité > concision. Commenter le pourquoi, pas le comment. Nommage explicite. Sécurité par défaut. DRY. Tests pertinents. Configuration via ENV. Documentation à jour. Performance & résilience par design. Accessibilité inclusive.
 
 ---
 
 ## Portée et périmètre
 
-Le dépôt comprend principalement:
-
-- Backend Python: serveur Flask, services applicatifs et modules métier.
-- Front-end statique: `static/` et `dashboard.html` (Dashboard Webhooks).
-- Services orientés métier/configuration dans `services/`.
-- Traitement des e-mails dans `email_processing/`.
-- Tâches de fond dans `background/`.
-- Configuration centralisée dans `config/`.
-- Authentification dans `auth/`.
-- Déduplication dans `deduplication/`.
-- Journalisation dans `app_logging/`.
-- Préférences de traitement dans `preferences/`.
-- Déploiement / intégrations PHP dans `deployment/` (legacy mais maintenu).
-- Documentation structurée dans `docs/` (architecture, operations, features, configuration, quality, integrations, archive) et contexte dans `memory-bank/`.
-
-Organisation modulaire côté backend (vue synthétique):
-
-- `app_render.py`
-  - Point d’entrée Flask / orchestrateur.
-  - Initialise les services principaux.
-  - Enregistre les blueprints `routes/`.
-  - Configure logging, CORS, tâches de fond et intégrations externes.
-
-- `routes/` (blueprints Flask)
-  - `api_webhooks.py` (config webhooks via WebhookConfigService).
-  - `api_config.py` (runtime flags, polling config via services).
-  - `api_admin.py` (tâches d’administration, check emails, redémarrage, déploiement Render).
-  - `api_processing.py` (préférences de traitement, URLs legacy supportées).
-  - `api_logs.py` (logs webhooks).
-  - `api_polling.py`, `api_test.py`, `api_make.py`, `api_utility.py`, `dashboard.py`, `health.py`.
-
-- `services/` (architecture orientée services)
-  - `ConfigService` (config centralisée, accès typé à config.settings, secrets, Render, auth dashboard, dédup).
-  - `RuntimeFlagsService` (Singleton, `runtime_flags.json`, cache TTL, accès et mise à jour des flags runtime).
-  - `WebhookConfigService` (Singleton, config webhooks, validation stricte, normalisation Make, cache + store externe, Absence Globale).
-  - `AuthService` (authentification dashboard et API, intégration Flask-Login, décorateurs `api_key_required` et similaires).
-  - `PollingConfigService` (exposé depuis `config/polling_config.py`, accès centralisé à la config de polling IMAP et timezone).
-  - `DeduplicationService` (dédup email ID et subject groups, Redis + fallback mémoire, clés issues de ConfigService).
-
-- `email_processing/`
-  - `orchestrator.py` (cycle de polling, application des règles métier, Absence Globale, fenêtres horaires, détecteurs, envoi de webhooks).
-  - `imap_client.py`, `pattern_matching.py`, `link_extraction.py`, `payloads.py`, `webhook_sender.py`.
-
-- `background/`
-  - `polling_thread.py` (boucle générique de polling IMAP avec dépendances injectées).
-  - `lock.py` (verrou singleton inter-processus).
-
-- `docs/`
-  - Référentiel de spécification organisé par thèmes : `architecture/`, `operations/`, `features/`, `configuration/`, `quality/`, `integrations/`, `archive/`.
+**Backend Python**: Flask, services, email_processing, background, config, auth, dedup, app_logging, preferences.  
+**Frontend ES6**: static/ (services/, components/, utils/, dashboard.js modulaire).  
+**Services**: ConfigService, RuntimeFlagsService, WebhookConfigService, AuthService, PollingConfigService, DeduplicationService, R2TransferService, MagicLinkService.  
+**Infrastructure**: Redis distribué, R2 offload, Docker GHCR, tests résilience.
 
 ---
 
-## Langages, style et formatage
+## Langages et formatage
 
-- Python
-  - Respect strict de PEP 8.
-  - Formatage automatique avec Black (ligne max 88) et tri des imports avec isort.
-  - Lint via flake8 ou ruff (idéalement intégré en CI).
-
-- JavaScript
-  - ES2019 minimum.
-  - Formatage via Prettier.
-  - Lint via ESLint (configuration airbnb-base ou eslint:recommended).
-
-- PHP (deployment)
-  - Respect de PSR-12.
-
-- Fichiers
-  - Encodage UTF-8, fins de ligne LF.
-  - Aucune espace en fin de ligne; un retour à la ligne final par fichier.
+**Python**: PEP 8, Black (88 chars), isort, flake8/ruff.  
+**JavaScript**: ES2022+, modules ES6, Prettier, ESLint (airbnb-base).  
+**PHP**: PSR-12.  
+**Fichiers**: UTF-8, LF, pas d'espaces fin de ligne.
 
 ---
 
-## Nommage, commentaires et documentation
+## Architecture Frontend (2026-01-18)
 
-- Nommage
-  - Python: snake_case pour fonctions/variables, PascalCase pour classes.
-  - JavaScript: camelCase pour fonctions/variables, PascalCase pour classes.
-  - PHP: conventions PSR (camelCase/PascalCase selon contexte).
-  - Noms explicites décrivant l’intention (ex: email_config_valid, deduplication_service, absence_pause_enabled).
+### Structure modulaire
+```
+static/
+├── services/
+│   ├── ApiService.js (client API, 401/403)
+│   ├── WebhookService.js (config+logs)
+│   └── LogService.js (timer+visibility API)
+├── components/
+│   └── TabManager.js (onglets+ARIA)
+├── utils/
+│   └── MessageHelper.js (UI helpers)
+└── dashboard.js (~600 lignes, orchestrateur)
+```
 
-- Commentaires
-  - Expliquer l’intention, les cas limites et les compromis.
-  - Éviter de commenter le code évident ou paraphraser les signatures.
-  - Documenter les décisions non triviales avec un renvoi éventuel vers `memory-bank/decisionLog.md`.
+### Standards ES6
+- Imports/exports explicites : `import { ApiService } from './services/ApiService.js';`
+- Classes et méthodes statiques pour les services
+- JSDoc pour API publique
+- Un fichier = une responsabilité
 
-- Docstrings et documentation
-  - Docstrings Python pour fonctions et classes publiques (style Google ou reST), en particulier dans `services/`, `email_processing/`, `background/`.
-  - Documentation fonctionnelle et opérationnelle dans `docs/` (architecture, API, configuration, sécurité, tests, webhooks, etc.).
-  - Tenir synchronisés: code, docs et memory-bank (productContext, decisionLog, progress, systemPatterns).
+### Performance
+- Lazy loading des onglets (TabManager)
+- Timer intelligent avec visibility API (LogService)
+- Bundle size réduit (1488→600 lignes)
+- Cleanup automatique timers/écouteurs
 
----
+### Sécurité
+- **Protection XSS** : `createElement()` > `innerHTML`
+- **Conditional logging** : uniquement localhost/127.0.0.1
+- **Validation client** : formats, placeholders, inputs
+- **Gestion 401/403** : ApiService avec redirection /login
 
-## Gestion des dépendances et configuration
-
-- Python
-  - Lister les dépendances dans `requirements.txt` (avec versions figées quand c’est pertinent) et `requirements-dev.txt` pour les outils de dev/test.
-  - Limiter l’ajout de packages; toute nouvelle dépendance doit être justifiée et documentée (impact sécurité et maintenance).
-
-- JavaScript
-  - Si un gestionnaire de paquets est utilisé (npm/pnpm/yarn), conserver un lockfile et configurer des scripts cohérents (lint, build, tests front si introduits).
-
-- Configuration
-  - Toute configuration sensible (secrets, tokens, URL externes, identifiants) provient de variables d’environnement.
-  - Les valeurs de référence présentes dans le code (prefixe REF) ne doivent pas être utilisées en production.
-  - Utiliser les services et helpers dédiés pour la lecture de configuration:
-    - `ConfigService` pour la plupart des accès config, y compris credentials dashboard, tokens API, clés Render.
-    - `RuntimeFlagsService` pour les flags de débogage ou de comportement runtime.
-    - `WebhookConfigService` pour la configuration webhook (URL, Absence Globale, etc.).
-    - `PollingConfigService` pour la configuration polling IMAP.
-  - Ne pas accéder directement aux fichiers JSON dans `debug/` depuis les routes; passer par les services ou helpers `config/app_config_store.py`.
-
----
-
-## Sécurité applicative
-
-- Entrées utilisateur et API
-  - Valider et nettoyer systématiquement toutes les entrées côté serveur (Flask, PHP) et, si nécessaire, côté client.
-  - Éviter les injections (SQL, commande, XSS) via requêtes paramétrées, échappement correct des données affichées et contrôle strict des chemins de fichiers.
-
-- Authentification et autorisation
-  - Utiliser Flask-Login pour l’authentification UI (`dashboard.py`), via `AuthService.init_flask_login`.
-  - Protéger les endpoints sensibles avec `@login_required` et/ou des décorateurs basés sur `AuthService` (par exemple `api_key_required`, `test_api_key_required`).
-  - Ne jamais stocker de mots de passe en clair; les identifiants dashboard sont fournis via ENV.
-
-- Secrets et clés
-  - Ne jamais commit de secrets ou tokens.
-  - `FLASK_SECRET_KEY` doit être défini en production et suffisamment robuste.
-  - Les clés API (Render, Make, Gmail, etc.) doivent être gérées via ENV côté Flask ou PHP.
-
-- Webhooks
-  - Pour les appels sortants, activer la vérification SSL en production (certificats valides); la désactivation éventuelle (mode legacy/test) doit être explicitement loggée et documentée.
-  - Toute future exposition de webhooks entrants doit être protégée par tokens, HMAC ou IP allowlist, et validée en amont (voir docs/operations/security.md).
-
-- Redis
-  - Utiliser `REDIS_URL` avec mot de passe et TLS si possible.
-  - Ne pas exposer Redis publiquement.
-
-- Logs
-  - Ne pas logger de secrets, contenu d’email complet ni données très sensibles.
-  - Utiliser `app_logging/webhook_logger.py` pour la journalisation webhooks (avec fallback mémoire/fichier).
+### Accessibilité
+- Rôles ARIA : tablist/tab/tabpanel
+- Navigation clavier : Tab/Shift+Tab/Espace/Entrée
+- WCAG AA : contrastes, labels, screen readers
+- Responsive mobile-first (breakpoints 768px/480px)
 
 ---
 
-## Gestion des erreurs, logs et observabilité
+## Architecture Backend
 
-- Erreurs
-  - Lever des exceptions explicites dans les services et helpers, les attraper aux frontières (routes, tâches de fond) pour renvoyer des réponses propres.
-  - Ne pas masquer silencieusement les erreurs sans log; préférer des logs au moins au niveau warning.
+### Services (Singletons quand pertinent)
+- **ConfigService** : config centralisée, secrets, Render
+- **RuntimeFlagsService** : flags JSON, cache TTL 60s
+- **WebhookConfigService** : config webhooks, validation HTTPS, Absence Globale
+- **AuthService** : Flask-Login, décorateurs auth
+- **PollingConfigService** : config IMAP, timezone
+- **DeduplicationService** : Redis + fallback mémoire
+- **R2TransferService** : offload Cloudflare R2, fallback garanti
+- **MagicLinkService** : magic links HMAC, TTL configurable
 
-- Logs
-  - Centraliser la logique liée aux logs webhooks dans `app_logging/webhook_logger.py`.
-  - Conserver des logs structurés et contextualisés (ID email, détecteur, décision prise) sans contenu sensible.
-  - Respecter la configuration de niveau de log fournie par ENV (par exemple FLASK_LOG_LEVEL).
-
-- Observabilité
-  - Utiliser les handlers existants (heartbeat, SIGTERM) pour diagnostiquer les problèmes de threads de fond et redémarrages Render.
-  - Prévoir des logs clairs sur le démarrage/arrêt des tâches de fond (`background/polling_thread.py`, lock file, flags ENABLE_BACKGROUND_TASKS, DISABLE_BACKGROUND_TASKS).
-
----
-
-## Tests (unitaires, intégration, end-to-end)
-
-Les règles détaillées de tests sont décrites dans `docs/quality/testing.md`. Ce fichier fait foi pour:
-
-- La structure de la suite de tests.
-- Les marqueurs pytest (`unit`, `integration`, `e2e`, `redis`, `imap`, etc.).
-- Les objectifs de couverture et la configuration `.coveragerc`.
-
-Règles de haut niveau:
-
-- Pyramide de tests
-  - Majorité de tests unitaires (services, utils, helpers).
-  - Couverture significative par tests d’intégration (routes API, services ensemble).
-  - Tests E2E ciblés sur les flux critiques (polling complet, webhooks, absence globale, etc.).
-
-- Services
-  - `ConfigService`, `RuntimeFlagsService`, `WebhookConfigService`, `AuthService`, `PollingConfigService`, `DeduplicationService` doivent avoir des tests unitaires ciblés.
-  - Pour les Singletons, prévoir des helpers/fixtures pour réinitialiser l’instance (`reset_instance`) dans les tests.
-  - Tester les services aussi via les endpoints API correspondants (approche API-first) lorsque pertinent.
-
-- Traitement des e-mails
-  - Tester `email_processing/orchestrator.py` à la fois de manière unitaire (helpers) et par scénarios d’intégration/E2E.
-  - Couvrir les règles métier spécifiques (DESABO urgent vs non urgent, Absence Globale, fenêtres horaires, dédup, miroir média vers webhook custom).
-
-- Web UI
-  - Tester les comportements critiques de `static/dashboard.js` (au minimum via tests d’intégration côté Flask ou tests front si introduits).
-
-- CI
-  - L’exécution de pytest avec couverture est obligatoire en CI.
-  - Le seuil minimal de couverture et le mode de rapport sont définis dans `docs/quality/testing.md` et `.coveragerc` (ne pas dupliquer ici les chiffres).
+### Modules métier
+- **email_processing/orchestrator.py** : cycle polling, règles métier, anti-OOM
+- **background/lock.py** : verrou Redis distribué + fallback fcntl
+- **routes/** : blueprints Flask (api_*.py, dashboard.py, health.py)
 
 ---
 
-## Performance et optimisation
+## Sécurité
 
-- Ne pas optimiser prématurément; baser les optimisations sur des mesures (profilage, logs, métriques).
-- Éviter les boucles sur des volumes élevés avec I O bloquantes; préférer les batchs.
-- Privilégier l’usage de caches contrôlés pour les données consultées fréquemment (RuntimeFlagsService, WebhookConfigService).
-- Éviter les requêtes IMAP ou HTTP inutiles; respecter les règles de fenêtres horaires et de déduplication pour limiter la charge.
+### Backend
+- Validation entrées côté serveur (Flask, PHP)
+- Flask-Login pour UI, décorateurs `@login_required`, `api_key_required`
+- Secrets via ENV uniquement (jamais commités)
+- `FLASK_SECRET_KEY` robuste en production
+- Webhooks : SSL vérifié en production, logs WARNING si désactivé
+
+### Frontend
+- Construction DOM sécurisée (pas d'innerHTML non contrôlé)
+- Conditional logging : `console.log` uniquement localhost
+- Validation inputs avant envoi API
+- ApiService : gestion centralisée 401/403
+
+### Infrastructure
+- Redis : `REDIS_URL` avec mot de passe + TLS si possible
+- R2 : `R2_FETCH_TOKEN` obligatoire pour Worker
+- Logs : anonymisation PII via `mask_sensitive_data()`
 
 ---
 
-## Git, branches et messages de commit
+## Performance & Résilience
 
-- Branches
-  - Branches par feature ou fix: `feature/<slug>` ou `fix/<slug>`.
-  - Utiliser des branches de courte durée, PRs ciblées.
+### Backend
+- **Anti-OOM** : limite HTML parsing à 1MB (`MAX_HTML_BYTES`)
+- **Timeouts** : IMAP 30s, R2 adaptatif (120s Dropbox, 15s autres)
+- **Fallbacks** : conservation URLs sources si R2 échoue, flux continu
+- **Verrou distribué** : Redis `render_signal:poller_lock` TTL 5min
+- **Caches** : RuntimeFlagsService (TTL 60s), WebhookConfigService
 
-- Messages de commit
-  - Format recommandé type Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
-  - Messages au présent, concis et explicites; mentionner le pourquoi si utile.
+### Frontend
+- Lazy loading onglets, visibility API polling
+- Responsive design mobile-first
+- Gestion mémoire : cleanup timers/écouteurs
+- Accessibilité WCAG AA complète
 
-- Pull Requests
-  - Petites, ciblées, avec description claire.
+---
+
+## Gestion erreurs et logs
+
+### Erreurs
+- Exceptions explicites dans services
+- Attraper aux frontières (routes, background)
+- Fallbacks gracieux : try/except larges avec WARNING mais flux continu
+
+### Logs
+- Centraliser webhook logs dans `app_logging/webhook_logger.py`
+- Structurés et contextualisés (ID email, détecteur, décision)
+- Pas de secrets/emails complets
+- Niveaux : `R2_TRANSFER:*`, `HTML content truncated`, `Using file-based lock`
+
+---
+
+## Tests
+
+### Structure
+- **Unitaires** : services, utils, helpers (majorité)
+- **Intégration** : routes API, services ensemble
+- **E2E** : flux critiques (polling, webhooks, absence globale)
+- **Résilience** : Redis lock, R2 fallback, anti-OOM, watchdog IMAP
+
+### Marqueurs pytest
+- `@pytest.mark.unit`, `@pytest.mark.integration`, `@pytest.mark.e2e`
+- `@pytest.mark.redis`, `@pytest.mark.imap` pour services externes
+- `@pytest.mark.slow` pour tests longs
+
+### Services à tester
+- Tous les services (Config, RuntimeFlags, Webhook, Auth, Polling, Dedup, R2, MagicLink)
+- Helpers reset_instance pour Singletons
+- Approche API-first quand pertinent
+
+### Résilience (Lot 2/3)
+- **Redis lock** : `test_lock_redis.py` format Given/When/Then
+- **R2 resilience** : `test_r2_resilience.py` scénarios exception/None/timeout
+- **Anti-OOM** : validation troncature HTML >1MB
+- **Watchdog IMAP** : timeout 30s anti-zombie
+
+### CI
+- pytest avec couverture obligatoire
+- Seuil dans `docs/quality/testing.md` et `.coveragerc`
+
+---
+
+## Configuration
+
+### Variables ENV obligatoires
+- `FLASK_SECRET_KEY`, `DASHBOARD_USER`, `DASHBOARD_PASSWORD`
+- `EMAIL_*` (IMAP), `WEBHOOK_URL`, `WEBHOOK_SSL_VERIFY`
+- `ENABLE_BACKGROUND_TASKS`
+- `REDIS_URL` (multi-conteneurs)
+- `R2_FETCH_*` (offload), `MAGIC_LINK_*` (auth)
+
+### Services de configuration
+- Utiliser services dédiés, pas accès direct fichiers JSON
+- ConfigService pour plupart, RuntimeFlagsService pour flags debug
+- WebhookConfigService pour config webhooks, PollingConfigService pour IMAP
+
+---
+
+## Git et commits
+
+### Branches
+- `feature/<slug>` ou `fix/<slug>`
+- Courte durée, PRs ciblées
+
+### Messages
+- Conventional Commits : `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`
+- Présent, concis, explicite
+
+### PRs
+- Petites, ciblées, description claire
+- Frontend : captures écran si applicable
+- Résilience : scénarios défaillance testés
+
+---
+
+## Développement Frontend
+
+### Patterns
+- **Modularité** : 1 fichier = 1 responsabilité
+- **Imports** : nommés et explicites
+- **Exports** : uniquement API publique
+- **Sécurité** : jamais innerHTML non contrôlé
+- **Performance** : lazy loading + visibility API
+- **Accessibilité** : ARIA + navigation clavier
+
+### Exemple service
+```javascript
+export class ApiService {
+  static async get(url) {
+    const res = await fetch(url);
+    return this.handleResponse(res);
+  }
+  
+  static handleResponse(res) {
+    if (res.status === 401) {
+      window.location.href = '/login';
+      throw new Error('Session expirée');
+    }
+    return res;
+  }
+}
+```
+
+---
+
+## Développement Résilience
+
+### Patterns
+- **Always fallback** : toujours prévoir fallback gracieux
+- **Log mais continue** : WARNING mais ne jamais interrompre flux critique
+- **Timeouts explicites** : toujours configurer I/O timeouts
+- **Conservation état** : préserver état initial pour fallback
+
+### Exemple fallback R2
+```python
+fallback_raw_url = source_url
+try:
+    r2_result = r2_service.request_remote_fetch(...)
+except Exception:
+    r2_result = None
+    logger.warning("R2_TRANSFER: fallback to source URL")
+# Flux continue avec fallback_raw_url
+```
+
+---
+
+## Métriques actuelles
+
+- **Tests** : 389 passed, 13 skipped, 0 failed
+- **Couverture** : ~70%
+- **Frontend** : 5 modules ES6, 1488→600 lignes
+- **Résilience** : Redis lock, R2 fallback, anti-OOM implémentés
+- **Performance** : lazy loading, visibility API, timeouts robustes
+
+---
+
+*Ce document reflète l'état actuel du projet avec frontend modulaire, résilience infrastructure, performance optimisée et accessibilité inclusive. Référence pour tout nouveau développement.*

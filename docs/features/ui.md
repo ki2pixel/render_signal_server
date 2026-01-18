@@ -401,3 +401,99 @@ Après chaque déploiement (pipeline GHCR → Render ou fallback `/api/deploy_ap
 - Toggle du polling IMAP
 - Configuration dynamique sans redéploiement (pour certains paramètres)
  - Outil « Ouvrir une page de téléchargement »: permet d'ouvrir manuellement une URL de fournisseur (Dropbox/FromSmash/SwissTransfer) dans un nouvel onglet. Cet outil remplace la logique d'extraction automatique de liens directs, désormais supprimée pour stabilité.
+
+## Sécurité Frontend Renforcée (2026-01-18)
+
+### Protection XSS
+
+- **Construction DOM sécurisée** : Remplacement de `innerHTML` par création sécurisée d'éléments DOM dans `loadWebhookLogs()`
+- **Validation des entrées** : Contrôle systématique des champs avant envoi API
+- **Échappement automatique** : Protection contre les injections dans les affichages utilisateur
+
+### Conditional Logging
+
+- **Protection des données sensibles** : `console.log/error/warn` uniquement exécutés en localhost/127.0.0.1
+- **Production sécurisée** : Aucune exposition de données sensibles en production
+- **Débogage préservé** : Logs complets disponibles en environnement de développement
+
+### Gestion Centralisée des Erreurs
+
+- **ApiClient centralisé** : Gestion automatique des erreurs 401/403 avec redirection vers `/login`
+- **Sessions expirées** : Redirection transparente lorsque la session n'est plus valide
+- **Accès refusé** : Messages clairs pour les erreurs 403 et erreurs serveur
+
+### Validation Robuste
+
+- **Validation placeholders** : Blocage de l'envoi si champ égal au placeholder "Non configuré"
+- **Validation formats horaires** : Acceptation `HHhMM` et `HH:MM` avec normalisation automatique
+- **Contrôles client-side** : Validation immédiate avec feedback utilisateur
+
+## Performance & Accessibilité (2026-01-18)
+
+### Architecture Modulaire ES6
+
+- **Réduction taille bundle** : Refactorisation de 1488 → ~600 lignes pour `dashboard.js`
+- **Lazy loading** : Chargement différé des onglets via `TabManager`
+- **Modules spécialisés** : Séparation claire des responsabilités (API, webhooks, logs, UI)
+
+### Responsive Design Mobile-First
+
+- **Breakpoints optimisés** : 768px (tablettes) et 480px (mobile)
+- **Grid adaptatif** : `minmax(300px, 1fr)` pour les conteneurs
+- **Navigation mobile** : Interface optimisée pour écrans tactiles
+
+### Accessibilité WCAG AA
+
+- **Rôles ARIA complets** : `tablist`, `tab`, `tabpanel` avec états appropriés
+- **Navigation clavier** : Support complet Tab/Shift+Tab/Espace/Entrée
+- **Screen readers** : Labels et descriptions appropriés
+- **Contrastes visuels** : Respect des ratios de contraste WCAG AA
+
+### Optimisations Performance
+
+- **Timer intelligent** : Polling avec `visibility API` pour pause/resume automatique
+- **Animations CSS** : Transitions fluides sans impact performance
+- **Gestion mémoire** : Nettoyage automatique des timers et écouteurs d'événements
+- **Cache intelligent** : Mise en cache des réponses API avec invalidation appropriée
+
+### États de Chargement
+
+- **Spinners cohérents** : Indicateurs de chargement unifiés via `MessageHelper`
+- **Skeleton screens** : Placeholder visuel pendant le chargement des données
+- **Feedback utilisateur** : Messages clairs pendant les opérations asynchrones
+
+## Architecture Technique Frontend
+
+### Services Frontend Spécialisés
+
+#### ApiService
+- Client API centralisé avec gestion 401/403
+- Méthodes `get()`, `post()`, `request()` avec error handling
+- Redirection automatique vers login en cas de session expirée
+
+#### WebhookService  
+- Gestion complète configuration webhooks
+- Affichage sécurisé des logs (construction DOM)
+- Validation des entrées utilisateur
+
+#### LogService
+- Timer polling intelligent avec visibility API
+- Export JSON des logs
+- Gestion automatique du cycle de vie du polling
+
+#### TabManager
+- Gestion des onglets avec accessibilité ARIA
+- Lazy loading des sections
+- Navigation clavier complète
+
+#### MessageHelper
+- Utilitaires UI unifiés (messages, loading)
+- Validation des formats (temps, email)
+- Feedback utilisateur cohérent
+
+### Intégration Backend
+
+- **Appels API REST** : Communication avec services backend via endpoints standardisés
+- **Gestion des erreurs** : Centralisation et affichage utilisateur approprié
+- **Mise à jour optimiste** : Interface mise à jour immédiatement avec synchronisation backend
+- **Cache serveur** : Invalidation du cache lors des modifications critiques

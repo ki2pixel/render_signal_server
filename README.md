@@ -67,6 +67,20 @@ Consultez [la documentation opérationnelle](docs/operational-guide.md) pour plu
 - **Déploiement** : URL `https://render-signal-server-latest.onrender.com` via Deploy Hook ou API Render
 - **Avantages** : Temps de déploiement réduit, image pré-buildée, logs centralisés
 
+### 🎨 Frontend Moderne & Sécurisé (2026-01-18)
+- **Architecture modulaire ES6** : Refactorisation complète de `dashboard.js` (1488 → ~600 lignes) en 5 modules spécialisés
+- **Services frontend** : `ApiService.js` (client API), `WebhookService.js` (config+logs), `LogService.js` (timer intelligent), `TabManager.js` (accessibilité), `MessageHelper.js` (utilitaires)
+- **Sécurité renforcée** : Protection XSS (construction DOM sécurisée), conditional logging (localhost only), gestion 401/403 centralisée, validation robuste
+- **Performance** : Lazy loading des onglets, responsive design mobile-first, timer avec visibility API, accessibilité WCAG AA complète
+- **Audit complet** : Audit frontend unifié ✅ toutes phases terminées (sécurité, architecture, UX/accessibilité)
+
+### 🛡️ Résilience Infrastructure (Lot 2/3 - 2026-01-14)
+- **Verrou distribué Redis** : Prévention multi-polling sur Render multi-conteneurs avec clé `render_signal:poller_lock` (TTL 5min) + fallback fcntl
+- **Fallback R2 garanti** : Conservation URLs sources, try/except large, flux continu même si Worker R2 échoue
+- **Watchdog IMAP** : Timeout 30s anti-zombie sur connexions `imaplib.IMAP4_SSL/IMAP4`
+- **Anti-OOM** : Troncature HTML à 1MB avant parsing pour prévenir les OOM kills sur conteneurs 512MB
+- **Tests résilience** : `test_lock_redis.py`, `test_r2_resilience.py` avec validation complète des scénarios de défaillance
+
 ## Architecture
 
 ```
@@ -187,7 +201,14 @@ En production: Gunicorn derrière Nginx (voir `docs/deploiement.md`). Le poller 
 pytest test_app_render.py -v
 ```
 
-Voir `docs/testing.md` pour l'état actuel de la suite de tests et de la couverture.
+**Résultats actuels** : 389 passed, 13 skipped, 0 failed (couverture ~70%)
+
+- **Tests unitaires** : Services, helpers, validation
+- **Tests d'intégration** : Routes API, services ensemble  
+- **Tests résilience** : Redis lock, fallback R2, anti-OOM
+- **Tests frontend** : Architecture modulaire, sécurité, accessibilité
+
+Voir `docs/quality/testing.md` pour l'état détaillé et `docs/quality/performance.md` pour les optimisations.
 
 ## Sécurité
 

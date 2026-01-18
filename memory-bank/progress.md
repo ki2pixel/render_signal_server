@@ -1,5 +1,22 @@
 # Suivi de Progression
 
+[2026-01-18 23:00:00] - Phase 3 UX & Accessibilité Frontend Terminée
+- **Décision** : Implémenter les recommandations UX & Accessibilité de la Phase 3 selon l'audit frontend unifié.
+- **Actions réalisées** :
+  1. **Responsive design mobile-first** : Modification de `dashboard.html` avec grid `minmax(500px → 300px)` et media queries complètes pour tablette/mobile
+  2. **Validation fenêtres horaires consistante** : Harmonisation des formats HHhMM vs HH:MM dans les placeholders et labels, ajout de validation client-side
+  3. **Performance optimisée** : Implémentation du lazy loading dans TabManager, animations CSS fluides, états de chargement (spinners, skeletons)
+  4. **Utilitaires de validation** : Ajout dans `MessageHelper.js` des méthodes `isValidTimeFormat()` et `normalizeTimeFormat()`
+  5. **Fonction manquante** : Ajout de `saveGlobalWebhookTimeWindow()` dans `dashboard.js` avec validation complète
+  6. **Audit mis à jour** : `docs/audit_frontend_unifie_2026-01-18.md` avec statut Phase 3 terminée et métriques à jour
+- **Améliorations apportées** :
+  - **Responsive mobile** : Design adaptatif complet avec breakpoints 768px et 480px
+  - **Validation unifiée** : Format HH:MM standardisé avec acceptation HHhMM legacy et normalisation automatique
+  - **Performance** : Lazy loading des onglets, animations CSS smooth, états loading cohérents
+  - **UX moderne** : Transitions fluides, feedback utilisateur amélioré, accessibilité conservée
+- **Fichiers modifiés** : `dashboard.html` (CSS responsive + animations), `static/dashboard.js` (validation temps), `static/utils/MessageHelper.js` (utilitaires temps), `static/components/TabManager.js` (lazy loading), `docs/audit_frontend_unifie_2026-01-18.md`
+- **Statut** : Phase 3 terminée avec succès, frontend maintenant excellent niveau de qualité (sécurisé, modulaire, accessible, performant)
+
 ## Archives disponibles
 Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 - [progress_2025Q4.md](archive/progress_2025Q4.md) - Archives Q4 2025 (décembre 2025 et antérieur)
@@ -19,6 +36,25 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 ---
 
 ## Terminé
+-   [2026-01-18 22:15] **Phase 2 Architecture Modulaire Frontend**
+    - Découpage de `dashboard.js` (1488 → ~600 lignes) en modules ES6 spécialisés selon audit frontend unifié
+    - Services créés : `ApiService.js` (client API centralisé), `WebhookService.js` (config + logs webhooks), `LogService.js` (logs + timer polling)
+    - Composants créés : `TabManager.js` (gestion onglets + accessibilité ARIA complète, navigation clavier)
+    - Utils créés : `MessageHelper.js` (utilitaires UI unifiés : messages, boutons loading, validation placeholders)
+    - Timer polling intelligent implémenté avec visibility API pour pause/resume automatique
+    - Dashboard.html mis à jour pour charger les modules ES6 avec `type="module"` dans le bon ordre
+    - Architecture finale : static/services/, static/components/, static/utils/, dashboard.js (orchestrateur modulaire)
+    - Améliorations : séparation responsabilités, maintenabilité, accessibilité WCAG AA complète, performance, sécurité conservée
+    - Audit frontend unifié mis à jour : `docs/audit_frontend_unifie_2026-01-18.md` avec statut Phase 2 terminée
+    - Rétrocompatibilité : `dashboard_legacy.js` conservé comme fallback
+-   [2026-01-18 21:37] **Phase 1 Sécurité Critique Frontend**
+    - Correction XSS dans `loadWebhookLogs()` : remplacement de `innerHTML` par construction DOM sécurisée
+    - Nettoyage console.log : conditional logging uniquement en localhost/127.0.0.1 pour protéger les données sensibles
+    - Gestion 401/403 centralisée : création de `ApiClient` class avec redirection automatique vers `/login`
+    - Validation placeholders : blocage envoi `webhook_url` si champ vide ou égal au placeholder "Non configuré"
+    - Migration complète des appels `fetch()` vers `ApiClient.request()` pour sécurité cohérente
+    - Fichier modifié : `static/dashboard.js` (1478 lignes) - refactoring sécurité complet
+    - Audit frontend mis à jour : `docs/audit_frontend_unifie_2026-01-18.md` avec statut Phase 1 terminée
 -   [2026-01-14 11:21] **Lot 2 - Résilience & Architecture**
     - Verrou distribué Redis implémenté dans `background/lock.py` (clé `render_signal:poller_lock`, TTL 5 min) avec fallback fcntl + WARNING si Redis indisponible.
     - Fallback R2 garanti dans `email_processing/orchestrator.py` : conservation explicite de `raw_url`/`direct_url`, try/except large sur `request_remote_fetch`, log WARNING en cas d’échec, flux continu sans interruption.

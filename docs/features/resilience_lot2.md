@@ -1,10 +1,14 @@
-# Résilience & Architecture (Lot 2 - 2026-01-14)
+# Résilience & Architecture (Lot 2/3 - 2026-01-14)
 
 ## Vue d'ensemble
 
-Le Lot 2 introduit des améliorations critiques de résilience pour garantir la stabilité du service en environnement de production, notamment sur Render multi-conteneurs et en cas de défaillances externes.
+Le Lot 2 introduit des améliorations critiques de résilience pour garantir la stabilité du service en environnement de production, notamment sur Render multi-conteneurs et en cas de défaillances externes. Le Lot 3 complète avec des optimisations performance et validations anti-OOM.
 
-## Verrou Distribué Redis
+---
+
+## Lot 2 : Résilience Infrastructure
+
+### Verrou Distribué Redis
 
 ### Implémentation
 - **Fichier** : `background/lock.py`
@@ -145,3 +149,97 @@ IMAP_TIMEOUT_SECONDS=30
 - [ ] Fallback R2 validé (simuler échec Worker)
 - [ ] Monitoring des logs WARNING mis en place
 - [ ] Documentation opératoire mise à jour
+
+---
+
+## Lot 3 : Performance & Validation (2026-01-14)
+
+### Anti-OOM Parsing HTML
+
+#### Problème résolu
+Les emails HTML volumineux (plusieurs MB) pouvaient provoquer des OOM kills sur les conteneurs Render avec 512MB de RAM.
+
+#### Solution
+- **Limite stricte** : Troncature du contenu `text/html` à 1MB avant parsing
+- **Log WARNING** : "HTML content truncated (exceeded 1MB limit)" pour traçabilité
+- **Parsing sécurisé** : BeautifulSoup opère sur contenu limité
+
+#### Implémentation dans `orchestrator.py`
+```python
+MAX_HTML_BYTES = 1024 * 1024  # 1MB
+
+def _extract_text_from_html(html_content: str) -> str:
+    if len(html_content.encode('utf-8')) > MAX_HTML_BYTES:
+        logger.warning("HTML content truncated (exceeded 1MB limit)")
+        html_content = html_content[:MAX_HTML_BYTES]
+    # Parsing BeautifulSoup sur contenu tronqué
+```
+
+### Tests Résilience R2
+
+#### Objectif
+Valider que le fallback R2 fonctionne correctement même en cas d'échec total du Worker.
+
+#### Implémentation
+- **Fichier** : `tests/test_r2_resilience.py`
+- **Scénarios** : Exception levée, retour None, timeout
+- **Validation** : Webhook envoyé avec URLs sources, `r2_url` absent/None
+
+#### Tests Given/When/Then
+```python
+@pytest.mark.integration
+def test_r2_resilience_worker_down_continues_flow():
+    # Given: R2 service configured but worker throws exception
+    # When: Processing email with delivery links
+    # Then: Webhook sent with raw_url, r2_url is None
+```
+
+### Résultats Lot 3
+
+- **Total tests** : 389 passed, 13 skipped, 0 failed
+- **Couverture** : Maintenue à ~70%
+- **Nouveaux tests** : `test_r2_resilience.py` avec scénarios complets
+
+### Configuration Lot 3
+
+```bash
+# Limite HTML (déjà intégrée, pas de variable ENV nécessaire)
+# MAX_HTML_BYTES = 1048576  # 1MB (hardcodé pour sécurité)
+```
+
+### Monitoring Lot 3
+
+- **Logs HTML** : "HTML content truncated (exceeded 1MB limit)"
+- **Logs R2** : "R2_TRANSFER:*" avec fallback explicite
+- **Métriques** : Taux de troncature HTML, taux d'échec R2
+
+---
+
+## Synthèse Lot 2/3
+
+### Bénéfices Combinés
+
+1. **Stabilité Infrastructure** : Verrou Redis + watchdog IMAP
+2. **Résilience External** : Fallback R2 garanti + timeouts robustes
+3. **Performance Optimisée** : Anti-OOM + parsing sécurisé
+4. **Tests Complets** : Couverture tous les scénarios de défaillance
+
+### Impact Production
+
+| Aspect | Avant Lot 2/3 | Après Lot 2/3 |
+|--------|---------------|---------------|
+| Multi-conteneurs | Risque double polling | Verrou distribué garanti |
+| Worker R2 down | Interruption webhook | Fallback transparent |
+| Emails volumineux | OOM possible | Troncation 1MB sécurisée |
+| Connexions IMAP | Zombies possibles | Timeout 30s garanti |
+| Monitoring | Logs limités | Traçabilité complète |
+
+### Checklist Finale
+
+- [ ] Lot 2 : Redis lock activé (`REDIS_URL`)
+- [ ] Lot 2 : Timeout IMAP 30s validé
+- [ ] Lot 2 : Fallback R2 testé
+- [ ] Lot 3 : Tests résilience R2 validés
+- [ ] Lot 3 : Monitoring troncature HTML
+- [ ] Documentation complète mise à jour
+- [ ] Équipe production formée aux nouveaux logs

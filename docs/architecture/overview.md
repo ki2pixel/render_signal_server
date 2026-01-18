@@ -69,14 +69,38 @@ Règles de fenêtre horaire (webhooks dédiés):
 - **Backends PHP** : `deployment/src/JsonLogger.php` a été étendu pour écrire les paires R2, les pages de test (`test.php`, `test-direct.php`) disposent d’un mode « Offload via Worker » avec diagnostics complets.
 - **Garanties** : économies de bande passante Render (~$5/mois pour 50 GB), fallback gracieux (si l’offload échoue, le webhook conserve uniquement `raw_url`/`direct_url`).
 
-### Authentification Magic Link (2026-01-07)
+### Architecture Frontend Modulaire (2026-01-18)
 
-- **Service** : `MagicLinkService` génère des tokens signés HMAC SHA-256 (`FLASK_SECRET_KEY`, TTL configurable via `MAGIC_LINK_TTL_SECONDS`) et les stocke dans `MAGIC_LINK_TOKENS_FILE` (JSON + verrou `RLock`).
-- **Routes/UI** :
-  - API : `POST /api/auth/magic-link` (session requise) pour générer un lien one-shot ou permanent (`unlimited=true`).
-  - Dashboard : pages `login.html` / `dashboard.html` ajoutent un bouton « ✨ Générer un magic link », copie automatique, champ "Magic Token".
-  - Route de consommation : `GET /dashboard/magic-link/<token>` valide/invalide le token puis crée la session Flask-Login.
-- **Sécurité** : logs `MAGIC_LINK:*`, nettoyage auto des tokens expirés, recommandations permissions (`chmod 600` sur le fichier de tokens).
+Le frontend a été complètement refactorisé en modules ES6 maintenable et sécurisé :
+
+**Structure modulaire :**
+```
+static/
+├── services/
+│   ├── ApiService.js (client API centralisé avec gestion 401/403)
+│   ├── WebhookService.js (configuration + logs webhooks)
+│   └── LogService.js (logs + timer polling intelligent)
+├── components/
+│   └── TabManager.js (gestion onglets + accessibilité ARIA complète)
+├── utils/
+│   └── MessageHelper.js (utilitaires UI unifiés)
+└── dashboard.js (orchestrateur modulaire ~600 lignes)
+```
+
+**Améliorations apportées :**
+- **Séparation des responsabilités** : Chaque module a une fonction unique et claire
+- **Maintenabilité** : Code organisé par domaines (API, webhooks, logs, UI)
+- **Accessibilité** : TabManager avec rôles ARIA, navigation clavier complète
+- **Performance** : Timer polling intelligent avec visibility API pour pause/resume
+- **Sécurité** : Conditional logging, validation placeholders, protection XSS
+- **Modernité** : Modules ES6 avec imports/exports, classes et méthodes statiques
+
+**Services frontend spécialisés :**
+- `ApiService` : Client API centralisé avec gestion automatique des erreurs 401/403
+- `WebhookService` : Gestion complète configuration webhooks et affichage logs
+- `LogService` : Timer polling intelligent avec visibility API et export logs
+- `TabManager` : Gestion onglets avec accessibilité WCAG AA complète
+- `MessageHelper` : Utilitaires UI unifiés (messages, loading, validation)
 
 ### Authentification Magic Link (2026-01-07)
 
