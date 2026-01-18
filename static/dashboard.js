@@ -1252,6 +1252,7 @@ function initializeCollapsiblePanels() {
     });
 }
 
+/**
  * Met à jour le statut d'un panneau
  * @param {string} panelType - Type de panneau
  * @param {boolean} success - Si la sauvegarde a réussi
