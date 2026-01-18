@@ -330,7 +330,7 @@ async function saveTimeWindow() {
     const normalizedEnd = end ? MessageHelper.normalizeTimeFormat(end) : '';
     
     try {
-        const data = await ApiService.post('/api/set_webhook_time_window', { 
+        const data = await ApiService.post('/api/webhooks/time-window', { 
             start: normalizedStart, 
             end: normalizedEnd 
         });
@@ -347,6 +347,9 @@ async function saveTimeWindow() {
             }
             
             renderTimeWindowDisplay(data.webhooks_time_start || normalizedStart, data.webhooks_time_end || normalizedEnd);
+            
+            // S'assurer que la source persistée est rechargée
+            await loadTimeWindow();
         } else {
             MessageHelper.showError('timeWindowMsg', data.message || 'Erreur lors de la sauvegarde.');
         }
