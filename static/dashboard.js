@@ -4,6 +4,7 @@ import { ApiService } from './services/ApiService.js';
 import { WebhookService } from './services/WebhookService.js';
 import { LogService } from './services/LogService.js';
 import { MessageHelper } from './utils/MessageHelper.js';
+import { TabManager } from './components/TabManager.js';
 
 window.DASHBOARD_BUILD = 'modular-2026-01-18';
 
