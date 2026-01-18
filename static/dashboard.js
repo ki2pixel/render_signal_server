@@ -283,6 +283,22 @@ async function loadTimeWindow() {
     };
     
     try {
+        // 0) Source principale : configuration webhooks persistée
+        const configResponse = await ApiService.get('/api/webhooks/config');
+        if (configResponse.success && configResponse.config) {
+            const cfg = configResponse.config;
+            if (cfg.webhook_time_start || cfg.webhook_time_end) {
+                applyWindowValues(cfg.webhook_time_start || '', cfg.webhook_time_end || '');
+                return;
+            }
+        }
+    } catch (e) {
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            console.warn('Impossible de charger la fenêtre horaire via /api/webhooks/config:', e);
+        }
+    }
+    
+    try {
         // 1) Préférence: configuration persistée (webhook config service)
         const persisted = await ApiService.get('/api/webhooks/time-window');
         if (persisted.success && (persisted.webhooks_time_start || persisted.webhooks_time_end)) {
