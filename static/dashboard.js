@@ -66,6 +66,12 @@ function bindEvents() {
         saveWebhookBtn.addEventListener('click', () => WebhookService.saveConfig());
     }
     
+    // Préférences email (polling config)
+    const saveEmailPrefsBtn = document.getElementById('saveEmailPrefsBtn');
+    if (saveEmailPrefsBtn) {
+        saveEmailPrefsBtn.addEventListener('click', savePollingConfig);
+    }
+    
     // Logs
     const clearLogsBtn = document.getElementById('clearLogsBtn');
     if (clearLogsBtn) {
