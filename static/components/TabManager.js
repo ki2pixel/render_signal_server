@@ -22,7 +22,8 @@ export class TabManager {
      */
     findTabElements() {
         this.tabButtons = document.querySelectorAll('.tab-btn');
-        this.tabContents = document.querySelectorAll('.tab-content');
+        // Les panneaux de sections utilisent la classe .section-panel dans dashboard.html
+        this.tabContents = document.querySelectorAll('.section-panel');
         
         // Construire la liste des onglets
         this.tabButtons.forEach((button, index) => {
