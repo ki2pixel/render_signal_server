@@ -62,17 +62,20 @@ export class WebhookService {
         
         const webhookUrl = (webhookUrlEl?.value || '').trim();
         const placeholder = webhookUrlEl?.placeholder || 'Non configuré';
+        const hasNewWebhookUrl = webhookUrl.length > 0;
         
-        // Validation placeholder
-        if (MessageHelper.isPlaceholder(webhookUrl, placeholder)) {
-            MessageHelper.showError('configMsg', 'Veuillez saisir une URL webhook valide.');
-            return false;
-        }
-        
-        // Validation format URL
-        if (!this.isValidWebhookUrl(webhookUrl)) {
-            MessageHelper.showError('configMsg', 'Format d\'URL webhook invalide.');
-            return false;
+        if (hasNewWebhookUrl) {
+            // Validation placeholder
+            if (MessageHelper.isPlaceholder(webhookUrl, placeholder)) {
+                MessageHelper.showError('configMsg', 'Veuillez saisir une URL webhook valide.');
+                return false;
+            }
+            
+            // Validation format URL
+            if (!this.isValidWebhookUrl(webhookUrl)) {
+                MessageHelper.showError('configMsg', 'Format d\'URL webhook invalide.');
+                return false;
+            }
         }
         
         // Collecter les jours d'absence
@@ -91,7 +94,7 @@ export class WebhookService {
         };
         
         // N'inclure l'URL que si une valeur est saisie
-        if (webhookUrl && webhookUrl !== placeholder) {
+        if (hasNewWebhookUrl && webhookUrl !== placeholder) {
             payload.webhook_url = webhookUrl;
         }
         
@@ -263,39 +266,43 @@ export class WebhookService {
 
     /**
      * Définit les cases à cocher des jours d'absence
-     * @param {Array} days - Jours à cocher (0=Monday, 6=Sunday)
+     * @param {Array} days - Jours à cocher (monday, tuesday, ...)
      */
     static setAbsenceDayCheckboxes(days) {
         const group = document.getElementById('absencePauseDaysGroup');
         if (!group) return;
         
-        const daySet = new Set(Array.isArray(days) ? days : []);
-        const checkboxes = group.querySelectorAll('input[name="absenceDay"][type="checkbox"]');
+        const normalizedDays = new Set(
+            (Array.isArray(days) ? days : []).map((day) => String(day).trim().toLowerCase())
+        );
+        const checkboxes = group.querySelectorAll('input[name="absencePauseDay"][type="checkbox"]');
         
         checkboxes.forEach(checkbox => {
-            const dayIndex = parseInt(checkbox.value, 10);
-            checkbox.checked = daySet.has(dayIndex);
+            const dayValue = String(checkbox.value).trim().toLowerCase();
+            checkbox.checked = normalizedDays.has(dayValue);
         });
     }
 
     /**
      * Collecte les jours d'absence cochés
-     * @returns {Array} Jours cochés (0=Monday, 6=Sunday)
+     * @returns {Array} Jours cochés (monday, tuesday, ...)
      */
     static collectAbsenceDayCheckboxes() {
         const group = document.getElementById('absencePauseDaysGroup');
         if (!group) return [];
         
-        const checkboxes = group.querySelectorAll('input[name="absenceDay"][type="checkbox"]');
+        const checkboxes = group.querySelectorAll('input[name="absencePauseDay"][type="checkbox"]');
         const selectedDays = [];
         
         checkboxes.forEach(checkbox => {
             if (checkbox.checked) {
-                selectedDays.push(parseInt(checkbox.value, 10));
+                const dayValue = String(checkbox.value).trim().toLowerCase();
+                if (dayValue) {
+                    selectedDays.push(dayValue);
+                }
             }
         });
         
-        // Trier croissant et garantir l'unicité
-        return Array.from(new Set(selectedDays)).sort((a, b) => a - b);
+        return Array.from(new Set(selectedDays));
     }
 }
