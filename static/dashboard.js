@@ -284,6 +284,18 @@ async function loadTimeWindow() {
             const startAfter = document.getElementById('webhooksTimeStart')?.value || '';
             const endAfter = document.getElementById('webhooksTimeEnd')?.value || '';
             console.log('[loadTimeWindow] Values after apply (delayed):', { startAfter, endAfter });
+            
+            // Vérifier ce qui est réellement visible
+            const startEl = document.getElementById('webhooksTimeStart');
+            const endEl = document.getElementById('webhooksTimeEnd');
+            console.log('[loadTimeWindow] DOM inspection:', {
+                startValue: startEl?.value,
+                startPlaceholder: startEl?.placeholder,
+                startVisible: startEl?.offsetParent !== null,
+                endValue: endEl?.value,
+                endPlaceholder: endEl?.placeholder,
+                endVisible: endEl?.offsetParent !== null
+            });
         }, 100);
         
         renderTimeWindowDisplay(startValue || '', endValue || '');
