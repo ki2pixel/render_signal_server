@@ -1253,59 +1253,6 @@ function initializeCollapsiblePanels() {
 }
 
 /**
- * Sauvegarde un panneau webhook spécifique
- * @param {string} panelType - Type de panneau (urls-ssl, absence, time-window)
- */
-async function saveWebhookPanel(panelType) {
-    try {
-        let success = false;
-        let message = '';
-        
-        switch (panelType) {
-            case 'urls-ssl':
-                // Utiliser la fonction existante de WebhookService
-                const result = await WebhookService.saveConfig();
-                success = result.success;
-                message = result.message;
-                break;
-                
-            case 'absence':
-                // Sauvegarder la configuration d'absence
-                const absenceData = collectAbsenceData();
-                const absenceResult = await ApiService.post('/api/webhooks/config', absenceData);
-                success = absenceResult.success;
-                message = absenceResult.message || 'Configuration d\'absence sauvegardée';
-                break;
-                
-            case 'time-window':
-                // Sauvegarder les fenêtres horaires
-                await Promise.all([
-                    saveTimeWindow(),
-                    saveGlobalWebhookTimeWindow()
-                ]);
-                success = true;
-                message = 'Fenêtres horaires sauvegardées';
-                break;
-        }
-        
-        // Mettre à jour le statut du panneau
-        updatePanelStatus(panelType, success);
-        
-        // Afficher le feedback
-        if (success) {
-            MessageHelper.showSuccess(`${panelType}-msg`, message);
-            updatePanelIndicator(panelType);
-        } else {
-            MessageHelper.showError(`${panelType}-msg`, message);
-        }
-        
-    } catch (error) {
-        console.error(`Erreur lors de la sauvegarde du panneau ${panelType}:`, error);
-        MessageHelper.showError(`${panelType}-msg`, 'Erreur lors de la sauvegarde');
-    }
-}
-
-/**
  * Collecte les données du panneau d'absence
  */
 function collectAbsenceData() {
