@@ -281,40 +281,6 @@ async function loadTimeWindow() {
         console.log('[loadTimeWindow] Applying values:', { startValue, endValue, startInput: !!startInput, endInput: !!endInput });
         if (startInput) startInput.value = startValue || '';
         if (endInput) endInput.value = endValue || '';
-        
-        // Vérifier immédiatement après application
-        setTimeout(() => {
-            const startAfter = document.getElementById('webhooksTimeStart')?.value || '';
-            const endAfter = document.getElementById('webhooksTimeEnd')?.value || '';
-            console.log('[loadTimeWindow] Values after apply (delayed):', { startAfter, endAfter });
-            
-            // Vérifier ce qui est réellement visible
-            const startEl = document.getElementById('webhooksTimeStart');
-            const endEl = document.getElementById('webhooksTimeEnd');
-            console.log('[loadTimeWindow] DOM inspection:', {
-                startValue: startEl?.value,
-                startPlaceholder: startEl?.placeholder,
-                startVisible: startEl?.offsetParent !== null,
-                startComputedStyle: window.getComputedStyle(startEl)?.color,
-                endValue: endEl?.value,
-                endPlaceholder: endEl?.placeholder,
-                endVisible: endEl?.offsetParent !== null,
-                endComputedStyle: window.getComputedStyle(endEl)?.color
-            });
-            
-            // Test forcer l'affichage
-            if (startEl && startEl.value) {
-                startEl.style.color = 'red';
-                startEl.style.background = 'yellow';
-                console.log('[loadTimeWindow] DEBUG: Forced red/yellow styling on start field');
-            }
-            if (endEl && endEl.value) {
-                endEl.style.color = 'red';
-                endEl.style.background = 'yellow';
-                console.log('[loadTimeWindow] DEBUG: Forced red/yellow styling on end field');
-            }
-        }, 100);
-        
         renderTimeWindowDisplay(startValue || '', endValue || '');
     };
     
@@ -324,8 +290,8 @@ async function loadTimeWindow() {
         console.log('[loadTimeWindow] /api/webhooks/config response:', configResponse);
         if (configResponse.success && configResponse.config) {
             const cfg = configResponse.config;
-            if (cfg.webhook_time_start || cfg.webhook_time_end) {
-                applyWindowValues(cfg.webhook_time_start || '', cfg.webhook_time_end || '');
+            if (cfg.global_time_start || cfg.global_time_end) {
+                applyWindowValues(cfg.global_time_start || '', cfg.global_time_end || '');
                 return;
             }
         }
