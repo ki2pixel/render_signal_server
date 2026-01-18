@@ -285,7 +285,19 @@ async function loadTimeWindow() {
     };
     
     try {
-        // 0) Source principale : configuration webhooks persistée
+        // 0) Source principale : fenêtre horaire globale (ancien endpoint)
+        const globalTimeResponse = await ApiService.get('/api/get_webhook_time_window');
+        console.log('[loadTimeWindow] /api/get_webhook_time_window response:', globalTimeResponse);
+        if (globalTimeResponse.success && (globalTimeResponse.webhooks_time_start || globalTimeResponse.webhooks_time_end)) {
+            applyWindowValues(globalTimeResponse.webhooks_time_start, globalTimeResponse.webhooks_time_end);
+            return;
+        }
+    } catch (e) {
+        console.warn('Impossible de charger la fenêtre horaire globale:', e);
+    }
+    
+    try {
+        // 1) Fallback : configuration webhooks (valeurs webhook spécifiques)
         const configResponse = await ApiService.get('/api/webhooks/config');
         console.log('[loadTimeWindow] /api/webhooks/config response:', configResponse);
         if (configResponse.success && configResponse.config) {
