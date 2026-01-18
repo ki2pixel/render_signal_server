@@ -292,10 +292,24 @@ async function loadTimeWindow() {
                 startValue: startEl?.value,
                 startPlaceholder: startEl?.placeholder,
                 startVisible: startEl?.offsetParent !== null,
+                startComputedStyle: window.getComputedStyle(startEl)?.color,
                 endValue: endEl?.value,
                 endPlaceholder: endEl?.placeholder,
-                endVisible: endEl?.offsetParent !== null
+                endVisible: endEl?.offsetParent !== null,
+                endComputedStyle: window.getComputedStyle(endEl)?.color
             });
+            
+            // Test forcer l'affichage
+            if (startEl && startEl.value) {
+                startEl.style.color = 'red';
+                startEl.style.background = 'yellow';
+                console.log('[loadTimeWindow] DEBUG: Forced red/yellow styling on start field');
+            }
+            if (endEl && endEl.value) {
+                endEl.style.color = 'red';
+                endEl.style.background = 'yellow';
+                console.log('[loadTimeWindow] DEBUG: Forced red/yellow styling on end field');
+            }
         }, 100);
         
         renderTimeWindowDisplay(startValue || '', endValue || '');
