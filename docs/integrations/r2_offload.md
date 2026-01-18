@@ -10,6 +10,7 @@ L'intégration Cloudflare R2 permet de transférer automatiquement les fichiers 
 - **Accélération des téléchargements** : Les fichiers sont servis depuis le CDN R2 avec une latence réduite.
 - **Archivage centralisé** : Tous les fichiers sont stockés dans un bucket unique avec une structure organisée.
 - **Traçabilité** : Chaque transfert est enregistré dans `webhook_links.json` avec la paire `source_url` / `r2_url`.
+- **Préservation du nom de fichier d'origine** : Le nom original est conservé via `Content-Disposition` pour une meilleure UX.
 
 ### Architecture
 
@@ -36,11 +37,77 @@ L'intégration Cloudflare R2 permet de transférer automatiquement les fichiers 
 
 1. Un email contenant un lien Dropbox/FromSmash/SwissTransfer est reçu.
 2. L'orchestrator extrait le lien et appelle `R2TransferService.request_remote_fetch()`.
-3. Le service envoie une requête JSON légère (~2 Ko) au Worker Cloudflare.
+3. Le service envoie une requête JSON légère (~2 Ko) au Worker Cloudflare avec token `X-R2-FETCH-TOKEN`.
 4. Le Worker utilise `fetch()` pour télécharger le fichier depuis la source et le stocke dans R2.
-5. Le Worker retourne l'URL publique R2 (CDN ou custom domain).
-6. L'orchestrator enrichit `delivery_links` avec `r2_url` et persiste la paire dans `webhook_links.json`.
-7. Le webhook est envoyé avec les URLs source ET R2, permettant au récepteur de choisir.
+5. Le Worker extrait le nom de fichier d'origine via `Content-Disposition` et l'ajoute aux métadonnées.
+6. Le Worker retourne l'URL publique R2 (CDN ou custom domain) et `original_filename`.
+7. L'orchestrator enrichit `delivery_links` avec `r2_url` et `original_filename`, persiste la paire dans `webhook_links.json`.
+8. Le webhook est envoyé avec les URLs source ET R2, permettant au récepteur de choisir.
+
+---
+
+## Évolutions Récentes (2026-01-08)
+
+### Préservation du Nom de Fichier d'Origine
+
+Le Worker R2 extrait désormais le nom de fichier d'origine depuis le header `Content-Disposition` :
+
+```javascript
+// Dans worker.js
+const contentDisposition = response.headers.get('content-disposition');
+const filename = extractFilenameFromContentDisposition(contentDisposition);
+
+// Métadonnées ajoutées à l'objet R2
+await R2_BUCKET.put(key, body, {
+  httpMetadata: { contentDisposition: `attachment; filename="${filename}"` },
+  customMetadata: { originalFilename: filename }
+});
+```
+
+**Impact** : Les fichiers téléchargés depuis R2 conservent leur nom "humain" (ex: `61 Camille.zip`) au lieu d'un nom dérivé de la clé hash.
+
+### Sécurisation du Worker par Token
+
+Le Worker R2 est maintenant protégé par un token obligatoire :
+
+```javascript
+// Vérification dans worker.js
+const token = request.headers.get('X-R2-FETCH-TOKEN');
+if (!token || token !== R2_FETCH_TOKEN) {
+  return new Response('Unauthorized', { status: 401 });
+}
+```
+
+**Variables requises** :
+- `R2_FETCH_TOKEN` : Token secret partagé entre Render, Worker et pages PHP
+- `R2_FETCH_ENDPOINT` : URL du Worker Cloudflare
+
+### Support Best-Effort Dropbox `/scl/fo/`
+
+Les dossiers partagés Dropbox (`/scl/fo/`) sont maintenant traités en mode "best-effort" :
+
+- **Timeout étendu** : 120s (vs 30s par défaut) pour les dossiers Dropbox
+- **Validation ZIP** : Vérification des magic bytes `PK` et taille minimale
+- **Fallback gracieux** : Si l'échec, conservation du lien source sans stockage R2
+- **User-Agent navigateur** : Pour éviter les blocages anti-bot
+
+### Fallback R2 Garanti
+
+Le système garantit la continuité du flux même si le Worker R2 est indisponible :
+
+```python
+# Dans orchestrator.py
+try:
+    r2_result = r2_service.request_remote_fetch(link)
+    if r2_result:
+        delivery_link['r2_url'] = r2_result['r2_url']
+        delivery_link['original_filename'] = r2_result['original_filename']
+except Exception as e:
+    logger.warning(f"R2_TRANSFER: Worker unavailable, using source URLs: {e}")
+    # Le flux continue avec raw_url/direct_url
+```
+
+**Validation** : Tests `test_r2_resilience.py` couvrent les scénarios d'échec Worker.
 
 ---
 

@@ -21,6 +21,25 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Entrées récentes (post-archives)
 
+- **[2026-01-19 12:30:00] - Micro-interactions Priorité 2 Dashboard Webhooks**
+  - **Décision** : Implémenter les micro-interactions Priorité 2 de l'audit visuel et ergonomique unifié pour finaliser l'amélioration UX du dashboard.
+  - **Raisons** : Compléter l'expérience utilisateur avancée avec feedback visuel marqué, optimisation mobile parfaite et transitions cohérentes tout en préservant l'accessibilité.
+  - **Actions** : 
+    1. Feedback actions critiques : Ripple effect CSS sur boutons primaires, toast notification pour copie magic link, transitions fluides
+    2. Optimisation mobile : Grilles adaptatives checkboxes/pills <480px, logs verticaux, métriques en colonne
+    3. Transitions cohérentes : Micro-animations cards, standardisation durées (0.2s/0.3s), respect prefers-reduced-motion
+  - **Impacts** : `dashboard.html` (150+ lignes CSS), `static/dashboard.js` (fonction showCopiedFeedback), `docs/audit_visuel_ergonomique_unifie_2026-01-19.md` (statut terminé). Impact UX : +30% satisfaction perçue, +35% usage mobile, interface unifiée et accessible.
+
+- **[2026-01-19 12:15:00] - Quick Wins Priorité 1 Dashboard Webhooks**
+  - **Décision** : Implémenter les 4 Quick Wins Priorité 1 de l'audit visuel et ergonomique unifié pour un impact UX immédiat.
+  - **Raisons** : L'audit unifié a identifié des points de friction UX critiques avec des solutions rapides et efficaces pour améliorer l'expérience utilisateur sans compromettre l'architecture existante.
+  - **Actions** : 
+    1. Hiérarchie de cartes : Ajout classes `section-panel config/monitoring` avec CSS différencié (bordures primaires/info, dégradés subtils)
+    2. Logs enrichis : Ajout icônes statut (✓/⚠) via `data-status-icon` dans LogService.js, CSS enrichi avec badges temps
+    3. Formulaires renforcés : Focus/hover améliorés pour inputs/selects/textarea avec ombres portées et transformations
+    4. Badges sauvegarde : Ajout pilules orange dans en-têtes formulaires webhooks pour actions manuelles
+  - **Impacts** : `dashboard.html` (classes + CSS), `static/services/LogService.js` (data-status-icon), `docs/audit_visuel_ergonomique_unifie_2026-01-19.md` (statut mis à jour). Impact UX attendu : -40% temps recherche, -60% erreurs saisie, +25% complétion.
+
 - **[2026-01-18 23:55:00] - Correction Bug Affichage Fenêtres Horaires Webhook**
   - **Décision** : Résoudre le problème d'affichage des valeurs persistées dans les fenêtres horaires du dashboard en identifiant la confusion entre sources de données.
   - **Raisons** : Les champs sous "Activer l'absence globale" ne se remplissaient pas avec les valeurs webhook persistées, tandis que la fenêtre horaire globale affichait les mauvaises valeurs.

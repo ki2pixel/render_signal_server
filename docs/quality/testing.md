@@ -57,20 +57,64 @@ render_signal_server-main/
 
 ### 📊 Métriques Clés
 
-- **Couverture de code** : 70.12% (objectif : 80%+) - Post-Lot 2
+- **Couverture de code** : 70.12% (objectif : 80%+) - Post-Lot 2/3
 - **Tests passants** : 389/402 (96.8%) - Post-Lot 3
 - **Temps d'exécution** : ~65s (avec tests Redis et R2 résilience)
 - **Dernière exécution** : 2026-01-14 11:55:00 (Lot 3)
 
-#### Évolution Lot 2
+#### Évolution Lot 2 - Résilience
 - **Nouveaux tests** : `test_lock_redis.py` avec format Given/When/Then
 - **Marqueurs** : `@pytest.mark.redis` pour tests nécessitant Redis
 - **Couverture** : Amélioration de 67.3% → 70.12% (+2.82 points)
+- **Scénarios testés** : Verrou distribué Redis, fallback fcntl, TTL 5 minutes
 
-#### Évolution Lot 3
+#### Évolution Lot 3 - Performance & Validation
 - **Nouveaux tests** : `test_r2_resilience.py` avec scénarios d'échec Worker (exception/None)
 - **Performance** : Ajout tests anti-OOM HTML (>1MB tronqué + WARNING)
 - **Couverture** : Maintenue à 70.12% (+3 tests, même couverture)
+- **Scénarios testés** : Worker R2 down, timeout IMAP, HTML volumineux
+
+#### Tests de Résilience (Lots 2/3)
+
+##### Verrou Distribué Redis
+- **Fichier** : `tests/test_lock_redis.py`
+- **Format** : Given/When/Then pour clarté
+- **Scénarios** :
+  - Acquisition réussie du verrou
+  - Comportement avec Redis indisponible (fallback fcntl)
+  - TTL et expiration du verrou
+  - Concurrence multi-processus
+- **Marqueur** : `@pytest.mark.redis`
+
+##### Fallback R2 Garanti
+- **Fichier** : `tests/test_r2_resilience.py`
+- **Scénarios** :
+  - Worker R2 retourne exception
+  - Worker R2 retourne None
+  - Timeout du Worker
+  - Conservation URLs sources
+- **Validation** : Webhook envoyé avec `raw_url`/`direct_url` même sans `r2_url`
+
+##### Anti-OOM HTML
+- **Intégré dans** : `tests/test_email_processing.py`
+- **Scénario** : Email avec HTML >1MB
+- **Validation** : Troncation avec log WARNING, traitement continu
+
+##### Watchdog IMAP
+- **Intégré dans** : `tests/test_imap_client.py`
+- **Scénario** : Timeout connexion IMAP
+- **Validation** : Fermeture propre, log timeout
+
+#### Marqueurs pytest
+
+```python
+@pytest.mark.unit          # Tests unitaires isolés
+@pytest.mark.integration   # Tests d'intégration entre composants
+@pytest.mark.e2e          # Tests end-to-end
+@pytest.mark.redis        # Tests nécessitant Redis
+@pytest.mark.imap         # Tests nécessitant serveur IMAP
+@pytest.mark.slow         # Tests lents (réseau, fichiers)
+```
 
 ## ⚙️ Installation
 

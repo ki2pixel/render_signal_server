@@ -18,6 +18,78 @@ Notes:
 - L'endpoint interne `POST /api/deploy_application` choisit automatiquement le meilleur chemin: Deploy Hook → API Render → commande fallback.
 - Les logs masquent la clé du Deploy Hook et tracent l'identité de l'utilisateur authentifié ayant déclenché le déploiement.
 
+## Variables d'environnement - Référence complète
+
+### Variables de résilience (Lots 2/3)
+
+| Variable | Description | Défaut |
+| --- | --- | --- |
+| `REDIS_URL` | URL Redis pour verrou distribué et déduplication (ex: `redis://:password@host:port/db`) | Non requis (fallback fichier) |
+| `MAX_HTML_BYTES` | Limite taille HTML pour anti-OOM (bytes) | `1048576` (1MB) |
+| `R2_FETCH_TIMEOUT_DROPBOX_SCL_FO` | Timeout spécifique dossiers Dropbox `/scl/fo/` (secondes) | `120` |
+
+### Variables Magic Links
+
+| Variable | Description | Défaut |
+| --- | --- | --- |
+| `MAGIC_LINK_TTL_SECONDS` | Durée de validité des liens à usage unique (secondes) | `900` (15 minutes) |
+| `MAGIC_LINK_TOKENS_FILE` | Chemin du fichier de stockage des tokens | `./magic_link_tokens.json` |
+| `FLASK_SECRET_KEY` | Clé secrète HMAC pour signer les tokens (obligatoire) | Non défini |
+| `EXTERNAL_CONFIG_BASE_URL` | URL de l'API PHP `config_api.php` (optionnel) | Non défini |
+| `CONFIG_API_TOKEN` | Jeton HMAC pour appeler `config_api.php` (optionnel) | Non défini |
+| `CONFIG_API_STORAGE_DIR` | Répertoire de stockage côté PHP (optionnel) | Non défini |
+
+### Variables Cloudflare R2 (Offload fichiers)
+
+| Variable | Description | Défaut |
+| --- | --- | --- |
+| `R2_FETCH_ENABLED` | Active/désactive l'offload | `false` |
+| `R2_FETCH_ENDPOINT` | URL du Worker Cloudflare | Non défini |
+| `R2_FETCH_TOKEN` | Token secret `X-R2-FETCH-TOKEN` (obligatoire si activé) | Non défini |
+| `R2_PUBLIC_BASE_URL` | Domaine public servant les objets R2 | Non défini |
+| `R2_BUCKET_NAME` | Bucket R2 cible | Non défini |
+| `WEBHOOK_LINKS_FILE` | Fichier de persistance des paires `source_url`/`r2_url` | `deployment/data/webhook_links.json` |
+| `R2_LINKS_MAX_ENTRIES` | Nombre max d'entrées conservées avant rotation | `1000` |
+| `JSON_LOG_MAX_BYTES` | Limite taille fichier côté PHP avant rotation | `5242880` (5MB) |
+
+### Variables de déploiement Render
+
+| Variable | Description | Défaut |
+| --- | --- | --- |
+| `RENDER_API_KEY` | Token API Render (Bearer) | Non défini |
+| `RENDER_SERVICE_ID` | Identifiant du service Render | Non défini |
+| `RENDER_DEPLOY_HOOK_URL` | URL Deploy Hook Render | Non défini |
+| `RENDER_DEPLOY_CLEAR_CACHE` | Contrôle cache lors des déploys | `do_not_clear` |
+| `DEPLOY_CMD` | Commande fallback locale | Non défini |
+
+### Variables Gunicorn (injection Render)
+
+| Variable | Description | Défaut |
+| --- | --- | --- |
+| `GUNICORN_WORKERS` | Nombre de workers Gunicorn | `2` |
+| `GUNICORN_THREADS` | Nombre de threads par worker | `2` |
+| `GUNICORN_TIMEOUT` | Timeout des requêtes (secondes) | `120` |
+| `GUNICORN_GRACEFUL_TIMEOUT` | Timeout d'arrêt gracieux | `30` |
+| `GUNICORN_KEEP_ALIVE` | Timeout keep-alive | `2` |
+| `GUNICORN_MAX_REQUESTS` | Max requêtes par worker | `1000` |
+| `GUNICORN_MAX_REQUESTS_JITTER` | Jitter max requêtes | `100` |
+
+### Secrets GitHub Actions
+
+| Variable | Description | Défaut |
+| --- | --- | --- |
+| `GHCR_USERNAME` | Nom d'utilisateur pour `docker login` | `github.actor` |
+| `GHCR_TOKEN` | PAT ou `GITHUB_TOKEN` pour GHCR | Non défini |
+
+### Variables sensibles (jamais à committer)
+
+- `FLASK_SECRET_KEY`
+- `R2_FETCH_TOKEN`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_ACCOUNT_ID`
+- `CONFIG_API_TOKEN`
+
 ## Politique SSL des webhooks
 
 - `WEBHOOK_SSL_VERIFY=false` n'est à utiliser qu'en développement. En production, laisser `true` pour la vérification TLS/SSL.

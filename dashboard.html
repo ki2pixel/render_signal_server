@@ -244,6 +244,43 @@
       .form-group input:focus {
         outline: none;
         border-color: var(--cork-primary-accent);
+        background: rgba(67, 97, 238, 0.05);
+        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+        transform: translateY(-1px);
+      }
+
+      .form-group input:hover,
+      .form-group select:focus,
+      .form-group textarea:focus {
+        outline: none;
+        border-color: var(--cork-primary-accent);
+        background: rgba(67, 97, 238, 0.05);
+        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+        transform: translateY(-1px);
+      }
+
+      .form-group input:hover,
+      .form-group select:hover,
+      .form-group textarea:hover {
+        border-color: rgba(67, 97, 238, 0.3);
+      }
+
+      .toggle-switch input:focus-visible + .toggle-slider {
+        box-shadow: 0 0 0 3px rgba(255,255,255,0.25);
+      }
+
+      /* Badges "Sauvegarde requise" - Quick Win Priorité 1 */
+      .pill { 
+        font-size: 0.7rem; 
+        text-transform: uppercase; 
+        border-radius: 999px; 
+        padding: 3px 8px; 
+        margin-left: 8px;
+      }
+
+      .pill-manual { 
+        background: rgba(226,160,63,0.15); 
+        color: #e2a03f; 
       }
 
       .btn {
@@ -400,6 +437,70 @@
         color: white;
       }
 
+      /* Hiérarchie de cartes améliorée - Quick Win Priorité 1 */
+      .section-panel.config .card { 
+        border-left: 4px solid var(--cork-primary-accent);
+        background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(67, 97, 238, 0.05) 100%);
+      }
+
+      .section-panel.monitoring .card { 
+        border-left: 4px solid var(--cork-info);
+        background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(33, 150, 243, 0.03) 100%);
+      }
+
+      /* Affichage des logs enrichi - Quick Win Priorité 1 */
+      .log-entry {
+        position: relative;
+        padding: 16px;
+        margin-bottom: 12px;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.3);
+        border-left: 4px solid var(--cork-text-secondary);
+        transition: all 0.2s ease;
+      }
+
+      .log-entry::before {
+        content: attr(data-status-icon);
+        display: inline-flex;
+        width: 1.25rem;
+        height: 1.25rem;
+        align-items: center;
+        justify-content: center;
+        margin-right: 8px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.08);
+        font-weight: bold;
+      }
+
+      .log-entry.success::before { 
+        content: "✓";
+        background: rgba(26,188,156,0.18); 
+        color: #1abc9c; 
+      }
+
+      .log-entry.error::before { 
+        content: "⚠";
+        background: rgba(231,81,90,0.18); 
+        color: #e7515a; 
+      }
+
+      .log-entry-time {
+        font-size: 0.75em;
+        color: var(--cork-text-secondary);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .log-entry-status {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 0.7em;
+        font-weight: 700;
+        margin-left: 8px;
+      }
+
       .log-entry-type.makecom {
         background: var(--cork-warning);
         color: white;
@@ -407,6 +508,151 @@
 
       .log-empty {
         text-align: center;
+      }
+
+      /* Micro-interactions Priorité 2 - Feedback actions critiques */
+      .btn-primary {
+        background: linear-gradient(to right, var(--cork-primary-accent) 0%, #5470f1 100%);
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .btn-primary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(67, 97, 238, 0.3);
+      }
+
+      .btn-primary:active {
+        transform: translateY(0);
+      }
+
+      .btn-primary::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.3);
+        transform: translate(-50%, -50%);
+        transition: width 0.6s, height 0.6s;
+        pointer-events: none;
+      }
+
+      .btn-primary:active::before {
+        width: 300px;
+        height: 300px;
+      }
+
+      /* Toast notification pour copie magic link */
+      .copied-feedback {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: var(--cork-success);
+        color: white;
+        padding: 12px 20px;
+        border-radius: 6px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        transform: translateX(400px);
+        transition: transform 0.3s ease;
+        z-index: 1000;
+        font-weight: 500;
+      }
+
+      .copied-feedback.show {
+        transform: translateX(0);
+      }
+
+      /* Micro-animations sur les cards */
+      .card {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+      }
+
+      /* Transitions cohérentes pour tous les éléments interactifs */
+      .form-group input,
+      .form-group select,
+      .form-group textarea {
+        transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .toggle-switch input:focus-visible + .toggle-slider {
+        transition: box-shadow 0.2s ease;
+      }
+
+      /* Optimisation mobile - Priorité 2 */
+      @media (max-width: 480px) {
+        .log-entry {
+          padding: 12px;
+          margin-bottom: 8px;
+        }
+        
+        .log-entry-time {
+          display: block;
+          margin-bottom: 4px;
+        }
+        
+        .log-entry-status {
+          position: absolute;
+          top: 12px;
+          right: 12px;
+        }
+        
+        #absencePauseDaysGroup,
+        #pollingActiveDaysGroup {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+          gap: 8px;
+        }
+        
+        #metricsSection .grid {
+          grid-template-columns: 1fr;
+        }
+        
+        .grid {
+          grid-template-columns: 1fr;
+          gap: 12px;
+        }
+        
+        .card {
+          padding: 16px;
+        }
+
+        .copied-feedback {
+          right: 10px;
+          top: 10px;
+          left: 10px;
+          transform: translateY(-100px);
+        }
+
+        .copied-feedback.show {
+          transform: translateY(0);
+        }
+      }
+
+      /* Respect pour prefers-reduced-motion */
+      @media (prefers-reduced-motion: reduce) {
+        .btn-primary,
+        .btn-primary::before,
+        .card,
+        .form-group input,
+        .form-group select,
+        .form-group textarea,
+        .copied-feedback {
+          transition: none;
+        }
+
+        .btn-primary:hover,
+        .card:hover {
+          transform: none;
+        }
       }
 
       /* Layout utilitaire pour éléments en ligne */
@@ -497,6 +743,505 @@
         color: var(--cork-text-secondary);
         margin-top: 5px;
       }
+      
+      /* Bandeau Statut Global */
+      .global-status-banner {
+        background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(67, 97, 238, 0.08) 100%);
+        border: 1px solid var(--cork-border-color);
+        border-radius: 8px;
+        padding: 16px 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        transition: all 0.3s ease;
+      }
+      
+      .global-status-banner:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      }
+      
+      .status-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--cork-border-color);
+      }
+      
+      .status-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        font-size: 1.1em;
+        color: var(--cork-text-primary);
+      }
+      
+      .status-icon {
+        font-size: 1.2em;
+        animation: pulse 2s infinite;
+      }
+      
+      .status-icon.warning {
+        color: var(--cork-warning);
+      }
+      
+      .status-icon.error {
+        color: var(--cork-danger);
+      }
+      
+      .status-icon.success {
+        color: var(--cork-success);
+      }
+      
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+      }
+      
+      .status-content {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+      }
+      
+      .status-item {
+        text-align: center;
+        padding: 8px;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        transition: all 0.2s ease;
+      }
+      
+      .status-item:hover {
+        background: rgba(0, 0, 0, 0.3);
+        transform: translateY(-1px);
+      }
+      
+      .status-label {
+        font-size: 0.8em;
+        color: var(--cork-text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+        font-weight: 600;
+      }
+      
+      .status-value {
+        font-size: 1.1em;
+        font-weight: 700;
+        color: var(--cork-text-primary);
+      }
+      
+      .btn-small {
+        padding: 4px 8px;
+        font-size: 0.8em;
+        min-width: auto;
+      }
+      
+      @media (max-width: 768px) {
+        .global-status-banner {
+          padding: 12px 16px;
+          margin-bottom: 15px;
+        }
+        
+        .status-content {
+          grid-template-columns: repeat(2, 1fr);
+          gap: 12px;
+        }
+        
+        .status-item {
+          padding: 6px;
+        }
+        
+        .status-title {
+          font-size: 1em;
+        }
+      }
+      
+      @media (max-width: 480px) {
+        .status-content {
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+        
+        .status-header {
+          flex-direction: column;
+          gap: 8px;
+          text-align: center;
+        }
+      }
+      
+      /* Timeline Logs */
+      .timeline-container {
+        position: relative;
+        padding: 20px 0;
+      }
+      
+      .timeline-line {
+        position: absolute;
+        left: 20px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: linear-gradient(to bottom, var(--cork-primary-accent), var(--cork-info));
+        opacity: 0.3;
+      }
+      
+      .timeline-item {
+        position: relative;
+        padding-left: 50px;
+        margin-bottom: 20px;
+        animation: slideInLeft 0.3s ease;
+      }
+      
+      .timeline-marker {
+        position: absolute;
+        left: 12px;
+        top: 8px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--cork-card-bg);
+        border: 2px solid var(--cork-primary-accent);
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: bold;
+      }
+      
+      .timeline-marker.success {
+        border-color: var(--cork-success);
+        color: var(--cork-success);
+      }
+      
+      .timeline-marker.error {
+        border-color: var(--cork-danger);
+        color: var(--cork-danger);
+      }
+      
+      .timeline-content {
+        background: rgba(0, 0, 0, 0.2);
+        border: 1px solid var(--cork-border-color);
+        border-radius: 8px;
+        padding: 12px 16px;
+        transition: all 0.2s ease;
+      }
+      
+      .timeline-content:hover {
+        background: rgba(0, 0, 0, 0.3);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+      }
+      
+      .timeline-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      
+      .timeline-time {
+        font-size: 0.8em;
+        color: var(--cork-text-secondary);
+        font-weight: 600;
+      }
+      
+      .timeline-status {
+        font-size: 0.7em;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      
+      .timeline-status.success {
+        background: rgba(26, 188, 156, 0.18);
+        color: var(--cork-success);
+      }
+      
+      .timeline-status.error {
+        background: rgba(231, 81, 90, 0.18);
+        color: var(--cork-danger);
+      }
+      
+      .timeline-details {
+        color: var(--cork-text-primary);
+        line-height: 1.4;
+      }
+      
+      .timeline-sparkline {
+        height: 40px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--cork-border-color);
+        border-radius: 4px;
+        margin: 10px 0;
+        position: relative;
+        overflow: hidden;
+      }
+      
+      .sparkline-canvas {
+        width: 100%;
+        height: 100%;
+      }
+      
+      @keyframes slideInLeft {
+        from {
+          opacity: 0;
+          transform: translateX(-20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+      
+      @media (max-width: 768px) {
+        .timeline-item {
+          padding-left: 40px;
+          margin-bottom: 15px;
+        }
+        
+        .timeline-line {
+          left: 15px;
+        }
+        
+        .timeline-marker {
+          left: 8px;
+          width: 14px;
+          height: 14px;
+          font-size: 8px;
+        }
+        
+        .timeline-content {
+          padding: 10px 12px;
+        }
+        
+        .timeline-header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 4px;
+        }
+      }
+      
+      @media (max-width: 480px) {
+        .timeline-container {
+          padding: 15px 0;
+        }
+        
+        .timeline-item {
+          padding-left: 35px;
+          margin-bottom: 12px;
+        }
+        
+        .timeline-line {
+          left: 12px;
+        }
+        
+        .timeline-marker {
+          left: 6px;
+          width: 12px;
+          height: 12px;
+        }
+        
+        .timeline-content {
+          padding: 8px 10px;
+        }
+      }
+      
+      /* Panneaux Pliables Webhooks */
+      .collapsible-panel {
+        background: rgba(0, 0, 0, 0.2);
+        border: 1px solid var(--cork-border-color);
+        border-radius: 8px;
+        margin-bottom: 16px;
+        overflow: hidden;
+        transition: all 0.3s ease;
+      }
+      
+      .collapsible-panel:hover {
+        border-color: rgba(67, 97, 238, 0.3);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      }
+      
+      .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        background: rgba(67, 97, 238, 0.05);
+        border-bottom: 1px solid var(--cork-border-color);
+        cursor: pointer;
+        user-select: none;
+        transition: all 0.2s ease;
+      }
+      
+      .panel-header:hover {
+        background: rgba(67, 97, 238, 0.1);
+      }
+      
+      .panel-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        color: var(--cork-text-primary);
+      }
+      
+      .panel-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      
+      .toggle-icon {
+        width: 20px;
+        height: 20px;
+        transition: transform 0.3s ease;
+        color: var(--cork-text-secondary);
+      }
+      
+      .toggle-icon.rotated {
+        transform: rotate(180deg);
+      }
+      
+      .panel-status {
+        font-size: 0.7em;
+        padding: 2px 6px;
+        border-radius: 10px;
+        background: rgba(226, 160, 63, 0.15);
+        color: var(--cork-warning);
+        font-weight: 600;
+      }
+      
+      .panel-status.saved {
+        background: rgba(26, 188, 156, 0.15);
+        color: var(--cork-success);
+      }
+      
+      .panel-content {
+        padding: 16px;
+        max-height: 1000px;
+        opacity: 1;
+        transition: all 0.3s ease;
+      }
+      
+      .panel-content.collapsed {
+        max-height: 0;
+        padding: 0 16px;
+        opacity: 0;
+        overflow: hidden;
+      }
+      
+      .panel-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      
+      .panel-save-btn {
+        background: var(--cork-primary-accent);
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 0.8em;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      
+      .panel-save-btn:hover {
+        background: #5470f1;
+        transform: translateY(-1px);
+      }
+      
+      .panel-save-btn:disabled {
+        background: var(--cork-text-secondary);
+        cursor: not-allowed;
+        transform: none;
+      }
+      
+      .panel-indicator {
+        font-size: 0.7em;
+        color: var(--cork-text-secondary);
+        font-style: italic;
+      }
+      
+      @media (max-width: 768px) {
+        .panel-header {
+          padding: 10px 12px;
+        }
+        
+        .panel-content {
+          padding: 12px;
+        }
+        
+        .panel-actions {
+          flex-direction: column;
+          gap: 8px;
+          align-items: stretch;
+        }
+        
+        .panel-save-btn {
+          width: 100%;
+        }
+      }
+      
+      /* Indicateurs de sections modifiées */
+      .section-indicator {
+        font-size: 0.6em;
+        padding: 2px 6px;
+        border-radius: 8px;
+        margin-left: 8px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        transition: all 0.2s ease;
+      }
+      
+      .section-indicator.modifié {
+        background: rgba(226, 160, 63, 0.15);
+        color: var(--cork-warning);
+        animation: pulse-modified 2s infinite;
+      }
+      
+      .section-indicator.sauvegardé {
+        background: rgba(26, 188, 156, 0.15);
+        color: var(--cork-success);
+      }
+      
+      @keyframes pulse-modified {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+      }
+      
+      .card.modified,
+      .collapsible-panel.modified {
+        border-left: 3px solid var(--cork-warning);
+        background: rgba(226, 160, 63, 0.02);
+      }
+      
+      .card.saved,
+      .collapsible-panel.saved {
+        border-left: 3px solid var(--cork-success);
+        background: rgba(26, 188, 156, 0.02);
+      }
+      
+      .auto-save-feedback {
+        position: absolute;
+        bottom: -20px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        z-index: 10;
+      }
     </style>
   </head>
   <body>
@@ -507,6 +1252,38 @@
         </h1>
         <a href="/logout" class="logout-link">Déconnexion</a>
       </div>
+      
+      <!-- Bandeau Statut Global -->
+      <div id="globalStatusBanner" class="global-status-banner">
+        <div class="status-header">
+          <div class="status-title">
+            <span class="status-icon" id="globalStatusIcon">🟢</span>
+            <span class="status-text">Statut Global</span>
+          </div>
+          <div class="status-refresh">
+            <button id="refreshStatusBtn" class="btn btn-small btn-secondary">🔄</button>
+          </div>
+        </div>
+        <div class="status-content">
+          <div class="status-item">
+            <div class="status-label">Dernière exécution</div>
+            <div class="status-value" id="lastExecutionTime">—</div>
+          </div>
+          <div class="status-item">
+            <div class="status-label">Incidents récents</div>
+            <div class="status-value" id="recentIncidents">—</div>
+          </div>
+          <div class="status-item">
+            <div class="status-label">Erreurs critiques</div>
+            <div class="status-value" id="criticalErrors">—</div>
+          </div>
+          <div class="status-item">
+            <div class="status-label">Webhooks actifs</div>
+            <div class="status-value" id="activeWebhooks">—</div>
+          </div>
+        </div>
+      </div>
+      
       <!-- Navigation principale -->
       <div class="nav-tabs" role="tablist">
         <button class="tab-btn active" data-target="#sec-overview" type="button">Vue d’ensemble</button>
@@ -516,54 +1293,59 @@
         <button class="tab-btn" data-target="#sec-tools" type="button">Outils</button>
       </div>
 
-      <!-- Section: Webhooks (fenêtre horaire + config URLs) -->
-      <div id="sec-webhooks" class="section-panel">
-        <div class="grid">
-          <!-- Fenêtre horaire globale -->
-          <div class="card">
-            <div class="card-title">🕐 Fenêtre Horaire Globale</div>
-            <div class="form-group">
-              <label for="webhooksTimeStart">Heure de début</label>
-              <input id="webhooksTimeStart" type="text" placeholder="ex: 11:30">
+      <!-- Section: Webhooks (panneaux pliables) -->
+      <div id="sec-webhooks" class="section-panel config">
+        <!-- Panneau 1: URLs & SSL -->
+        <div class="collapsible-panel" data-panel="urls-ssl">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>🔗</span>
+              <span>URLs & SSL</span>
             </div>
-            <div class="form-group">
-              <label for="webhooksTimeEnd">Heure de fin</label>
-              <input id="webhooksTimeEnd" type="text" placeholder="ex: 17:30">
+            <div class="panel-toggle">
+              <span class="panel-status" id="urls-ssl-status">Sauvegarde requise</span>
+              <span class="toggle-icon">▼</span>
             </div>
-            <button id="saveTimeWindowBtn" class="btn btn-primary">💾 Enregistrer</button>
-            <div id="timeWindowMsg" class="status-msg"></div>
-            <div id="timeWindowDisplay" class="small-text"></div>
-            <div class="small-text">Laissez les deux champs vides pour désactiver la contrainte horaire.</div>
           </div>
-        </div>
-        <div class="card" style="margin: 20px 0;">
-          <div class="card-title">🔗 Configuration des URLs Webhooks</div>
-          <div class="grid" style="grid-template-columns: 1fr;">
+          <div class="panel-content">
             <div class="form-group">
               <label for="webhookUrl">Webhook Personnalisé (WEBHOOK_URL)</label>
               <input id="webhookUrl" type="text" placeholder="https://...">
             </div>
-            <div class="form-group">
-              <label for="sslVerifyToggle">&nbsp;</label>
+            <div style="margin-top: 15px;">
+              <label class="toggle-switch" style="vertical-align: middle;">
+                <input type="checkbox" id="sslVerifyToggle">
+                <span class="toggle-slider"></span>
+              </label>
+              <span style="margin-left: 10px; vertical-align: middle;">Vérification SSL (WEBHOOK_SSL_VERIFY)</span>
+            </div>
+            <div style="margin-top: 12px;">
+              <label class="toggle-switch" style="vertical-align: middle;">
+                <input type="checkbox" id="webhookSendingToggle">
+                <span class="toggle-slider"></span>
+              </label>
+              <span style="margin-left: 10px; vertical-align: middle;">Activer l'envoi des webhooks (global)</span>
+            </div>
+            <div class="panel-actions">
+              <button class="panel-save-btn" onclick="saveWebhookPanel('urls-ssl')">💾 Enregistrer</button>
+              <span class="panel-indicator" id="urls-ssl-indicator">Dernière sauvegarde: —</span>
             </div>
           </div>
-          <div style="margin-top: 15px;">
-            <label class="toggle-switch" style="vertical-align: middle;">
-              <input type="checkbox" id="sslVerifyToggle">
-              <span class="toggle-slider"></span>
-            </label>
-            <span style="margin-left: 10px; vertical-align: middle;">Vérification SSL (WEBHOOK_SSL_VERIFY)</span>
+        </div>
+
+        <!-- Panneau 2: Absence Globale -->
+        <div class="collapsible-panel" data-panel="absence">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>🚫</span>
+              <span>Absence Globale</span>
+            </div>
+            <div class="panel-toggle">
+              <span class="panel-status" id="absence-status">Sauvegarde requise</span>
+              <span class="toggle-icon">▼</span>
+            </div>
           </div>
-          <div style="margin-top: 12px;">
-            <label class="toggle-switch" style="vertical-align: middle;">
-              <input type="checkbox" id="webhookSendingToggle">
-              <span class="toggle-slider"></span>
-            </label>
-            <span style="margin-left: 10px; vertical-align: middle;">Activer l'envoi des webhooks (global)</span>
-          </div>
-          
-          <!-- Absence Globale (Stop Emails) -->
-          <div style="margin: 15px 0 0 0; padding: 12px; background: rgba(255, 152, 0, 0.1); border-radius: 6px; border-left: 3px solid #ff9800;">
+          <div class="panel-content">
             <div style="margin-bottom: 12px;">
               <label class="toggle-switch" style="vertical-align: middle;">
                 <input type="checkbox" id="absencePauseToggle">
@@ -587,26 +1369,60 @@
               </div>
               <div class="small-text">Sélectionnez au moins un jour si vous activez l'absence.</div>
             </div>
-          </div>
-          
-          <!-- Fenêtre Horaire pour le Toggle Global -->
-          <div style="margin: 15px 0 0 30px; padding: 12px; background: rgba(67, 97, 238, 0.1); border-radius: 6px; border-left: 3px solid var(--cork-primary-accent);">
-            <div class="form-group" style="margin-bottom: 10px;">
-              <label for="globalWebhookTimeStart">Heure de début</label>
-              <input id="globalWebhookTimeStart" type="text" placeholder="ex: 09:00" style="width: 100%; max-width: 100px;">
+            <div class="panel-actions">
+              <button class="panel-save-btn" onclick="saveWebhookPanel('absence')">💾 Enregistrer</button>
+              <span class="panel-indicator" id="absence-indicator">Dernière sauvegarde: —</span>
             </div>
-            <div class="form-group" style="margin-bottom: 10px;">
-              <label for="globalWebhookTimeEnd">Heure de fin</label>
-              <input id="globalWebhookTimeEnd" type="text" placeholder="ex: 19:00" style="width: 100%; max-width: 100px;">
-            </div>
-            <button id="saveGlobalWebhookTimeBtn" class="btn btn-primary" style="margin-top: 10px; width: 100%; max-width: 280px; display: block;">💾 Enregistrer la fenêtre horaire</button>
-            <div id="globalWebhookTimeMsg" class="status-msg" style="margin-top: 8px;"></div>
-            <div class="small-text">Définissez quand les webhooks peuvent être envoyés (laissez vide pour désactiver).</div>
           </div>
-          
-          <button id="saveConfigBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer la Configuration</button>
-          <div id="configMsg" class="status-msg"></div>
-          <div class="small-text">⚠️ Les URLs masquées partiellement par sécurité. Saisissez l'URL complète pour modifier.</div>
+        </div>
+
+        <!-- Panneau 3: Fenêtre Horaire -->
+        <div class="collapsible-panel" data-panel="time-window">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>🕐</span>
+              <span>Fenêtre Horaire</span>
+            </div>
+            <div class="panel-toggle">
+              <span class="panel-status" id="time-window-status">Sauvegarde requise</span>
+              <span class="toggle-icon">▼</span>
+            </div>
+          </div>
+          <div class="panel-content">
+            <div style="margin-bottom: 20px;">
+              <h4 style="margin: 0 0 10px 0; color: var(--cork-text-primary);">Fenêtre Horaire Globale</h4>
+              <div class="form-group">
+                <label for="webhooksTimeStart">Heure de début</label>
+                <input id="webhooksTimeStart" type="text" placeholder="ex: 11:30">
+              </div>
+              <div class="form-group">
+                <label for="webhooksTimeEnd">Heure de fin</label>
+                <input id="webhooksTimeEnd" type="text" placeholder="ex: 17:30">
+              </div>
+              <div id="timeWindowMsg" class="status-msg"></div>
+              <div id="timeWindowDisplay" class="small-text"></div>
+              <div class="small-text">Laissez les deux champs vides pour désactiver la contrainte horaire.</div>
+            </div>
+            
+            <div style="padding: 12px; background: rgba(67, 97, 238, 0.1); border-radius: 6px; border-left: 3px solid var(--cork-primary-accent);">
+              <h4 style="margin: 0 0 10px 0; color: var(--cork-text-primary);">Fenêtre Horaire Webhooks</h4>
+              <div class="form-group" style="margin-bottom: 10px;">
+                <label for="globalWebhookTimeStart">Heure de début</label>
+                <input id="globalWebhookTimeStart" type="text" placeholder="ex: 09:00" style="width: 100%; max-width: 100px;">
+              </div>
+              <div class="form-group" style="margin-bottom: 10px;">
+                <label for="globalWebhookTimeEnd">Heure de fin</label>
+                <input id="globalWebhookTimeEnd" type="text" placeholder="ex: 19:00" style="width: 100%; max-width: 100px;">
+              </div>
+              <div id="globalWebhookTimeMsg" class="status-msg" style="margin-top: 8px;"></div>
+              <div class="small-text">Définissez quand les webhooks peuvent être envoyés (laissez vide pour désactiver).</div>
+            </div>
+            
+            <div class="panel-actions">
+              <button class="panel-save-btn" onclick="saveWebhookPanel('time-window')">💾 Enregistrer</button>
+              <span class="panel-indicator" id="time-window-indicator">Dernière sauvegarde: —</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -729,7 +1545,7 @@
       </div>
 
       <!-- Section: Vue d'ensemble (métriques + logs) -->
-      <div id="sec-overview" class="section-panel active">
+      <div id="sec-overview" class="section-panel monitoring active">
         <div class="card">
           <div class="card-title">📊 Monitoring & Métriques (24h)</div>
           <div class="inline-group" style="margin-bottom: 10px;">

@@ -220,6 +220,58 @@ Objectif: n'envoyer qu'un seul webhook par « série » d'emails portant un suje
     - `> 0` → active une clé Redis par groupe avec expiration (en secondes) permettant de réautoriser un envoi après la TTL
     - S'applique uniquement si Redis est disponible. Le fallback mémoire n'a pas de TTL.
 
+## Résilience et Robustesse (Lots 2/3)
+
+### Verrou Distribué Redis (Lot 2)
+
+Pour éviter le multi-polling sur les déploiements multi-conteneurs Render, un verrou distribué Redis est implémenté :
+
+- **Service** : `background/lock.py` avec clé `render_signal:poller_lock` et TTL 5 minutes
+- **Comportement** : Le premier conteneur acquiert le verrou, les autres attendent ou skip le cycle
+- **Fallback** : Si Redis indisponible, utilisation de `fcntl` avec lock fichier + WARNING dans les logs
+- **Logs** : `REDIS_LOCK: Acquired distributed lock` / `REDIS_LOCK: Using file-based fallback`
+
+### Fallback R2 Garanti (Lot 2)
+
+Pour garantir la continuité du flux en cas d'indisponibilité du Worker Cloudflare R2 :
+
+- **Conservation URLs sources** : `raw_url` et `direct_url` sont toujours conservés dans le payload
+- **Try/except large** : L'appel à `R2TransferService.request_remote_fetch()` est enveloppé dans un try/except
+- **Log WARNING** : En cas d'échec, log `R2_TRANSFER: Worker unavailable, using source URLs`
+- **Flux continu** : Le webhook est toujours envoyé même sans offload R2
+
+### Watchdog IMAP Anti-Zombie (Lot 2)
+
+Pour prévenir les connexions IMAP zombies qui peuvent bloquer le polling :
+
+- **Timeout configuré** : `timeout=30` passé à `imaplib.IMAP4_SSL`/`IMAP4` dans `email_processing/imap_client.py`
+- **Comportement** : Les connexions IMAP qui ne répondent pas dans les 30 secondes sont fermées
+- **Logs** : `IMAP: Connection timeout (30s), closing connection`
+
+### Limitation HTML Anti-OOM (Lot 3)
+
+Pour prévenir les OOM kills sur les conteneurs avec faible mémoire (512MB) :
+
+- **Constante** : `MAX_HTML_BYTES = 1024 * 1024` (1MB) dans `email_processing/orchestrator.py`
+- **Comportement** : Le contenu HTML dépassant 1MB est tronqué avec un log WARNING unique
+- **Message de log** : `"HTML content truncated (exceeded 1MB limit)"`
+- **Impact** : Le traitement continue avec le HTML tronqué, les liens sont toujours extraits si présents
+
+### Tests de Résilience
+
+Nouveaux tests ajoutés pour valider la robustesse :
+
+- **`tests/test_lock_redis.py`** : Tests du verrou distribué Redis avec format Given/When/Then
+- **`tests/test_r2_resilience.py`** : Tests du fallback R2 en cas d'indisponibilité du Worker
+- **Marqueurs pytest** : `@pytest.mark.redis` et `@pytest.mark.slow` pour les tests de résilience
+
+### Validation
+
+L'ensemble des fonctionnalités de résilience a été validé :
+- **389 passed, 13 skipped, 0 failed** (exécuté dans `/mnt/venv_ext4/venv_render_signal_server`)
+- **Couverture** : ~70% avec tests unitaires et d'intégration
+- **Scénarios testés** : Redis down, Worker R2 down, IMAP timeout, HTML volumineux
+
 ## Extraction et normalisation
 
 ### Limitation HTML anti-OOM (Lot 3)

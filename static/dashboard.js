@@ -27,6 +27,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Lier les événements
         bindEvents();
         
+        // Initialiser les panneaux pliables
+        initializeCollapsiblePanels();
+        
+        // Initialiser l'auto-sauvegarde intelligente
+        initializeAutoSave();
+        
         // Charger les données initiales
         await loadInitialData();
         
@@ -156,6 +162,12 @@ function bindEvents() {
     if (addEmailBtn) {
         addEmailBtn.addEventListener('click', () => addEmailField(''));
     }
+    
+    // Statut Global
+    const refreshStatusBtn = document.getElementById('refreshStatusBtn');
+    if (refreshStatusBtn) {
+        refreshStatusBtn.addEventListener('click', updateGlobalStatus);
+    }
 }
 
 /**
@@ -182,9 +194,32 @@ async function loadInitialData() {
         // Charger les logs après les autres données
         await LogService.loadAndRenderLogs();
         
+        // Mettre à jour le statut global
+        await updateGlobalStatus();
+        
     } catch (e) {
         console.error('Erreur lors du chargement des données initiales:', e);
     }
+}
+
+// -------------------- Feedback Visuel --------------------
+function showCopiedFeedback() {
+    // Créer le toast notification s'il n'existe pas
+    let toast = document.querySelector('.copied-feedback');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.className = 'copied-feedback';
+        toast.textContent = '🔗 Magic link copié dans le presse-papiers !';
+        document.body.appendChild(toast);
+    }
+    
+    // Afficher le toast
+    toast.classList.add('show');
+    
+    // Cacher après 3 secondes
+    setTimeout(() => {
+        toast.classList.remove('show');
+    }, 3000);
 }
 
 // -------------------- Magic Links --------------------
@@ -210,6 +245,7 @@ async function generateMagicLink() {
             try {
                 await navigator.clipboard.writeText(data.magic_link);
                 output.textContent += ' — Copié dans le presse-papiers';
+                showCopiedFeedback();
             } catch (clipboardError) {
                 // Silently fail clipboard copy
             }
@@ -1047,6 +1083,524 @@ async function saveGlobalWebhookTimeWindow() {
     } catch (e) {
         MessageHelper.showError('globalWebhookTimeMsg', 'Erreur de communication avec le serveur.');
     }
+}
+
+// -------------------- Statut Global --------------------
+/**
+ * Met à jour le bandeau de statut global avec les données récentes
+ */
+async function updateGlobalStatus() {
+    try {
+        // Récupérer les logs récents pour analyser le statut
+        const logsResponse = await ApiService.get('/api/webhook_logs?limit=50');
+        const configResponse = await ApiService.get('/api/webhooks/config');
+        
+        if (!logsResponse.success || !configResponse.success) {
+            console.warn('Impossible de récupérer les données pour le statut global');
+            return;
+        }
+        
+        const logs = logsResponse.logs || [];
+        const config = configResponse.config || {};
+        
+        // Analyser les logs pour déterminer le statut
+        const statusData = analyzeLogsForStatus(logs);
+        
+        // Mettre à jour l'interface
+        updateStatusBanner(statusData, config);
+        
+    } catch (error) {
+        console.error('Erreur lors de la mise à jour du statut global:', error);
+        // Afficher un statut d'erreur
+        updateStatusBanner({
+            lastExecution: 'Erreur',
+            recentIncidents: '—',
+            criticalErrors: '—',
+            activeWebhooks: config?.webhook_url ? '1' : '0',
+            status: 'error'
+        }, {});
+    }
+}
+
+/**
+ * Analyse les logs pour extraire les informations de statut
+ */
+function analyzeLogsForStatus(logs) {
+    const now = new Date();
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    
+    let lastExecution = null;
+    let recentIncidents = 0;
+    let criticalErrors = 0;
+    let totalWebhooks = 0;
+    let successfulWebhooks = 0;
+    
+    logs.forEach(log => {
+        const logTime = new Date(log.timestamp);
+        
+        // Dernière exécution
+        if (!lastExecution || logTime > lastExecution) {
+            lastExecution = logTime;
+        }
+        
+        // Webhooks envoyés (dernière heure)
+        if (logTime >= oneHourAgo) {
+            totalWebhooks++;
+            if (log.status === 'success') {
+                successfulWebhooks++;
+            } else if (log.status === 'error') {
+                criticalErrors++;
+            }
+        }
+        
+        // Incidents récents (dernières 24h)
+        if (logTime >= oneDayAgo && log.status === 'error') {
+            recentIncidents++;
+        }
+    });
+    
+    // Formater la dernière exécution
+    let lastExecutionText = '—';
+    if (lastExecution) {
+        const diffMinutes = Math.floor((now - lastExecution) / (1000 * 60));
+        if (diffMinutes < 1) {
+            lastExecutionText = 'À l\'instant';
+        } else if (diffMinutes < 60) {
+            lastExecutionText = `Il y a ${diffMinutes} min`;
+        } else if (diffMinutes < 1440) {
+            lastExecutionText = `Il y a ${Math.floor(diffMinutes / 60)}h`;
+        } else {
+            lastExecutionText = lastExecution.toLocaleDateString('fr-FR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+        }
+    }
+    
+    // Déterminer le statut global
+    let status = 'success';
+    if (criticalErrors > 0) {
+        status = 'error';
+    } else if (recentIncidents > 0) {
+        status = 'warning';
+    }
+    
+    return {
+        lastExecution: lastExecutionText,
+        recentIncidents: recentIncidents.toString(),
+        criticalErrors: criticalErrors.toString(),
+        activeWebhooks: totalWebhooks.toString(),
+        status: status
+    };
+}
+
+/**
+ * Met à jour l'affichage du bandeau de statut
+ */
+function updateStatusBanner(statusData, config) {
+    // Mettre à jour les valeurs
+    document.getElementById('lastExecutionTime').textContent = statusData.lastExecution;
+    document.getElementById('recentIncidents').textContent = statusData.recentIncidents;
+    document.getElementById('criticalErrors').textContent = statusData.criticalErrors;
+    document.getElementById('activeWebhooks').textContent = statusData.activeWebhooks;
+    
+    // Mettre à jour l'icône de statut
+    const statusIcon = document.getElementById('globalStatusIcon');
+    statusIcon.className = 'status-icon ' + statusData.status;
+    
+    switch (statusData.status) {
+        case 'success':
+            statusIcon.textContent = '🟢';
+            break;
+        case 'warning':
+            statusIcon.textContent = '🟡';
+            break;
+        case 'error':
+            statusIcon.textContent = '🔴';
+            break;
+        default:
+            statusIcon.textContent = '🟢';
+    }
+}
+
+// -------------------- Panneaux Pliables Webhooks --------------------
+/**
+ * Initialise les panneaux pliables des webhooks
+ */
+function initializeCollapsiblePanels() {
+    const panels = document.querySelectorAll('.collapsible-panel');
+    
+    panels.forEach(panel => {
+        const header = panel.querySelector('.panel-header');
+        const content = panel.querySelector('.panel-content');
+        const toggleIcon = panel.querySelector('.toggle-icon');
+        
+        if (header && content && toggleIcon) {
+            header.addEventListener('click', () => {
+                const isCollapsed = content.classList.contains('collapsed');
+                
+                if (isCollapsed) {
+                    content.classList.remove('collapsed');
+                    toggleIcon.classList.remove('rotated');
+                } else {
+                    content.classList.add('collapsed');
+                    toggleIcon.classList.add('rotated');
+                }
+            });
+        }
+    });
+}
+
+/**
+ * Sauvegarde un panneau webhook spécifique
+ * @param {string} panelType - Type de panneau (urls-ssl, absence, time-window)
+ */
+async function saveWebhookPanel(panelType) {
+    try {
+        let success = false;
+        let message = '';
+        
+        switch (panelType) {
+            case 'urls-ssl':
+                // Utiliser la fonction existante de WebhookService
+                const result = await WebhookService.saveConfig();
+                success = result.success;
+                message = result.message;
+                break;
+                
+            case 'absence':
+                // Sauvegarder la configuration d'absence
+                const absenceData = collectAbsenceData();
+                const absenceResult = await ApiService.post('/api/webhooks/config', absenceData);
+                success = absenceResult.success;
+                message = absenceResult.message || 'Configuration d\'absence sauvegardée';
+                break;
+                
+            case 'time-window':
+                // Sauvegarder les fenêtres horaires
+                await Promise.all([
+                    saveTimeWindow(),
+                    saveGlobalWebhookTimeWindow()
+                ]);
+                success = true;
+                message = 'Fenêtres horaires sauvegardées';
+                break;
+        }
+        
+        // Mettre à jour le statut du panneau
+        updatePanelStatus(panelType, success);
+        
+        // Afficher le feedback
+        if (success) {
+            MessageHelper.showSuccess(`${panelType}-msg`, message);
+            updatePanelIndicator(panelType);
+        } else {
+            MessageHelper.showError(`${panelType}-msg`, message);
+        }
+        
+    } catch (error) {
+        console.error(`Erreur lors de la sauvegarde du panneau ${panelType}:`, error);
+        MessageHelper.showError(`${panelType}-msg`, 'Erreur lors de la sauvegarde');
+    }
+}
+
+/**
+ * Collecte les données du panneau d'absence
+ */
+function collectAbsenceData() {
+    const toggle = document.getElementById('absencePauseToggle');
+    const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]:checked');
+    
+    return {
+        absence_pause_enabled: toggle ? toggle.checked : false,
+        absence_pause_days: Array.from(dayCheckboxes).map(cb => cb.value)
+    };
+}
+
+/**
+ * Met à jour le statut d'un panneau
+ * @param {string} panelType - Type de panneau
+ * @param {boolean} success - Si la sauvegarde a réussi
+ */
+function updatePanelStatus(panelType, success) {
+    const statusElement = document.getElementById(`${panelType}-status`);
+    if (statusElement) {
+        if (success) {
+            statusElement.textContent = 'Sauvegardé';
+            statusElement.classList.add('saved');
+        } else {
+            statusElement.textContent = 'Erreur';
+            statusElement.classList.remove('saved');
+        }
+        
+        // Réinitialiser après 3 secondes
+        setTimeout(() => {
+            statusElement.textContent = 'Sauvegarde requise';
+            statusElement.classList.remove('saved');
+        }, 3000);
+    }
+}
+
+/**
+ * Met à jour l'indicateur de dernière sauvegarde
+ * @param {string} panelType - Type de panneau
+ */
+function updatePanelIndicator(panelType) {
+    const indicator = document.getElementById(`${panelType}-indicator`);
+    if (indicator) {
+        const now = new Date();
+        const timeString = now.toLocaleTimeString('fr-FR', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+        indicator.textContent = `Dernière sauvegarde: ${timeString}`;
+    }
+}
+
+// -------------------- Auto-sauvegarde Intelligente --------------------
+/**
+ * Initialise l'auto-sauvegarde intelligente
+ */
+function initializeAutoSave() {
+    // Préférences qui peuvent être sauvegardées automatiquement
+    const autoSaveFields = [
+        'attachmentDetectionToggle',
+        'retryCount', 
+        'retryDelaySec',
+        'webhookTimeoutSec',
+        'rateLimitPerHour',
+        'notifyOnFailureToggle'
+    ];
+    
+    // Écouter les changements sur les champs d'auto-sauvegarde
+    autoSaveFields.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.addEventListener('change', () => handleAutoSaveChange(fieldId));
+            field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 2000));
+        }
+    });
+    
+    // Écouter les changements sur les textarea de préférences
+    const preferenceTextareas = [
+        'excludeKeywordsRecadrage',
+        'excludeKeywordsAutorepondeur',
+        'excludeKeywords',
+        'senderPriority'
+    ];
+    
+    preferenceTextareas.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 3000));
+        }
+    });
+}
+
+/**
+ * Gère les changements pour l'auto-sauvegarde
+ * @param {string} fieldId - ID du champ modifié
+ */
+async function handleAutoSaveChange(fieldId) {
+    try {
+        // Marquer la section comme modifiée
+        markSectionAsModified(fieldId);
+        
+        // Collecter les données de préférences
+        const prefsData = collectPreferencesData();
+        
+        // Sauvegarder automatiquement
+        const result = await ApiService.post('/api/processing_prefs', prefsData);
+        
+        if (result.success) {
+            // Marquer la section comme sauvegardée
+            markSectionAsSaved(fieldId);
+            showAutoSaveFeedback(fieldId, true);
+        } else {
+            showAutoSaveFeedback(fieldId, false, result.message);
+        }
+        
+    } catch (error) {
+        console.error('Erreur lors de l\'auto-sauvegarde:', error);
+        showAutoSaveFeedback(fieldId, false, 'Erreur de connexion');
+    }
+}
+
+/**
+ * Collecte les données des préférences
+ */
+function collectPreferencesData() {
+    const data = {};
+    
+    // Préférences de filtres
+    data.exclude_keywords_recadrage = document.getElementById('excludeKeywordsRecadrage')?.value || '';
+    data.exclude_keywords_autorepondeur = document.getElementById('excludeKeywordsAutorepondeur')?.value || '';
+    data.exclude_keywords = document.getElementById('excludeKeywords')?.value || '';
+    
+    // Préférences de fiabilité
+    data.require_attachments = document.getElementById('attachmentDetectionToggle')?.checked || false;
+    data.retry_count = parseInt(document.getElementById('retryCount')?.value) || 3;
+    data.retry_delay_sec = parseInt(document.getElementById('retryDelaySec')?.value) || 10;
+    data.webhook_timeout_sec = parseInt(document.getElementById('webhookTimeoutSec')?.value) || 30;
+    data.rate_limit_per_hour = parseInt(document.getElementById('rateLimitPerHour')?.value) || 300;
+    data.notify_on_failure = document.getElementById('notifyOnFailureToggle')?.checked || false;
+    
+    // Préférences de priorité (JSON)
+    const senderPriorityText = document.getElementById('senderPriority')?.value || '{}';
+    try {
+        data.sender_priority = JSON.parse(senderPriorityText);
+    } catch (e) {
+        data.sender_priority = {};
+    }
+    
+    return data;
+}
+
+/**
+ * Marque une section comme modifiée
+ * @param {string} fieldId - ID du champ modifié
+ */
+function markSectionAsModified(fieldId) {
+    const section = getFieldSection(fieldId);
+    if (section) {
+        section.classList.add('modified');
+        updateSectionIndicator(section, 'Modifié');
+    }
+}
+
+/**
+ * Marque une section comme sauvegardée
+ * @param {string} fieldId - ID du champ sauvegardé
+ */
+function markSectionAsSaved(fieldId) {
+    const section = getFieldSection(fieldId);
+    if (section) {
+        section.classList.remove('modified');
+        section.classList.add('saved');
+        updateSectionIndicator(section, 'Sauvegardé');
+        
+        // Retirer la classe 'saved' après 2 secondes
+        setTimeout(() => {
+            section.classList.remove('saved');
+            updateSectionIndicator(section, '');
+        }, 2000);
+    }
+}
+
+/**
+ * Obtient la section d'un champ
+ * @param {string} fieldId - ID du champ
+ * @returns {HTMLElement|null} Section parente
+ */
+function getFieldSection(fieldId) {
+    const field = document.getElementById(fieldId);
+    if (!field) return null;
+    
+    // Remonter jusqu'à trouver une carte ou un panneau
+    let parent = field.parentElement;
+    while (parent && parent !== document.body) {
+        if (parent.classList.contains('card') || parent.classList.contains('collapsible-panel')) {
+            return parent;
+        }
+        parent = parent.parentElement;
+    }
+    
+    return null;
+}
+
+/**
+ * Met à jour l'indicateur de section
+ * @param {HTMLElement} section - Section à mettre à jour
+ * @param {string} status - Statut à afficher
+ */
+function updateSectionIndicator(section, status) {
+    let indicator = section.querySelector('.section-indicator');
+    
+    if (!indicator) {
+        // Créer l'indicateur s'il n'existe pas
+        indicator = document.createElement('div');
+        indicator.className = 'section-indicator';
+        
+        // Insérer après le titre
+        const title = section.querySelector('.card-title, .panel-title');
+        if (title) {
+            title.appendChild(indicator);
+        }
+    }
+    
+    if (status) {
+        indicator.textContent = status;
+        indicator.className = `section-indicator ${status.toLowerCase()}`;
+    } else {
+        indicator.textContent = '';
+        indicator.className = 'section-indicator';
+    }
+}
+
+/**
+ * Affiche un feedback d'auto-sauvegarde
+ * @param {string} fieldId - ID du champ
+ * @param {boolean} success - Si la sauvegarde a réussi
+ * @param {string} message - Message optionnel
+ */
+function showAutoSaveFeedback(fieldId, success, message = '') {
+    const field = document.getElementById(fieldId);
+    if (!field) return;
+    
+    // Créer ou récupérer le conteneur de feedback
+    let feedback = field.parentElement.querySelector('.auto-save-feedback');
+    if (!feedback) {
+        feedback = document.createElement('div');
+        feedback.className = 'auto-save-feedback';
+        field.parentElement.appendChild(feedback);
+    }
+    
+    // Définir le style et le message
+    feedback.style.cssText = `
+        font-size: 0.7em;
+        margin-top: 4px;
+        padding: 2px 6px;
+        border-radius: 3px;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    `;
+    
+    if (success) {
+        feedback.style.background = 'rgba(26, 188, 156, 0.2)';
+        feedback.style.color = 'var(--cork-success)';
+        feedback.textContent = '✓ Auto-sauvegardé';
+    } else {
+        feedback.style.background = 'rgba(231, 81, 90, 0.2)';
+        feedback.style.color = 'var(--cork-danger)';
+        feedback.textContent = `✗ Erreur: ${message}`;
+    }
+    
+    // Afficher le feedback
+    feedback.style.opacity = '1';
+    
+    // Masquer après 3 secondes
+    setTimeout(() => {
+        feedback.style.opacity = '0';
+    }, 3000);
+}
+
+/**
+ * Fonction de debounce pour limiter les appels
+ * @param {Function} func - Fonction à débouncer
+ * @param {number} wait - Temps d'attente en ms
+ * @returns {Function} Fonction débouncée
+ */
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
 }
 
 // -------------------- Nettoyage --------------------

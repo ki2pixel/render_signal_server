@@ -79,47 +79,86 @@ export class LogService {
         container.innerHTML = '';
         
         if (!logs || logs.length === 0) {
-            container.innerHTML = '<div class="log-entry">Aucun log trouvé pour cette période.</div>';
+            container.innerHTML = '<div class="timeline-item"><div class="timeline-content">Aucun log trouvé pour cette période.</div></div>';
             return;
         }
         
-        logs.forEach(log => {
-            const logEntry = document.createElement('div');
-            logEntry.className = `log-entry ${log.status}`;
+        // Créer le conteneur timeline
+        const timelineContainer = document.createElement('div');
+        timelineContainer.className = 'timeline-container';
+        
+        // Ajouter la ligne timeline
+        const timelineLine = document.createElement('div');
+        timelineLine.className = 'timeline-line';
+        timelineContainer.appendChild(timelineLine);
+        
+        // Ajouter la sparkline pour les tendances
+        const sparkline = this.createSparkline(logs);
+        if (sparkline) {
+            timelineContainer.appendChild(sparkline);
+        }
+        
+        logs.forEach((log, index) => {
+            const timelineItem = document.createElement('div');
+            timelineItem.className = 'timeline-item';
+            timelineItem.style.animationDelay = `${index * 0.1}s`;
+            
+            // Créer le marqueur
+            const marker = document.createElement('div');
+            marker.className = `timeline-marker ${log.status}`;
+            marker.textContent = log.status === 'success' ? '✓' : '⚠';
+            timelineItem.appendChild(marker);
+            
+            // Créer le contenu
+            const content = document.createElement('div');
+            content.className = 'timeline-content';
+            
+            // Header avec temps et statut
+            const header = document.createElement('div');
+            header.className = 'timeline-header';
             
             const timeDiv = document.createElement('div');
-            timeDiv.className = 'log-entry-time';
+            timeDiv.className = 'timeline-time';
             timeDiv.textContent = this.formatTimestamp(log.timestamp);
-            logEntry.appendChild(timeDiv);
+            header.appendChild(timeDiv);
             
             const statusDiv = document.createElement('div');
-            statusDiv.className = 'log-entry-status';
+            statusDiv.className = `timeline-status ${log.status}`;
             statusDiv.textContent = log.status.toUpperCase();
-            logEntry.appendChild(statusDiv);
+            header.appendChild(statusDiv);
+            
+            content.appendChild(header);
+            
+            // Détails
+            const details = document.createElement('div');
+            details.className = 'timeline-details';
             
             if (log.subject) {
                 const subjectDiv = document.createElement('div');
-                subjectDiv.className = 'log-entry-subject';
                 subjectDiv.textContent = `Sujet: ${this.escapeHtml(log.subject)}`;
-                logEntry.appendChild(subjectDiv);
+                details.appendChild(subjectDiv);
             }
             
             if (log.webhook_url) {
                 const urlDiv = document.createElement('div');
-                urlDiv.className = 'log-entry-url';
                 urlDiv.textContent = `URL: ${this.escapeHtml(log.webhook_url)}`;
-                logEntry.appendChild(urlDiv);
+                details.appendChild(urlDiv);
             }
             
             if (log.error_message) {
                 const errorDiv = document.createElement('div');
-                errorDiv.className = 'log-entry-error';
+                errorDiv.style.color = 'var(--cork-danger)';
                 errorDiv.textContent = `Erreur: ${this.escapeHtml(log.error_message)}`;
-                logEntry.appendChild(errorDiv);
+                details.appendChild(errorDiv);
             }
             
-            container.appendChild(logEntry);
+            content.appendChild(details);
+            timelineItem.appendChild(content);
+            timelineContainer.appendChild(timelineItem);
         });
+        
+        container.innerHTML = '';
+        container.appendChild(timelineContainer);
     }
 
     /**
@@ -252,5 +291,95 @@ export class LogService {
                 period_days: daysToAnalyze
             };
         }
+    }
+    
+    /**
+     * Crée une sparkline pour visualiser les tendances des logs
+     * @param {Array} logs - Liste des logs
+     * @returns {HTMLElement|null} Élément DOM de la sparkline
+     */
+    static createSparkline(logs) {
+        if (!logs || logs.length < 2) return null;
+        
+        // Grouper les logs par heure
+        const hourlyData = {};
+        const now = new Date();
+        
+        logs.forEach(log => {
+            const logTime = new Date(log.timestamp);
+            const hourKey = new Date(logTime.getFullYear(), logTime.getMonth(), logTime.getDate(), logTime.getHours()).getTime();
+            
+            if (!hourlyData[hourKey]) {
+                hourlyData[hourKey] = { success: 0, error: 0, total: 0 };
+            }
+            
+            hourlyData[hourKey].total++;
+            if (log.status === 'success') {
+                hourlyData[hourKey].success++;
+            } else if (log.status === 'error') {
+                hourlyData[hourKey].error++;
+            }
+        });
+        
+        // Créer les dernières 24 heures de données
+        const sparklineContainer = document.createElement('div');
+        sparklineContainer.className = 'timeline-sparkline';
+        
+        const canvas = document.createElement('canvas');
+        canvas.className = 'sparkline-canvas';
+        canvas.width = 200;
+        canvas.height = 40;
+        
+        const ctx = canvas.getContext('2d');
+        
+        // Préparer les données
+        const hours = 24;
+        const data = [];
+        const maxCount = Math.max(...Object.values(hourlyData).map(d => d.total), 1);
+        
+        for (let i = hours - 1; i >= 0; i--) {
+            const hourTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() - i).getTime();
+            const hourData = hourlyData[hourTime] || { success: 0, error: 0, total: 0 };
+            data.push(hourData.total);
+        }
+        
+        // Dessiner la sparkline
+        ctx.strokeStyle = '#4361ee';
+        ctx.lineWidth = 2;
+        ctx.fillStyle = 'rgba(67, 97, 238, 0.1)';
+        
+        const width = canvas.width;
+        const height = canvas.height;
+        const stepX = width / (data.length - 1);
+        
+        // Dessiner la ligne
+        ctx.beginPath();
+        data.forEach((value, index) => {
+            const x = index * stepX;
+            const y = height - (value / maxCount) * height * 0.8 - 5;
+            
+            if (index === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        });
+        ctx.stroke();
+        
+        // Remplir sous la ligne
+        ctx.lineTo(width, height);
+        ctx.lineTo(0, height);
+        ctx.closePath();
+        ctx.fill();
+        
+        sparklineContainer.appendChild(canvas);
+        
+        // Ajouter une légende simple
+        const legend = document.createElement('div');
+        legend.style.cssText = 'position: absolute; top: 5px; right: 10px; font-size: 0.7em; color: var(--cork-text-secondary);';
+        legend.textContent = `24h - Max: ${maxCount}`;
+        sparklineContainer.appendChild(legend);
+        
+        return sparklineContainer;
     }
 }
