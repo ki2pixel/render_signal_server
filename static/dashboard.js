@@ -277,6 +277,9 @@ async function loadTimeWindow() {
     const applyWindowValues = (startValue = '', endValue = '') => {
         const startInput = document.getElementById('webhooksTimeStart');
         const endInput = document.getElementById('webhooksTimeEnd');
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            console.log('[loadTimeWindow] Applying values:', { startValue, endValue });
+        }
         if (startInput) startInput.value = startValue || '';
         if (endInput) endInput.value = endValue || '';
         renderTimeWindowDisplay(startValue || '', endValue || '');
@@ -285,6 +288,9 @@ async function loadTimeWindow() {
     try {
         // 0) Source principale : configuration webhooks persistée
         const configResponse = await ApiService.get('/api/webhooks/config');
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            console.log('[loadTimeWindow] /api/webhooks/config response:', configResponse);
+        }
         if (configResponse.success && configResponse.config) {
             const cfg = configResponse.config;
             if (cfg.webhook_time_start || cfg.webhook_time_end) {
@@ -301,6 +307,9 @@ async function loadTimeWindow() {
     try {
         // 1) Préférence: configuration persistée (webhook config service)
         const persisted = await ApiService.get('/api/webhooks/time-window');
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            console.log('[loadTimeWindow] /api/webhooks/time-window response:', persisted);
+        }
         if (persisted.success && (persisted.webhooks_time_start || persisted.webhooks_time_end)) {
             applyWindowValues(persisted.webhooks_time_start, persisted.webhooks_time_end);
             return;
@@ -314,6 +323,9 @@ async function loadTimeWindow() {
     try {
         // 2) Fallback: ancienne source (time window override)
         const data = await ApiService.get('/api/get_webhook_time_window');
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            console.log('[loadTimeWindow] /api/get_webhook_time_window response:', data);
+        }
         if (data.success) {
             applyWindowValues(data.webhooks_time_start, data.webhooks_time_end);
         }
