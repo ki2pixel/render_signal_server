@@ -390,12 +390,12 @@ async function saveTimeWindow() {
     // Validation des formats
     if (start && !MessageHelper.isValidTimeFormat(start)) {
         MessageHelper.showError('timeWindowMsg', 'Format d\'heure invalide (ex: 09:30 ou 9h30).');
-        return;
+        return false;
     }
     
     if (end && !MessageHelper.isValidTimeFormat(end)) {
         MessageHelper.showError('timeWindowMsg', 'Format d\'heure invalide (ex: 17:30 ou 17h30).');
-        return;
+        return false;
     }
     
     // Normalisation des formats
@@ -423,11 +423,14 @@ async function saveTimeWindow() {
             
             // S'assurer que la source persistée est rechargée
             await loadTimeWindow();
+            return true;
         } else {
             MessageHelper.showError('timeWindowMsg', data.message || 'Erreur lors de la sauvegarde.');
+            return false;
         }
     } catch (e) {
         MessageHelper.showError('timeWindowMsg', 'Erreur de communication avec le serveur.');
+        return false;
     }
 }
 
@@ -1059,12 +1062,12 @@ async function saveGlobalWebhookTimeWindow() {
     // Validation des formats
     if (start && !MessageHelper.isValidTimeFormat(start)) {
         MessageHelper.showError('globalWebhookTimeMsg', 'Format d\'heure invalide (ex: 09:00 ou 9h00).');
-        return;
+        return false;
     }
     
     if (end && !MessageHelper.isValidTimeFormat(end)) {
         MessageHelper.showError('globalWebhookTimeMsg', 'Format d\'heure invalide (ex: 19:00 ou 19h00).');
-        return;
+        return false;
     }
     
     // Normalisation des formats
@@ -1087,11 +1090,14 @@ async function saveGlobalWebhookTimeWindow() {
             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
                 endInput.value = data.webhooks_time_end || '';
             }
+            return true;
         } else {
             MessageHelper.showError('globalWebhookTimeMsg', data.message || 'Erreur lors de la sauvegarde.');
+            return false;
         }
     } catch (e) {
         MessageHelper.showError('globalWebhookTimeMsg', 'Erreur de communication avec le serveur.');
+        return false;
     }
 }
 
