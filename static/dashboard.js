@@ -278,6 +278,14 @@ async function loadTimeWindow() {
         console.log('[loadTimeWindow] Applying values:', { startValue, endValue, startInput: !!startInput, endInput: !!endInput });
         if (startInput) startInput.value = startValue || '';
         if (endInput) endInput.value = endValue || '';
+        
+        // Vérifier immédiatement après application
+        setTimeout(() => {
+            const startAfter = document.getElementById('webhooksTimeStart')?.value || '';
+            const endAfter = document.getElementById('webhooksTimeEnd')?.value || '';
+            console.log('[loadTimeWindow] Values after apply (delayed):', { startAfter, endAfter });
+        }, 100);
+        
         renderTimeWindowDisplay(startValue || '', endValue || '');
     };
     
