@@ -719,7 +719,7 @@ async function saveProcessingPrefsToServer() {
             }
         });
         
-        const data = await ApiService.post('/api/set_processing_prefs', { prefs });
+        const data = await ApiService.post('/api/processing_prefs', { prefs });
         
         if (data.success) {
             MessageHelper.showSuccess(msgId, 'Préférences de traitement enregistrées avec succès !');
@@ -1358,6 +1358,146 @@ function updatePanelIndicator(panelType) {
     }
 }
 
+/**
+ * Sauvegarde un panneau de configuration webhook
+ * @param {string} panelType - Type de panneau (urls-ssl, absence, time-window)
+ */
+async function saveWebhookPanel(panelType) {
+    try {
+        let data;
+        let endpoint;
+        let successMessage;
+        
+        switch (panelType) {
+            case 'urls-ssl':
+                data = collectUrlsData();
+                endpoint = '/api/webhooks/config';
+                successMessage = 'Configuration URLs & SSL enregistrée avec succès !';
+                break;
+                
+            case 'absence':
+                data = collectAbsenceData();
+                endpoint = '/api/webhooks/config';
+                successMessage = 'Configuration Absence Globale enregistrée avec succès !';
+                break;
+                
+            case 'time-window':
+                data = collectTimeWindowData();
+                endpoint = '/api/webhooks/time-window';
+                successMessage = 'Fenêtre horaire enregistrée avec succès !';
+                break;
+                
+            default:
+                console.error('Type de panneau inconnu:', panelType);
+                return;
+        }
+        
+        // Envoyer les données au serveur
+        const response = await ApiService.post(endpoint, data);
+        
+        if (response.success) {
+            MessageHelper.showSuccess(`${panelType}-msg`, successMessage);
+            updatePanelStatus(panelType, true);
+            updatePanelIndicator(panelType);
+        } else {
+            MessageHelper.showError(`${panelType}-msg`, response.message || 'Erreur lors de la sauvegarde');
+            updatePanelStatus(panelType, false);
+        }
+        
+    } catch (error) {
+        console.error(`Erreur lors de la sauvegarde du panneau ${panelType}:`, error);
+        MessageHelper.showError(`${panelType}-msg`, 'Erreur lors de la sauvegarde');
+        updatePanelStatus(panelType, false);
+    }
+}
+
+/**
+ * Collecte les données du panneau URLs & SSL
+ */
+function collectUrlsData() {
+    const webhookUrl = document.getElementById('webhookUrl')?.value || '';
+    const makeWebhookUrl = document.getElementById('makeWebhookUrl')?.value || '';
+    const sslVerify = document.getElementById('webhookSslVerify')?.checked ?? true;
+    
+    return {
+        webhook_url: webhookUrl || null,
+        make_webhook_url: makeWebhookUrl || null,
+        webhook_ssl_verify: sslVerify
+    };
+}
+
+/**
+ * Collecte les données du panneau fenêtre horaire
+ */
+function collectTimeWindowData() {
+    const startInput = document.getElementById('webhooksTimeStart');
+    const endInput = document.getElementById('webhooksTimeEnd');
+    const start = startInput?.value?.trim() || '';
+    const end = endInput?.value?.trim() || '';
+    
+    // Normaliser les formats
+    const normalizedStart = start ? MessageHelper.normalizeTimeFormat(start) : '';
+    const normalizedEnd = end ? MessageHelper.normalizeTimeFormat(end) : '';
+    
+    return {
+        start: normalizedStart,
+        end: normalizedEnd
+    };
+}
+
+/**
+ * Collecte les données du panneau d'absence
+ */
+function collectAbsenceData() {
+    const toggle = document.getElementById('absencePauseToggle');
+    const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]:checked');
+    
+    return {
+        absence_pause_enabled: toggle ? toggle.checked : false,
+        absence_pause_days: Array.from(dayCheckboxes).map(cb => cb.value)
+    };
+}
+
+/**
+ * Met à jour le statut d'un panneau
+ * @param {string} panelType - Type de panneau
+ * @param {boolean} success - Si la sauvegarde a réussi
+ */
+function updatePanelStatus(panelType, success) {
+    const statusElement = document.getElementById(`${panelType}-status`);
+    if (statusElement) {
+        if (success) {
+            statusElement.textContent = 'Sauvegardé';
+            statusElement.classList.add('saved');
+        } else {
+            statusElement.textContent = 'Erreur';
+            statusElement.classList.remove('saved');
+        }
+        
+        // Réinitialiser après 3 secondes
+        setTimeout(() => {
+            statusElement.textContent = 'Sauvegarde requise';
+            statusElement.classList.remove('saved');
+        }, 3000);
+    }
+}
+
+/**
+ * Met à jour l'indicateur de dernière sauvegarde
+ * @param {string} panelType - Type de panneau
+ */
+function updatePanelIndicator(panelType) {
+    const indicator = document.getElementById(`${panelType}-indicator`);
+    if (indicator) {
+        const now = new Date();
+        const timeString = now.toLocaleTimeString('fr-FR', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+        indicator.textContent = `Dernière sauvegarde: ${timeString}`;
+    }
+}
+
 // -------------------- Auto-sauvegarde Intelligente --------------------
 /**
  * Initialise l'auto-sauvegarde intelligente
@@ -1411,7 +1551,7 @@ async function handleAutoSaveChange(fieldId) {
         const prefsData = collectPreferencesData();
         
         // Sauvegarder automatiquement
-        const result = await ApiService.post('/api/processing_prefs', prefsData);
+        const result = await ApiService.post('/api/processing_prefs', { prefs: prefsData });
         
         if (result.success) {
             // Marquer la section comme sauvegardée
@@ -1433,10 +1573,17 @@ async function handleAutoSaveChange(fieldId) {
 function collectPreferencesData() {
     const data = {};
     
-    // Préférences de filtres
-    data.exclude_keywords_recadrage = document.getElementById('excludeKeywordsRecadrage')?.value || '';
-    data.exclude_keywords_autorepondeur = document.getElementById('excludeKeywordsAutorepondeur')?.value || '';
-    data.exclude_keywords = document.getElementById('excludeKeywords')?.value || '';
+    // Préférences de filtres (tableaux)
+    const excludeKeywordsRecadrage = document.getElementById('excludeKeywordsRecadrage')?.value || '';
+    const excludeKeywordsAutorepondeur = document.getElementById('excludeKeywordsAutorepondeur')?.value || '';
+    const excludeKeywords = document.getElementById('excludeKeywords')?.value || '';
+    
+    data.exclude_keywords_recadrage = excludeKeywordsRecadrage ? 
+        excludeKeywordsRecadrage.split('\n').map(line => line.trim()).filter(line => line) : [];
+    data.exclude_keywords_autorepondeur = excludeKeywordsAutorepondeur ? 
+        excludeKeywordsAutorepondeur.split('\n').map(line => line.trim()).filter(line => line) : [];
+    data.exclude_keywords = excludeKeywords ? 
+        excludeKeywords.split('\n').map(line => line.trim()).filter(line => line) : [];
     
     // Préférences de fiabilité
     data.require_attachments = document.getElementById('attachmentDetectionToggle')?.checked || false;
