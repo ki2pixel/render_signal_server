@@ -1252,20 +1252,6 @@ function initializeCollapsiblePanels() {
     });
 }
 
-/**
- * Collecte les données du panneau d'absence
- */
-function collectAbsenceData() {
-    const toggle = document.getElementById('absencePauseToggle');
-    const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]:checked');
-    
-    return {
-        absence_pause_enabled: toggle ? toggle.checked : false,
-        absence_pause_days: Array.from(dayCheckboxes).map(cb => cb.value)
-    };
-}
-
-/**
  * Met à jour le statut d'un panneau
  * @param {string} panelType - Type de panneau
  * @param {boolean} success - Si la sauvegarde a réussi
@@ -1403,46 +1389,6 @@ function collectAbsenceData() {
         absence_pause_enabled: toggle ? toggle.checked : false,
         absence_pause_days: Array.from(dayCheckboxes).map(cb => cb.value)
     };
-}
-
-/**
- * Met à jour le statut d'un panneau
- * @param {string} panelType - Type de panneau
- * @param {boolean} success - Si la sauvegarde a réussi
- */
-function updatePanelStatus(panelType, success) {
-    const statusElement = document.getElementById(`${panelType}-status`);
-    if (statusElement) {
-        if (success) {
-            statusElement.textContent = 'Sauvegardé';
-            statusElement.classList.add('saved');
-        } else {
-            statusElement.textContent = 'Erreur';
-            statusElement.classList.remove('saved');
-        }
-        
-        // Réinitialiser après 3 secondes
-        setTimeout(() => {
-            statusElement.textContent = 'Sauvegarde requise';
-            statusElement.classList.remove('saved');
-        }, 3000);
-    }
-}
-
-/**
- * Met à jour l'indicateur de dernière sauvegarde
- * @param {string} panelType - Type de panneau
- */
-function updatePanelIndicator(panelType) {
-    const indicator = document.getElementById(`${panelType}-indicator`);
-    if (indicator) {
-        const now = new Date();
-        const timeString = now.toLocaleTimeString('fr-FR', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
-        });
-        indicator.textContent = `Dernière sauvegarde: ${timeString}`;
-    }
 }
 
 // -------------------- Auto-sauvegarde Intelligente --------------------
