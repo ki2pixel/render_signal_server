@@ -168,6 +168,16 @@ function bindEvents() {
     if (refreshStatusBtn) {
         refreshStatusBtn.addEventListener('click', updateGlobalStatus);
     }
+    
+    // Panneaux webhooks (save buttons)
+    document.querySelectorAll('.panel-save-btn[data-panel]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const panelType = btn.dataset.panel;
+            if (panelType) {
+                saveWebhookPanel(panelType);
+            }
+        });
+    });
 }
 
 /**
