@@ -61,7 +61,7 @@ function bindEvents() {
     }
     
     // Configuration webhooks
-    const saveWebhookBtn = document.getElementById('saveWebhookConfigBtn');
+    const saveWebhookBtn = document.getElementById('saveConfigBtn');
     if (saveWebhookBtn) {
         saveWebhookBtn.addEventListener('click', () => WebhookService.saveConfig());
     }
