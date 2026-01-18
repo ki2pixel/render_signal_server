@@ -1,6 +1,15 @@
 # Contexte Actif
 
 ## Tâches Terminées
+- [2026-01-18 23:55] **Correction Bug Affichage Fenêtres Horaires Webhook** :
+  - Problème identifié : Confusion entre deux sources de données pour fenêtres horaires (globale vs webhook spécifique)
+  - Actions réalisées :
+    1. Débogage complet avec logs systématiques (tous les logs rendus visibles en production)
+    2. Identification que `loadGlobalWebhookTimeWindow()` manquait pour les champs sous "Activer l'absence globale"
+    3. Correction de `loadTimeWindow()` pour utiliser `/api/get_webhook_time_window` (valeurs globales 05:30/06:30)
+    4. Ajout de `loadGlobalWebhookTimeWindow()` pour utiliser `/api/webhooks/config` (valeurs webhook 05h00/06h00)
+    5. Suppression du debug coloriage jaune/rouge une fois le problème résolu
+  - Résultat : Les deux fenêtres horaires affichent maintenant les bonnes valeurs respectives
 - [2026-01-18 23:00] **Phase 3 UX & Accessibilité Frontend** :
   - Responsive design mobile-first : grid minmax(500px → 300px), media queries complètes, optimisation mobile
   - Validation fenêtres horaires consistante : harmonisation HHhMM vs HH:MM avec validation client-side et normalisation
@@ -38,6 +47,9 @@
   - Anonymisation des logs (sujets, emails, contenu) via `mask_sensitive_data`.
   - Sécurisation des services de config (RLock + écriture atomique).
   - Validation préventive des domaines pour l'offload R2 (anti-SSRF).
+
+## Questions Ouvertes
+- Aucune question en attente
 
 ## Prochaine Étape
 - Aucune tâche active. Phases 1 (Sécurité), 2 (Architecture) et 3 (UX & Accessibilité) terminées avec succès. Prêt pour Phase 4 (Modernisation) si nécessaire.

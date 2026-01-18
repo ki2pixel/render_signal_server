@@ -21,6 +21,16 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Entrées récentes (post-archives)
 
+- **[2026-01-18 23:55:00] - Correction Bug Affichage Fenêtres Horaires Webhook**
+  - **Décision** : Résoudre le problème d'affichage des valeurs persistées dans les fenêtres horaires du dashboard en identifiant la confusion entre sources de données.
+  - **Raisons** : Les champs sous "Activer l'absence globale" ne se remplissaient pas avec les valeurs webhook persistées, tandis que la fenêtre horaire globale affichait les mauvaises valeurs.
+  - **Actions** : 
+    1. Activation de tous les logs en production pour débogage systématique
+    2. Identification que `loadGlobalWebhookTimeWindow()` manquait pour les champs webhook spécifiques
+    3. Correction de `loadTimeWindow()` pour utiliser `/api/get_webhook_time_window` (valeurs globales)
+    4. Ajout de `loadGlobalWebhookTimeWindow()` pour utiliser `/api/webhooks/config` (valeurs webhook)
+  - **Impacts** : `static/dashboard.js` modifié (corrections + ajout fonction), logs activés dans tous les modules frontend, problème résolu avec les bonnes valeurs affichées respectivement.
+
 - **[2026-01-14 11:55:00] - Lot 3 : Performance & Validation**
   - **Décision** : Ajouter un garde-fou anti-OOM en tronquant strictement le HTML `text/html` à 1MB avant parsing/exploitation, et ajouter un test d’intégration prouvant le fallback R2 (worker down) sans interruption du flux.
   - **Raisons** : Prévenir les OOM kills sur petits conteneurs (512MB) en cas d’e-mails HTML énormes/malformés ; garantir que la panne du Worker R2 n’empêche pas l’envoi des webhooks (fallback vers lien source).

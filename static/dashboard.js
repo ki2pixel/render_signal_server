@@ -565,12 +565,37 @@ async function loadProcessingPrefsFromServer() {
         if (data.success) {
             const prefs = data.prefs || {};
             
-            // Appliquer les préférences aux éléments UI
-            Object.keys(prefs).forEach(prefKey => {
-                const el = document.getElementById(prefKey);
-                if (el) {
+            // Mapping des préférences vers les éléments UI avec les bons IDs
+            const mappings = {
+                // Filtres
+                'excludeKeywords': 'excludeKeywords',
+                'exclude_keywords_recadrage': 'excludeKeywordsRecadrage', 
+                'exclude_keywords_autorepondeur': 'excludeKeywordsAutorepondeur',
+                
+                // Paramètres
+                'require_attachments': 'attachmentDetectionToggle',
+                'max_email_size_mb': 'maxEmailSizeMB',
+                'sender_priority': 'senderPriority',
+                
+                // Fiabilité
+                'retry_count': 'retryCount',
+                'retry_delay_sec': 'retryDelaySec',
+                'webhook_timeout_sec': 'webhookTimeoutSec',
+                'rate_limit_per_hour': 'rateLimitPerHour',
+                'notify_on_failure': 'notifyOnFailureToggle'
+            };
+            
+            Object.entries(mappings).forEach(([prefKey, elementId]) => {
+                const el = document.getElementById(elementId);
+                if (el && prefs[prefKey] !== undefined) {
                     if (el.type === 'checkbox') {
-                        el.checked = prefs[prefKey];
+                        el.checked = Boolean(prefs[prefKey]);
+                    } else if (el.tagName === 'TEXTAREA' && Array.isArray(prefs[prefKey])) {
+                        // Convertir les tableaux en chaînes multi-lignes pour les textarea
+                        el.value = prefs[prefKey].join('\n');
+                    } else if (el.tagName === 'TEXTAREA' && typeof prefs[prefKey] === 'object') {
+                        // Convertir les objets JSON en chaînes formatées pour les textarea
+                        el.value = JSON.stringify(prefs[prefKey], null, 2);
                     } else {
                         el.value = prefs[prefKey];
                     }
@@ -589,16 +614,72 @@ async function saveProcessingPrefsToServer() {
     MessageHelper.setButtonLoading(btn, true);
     
     try {
-        // Collecter toutes les préférences depuis les éléments UI
-        const prefs = {};
-        const prefElements = document.querySelectorAll('[id^="pref_"], [id$="_pref"]');
+        // Mapping des éléments UI vers les clés de préférences
+        const mappings = {
+            // Filtres
+            'excludeKeywords': 'excludeKeywords',
+            'excludeKeywordsRecadrage': 'exclude_keywords_recadrage', 
+            'excludeKeywordsAutorepondeur': 'exclude_keywords_autorepondeur',
+            
+            // Paramètres
+            'attachmentDetectionToggle': 'require_attachments',
+            'maxEmailSizeMB': 'max_email_size_mb',
+            'senderPriority': 'sender_priority',
+            
+            // Fiabilité
+            'retryCount': 'retry_count',
+            'retryDelaySec': 'retry_delay_sec',
+            'webhookTimeoutSec': 'webhook_timeout_sec',
+            'rateLimitPerHour': 'rate_limit_per_hour',
+            'notifyOnFailureToggle': 'notify_on_failure'
+        };
         
-        prefElements.forEach(el => {
-            const prefName = el.id.replace(/^pref_/, '').replace(/_pref$/, '');
-            if (el.type === 'checkbox') {
-                prefs[prefName] = el.checked;
-            } else {
-                prefs[prefName] = el.value;
+        // Collecter les préférences depuis les éléments UI
+        const prefs = {};
+        
+        Object.entries(mappings).forEach(([elementId, prefKey]) => {
+            const el = document.getElementById(elementId);
+            if (el) {
+                if (el.type === 'checkbox') {
+                    prefs[prefKey] = el.checked;
+                } else if (el.tagName === 'TEXTAREA') {
+                    const value = el.value.trim();
+                    if (value) {
+                        // Pour les textarea de mots-clés, convertir en tableau
+                        if (elementId.includes('Keywords')) {
+                            prefs[prefKey] = value.split('\n').map(line => line.trim()).filter(line => line);
+                        } 
+                        // Pour le textarea JSON (sender_priority)
+                        else if (elementId === 'senderPriority') {
+                            try {
+                                prefs[prefKey] = JSON.parse(value);
+                            } catch (e) {
+                                console.warn('Invalid JSON in senderPriority, using empty object');
+                                prefs[prefKey] = {};
+                            }
+                        }
+                        // Pour les autres textarea
+                        else {
+                            prefs[prefKey] = value;
+                        }
+                    } else {
+                        // Valeur vide selon le type
+                        if (elementId.includes('Keywords')) {
+                            prefs[prefKey] = [];
+                        } else if (elementId === 'senderPriority') {
+                            prefs[prefKey] = {};
+                        } else {
+                            prefs[prefKey] = value;
+                        }
+                    }
+                } else {
+                    // Pour les inputs normaux
+                    let value = el.value;
+                    if (el.type === 'number' && value) {
+                        value = parseInt(value, 10);
+                    }
+                    prefs[prefKey] = value || (el.type === 'number' ? 0 : '');
+                }
             }
         });
         

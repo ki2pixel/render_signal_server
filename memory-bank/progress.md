@@ -1,5 +1,17 @@
 # Suivi de Progression
 
+[2026-01-18 23:55:00] - Correction Bug Affichage Fenêtres Horaires Webhook Terminée
+- **Décision** : Résoudre le problème d'affichage des valeurs persistées dans les fenêtres horaires du dashboard.
+- **Actions réalisées** :
+  1. **Débogage systématique** : Activation de tous les logs en production pour identifier le problème
+  2. **Identification du problème** : Confusion entre deux sources de données (fenêtre globale vs webhook spécifique)
+  3. **Correction loadTimeWindow()** : Utilisation de `/api/get_webhook_time_window` pour les valeurs globales (05:30/06:30)
+  4. **Ajout loadGlobalWebhookTimeWindow()** : Fonction manquante pour charger les champs sous "Activer l'absence globale" (05h00/06h00)
+  5. **Nettoyage** : Suppression du debug coloriage jaune/rouge une fois le problème résolu
+- **Résultat** : Les deux fenêtres horaires affichent maintenant les bonnes valeurs respectives
+- **Fichiers modifiés** : `static/dashboard.js` (corrections loadTimeWindow + ajout loadGlobalWebhookTimeWindow), `static/services/WebhookService.js`, `static/services/LogService.js`, `static/components/TabManager.js` (logs visibles)
+- **Impact** : Problème d'affichage résolu, logs activés pour faciliter le débogage futur
+
 [2026-01-18 23:00:00] - Phase 3 UX & Accessibilité Frontend Terminée
 - **Décision** : Implémenter les recommandations UX & Accessibilité de la Phase 3 selon l'audit frontend unifié.
 - **Actions réalisées** :
