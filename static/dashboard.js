@@ -176,6 +176,9 @@ async function loadInitialData() {
             loadLocalPreferences()
         ]);
         
+        // Charger la fenêtre horaire webhook globale après les autres
+        await loadGlobalWebhookTimeWindow();
+        
         // Charger les logs après les autres données
         await LogService.loadAndRenderLogs();
         
@@ -908,6 +911,40 @@ function collectSenderInputs() {
 }
 
 // -------------------- Fenêtre Horaire Global Webhook --------------------
+async function loadGlobalWebhookTimeWindow() {
+    console.log('[loadGlobalWebhookTimeWindow] Function called - hostname:', window.location.hostname);
+    
+    const applyGlobalWindowValues = (startValue = '', endValue = '') => {
+        const startInput = document.getElementById('globalWebhookTimeStart');
+        const endInput = document.getElementById('globalWebhookTimeEnd');
+        console.log('[loadGlobalWebhookTimeWindow] Applying values:', { startValue, endValue, startInput: !!startInput, endInput: !!endInput });
+        if (startInput) startInput.value = startValue || '';
+        if (endInput) endInput.value = endValue || '';
+        
+        // Vérifier immédiatement après application
+        setTimeout(() => {
+            const startAfter = document.getElementById('globalWebhookTimeStart')?.value || '';
+            const endAfter = document.getElementById('globalWebhookTimeEnd')?.value || '';
+            console.log('[loadGlobalWebhookTimeWindow] Values after apply (delayed):', { startAfter, endAfter });
+        }, 100);
+    };
+    
+    try {
+        // Utiliser la même source que la fenêtre horaire principale
+        const configResponse = await ApiService.get('/api/webhooks/config');
+        console.log('[loadGlobalWebhookTimeWindow] /api/webhooks/config response:', configResponse);
+        if (configResponse.success && configResponse.config) {
+            const cfg = configResponse.config;
+            if (cfg.webhook_time_start || cfg.webhook_time_end) {
+                applyGlobalWindowValues(cfg.webhook_time_start || '', cfg.webhook_time_end || '');
+                return;
+            }
+        }
+    } catch (e) {
+        console.warn('Impossible de charger la fenêtre horaire webhook globale:', e);
+    }
+}
+
 async function saveGlobalWebhookTimeWindow() {
     const startInput = document.getElementById('globalWebhookTimeStart');
     const endInput = document.getElementById('globalWebhookTimeEnd');
