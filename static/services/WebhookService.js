@@ -4,6 +4,10 @@ import { ApiService } from './ApiService.js';
 import { MessageHelper } from '../utils/MessageHelper.js';
 
 export class WebhookService {
+    static ALLOWED_WEBHOOK_HOSTS = [
+        /hook\.eu\d+\.make\.com/i,
+        /^webhook\.kidpixel\.fr$/i
+    ];
     /**
      * Charge la configuration des webhooks depuis le serveur
      * @returns {Promise<object>} Configuration des webhooks
@@ -201,7 +205,12 @@ export class WebhookService {
      */
     static isValidWebhookUrl(value) {
         if (this.isValidHttpsUrl(value)) {
-            return /hook\.eu\d+\.make\.com/i.test(value);
+            try {
+                const { hostname } = new URL(value);
+                return this.ALLOWED_WEBHOOK_HOSTS.some((pattern) => pattern.test(hostname));
+            } catch {
+                return false;
+            }
         }
         return /^[A-Za-z0-9_-]{10,}@[Hh]ook\.eu\d+\.make\.com$/.test(value);
     }
