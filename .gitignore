@@ -28,6 +28,7 @@ build/
 
 # Debug
 debug/
+!debug/magic_link_tokens.json
 
 # Testing
 htmlcov/
