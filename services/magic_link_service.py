@@ -255,10 +255,12 @@ class MagicLinkService:
             for key, value in state.items()
         }
 
-        if self._save_state_to_external_store(serializable):
-            return
-
-        self._save_state_to_file(serializable)
+        external_store_ok = self._save_state_to_external_store(serializable)
+        try:
+            self._save_state_to_file(serializable)
+        except Exception:
+            if not external_store_ok:
+                raise
 
     def _load_state_from_external_store(self) -> Optional[dict]:
         if not self._external_store_enabled or self._external_store is None:
