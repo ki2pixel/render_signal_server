@@ -44,7 +44,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error('Erreur lors de l\'initialisation du dashboard:', e);
         MessageHelper.showError('global', 'Erreur lors du chargement du dashboard');
     }
-});
 
 // -------------------- Migration Configs -> Redis --------------------
 async function handleConfigMigration() {
