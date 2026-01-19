@@ -95,6 +95,8 @@ async function handleConfigVerification() {
     const button = document.getElementById('verifyConfigStoreBtn');
     const messageId = 'verifyConfigStoreMsg';
     const logEl = document.getElementById('verifyConfigStoreLog');
+    const rawToggle = document.getElementById('verifyConfigStoreRawToggle');
+    const includeRaw = Boolean(rawToggle?.checked);
 
     if (!button) {
         MessageHelper.showError(messageId, 'Bouton de vérification introuvable.');
@@ -109,7 +111,7 @@ async function handleConfigVerification() {
     }
 
     try {
-        const response = await ApiService.post('/api/verify_config_store', {});
+        const response = await ApiService.post('/api/verify_config_store', { raw: includeRaw });
         if (response?.success) {
             MessageHelper.showSuccess(messageId, 'Toutes les configurations sont conformes.');
         } else {
@@ -122,7 +124,14 @@ async function handleConfigVerification() {
         if (logEl) {
             const lines = (response?.results || []).map((entry) => {
                 const status = entry.valid ? 'OK' : `INVALID (${entry.message})`;
-                return `${entry.key}: ${status}\n${entry.summary}`;
+                const summary = entry.summary || '';
+                const payload =
+                    includeRaw && entry.payload
+                        ? `Payload:\n${JSON.stringify(entry.payload, null, 2)}`
+                        : null;
+                return [ `${entry.key}: ${status}`, summary, payload ]
+                    .filter(Boolean)
+                    .join('\n');
             });
             logEl.textContent = lines.length ? lines.join('\n\n') : 'Aucun résultat renvoyé.';
             logEl.style.display = 'block';
