@@ -28,6 +28,19 @@
   - `type="content"` journalise uniquement la longueur.
 - Le masquage est appliqué dans `email_processing/orchestrator.py` (lecture IMAP, allowlist, décisions) et `email_processing/webhook_sender.py` (logs Make.com/dashboard). Vérifiez que vos ajouts de logs sensibles utilisent la même fonction pour éviter toute fuite de PII.
 
+### Écriture Atomique Configuration (Lot 1)
+- **Services impactés** : `RuntimeFlagsService` et `WebhookConfigService` utilisent `RLock` + écriture atomique
+- **Mécanisme** : Écriture via fichier temporaire + `os.replace()` pour garantir l'atomicité
+- **Protection** : Prévention de la corruption des fichiers JSON lors écritures concurrentes
+- **Fallback** : Fichier verrouillé avec `fcntl` pour éviter les conditions de course
+
+### Validation Domaines R2 (Lot 1)
+- **Service** : `R2TransferService` avec allowlist stricte des domaines sources
+- **Protection** : Prévention SSRF (Server-Side Request Forgery) côté Python
+- **Domaines autorisés** : `dropbox.com`, `fromsmash.com`, `swisstransfer.com`, `wetransfer.com`
+- **Configuration** : `R2_ALLOWED_DOMAINS` (optionnel) pour surcharge personnalisée
+- **Logging** : Rejets journalisés avec `WARNING` pour auditabilité
+
 ## Magic Links
 
 ### Génération sécurisée

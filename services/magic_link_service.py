@@ -83,10 +83,18 @@ class MagicLinkService:
         self._ttl_seconds = max(60, int(ttl_seconds or 0))  # minimum 1 minute
         self._config_service = config_service or ConfigService()
         self._external_store = external_store
-        self._external_store_enabled = bool(
+        redis_url = os.environ.get("REDIS_URL")
+        php_enabled = bool(
             os.environ.get("EXTERNAL_CONFIG_BASE_URL")
             and os.environ.get("CONFIG_API_TOKEN")
         )
+        redis_enabled = bool(
+            isinstance(redis_url, str)
+            and redis_url.strip()
+            and str(os.environ.get("CONFIG_STORE_DISABLE_REDIS", "")).strip().lower()
+            not in {"1", "true", "yes", "y", "on"}
+        )
+        self._external_store_enabled = bool(self._external_store is not None and (redis_enabled or php_enabled))
         self._logger = logger or logging.getLogger(__name__)
         self._file_lock = RLock()
 

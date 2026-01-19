@@ -26,6 +26,7 @@ from config import polling_config
 from config.polling_config import PollingConfigService
 from config import webhook_time_window
 from config.app_config_store import get_config_json as _config_get
+from config.app_config_store import set_config_json as _config_set
 
 # --- Import des services (Phase 2 - Architecture orientée services) ---
 from services import (
@@ -761,27 +762,23 @@ except NameError:
 
 
 def _load_processing_prefs() -> dict:
-    """Charge les préférences via module preferences (Redis si dispo, sinon fichier)."""
-    rc = globals().get("redis_client")
-    return _processing_prefs.load_processing_prefs(
-        redis_client=rc,
-        file_path=PROCESSING_PREFS_FILE,
-        defaults=_DEFAULT_PROCESSING_PREFS,
-        logger=app.logger,
-        redis_key=PROCESSING_PREFS_REDIS_KEY,
-    )
+    """Charge les préférences via app_config_store (Redis-first, fallback fichier)."""
+    try:
+        data = _config_get("processing_prefs", file_fallback=PROCESSING_PREFS_FILE) or {}
+    except Exception:
+        data = {}
+
+    if isinstance(data, dict):
+        return {**_DEFAULT_PROCESSING_PREFS, **data}
+    return _DEFAULT_PROCESSING_PREFS.copy()
 
 
 def _save_processing_prefs(prefs: dict) -> bool:
-    """Sauvegarde via module preferences (Redis prioritaire, sinon fichier)."""
-    rc = globals().get("redis_client")
-    return _processing_prefs.save_processing_prefs(
-        prefs,
-        redis_client=rc,
-        file_path=PROCESSING_PREFS_FILE,
-        logger=app.logger,
-        redis_key=PROCESSING_PREFS_REDIS_KEY,
-    )
+    """Sauvegarde via app_config_store (Redis-first, fallback fichier)."""
+    try:
+        return bool(_config_set("processing_prefs", prefs, file_fallback=PROCESSING_PREFS_FILE))
+    except Exception:
+        return False
 
 # Initialize with persisted values
 PROCESSING_PREFS = _load_processing_prefs()

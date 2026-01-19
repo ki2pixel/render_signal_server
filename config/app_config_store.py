@@ -21,11 +21,92 @@ try:
 except Exception:  # requests may be unavailable in some test contexts
     requests = None  # type: ignore
 
+
+_REDIS_CLIENT = None
+
+
+def _get_redis_client():
+    global _REDIS_CLIENT
+
+    if _REDIS_CLIENT is not None:
+        return _REDIS_CLIENT
+
+    redis_url = os.environ.get("REDIS_URL")
+    if not isinstance(redis_url, str) or not redis_url.strip():
+        return None
+
+    try:
+        import redis  # type: ignore
+
+        _REDIS_CLIENT = redis.Redis.from_url(redis_url, decode_responses=True)
+        return _REDIS_CLIENT
+    except Exception:
+        return None
+
+
+def _config_redis_key(key: str) -> str:
+    prefix = os.environ.get("CONFIG_STORE_REDIS_PREFIX", "r:ss:config:")
+    return f"{prefix}{key}"
+
+
+def _store_mode() -> str:
+    mode = os.environ.get("CONFIG_STORE_MODE", "redis_first")
+    if not isinstance(mode, str):
+        return "redis_first"
+    mode = mode.strip().lower()
+    return mode if mode in {"redis_first", "php_first"} else "redis_first"
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _redis_get_json(key: str) -> Optional[Dict[str, Any]]:
+    if _env_bool("CONFIG_STORE_DISABLE_REDIS", False):
+        return None
+
+    client = _get_redis_client()
+    if client is None:
+        return None
+
+    try:
+        raw = client.get(_config_redis_key(key))
+        if not raw:
+            return None
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _redis_set_json(key: str, value: Dict[str, Any]) -> bool:
+    if _env_bool("CONFIG_STORE_DISABLE_REDIS", False):
+        return False
+
+    client = _get_redis_client()
+    if client is None:
+        return False
+
+    try:
+        client.set(_config_redis_key(key), json.dumps(value, ensure_ascii=False))
+        return True
+    except Exception:
+        return False
+
 def get_config_json(key: str, *, file_fallback: Optional[Path] = None) -> Dict[str, Any]:
     """Fetch config dict for a key from External JSON backend, with file fallback.
     Returns empty dict on any error.
     """
-    # External backend (PHP)
+    mode = _store_mode()
+
+    if mode == "redis_first":
+        data = _redis_get_json(key)
+        if isinstance(data, dict):
+            return data
+
     base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
     api_token = os.environ.get("CONFIG_API_TOKEN")
     if base_url and api_token and requests is not None:
@@ -35,6 +116,11 @@ def get_config_json(key: str, *, file_fallback: Optional[Path] = None) -> Dict[s
                 return data
         except Exception:
             pass
+
+    if mode == "php_first":
+        data = _redis_get_json(key)
+        if isinstance(data, dict):
+            return data
 
     # File fallback
     if file_fallback and file_fallback.exists():
@@ -50,7 +136,12 @@ def get_config_json(key: str, *, file_fallback: Optional[Path] = None) -> Dict[s
 
 def set_config_json(key: str, value: Dict[str, Any], *, file_fallback: Optional[Path] = None) -> bool:
     """Persist config dict for a key into External backend, fallback to file if needed."""
-    # External backend (PHP)
+    mode = _store_mode()
+
+    if mode == "redis_first":
+        if _redis_set_json(key, value):
+            return True
+
     base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
     api_token = os.environ.get("CONFIG_API_TOKEN")
     if base_url and api_token and requests is not None:
@@ -60,6 +151,10 @@ def set_config_json(key: str, value: Dict[str, Any], *, file_fallback: Optional[
                 return True
         except Exception:
             pass
+
+    if mode == "php_first":
+        if _redis_set_json(key, value):
+            return True
 
     # File fallback
     if file_fallback is not None:

@@ -21,6 +21,29 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Entrées récentes (post-archives)
 
+- **[2026-01-19 11:00:00] - Migration persistance configs vers Redis**
+  - **Décision** : Remplacer la dépendance au backend PHP/fichiers par un store Redis-first pour toutes les configurations (`processing_prefs`, `polling_config`, `webhook_config`, `magic_link_tokens`).
+  - **Raisons** : Le filesystem Render est éphémère et le serveur PHP externe est fragile; Redis est déjà requis (lock poller, dédup) et offre une disponibilité multi-workers.
+  - **Actions** :
+    1. Extension de `config/app_config_store.py` avec client Redis, modes `redis_first`/`php_first`, flags de désactivation et préfixes configurables.
+    2. Mise à jour de `app_render.py` et `MagicLinkService` pour consommer ce store et détecter automatiquement Redis.
+    3. Création du script `migrate_configs_to_redis.py` (dry-run/verify/only/require-redis) + tests unitaires `tests/test_app_config_store.py`.
+    4. Exécution du script (avec `--verify`) via l'env `/mnt/venv_ext4/venv_render_signal_server` pour pousser les 4 JSON vers Redis.
+  - **Impacts** : Configs critiques survivent aux redeploys, alignement avec Lot 2 (Redis), rollback possible via mode `php_first`, tests automatisés couvrant les nouveaux chemins.
+
+- **[2026-01-19 13:30:00] - Mise à Jour Documentation Complète (Workflow docs-updater)**
+  - **Décision** : Exécuter le workflow `/docs-updater` pour analyser la Memory Bank, inspecter le code source impacté et synchroniser toute la documentation avec les évolutions récentes.
+  - **Raisons** : Les évolutions majeures (Lot 1 Sécurité, Lot 2 Résilience, Frontend UX avancé) nécessitaient une mise à jour complète de la documentation pour maintenir la cohérence entre le code et les docs.
+  - **Actions** :
+    - Architecture overview : Ajout section Résilience & Architecture (Lot 2) avec verrou Redis, fallback R2, watchdog IMAP
+    - Sécurité : Ajout sections écriture atomique et validation domaines R2 (Lot 1)
+    - README docs : Mise à jour plan de documentation avec nouvelles sections
+    - Validation : Documentation frontend UX, API et tests déjà complètes
+  - **Impacts** : Documentation entièrement synchronisée, cohérence code/docs maintenue, meilleure traçabilité des évolutions pour les développeurs et ops.
+  - **Décision** : Implémenter les 4 fonctionnalités UX avancées (Statut Global, Timeline, Panneaux pliables, Auto-sauvegarde) pour atteindre un niveau d'excellence ergonomique.
+  - **Raisons** : Faciliter le monitoring rapide, réduire la charge cognitive et sécuriser les modifications de configuration par feedback immédiat.
+  - **Impacts** : Transformation visuelle majeure du dashboard, introduction de graphiques (Sparkline Canvas), organisation logique en panneaux, impact UX mesuré positif.
+
 - **[2026-01-19 12:30:00] - Micro-interactions Priorité 2 Dashboard Webhooks**
   - **Décision** : Implémenter les micro-interactions Priorité 2 de l'audit visuel et ergonomique unifié pour finaliser l'amélioration UX du dashboard.
   - **Raisons** : Compléter l'expérience utilisateur avancée avec feedback visuel marqué, optimisation mobile parfaite et transitions cohérentes tout en préservant l'accessibilité.
@@ -29,6 +52,11 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
     2. Optimisation mobile : Grilles adaptatives checkboxes/pills <480px, logs verticaux, métriques en colonne
     3. Transitions cohérentes : Micro-animations cards, standardisation durées (0.2s/0.3s), respect prefers-reduced-motion
   - **Impacts** : `dashboard.html` (150+ lignes CSS), `static/dashboard.js` (fonction showCopiedFeedback), `docs/audit_visuel_ergonomique_unifie_2026-01-19.md` (statut terminé). Impact UX : +30% satisfaction perçue, +35% usage mobile, interface unifiée et accessible.
+
+- **[2026-01-19 12:15:00] - Refonte Architecture Frontend (Phase 2)**
+  - **Décision** : Migrer le monolithe `dashboard.js` (1500 lignes) vers une architecture modulaire ES6 avec services spécialisés (`ApiService`, `WebhookService`, `LogService`) et composants (`TabManager`).
+  - **Raisons** : L'audit frontend unifié a relevé des problèmes de maintenabilité, de lisibilité et de mélange des responsabilités rendant les évolutions risquées.
+  - **Impacts** : Code frontend modulaire, testable et maintenable. Séparation nette entre logique métier, UI et appels API. Chargement via `type="module"`.
 
 - **[2026-01-19 12:15:00] - Quick Wins Priorité 1 Dashboard Webhooks**
   - **Décision** : Implémenter les 4 Quick Wins Priorité 1 de l'audit visuel et ergonomique unifié pour un impact UX immédiat.
@@ -130,7 +158,6 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
   - **Raisons** : Les utilisateurs partagent majoritairement des dossiers Dropbox ; ignorer ces liens empêchait l’économie de bande passante et obligeait à télécharger depuis Render.
   - **Impacts** : Les liens `/scl/fo/` réussissent désormais quand Dropbox fournit un ZIP public (ex. test 265 MB validé). Les cas HTML/login échouent proprement sans stocker de prévisualisation, logs explicites et fallback vers le lien source toujours disponible.
 
-
 - **[2026-01-08 01:30:00] - Intégration Cloudflare R2 Offload pour économiser la bande passante Render**
   - **Décision** : Implémenter un service R2TransferService et des Workers Cloudflare pour transférer automatiquement les fichiers volumineux (Dropbox, FromSmash, SwissTransfer) vers R2, supprimant la consommation de bande passante Render.
   - **Changements clés** :
@@ -151,6 +178,15 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
   - **Raisons** : Simplifier l’accès admin récurrent tout en conservant une trace sécurisée des tokens et la possibilité d’expiration rapide.
   - **Impacts** : Amélioration UX login, nouveau besoin de surveiller les tokens permanents (révocation manuelle si fuite), couverture test à compléter.
 
+- **[2026-01-07 11:10:00] - Passage au déploiement par image Docker (GHCR → Render)**
+  - **Décision** : Construire et publier l'application via un `Dockerfile` officiel et un workflow GitHub Actions poussant sur GHCR puis déclenchant Render (Deploy Hook ou API).
+  - **Changements clés** :
+    - Création d'un `Dockerfile` standardisé (Gunicorn, logs stdout/stderr, variables `GUNICORN_*`).
+    - Nouveau workflow `.github/workflows/render-image.yml` (build/push, déclenchement Render, fallback API).
+    - Mise à jour de `docs/deploiement.md` pour documenter le flux image-based.
+  - **Raisons** : Réduire le temps de déploiement Render en réutilisant une image pré-buildée et fiabiliser la traçabilité des logs.
+  - **Impacts** : Service Render migré vers `render-signal-server-latest.onrender.com`, pipeline reproductible, monitoring conservé.
+
 - **[2026-01-06 11:27:00] - Réduction de la dette historique des Memory Bank**
   - **Décision** : Mettre en œuvre une politique d'archivage pour réduire la taille de `decisionLog.md` (>1000 lignes) et `progress.md` (~350 lignes) tout en conservant l'historique utile.
   - **Changements clés** :
@@ -160,12 +196,3 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
     - Déplacement des entrées antérieures à 2025-12-01 vers les archives
   - **Raisons** : Les fichiers devenaient difficiles à maintenir et contenaient beaucoup de redondances. L'archivage améliore la lisibilité tout en préservant l'historique.
   - **Impacts** : Fichiers principaux réduits à <100 lignes, historique préservé dans archives, politique de maintenance claire établie.
-
-- **[2026-01-07 11:10:00] - Passage au déploiement par image Docker (GHCR → Render)**
-  - **Décision** : Construire et publier l'application via un `Dockerfile` officiel et un workflow GitHub Actions poussant sur GHCR puis déclenchant Render (Deploy Hook ou API).
-  - **Changements clés** :
-    - Création d'un `Dockerfile` standardisé (Gunicorn, logs stdout/stderr, variables `GUNICORN_*`).
-    - Nouveau workflow `.github/workflows/render-image.yml` (build/push, déclenchement Render, fallback API).
-    - Mise à jour de `docs/deploiement.md` pour documenter le flux image-based.
-  - **Raisons** : Réduire le temps de déploiement Render en réutilisant une image pré-buildée et fiabiliser la traçabilité des logs.
-  - **Impacts** : Service Render migré vers `render-signal-server-latest.onrender.com`, pipeline reproductible, monitoring conservé.

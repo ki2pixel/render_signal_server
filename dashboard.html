@@ -1604,6 +1604,15 @@
           <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
         </div>
         <div class="card" style="margin-top: 20px;">
+          <div class="card-title">🗂️ Migration configs → Redis</div>
+          <p>Rejouez le script <code>migrate_configs_to_redis.py</code> directement sur le serveur Render avec toutes les variables d'environnement de production.</p>
+          <div class="inline-group" style="margin-bottom: 10px;">
+            <button id="migrateConfigsBtn" class="btn btn-warning">📦 Migrer les configurations</button>
+          </div>
+          <div id="migrateConfigsMsg" class="status-msg"></div>
+          <pre id="migrateConfigsLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
+        </div>
+        <div class="card" style="margin-top: 20px;">
           <div class="card-title">🔐 Accès Magic Link</div>
           <p>Générez un lien pré-authentifié à usage unique pour ouvrir rapidement le dashboard sans retaper vos identifiants. Le lien est automatiquement copié.</p>
           <div class="inline-group" style="margin-bottom: 12px;">

@@ -94,6 +94,38 @@ def create_imap_connection(
 ) -> Optional[Union[imaplib.IMAP4_SSL, imaplib.IMAP4]]:
 ```
 
+### Implémentation Technique
+
+#### Verrou Redis (background/lock.py)
+```python
+# Clé et TTL
+_REDIS_LOCK_KEY = "render_signal:poller_lock"
+_REDIS_LOCK_TTL_SECONDS = 300
+
+# Token avec PID
+token = f"pid={os.getpid()}"
+acquired = client.set(key, token, nx=True, ex=ttl)
+```
+
+#### Fallback R2 (orchestrator.py)
+```python
+# Conservation explicite du lien source
+fallback_raw_url = source_url
+try:
+    r2_result = r2_service.request_remote_fetch(...)
+except Exception:
+    r2_result = None
+    logger.warning("R2_TRANSFER: fallback to source URL")
+# Flux continue avec fallback_raw_url
+```
+
+#### Watchdog IMAP (imap_client.py)
+```python
+# Timeout 30s sur toutes les opérations
+imap_client.select('INBOX', timeout=30)
+imap_client.search(None, criteria, timeout=30)
+```
+
 ## Tests & Couverture
 
 ### Résultats Lot 2

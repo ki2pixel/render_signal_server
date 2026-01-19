@@ -221,3 +221,45 @@ R2_TRANSFER: failed url=... error=... (fallback to source URLs)
 ```
 
 Cette architecture garantit qu'un seul poller s'exécute à travers tous les conteneurs, éliminant le risque de double traitement des emails.
+
+## Redis comme backend central
+
+### Config Store Redis-first
+- **Service** : `config/app_config_store.py` avec support Redis-first
+- **Modes** : `redis_first` (défaut) ou `php_first` via `CONFIG_STORE_MODE`
+- **Préfixe** : Configurable via `CONFIG_STORE_REDIS_PREFIX` (défaut: "r:ss:config:")
+
+### Configuration
+```bash
+# Redis (requis pour multi-conteneurs)
+REDIS_URL=redis://redis-host:6379/0
+CONFIG_STORE_MODE=redis_first
+
+# Désactiver fallback fichiers (éphémères)
+CONFIG_STORE_DISABLE_REDIS=false
+```
+
+### Configurations supportées
+- `magic_link_tokens` : Tokens magic link permanents
+- `polling_config` : Configuration IMAP et fenêtres horaires
+- `processing_prefs` : Préférences de traitement des emails
+- `webhook_config` : Configuration URLs webhooks et SSL
+
+### Migration
+Utiliser le script `migrate_configs_to_redis.py` :
+```bash
+# Migration avec vérification
+python migrate_configs_to_redis.py --verify
+
+# Redis obligatoire
+python migrate_configs_to_redis.py --require-redis
+```
+
+### Health Checks
+- `/health` : Vérifie Redis et services critiques
+- Lock Redis : Monitoring via logs `WARNING Using file-based lock`
+
+### Scalabilité
+- **Horizontal** : Plusieurs instances Render autorisées
+- **Partage** : Configs et état partagés via Redis
+- **Fallback** : Si Redis indisponible, mode dégradé avec lock fichier

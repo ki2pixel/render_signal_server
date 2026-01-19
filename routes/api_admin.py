@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import io
 import os
 import subprocess
 import threading
+from contextlib import redirect_stdout, redirect_stderr
 from datetime import datetime
+from typing import Iterable, List, Tuple
 
 import requests
 from flask import Blueprint, jsonify, request, current_app
@@ -14,11 +17,36 @@ from services import ConfigService
 from email_processing import webhook_sender as email_webhook_sender
 from email_processing import orchestrator as email_orchestrator
 from app_logging.webhook_logger import append_webhook_log as _append_webhook_log
+from migrate_configs_to_redis import main as migrate_configs_main
 
 bp = Blueprint("api_admin", __name__, url_prefix="/api")
 
 # Phase 5: Initialiser ConfigService pour ce module
 _config_service = ConfigService()
+ALLOWED_CONFIG_KEYS = (
+    "magic_link_tokens",
+    "polling_config",
+    "processing_prefs",
+    "webhook_config",
+)
+
+
+def _invoke_config_migration(selected_keys: Iterable[str]) -> Tuple[int, str]:
+    argv: List[str] = ["--require-redis", "--verify"]
+    for key in selected_keys:
+        argv.extend(["--only", key])
+
+    stdout_buffer = io.StringIO()
+    stderr_buffer = io.StringIO()
+    with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+        exit_code = migrate_configs_main(argv)
+
+    combined_output = "\n".join(
+        segment
+        for segment in (stdout_buffer.getvalue().strip(), stderr_buffer.getvalue().strip())
+        if segment
+    )
+    return exit_code, combined_output
 
 
 @bp.route("/restart_server", methods=["POST"])  # POST /api/restart_server
@@ -51,6 +79,73 @@ def restart_server():
         return jsonify({"success": True, "message": "Redémarrage planifié. L'application sera indisponible quelques secondes."}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+@bp.route("/migrate_configs_to_redis", methods=["POST"])
+@login_required
+def migrate_configs_to_redis_endpoint():
+    """Migrer les configurations critiques vers Redis directement depuis le dashboard."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        requested_keys = payload.get("keys")
+
+        if requested_keys is None:
+            selected_keys = ALLOWED_CONFIG_KEYS
+        elif isinstance(requested_keys, list) and all(isinstance(k, str) for k in requested_keys):
+            invalid = [k for k in requested_keys if k not in ALLOWED_CONFIG_KEYS]
+            if invalid:
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": f"Clés invalides: {', '.join(invalid)}",
+                            "allowed_keys": ALLOWED_CONFIG_KEYS,
+                        }
+                    ),
+                    400,
+                )
+            # Conserver l'ordre fourni par l'utilisateur (mais éviter doublons)
+            seen = set()
+            selected_keys = tuple(k for k in requested_keys if not (k in seen or seen.add(k)))
+        else:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Le champ 'keys' doit être une liste de chaînes.",
+                        "allowed_keys": ALLOWED_CONFIG_KEYS,
+                    }
+                ),
+                400,
+            )
+
+        exit_code, output = _invoke_config_migration(selected_keys)
+        success = exit_code == 0
+        status_code = 200 if success else 502
+
+        try:
+            current_app.logger.info(
+                "ADMIN: Config migration requested by '%s' (keys=%s, exit=%s)",
+                getattr(current_user, "id", "unknown"),
+                list(selected_keys),
+                exit_code,
+            )
+        except Exception:
+            pass
+
+        return (
+            jsonify(
+                {
+                    "success": success,
+                    "exit_code": exit_code,
+                    "keys": list(selected_keys),
+                    "log": output,
+                }
+            ),
+            status_code,
+        )
+    except Exception as exc:
+        return jsonify({"success": False, "message": str(exc)}), 500
 
 
 @bp.route("/deploy_application", methods=["POST"])  # POST /api/deploy_application

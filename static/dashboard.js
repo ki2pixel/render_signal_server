@@ -44,6 +44,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error('Erreur lors de l\'initialisation du dashboard:', e);
         MessageHelper.showError('global', 'Erreur lors du chargement du dashboard');
     }
+
+// -------------------- Migration Configs -> Redis --------------------
+async function handleConfigMigration() {
+    const button = document.getElementById('migrateConfigsBtn');
+    const messageId = 'migrateConfigsMsg';
+    const logEl = document.getElementById('migrateConfigsLog');
+
+    if (!button) {
+        MessageHelper.showError(messageId, 'Bouton de migration introuvable.');
+        return;
+    }
+
+    const confirmed = window.confirm('Lancer la migration des configurations vers Redis ?');
+    if (!confirmed) {
+        return;
+    }
+
+    MessageHelper.setButtonLoading(button, true, '⏳ Migration en cours...');
+    MessageHelper.showInfo(messageId, 'Migration en cours...');
+    if (logEl) {
+        logEl.style.display = 'none';
+        logEl.textContent = '';
+    }
+
+    try {
+        const response = await ApiService.post('/api/migrate_configs_to_redis', {});
+        if (response?.success) {
+            const keysText = (response.keys || []).join(', ') || 'aucune clé';
+            MessageHelper.showSuccess(messageId, `Migration réussie (${keysText}).`);
+        } else {
+            MessageHelper.showError(messageId, response?.message || 'Échec de la migration.');
+        }
+
+        if (logEl) {
+            const logContent = response?.log ? response.log.trim() : 'Aucun log renvoyé.';
+            logEl.textContent = logContent;
+            logEl.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Erreur migration configs:', error);
+        MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
+    } finally {
+        MessageHelper.setButtonLoading(button, false);
+    }
+}
 });
 
 /**
@@ -183,6 +228,11 @@ function bindEvents() {
     const restartBtn = document.getElementById('restartServerBtn');
     if (restartBtn) {
         restartBtn.addEventListener('click', handleDeployApplication);
+    }
+    
+    const migrateBtn = document.getElementById('migrateConfigsBtn');
+    if (migrateBtn) {
+        migrateBtn.addEventListener('click', handleConfigMigration);
     }
 }
 

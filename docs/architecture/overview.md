@@ -68,6 +68,29 @@ Règles de fenêtre horaire (webhooks dédiés):
   - `deployment/cloudflare-worker/cleanup.js` – Suppression automatique (24h) basée sur les metadatas.
 - **Backends PHP** : `deployment/src/JsonLogger.php` a été étendu pour écrire les paires R2, les pages de test (`test.php`, `test-direct.php`) disposent d’un mode « Offload via Worker » avec diagnostics complets.
 - **Garanties** : économies de bande passante Render (~$5/mois pour 50 GB), fallback gracieux (si l’offload échoue, le webhook conserve uniquement `raw_url`/`direct_url`).
+### Résilience & Architecture (Lot 2, 2026-01-14)
+
+#### Verrou Distribué Redis
+- **Implémentation** : `background/lock.py` avec clé `render_signal:poller_lock` et TTL 5 minutes
+- **Fallback** : Verrou fichier `fcntl` si Redis indisponible
+- **Usage** : Prévention du multi-polling sur Render multi-conteneurs
+- **Logging** : WARNING en cas de fallback vers verrou fichier
+
+#### Fallback R2 Garanti
+- **Service** : `services/r2_transfer_service.py` avec gestion d'erreurs robuste
+- **Comportement** : Conservation explicite de `raw_url` en cas d'échec d'offload
+- **Logging** : `R2_TRANSFER:*` avec WARNING mais flux continu sans interruption
+- **Garantie** : Aucune perte de lien, même si Worker R2 indisponible
+
+#### Watchdog IMAP
+- **Timeout** : 30s pour éviter les processus zombies IMAP
+- **Sécurité** : Anti-blocage automatique des connexions
+- **Implémentation** : Timeout sur toutes les opérations IMAP dans `email_processing/imap_client.py`
+
+#### Tests Résilience
+- **Redis Lock** : `tests/test_lock_redis.py` avec scénarios distributed/fallback
+- **R2 Resilience** : `tests/test_r2_resilience.py` (exception/None/timeout)
+- **Anti-OOM** : Limite 1MB sur parsing HTML dans `email_processing/orchestrator.py`
 
 ### Architecture Frontend Modulaire ES6 (2026-01-19)
 

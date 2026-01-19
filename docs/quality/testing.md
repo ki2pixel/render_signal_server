@@ -74,9 +74,9 @@ render_signal_server-main/
 - **Couverture** : Maintenue à 70.12% (+3 tests, même couverture)
 - **Scénarios testés** : Worker R2 down, timeout IMAP, HTML volumineux
 
-#### Tests de Résilience (Lots 2/3)
+### Tests Résilience (Lot 2/3)
 
-##### Verrou Distribué Redis
+#### Verrou Distribué Redis
 - **Fichier** : `tests/test_lock_redis.py`
 - **Format** : Given/When/Then pour clarté
 - **Scénarios** :
@@ -86,7 +86,7 @@ render_signal_server-main/
   - Concurrence multi-processus
 - **Marqueur** : `@pytest.mark.redis`
 
-##### Fallback R2 Garanti
+#### Fallback R2 Garanti
 - **Fichier** : `tests/test_r2_resilience.py`
 - **Scénarios** :
   - Worker R2 retourne exception
@@ -95,28 +95,26 @@ render_signal_server-main/
   - Conservation URLs sources
 - **Validation** : Webhook envoyé avec `raw_url`/`direct_url` même sans `r2_url`
 
-##### Anti-OOM HTML
+#### Anti-OOM HTML
 - **Intégré dans** : `tests/test_email_processing.py`
 - **Scénario** : Email avec HTML >1MB
 - **Validation** : Troncation avec log WARNING, traitement continu
 
-##### Watchdog IMAP
+#### Watchdog IMAP
 - **Intégré dans** : `tests/test_imap_client.py`
 - **Scénario** : Timeout connexion IMAP
 - **Validation** : Fermeture propre, log timeout
 
-#### Marqueurs pytest
+#### Exécution
+```bash
+# Tests résilience uniquement
+pytest -m "redis or r2 or resilience"
 
-```python
-@pytest.mark.unit          # Tests unitaires isolés
-@pytest.mark.integration   # Tests d'intégration entre composants
-@pytest.mark.e2e          # Tests end-to-end
-@pytest.mark.redis        # Tests nécessitant Redis
-@pytest.mark.imap         # Tests nécessitant serveur IMAP
-@pytest.mark.slow         # Tests lents (réseau, fichiers)
+# Tous les tests avec couverture
+pytest --cov=. --cov-report=html
 ```
 
-## ⚙️ Installation
+### 🧪 Tests Spécifiques R2 Offload
 
 ### Prérequis
 

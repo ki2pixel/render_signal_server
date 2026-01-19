@@ -101,6 +101,64 @@ Les éléments suivants sont gérés par l'écosystème PHP (`deployment/`) et d
 - En cas de rotation de secrets, mettre à jour `env.local.php` puis relancer un `POST action=dry-run` via `GmailOAuthTest.php` pour vérifier.
 
 
+## Redis Config Store (2026-01-19)
+
+### Architecture
+- **Service** : `config/app_config_store.py` avec support Redis-first
+- **Modes** : `redis_first` (défaut) ou `php_first` via `CONFIG_STORE_MODE`
+- **Préfixe** : Configurable via `CONFIG_STORE_REDIS_PREFIX` (défaut: "r:ss:config:")
+
+### Configuration
+```bash
+# Redis (recommandé pour multi-conteneurs)
+REDIS_URL=redis://user:pass@host:port/db
+CONFIG_STORE_MODE=redis_first
+CONFIG_STORE_REDIS_PREFIX=r:ss:config:
+
+# Fallback PHP (legacy)
+EXTERNAL_CONFIG_BASE_URL=https://php-server.example.com
+CONFIG_API_TOKEN=your_token
+```
+
+### Migration
+Utiliser le script `migrate_configs_to_redis.py` :
+```bash
+# Dry-run pour vérification
+python migrate_configs_to_redis.py --dry-run
+
+# Migration avec vérification
+python migrate_configs_to_redis.py --verify
+
+# Redis obligatoire
+python migrate_configs_to_redis.py --require-redis
+```
+
+### Vérification après migration
+Un utilitaire dédié permet de lire les clés directement dans Redis et de vérifier leur structure :
+
+```bash
+python -m scripts.check_config_store
+
+# Limiter aux préférences et afficher le JSON brut
+python -m scripts.check_config_store --keys processing_prefs --raw
+```
+
+Le script retourne `0` si toutes les clés vérifiées sont présentes et valides, sinon `1`.
+
+> **Depuis le dashboard** : un bouton « 📦 Migrer les configurations » (section « Migration configs → Redis ») déclenche `/api/migrate_configs_to_redis` sur le serveur Render et affiche le log retourné. À utiliser si l'accès CLI n'est pas disponible.
+
+### Configurations supportées
+- `magic_link_tokens` : Tokens magic link permanents
+- `polling_config` : Configuration IMAP et fenêtres horaires
+- `processing_prefs` : Préférences de traitement des emails
+- `webhook_config` : Configuration URLs webhooks et SSL
+
+### Comportement
+- **Ordre de priorité** : Redis → PHP externe → fichiers locaux (selon mode)
+- **Cache** : Client Redis avec décode_responses=True
+- **Fallback** : Basculement automatique avec logging WARNING
+- **Atomicité** : Opérations JSON avec sérialisation ensure_ascii=False
+
 ## Artefacts R2 Offload (deployment/)
 
 L'offload Cloudflare R2 (côté Flask) persiste un historique des transferts dans :
