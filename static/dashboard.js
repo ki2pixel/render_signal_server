@@ -1367,12 +1367,16 @@ async function saveWebhookPanel(panelType) {
 function collectUrlsData() {
     const webhookUrl = document.getElementById('webhookUrl')?.value || '';
     const makeWebhookUrl = document.getElementById('makeWebhookUrl')?.value || '';
-    const sslVerify = document.getElementById('webhookSslVerify')?.checked ?? true;
+    const sslToggle = document.getElementById('sslVerifyToggle');
+    const sendingToggle = document.getElementById('webhookSendingToggle');
+    const sslVerify = sslToggle?.checked ?? true;
+    const sendingEnabled = sendingToggle?.checked ?? true;
     
     return {
         webhook_url: webhookUrl || null,
         make_webhook_url: makeWebhookUrl || null,
-        webhook_ssl_verify: sslVerify
+        webhook_ssl_verify: sslVerify,
+        webhook_sending_enabled: sendingEnabled
     };
 }
 
