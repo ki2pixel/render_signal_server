@@ -90,7 +90,6 @@ async function handleConfigMigration() {
         MessageHelper.setButtonLoading(button, false);
     }
 }
-});
 
 /**
  * Initialise les services nécessaires
