@@ -6,7 +6,7 @@ import { LogService } from './services/LogService.js';
 import { MessageHelper } from './utils/MessageHelper.js';
 import { TabManager } from './components/TabManager.js';
 
-window.DASHBOARD_BUILD = 'modular-2026-01-18';
+window.DASHBOARD_BUILD = 'modular-2026-01-19a';
 
 console.log('[build] static/dashboard.js loaded:', window.DASHBOARD_BUILD);
 
