@@ -30,6 +30,11 @@ export class WebhookService {
                     sslToggle.checked = !!config.webhook_ssl_verify;
                 }
                 
+                const sendingToggle = document.getElementById('webhookSendingToggle');
+                if (sendingToggle) {
+                    sendingToggle.checked = config.webhook_sending_enabled ?? true;
+                }
+                
                 // Absence Globale
                 const absenceToggle = document.getElementById('absencePauseToggle');
                 if (absenceToggle) {
@@ -56,6 +61,7 @@ export class WebhookService {
     static async saveConfig() {
         const webhookUrlEl = document.getElementById('webhookUrl');
         const sslToggle = document.getElementById('sslVerifyToggle');
+        const sendingToggle = document.getElementById('webhookSendingToggle');
         const absenceToggle = document.getElementById('absencePauseToggle');
         
         const webhookUrl = (webhookUrlEl?.value || '').trim();
@@ -87,6 +93,7 @@ export class WebhookService {
         
         const payload = {
             webhook_ssl_verify: sslToggle?.checked ?? false,
+            webhook_sending_enabled: sendingToggle?.checked ?? true,
             absence_pause_enabled: absenceToggle?.checked ?? false,
             absence_pause_days: selectedDays
         };
