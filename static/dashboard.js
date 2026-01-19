@@ -235,8 +235,10 @@ function bindEvents() {
         exportConfigBtn.addEventListener('click', exportAllConfig);
     }
     
-    const importConfigInput = document.getElementById('importConfigInput');
-    if (importConfigInput) {
+    const importConfigBtn = document.getElementById('importConfigBtn');
+    const importConfigInput = document.getElementById('importConfigFile');
+    if (importConfigBtn && importConfigInput) {
+        importConfigBtn.addEventListener('click', () => importConfigInput.click());
         importConfigInput.addEventListener('change', handleImportConfigFile);
     }
     
@@ -256,7 +258,7 @@ function bindEvents() {
     });
     
     // Email fields management
-    const addEmailBtn = document.getElementById('addEmailBtn');
+    const addEmailBtn = document.getElementById('addSenderBtn');
     if (addEmailBtn) {
         addEmailBtn.addEventListener('click', () => addEmailField(''));
     }
@@ -392,10 +394,10 @@ async function generateMagicLink() {
 // -------------------- Polling Control --------------------
 async function loadPollingStatus() {
     try {
-        const data = await ApiService.get('/api/webhooks/config');
+        const data = await ApiService.get('/api/get_polling_config');
         
         if (data.success) {
-            const isEnabled = data.config.polling_enabled;
+            const isEnabled = !!data.config?.enable_polling;
             const toggle = document.getElementById('pollingToggle');
             const statusText = document.getElementById('pollingStatusText');
             
@@ -415,7 +417,7 @@ async function togglePolling() {
     const enable = document.getElementById('pollingToggle').checked;
     
     try {
-        const data = await ApiService.post('/api/toggle_polling', { enable });
+        const data = await ApiService.post('/api/update_polling_config', { enable_polling: enable });
         
         if (data.success) {
             MessageHelper.showInfo('pollingMsg', data.message);
@@ -648,18 +650,19 @@ async function loadRuntimeFlags() {
         
         if (data.success) {
             const flags = data.flags || {};
-            
-            // Appliquer les flags aux éléments UI
-            Object.keys(flags).forEach(flagKey => {
-                const el = document.getElementById(flagKey);
-                if (el) {
-                    if (el.type === 'checkbox') {
-                        el.checked = flags[flagKey];
-                    } else {
-                        el.value = flags[flagKey];
-                    }
-                }
-            });
+
+            const disableDedup = document.getElementById('disableEmailIdDedupToggle');
+            if (disableDedup && Object.prototype.hasOwnProperty.call(flags, 'disable_email_id_dedup')) {
+                disableDedup.checked = !!flags.disable_email_id_dedup;
+            }
+
+            const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
+            if (
+                allowCustom
+                && Object.prototype.hasOwnProperty.call(flags, 'allow_custom_webhook_without_links')
+            ) {
+                allowCustom.checked = !!flags.allow_custom_webhook_without_links;
+            }
         }
     } catch (e) {
         console.error('loadRuntimeFlags error', e);
@@ -673,20 +676,15 @@ async function saveRuntimeFlags() {
     MessageHelper.setButtonLoading(btn, true);
     
     try {
-        // Collecter tous les flags depuis les éléments UI
-        const flags = {};
-        const flagElements = document.querySelectorAll('[id^="flag_"], [id$="_flag"]');
-        
-        flagElements.forEach(el => {
-            const flagName = el.id.replace(/^flag_/, '').replace(/_flag$/, '');
-            if (el.type === 'checkbox') {
-                flags[flagName] = el.checked;
-            } else {
-                flags[flagName] = el.value;
-            }
-        });
-        
-        const data = await ApiService.post('/api/set_runtime_flags', { flags });
+        const disableDedup = document.getElementById('disableEmailIdDedupToggle');
+        const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
+
+        const payload = {
+            disable_email_id_dedup: disableDedup?.checked ?? false,
+            allow_custom_webhook_without_links: allowCustom?.checked ?? false,
+        };
+
+        const data = await ApiService.post('/api/update_runtime_flags', payload);
         
         if (data.success) {
             MessageHelper.showSuccess(msgId, 'Flags de débogage enregistrés avec succès !');
@@ -703,7 +701,7 @@ async function saveRuntimeFlags() {
 // -------------------- Processing Preferences --------------------
 async function loadProcessingPrefsFromServer() {
     try {
-        const data = await ApiService.get('/api/get_processing_prefs');
+        const data = await ApiService.get('/api/processing_prefs');
         
         if (data.success) {
             const prefs = data.prefs || {};
@@ -711,7 +709,7 @@ async function loadProcessingPrefsFromServer() {
             // Mapping des préférences vers les éléments UI avec les bons IDs
             const mappings = {
                 // Filtres
-                'excludeKeywords': 'excludeKeywords',
+                'exclude_keywords': 'excludeKeywords',
                 'exclude_keywords_recadrage': 'excludeKeywordsRecadrage', 
                 'exclude_keywords_autorepondeur': 'excludeKeywordsAutorepondeur',
                 
@@ -739,6 +737,8 @@ async function loadProcessingPrefsFromServer() {
                     } else if (el.tagName === 'TEXTAREA' && typeof prefs[prefKey] === 'object') {
                         // Convertir les objets JSON en chaînes formatées pour les textarea
                         el.value = JSON.stringify(prefs[prefKey], null, 2);
+                    } else if (el.type === 'number' && prefs[prefKey] === null) {
+                        el.value = '';
                     } else {
                         el.value = prefs[prefKey];
                     }
@@ -760,7 +760,7 @@ async function saveProcessingPrefsToServer() {
         // Mapping des éléments UI vers les clés de préférences
         const mappings = {
             // Filtres
-            'excludeKeywords': 'excludeKeywords',
+            'excludeKeywords': 'exclude_keywords',
             'excludeKeywordsRecadrage': 'exclude_keywords_recadrage', 
             'excludeKeywordsAutorepondeur': 'exclude_keywords_autorepondeur',
             
@@ -817,16 +817,23 @@ async function saveProcessingPrefsToServer() {
                     }
                 } else {
                     // Pour les inputs normaux
-                    let value = el.value;
-                    if (el.type === 'number' && value) {
-                        value = parseInt(value, 10);
+                    const value = (el.value ?? '').toString().trim();
+                    if (el.type === 'number') {
+                        if (value === '') {
+                            if (elementId === 'maxEmailSizeMB') {
+                                prefs[prefKey] = null;
+                            }
+                            return;
+                        }
+                        prefs[prefKey] = parseInt(value, 10);
+                        return;
                     }
-                    prefs[prefKey] = value || (el.type === 'number' ? 0 : '');
+                    prefs[prefKey] = value;
                 }
             }
         });
         
-        const data = await ApiService.post('/api/processing_prefs', { prefs });
+        const data = await ApiService.post('/api/processing_prefs', prefs);
         
         if (data.success) {
             MessageHelper.showSuccess(msgId, 'Préférences de traitement enregistrées avec succès !');
@@ -888,10 +895,11 @@ function saveLocalPreferences() {
 // -------------------- Configuration Management --------------------
 async function exportAllConfig() {
     try {
-        const [webhookCfg, pollingCfg, timeWin] = await Promise.all([
+        const [webhookCfg, pollingCfg, timeWin, processingPrefs] = await Promise.all([
             ApiService.get('/api/webhooks/config'),
             ApiService.get('/api/get_polling_config'),
-            ApiService.get('/api/get_webhook_time_window')
+            ApiService.get('/api/get_webhook_time_window'),
+            ApiService.get('/api/processing_prefs')
         ]);
         
         const prefsRaw = localStorage.getItem('dashboard_prefs_v1');
@@ -900,6 +908,7 @@ async function exportAllConfig() {
             webhook_config: webhookCfg,
             polling_config: pollingCfg,
             time_window: timeWin,
+            processing_prefs: processingPrefs,
             ui_preferences: prefsRaw ? JSON.parse(prefsRaw) : {}
         };
         
@@ -951,9 +960,24 @@ async function applyImportedServerConfig(obj) {
     if (obj?.webhook_config?.config) {
         const cfg = obj.webhook_config.config;
         const payload = {};
-        
-        if (cfg.webhook_url) payload.webhook_url = cfg.webhook_url;
+
+        if (
+            cfg.webhook_url
+            && typeof cfg.webhook_url === 'string'
+            && !cfg.webhook_url.includes('***')
+        ) {
+            payload.webhook_url = cfg.webhook_url;
+        }
         if (typeof cfg.webhook_ssl_verify === 'boolean') payload.webhook_ssl_verify = cfg.webhook_ssl_verify;
+        if (typeof cfg.webhook_sending_enabled === 'boolean') {
+            payload.webhook_sending_enabled = cfg.webhook_sending_enabled;
+        }
+        if (typeof cfg.absence_pause_enabled === 'boolean') {
+            payload.absence_pause_enabled = cfg.absence_pause_enabled;
+        }
+        if (Array.isArray(cfg.absence_pause_days)) {
+            payload.absence_pause_days = cfg.absence_pause_days;
+        }
         
         if (Object.keys(payload).length) {
             await ApiService.post('/api/webhooks/config', payload);
@@ -984,6 +1008,12 @@ async function applyImportedServerConfig(obj) {
         const end = obj.time_window.webhooks_time_end ?? '';
         await ApiService.post('/api/set_webhook_time_window', { start, end });
         await loadTimeWindow();
+    }
+
+    // Processing prefs
+    if (obj?.processing_prefs?.prefs && typeof obj.processing_prefs.prefs === 'object') {
+        await ApiService.post('/api/processing_prefs', obj.processing_prefs.prefs);
+        await loadProcessingPrefsFromServer();
     }
 }
 
@@ -1633,7 +1663,7 @@ async function handleAutoSaveChange(fieldId) {
         const prefsData = collectPreferencesData();
         
         // Sauvegarder automatiquement
-        const result = await ApiService.post('/api/processing_prefs', { prefs: prefsData });
+        const result = await ApiService.post('/api/processing_prefs', prefsData);
         
         if (result.success) {
             // Marquer la section comme sauvegardée
@@ -1669,10 +1699,27 @@ function collectPreferencesData() {
     
     // Préférences de fiabilité
     data.require_attachments = document.getElementById('attachmentDetectionToggle')?.checked || false;
-    data.retry_count = parseInt(document.getElementById('retryCount')?.value) || 3;
-    data.retry_delay_sec = parseInt(document.getElementById('retryDelaySec')?.value) || 10;
-    data.webhook_timeout_sec = parseInt(document.getElementById('webhookTimeoutSec')?.value) || 30;
-    data.rate_limit_per_hour = parseInt(document.getElementById('rateLimitPerHour')?.value) || 300;
+
+    const retryCountRaw = document.getElementById('retryCount')?.value;
+    if (retryCountRaw !== undefined && String(retryCountRaw).trim() !== '') {
+        data.retry_count = parseInt(String(retryCountRaw).trim(), 10);
+    }
+
+    const retryDelayRaw = document.getElementById('retryDelaySec')?.value;
+    if (retryDelayRaw !== undefined && String(retryDelayRaw).trim() !== '') {
+        data.retry_delay_sec = parseInt(String(retryDelayRaw).trim(), 10);
+    }
+
+    const webhookTimeoutRaw = document.getElementById('webhookTimeoutSec')?.value;
+    if (webhookTimeoutRaw !== undefined && String(webhookTimeoutRaw).trim() !== '') {
+        data.webhook_timeout_sec = parseInt(String(webhookTimeoutRaw).trim(), 10);
+    }
+
+    const rateLimitRaw = document.getElementById('rateLimitPerHour')?.value;
+    if (rateLimitRaw !== undefined && String(rateLimitRaw).trim() !== '') {
+        data.rate_limit_per_hour = parseInt(String(rateLimitRaw).trim(), 10);
+    }
+
     data.notify_on_failure = document.getElementById('notifyOnFailureToggle')?.checked || false;
     
     // Préférences de priorité (JSON)

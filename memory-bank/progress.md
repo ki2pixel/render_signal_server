@@ -20,6 +20,15 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-01-19 14:20:00] - Audit cohérence dashboard (configs persistées) + correctifs frontend
+- **Objectif** : Identifier/corriger les incohérences UI après migration Redis (placeholders, mapping clés, endpoints, handlers).
+- **Corrections** :
+  - Polling : alignement `enable_polling` (GET `/api/get_polling_config`, POST `/api/update_polling_config`) + ajout des éléments UI manquants (`#pollingToggle`, `#pollingStatusText`, `#pollingMsg`).
+  - Runtime flags : correction mapping UI (`disableEmailIdDedupToggle`, `allowCustomWithoutLinksToggle`) + endpoint POST `/api/update_runtime_flags`.
+  - Processing prefs : correction mapping clé `exclude_keywords`, payload (POST direct sur `/api/processing_prefs`), gestion `max_email_size_mb=null`, et GET basculé sur endpoint canonique `/api/processing_prefs`.
+  - Import/Export : wiring correct des éléments (`importConfigBtn`/`importConfigFile`) + export inclut désormais `processing_prefs`.
+- **Fichiers modifiés** : `static/dashboard.js`, `dashboard.html`.
+
 [2026-01-19 11:05:00] - Migration persistance configs vers Redis
 - **Décision** : Sécuriser la configuration (processing_prefs, polling_config, webhook_config, magic_link_tokens) en l'hébergeant dans Redis plutôt que sur fichiers/serveur PHP.
 - **Actions réalisées** :

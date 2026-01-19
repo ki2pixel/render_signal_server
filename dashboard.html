@@ -1437,6 +1437,14 @@
       <div id="sec-email" class="section-panel">
         <div class="card">
           <div class="card-title">🧩 Préférences Email (expéditeurs, dédup)</div>
+          <div class="inline-group" style="margin: 8px 0 12px 0;">
+            <label class="toggle-switch">
+              <input type="checkbox" id="pollingToggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <span id="pollingStatusText" style="margin-left: 10px;">—</span>
+          </div>
+          <div id="pollingMsg" class="status-msg" style="margin-top: 6px;"></div>
           <div class="form-group">
             <label>SENDER_OF_INTEREST_FOR_POLLING</label>
             <div id="senderOfInterestContainer" class="stack" style="gap:8px;"></div>
