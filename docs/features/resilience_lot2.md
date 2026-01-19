@@ -247,6 +247,90 @@ def test_r2_resilience_worker_down_continues_flow():
 
 ---
 
+## Vérification Config Store Redis
+
+### Objectif
+Fournir des outils UI pour vérifier et migrer les configurations stockées dans Redis, assurant la cohérence des données entre les redeploys.
+
+### Boutons Dashboard
+
+#### Migration vers Redis
+- **Fonction** : `handleConfigMigration()` dans `dashboard.js`
+- **Endpoint** : `/api/migrate_configs_to_redis`
+- **Action** : Migre les 4 configurations critiques (processing_prefs, polling_config, webhook_config, magic_link_tokens) depuis les fichiers locaux vers Redis
+- **Output** : Résumé des clés migrées + logs détaillés dans `migrateConfigsLog`
+
+#### Vérification Config Store
+- **Fonction** : `handleConfigVerification()` dans `dashboard.js`
+- **Endpoint** : `/api/verify_config_store`
+- **Options** : Toggle "Inclure le JSON complet" pour afficher le payload brut
+- **Output** : Statut OK/INVALID par clé + résumé + payload optionnel dans `verifyConfigStoreLog`
+
+### Implémentation Technique
+
+#### Interface Dashboard
+```javascript
+// Migration configs vers Redis
+async function handleConfigMigration() {
+    const response = await ApiService.post('/api/migrate_configs_to_redis', {});
+    if (response?.success) {
+        const keysText = (response.keys || []).join(', ') || 'aucune clé';
+        MessageHelper.showSuccess(messageId, `Migration réussie (${keysText}).`);
+        // Affichage des logs détaillés
+    }
+}
+
+// Vérification des données Redis
+async function handleConfigVerification() {
+    const includeRaw = Boolean(rawToggle?.checked);
+    const response = await ApiService.post('/api/verify_config_store', { raw: includeRaw });
+    // Affichage du statut par clé avec payload optionnel
+}
+```
+
+#### Backend API
+- **Script** : `scripts/check_config_store.py` avec fonction `inspect_configs()`
+- **Route** : `/api/verify_config_store` dans `routes/api_admin.py`
+- **Retour** : Structure `{ success: boolean, results: [{ key, valid, summary, payload }] }`
+
+### Configuration
+```bash
+# Redis requis pour la vérification
+REDIS_URL=redis://user:pass@host:port/db
+
+# Modes de fonctionnement (optionnel)
+CONFIG_STORE_MODE=redis_first  # ou php_first pour fallback
+```
+
+### Procédures Opératoires
+
+#### Avant déploiement
+1. Cliquer sur "Vérifier les données en Redis"
+2. Vérifier que toutes les clés affichent "OK"
+3. En cas d'INVALID, consulter le payload JSON pour diagnostic
+4. Utiliser "Migrer vers Redis" si nécessaire
+
+#### Diagnostic
+- Activer "Inclure le JSON complet" pour voir les données brutes
+- Comparer avec les fichiers `debug/*.json` locaux
+- Les logs indiquent les divergences détectées
+
+### Auto-sauvegarde Processing Prefs
+
+#### Résilience Configuration
+- **Déclenchement** : Debounce 2-3s sur modification des préférences
+- **Endpoint** : `/api/processing_prefs`
+- **Fonctions** : `initializeAutoSave()`, `handleAutoSaveChange()`, `collectPreferencesData()`
+- **Persistance** : Sauvegarde automatique dans Redis, survit aux redeploys
+
+#### Champs concernés
+- Filtres (excludeKeywords, excludeKeywordsRecadrage, excludeKeywordsAutorepondeur)
+- Fiabilité (retryCount, retryDelaySec, webhookTimeoutSec, rateLimitPerHour)
+- Notifications (notifyOnFailureToggle)
+- Priorité expéditeurs (senderPriority JSON)
+
+---
+
 ## Synthèse Lot 2/3
 
 ### Bénéfices Combinés

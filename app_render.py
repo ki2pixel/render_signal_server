@@ -1,4 +1,3 @@
-# Safe default for Redis client (can be initialized elsewhere and injected via globals())
 redis_client = None
 
 from background.lock import acquire_singleton_lock
@@ -14,13 +13,10 @@ import logging
 from datetime import datetime, timedelta, timezone
 import urllib3
 import signal
-from collections import deque  # Rate limiting queue for webhook sends
-# Ces imports remplacent les définitions locales des mêmes fonctions
+from collections import deque
 from utils.time_helpers import parse_time_hhmm as _parse_time_hhmm
 from utils.validators import normalize_make_webhook_url as _normalize_make_webhook_url
 
-# --- Import des configurations extraites dans config/ ---
-# Ces imports remplacent les définitions de constantes et variables de configuration
 from config import settings
 from config import polling_config
 from config.polling_config import PollingConfigService
@@ -28,7 +24,6 @@ from config import webhook_time_window
 from config.app_config_store import get_config_json as _config_get
 from config.app_config_store import set_config_json as _config_set
 
-# --- Import des services (Phase 2 - Architecture orientée services) ---
 from services import (
     ConfigService,
     RuntimeFlagsService,
@@ -37,15 +32,12 @@ from services import (
     DeduplicationService,
 )
 
-# --- Import des modules d'authentification extraits dans auth/ ---
 from auth import user as auth_user
 from auth import helpers as auth_helpers
-# Alias pour compatibilité avec le code existant
 from auth.helpers import testapi_authorized as _testapi_authorized
 
 from email_processing import imap_client as email_imap_client
 from email_processing import pattern_matching as email_pattern_matching
-# Import de la constante URL_PROVIDERS_PATTERN depuis pattern_matching
 from email_processing import webhook_sender as email_webhook_sender
 from email_processing import orchestrator as email_orchestrator
 from email_processing import link_extraction as email_link_extraction
@@ -104,61 +96,34 @@ except ImportError:
     # Standard logging can be used if needed here, or rely on app.logger later.
 
 
-# Note: L'extraction des liens fournisseurs est centralisée dans
-# `email_processing/link_extraction.py` et le pattern regex dans
-# `email_processing/pattern_matching.py`.
-
-
 app = Flask(__name__, template_folder='.', static_folder='static')
-# NOUVEAU: Une clé secrète est OBLIGATOIRE pour les sessions.
-# Pour la production, utilisez une valeur complexe stockée dans les variables d'environnement.
 app.secret_key = settings.FLASK_SECRET_KEY
 
-# =============================================================================
-# SERVICES INITIALIZATION (Phase 2 - Architecture Orientée Services)
-# =============================================================================
-# Les services encapsulent la logique métier et fournissent des interfaces
-# cohérentes pour accéder aux fonctionnalités de l'application.
-#
-# L'ordre d'initialisation est important car certains services dépendent d'autres:
-# 1. ConfigService (aucune dépendance)
-# 2. RuntimeFlagsService, WebhookConfigService (dépendent indirectement de config)
-# 3. AuthService (dépend de ConfigService)
-# 4. PollingConfigService (déjà créé plus bas)
-# 5. DeduplicationService (dépend de ConfigService et PollingConfigService)
-
-# 1. Configuration Service
 _config_service = ConfigService()
 
-# 2. Runtime Flags Service (Singleton - sera initialisé plus bas après settings)
-# _runtime_flags_service = RuntimeFlagsService.get_instance(...)
+_runtime_flags_service = RuntimeFlagsService.get_instance(...)
 
-# 3. Webhook Config Service (Singleton - sera initialisé plus bas)
-# _webhook_service = WebhookConfigService.get_instance(...)
+_webhook_service = WebhookConfigService.get_instance(...)
 
-# 4. Auth Service  
 _auth_service = AuthService(_config_service)
 
 # Note: _polling_service et _dedup_service seront initialisés plus bas
 # après la configuration complète du logging et Redis
 
-# --- Blueprints registration ---
 app.register_blueprint(health_bp)
 app.register_blueprint(api_webhooks_bp)
 app.register_blueprint(api_polling_bp)
 app.register_blueprint(api_processing_bp)
-app.register_blueprint(api_processing_legacy_bp)  # legacy URLs: /api/get_processing_prefs, /api/update_processing_prefs
+app.register_blueprint(api_processing_legacy_bp)
 app.register_blueprint(api_test_bp)
 app.register_blueprint(dashboard_bp)
-app.register_blueprint(api_logs_bp)  # legacy URL: /api/webhook_logs
+app.register_blueprint(api_logs_bp)
 app.register_blueprint(api_admin_bp)
 app.register_blueprint(api_utility_bp)
 app.register_blueprint(api_config_bp)
 app.register_blueprint(api_make_bp)
 app.register_blueprint(api_auth_bp)
 
-# --- CORS (for test tools calling from another origin) ---
-# Allowlist origins, comma-separated in env CORS_ALLOWED_ORIGINS (e.g., "https://webhook.kidpixel.fr,https://example.com")
 _cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
 if _cors_origins:
     CORS(
@@ -174,24 +139,14 @@ if _cors_origins:
         },
     )
 
-    # Preflight requests are handled by Flask-CORS configuration on the api_test blueprint
-
-# --- Authentification: Initialisation Flask-Login (via AuthService) ---
-# Le décorateur @login_required est utilisé sur plusieurs routes (ex: '/').
-# AuthService encapsule Flask-Login et fournit une interface unifiée pour
-# l'authentification dashboard et API.
 login_manager = _auth_service.init_flask_login(app, login_view='dashboard.login')
 
-# Backward compatibility: Keep auth_user initialization for any legacy code
-# TODO: Deprecate in favor of AuthService.init_flask_login once all consumers updated
 auth_user.init_login_manager(app, login_view='dashboard.login')
 
-# --- Configuration centralisée (alias locaux vers config.settings) ---
 WEBHOOK_URL = settings.WEBHOOK_URL
 MAKECOM_API_KEY = settings.MAKECOM_API_KEY
 WEBHOOK_SSL_VERIFY = settings.WEBHOOK_SSL_VERIFY
 
-# IMAP / Email config
 EMAIL_ADDRESS = settings.EMAIL_ADDRESS
 EMAIL_PASSWORD = settings.EMAIL_PASSWORD
 IMAP_SERVER = settings.IMAP_SERVER

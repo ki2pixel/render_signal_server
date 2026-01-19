@@ -1,5 +1,3 @@
-// static/dashboard.js
-// Dashboard de contrôle des webhooks - Version modulaire
 import { ApiService } from './services/ApiService.js';
 import { WebhookService } from './services/WebhookService.js';
 import { LogService } from './services/LogService.js';
@@ -10,33 +8,24 @@ window.DASHBOARD_BUILD = 'modular-2026-01-19a';
 
 console.log('[build] static/dashboard.js loaded:', window.DASHBOARD_BUILD);
 
-// Variables globales pour le gestionnaire d'onglets
 let tabManager = null;
 
-// -------------------- Initialisation --------------------
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        // Initialiser le gestionnaire d'onglets
         tabManager = new TabManager();
         tabManager.init();
         tabManager.enhanceAccessibility();
         
-        // Initialiser les services
         await initializeServices();
         
-        // Lier les événements
         bindEvents();
         
-        // Initialiser les panneaux pliables
         initializeCollapsiblePanels();
         
-        // Initialiser l'auto-sauvegarde intelligente
         initializeAutoSave();
         
-        // Charger les données initiales
         await loadInitialData();
         
-        // Démarrer le polling des logs
         LogService.startLogPolling();
         
         console.log('Dashboard initialisé avec succès');
@@ -46,7 +35,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
-// -------------------- Migration Configs -> Redis --------------------
 async function handleConfigMigration() {
     const button = document.getElementById('migrateConfigsBtn');
     const messageId = 'migrateConfigsMsg';
@@ -144,37 +132,25 @@ async function handleConfigVerification() {
     }
 }
 
-/**
- * Initialise les services nécessaires
- */
 async function initializeServices() {
-    // Les services sont déjà importés, pas besoin d'initialisation supplémentaire
-    // On pourrait ajouter des configurations globales ici si nécessaire
 }
 
-/**
- * Lie les événements aux éléments DOM
- */
 function bindEvents() {
-    // Magic Link
     const magicLinkBtn = document.getElementById('generateMagicLinkBtn');
     if (magicLinkBtn) {
         magicLinkBtn.addEventListener('click', generateMagicLink);
     }
     
-    // Configuration webhooks
     const saveWebhookBtn = document.getElementById('saveConfigBtn');
     if (saveWebhookBtn) {
         saveWebhookBtn.addEventListener('click', () => WebhookService.saveConfig());
     }
     
-    // Préférences email (polling config)
     const saveEmailPrefsBtn = document.getElementById('saveEmailPrefsBtn');
     if (saveEmailPrefsBtn) {
         saveEmailPrefsBtn.addEventListener('click', savePollingConfig);
     }
     
-    // Logs
     const clearLogsBtn = document.getElementById('clearLogsBtn');
     if (clearLogsBtn) {
         clearLogsBtn.addEventListener('click', () => LogService.clearLogs());
@@ -185,51 +161,42 @@ function bindEvents() {
         exportLogsBtn.addEventListener('click', () => LogService.exportLogs());
     }
     
-    // Périodes de logs
     const logPeriodSelect = document.getElementById('logPeriodSelect');
     if (logPeriodSelect) {
         logPeriodSelect.addEventListener('change', (e) => {
             LogService.changeLogPeriod(parseInt(e.target.value));
         });
     }
-    
-    // Polling
     const pollingToggle = document.getElementById('pollingToggle');
     if (pollingToggle) {
         pollingToggle.addEventListener('change', togglePolling);
     }
     
-    // Time window
     const saveTimeWindowBtn = document.getElementById('saveTimeWindowBtn');
     if (saveTimeWindowBtn) {
         saveTimeWindowBtn.addEventListener('click', saveTimeWindow);
     }
     
-    // Global webhook time window
     const saveGlobalWebhookTimeBtn = document.getElementById('saveGlobalWebhookTimeBtn');
     if (saveGlobalWebhookTimeBtn) {
         saveGlobalWebhookTimeBtn.addEventListener('click', saveGlobalWebhookTimeWindow);
     }
     
-    // Polling config
     const savePollingConfigBtn = document.getElementById('savePollingCfgBtn');
     if (savePollingConfigBtn) {
         savePollingConfigBtn.addEventListener('click', savePollingConfig);
     }
     
-    // Runtime flags
     const saveRuntimeFlagsBtn = document.getElementById('runtimeFlagsSaveBtn');
     if (saveRuntimeFlagsBtn) {
         saveRuntimeFlagsBtn.addEventListener('click', saveRuntimeFlags);
     }
     
-    // Processing prefs
     const saveProcessingPrefsBtn = document.getElementById('processingPrefsSaveBtn');
     if (saveProcessingPrefsBtn) {
         saveProcessingPrefsBtn.addEventListener('click', saveProcessingPrefsToServer);
     }
     
-    // Config management
     const exportConfigBtn = document.getElementById('exportConfigBtn');
     if (exportConfigBtn) {
         exportConfigBtn.addEventListener('click', exportAllConfig);
@@ -242,13 +209,11 @@ function bindEvents() {
         importConfigInput.addEventListener('change', handleImportConfigFile);
     }
     
-    // Validation URL webhook
     const testWebhookUrl = document.getElementById('testWebhookUrl');
     if (testWebhookUrl) {
         testWebhookUrl.addEventListener('input', validateWebhookUrlFromInput);
     }
     
-    // Preview payload
     const previewInputs = ['previewSubject', 'previewSender', 'previewBody'];
     previewInputs.forEach(id => {
         const el = document.getElementById(id);
@@ -257,19 +222,16 @@ function bindEvents() {
         }
     });
     
-    // Email fields management
     const addEmailBtn = document.getElementById('addSenderBtn');
     if (addEmailBtn) {
         addEmailBtn.addEventListener('click', () => addEmailField(''));
     }
     
-    // Statut Global
     const refreshStatusBtn = document.getElementById('refreshStatusBtn');
     if (refreshStatusBtn) {
         refreshStatusBtn.addEventListener('click', updateGlobalStatus);
     }
     
-    // Panneaux webhooks (save buttons)
     document.querySelectorAll('.panel-save-btn[data-panel]').forEach(btn => {
         btn.addEventListener('click', () => {
             const panelType = btn.dataset.panel;
@@ -279,7 +241,6 @@ function bindEvents() {
         });
     });
     
-    // Déploiement application
     const restartBtn = document.getElementById('restartServerBtn');
     if (restartBtn) {
         restartBtn.addEventListener('click', handleDeployApplication);
@@ -296,14 +257,10 @@ function bindEvents() {
     }
 }
 
-/**
- * Charge les données initiales
- */
 async function loadInitialData() {
     console.log('[loadInitialData] Function called - hostname:', window.location.hostname);
     
     try {
-        // Charger en parallèle les données initiales
         await Promise.all([
             WebhookService.loadConfig(),
             loadPollingStatus(),
@@ -314,13 +271,10 @@ async function loadInitialData() {
             loadLocalPreferences()
         ]);
         
-        // Charger la fenêtre horaire webhook globale après les autres
         await loadGlobalWebhookTimeWindow();
         
-        // Charger les logs après les autres données
         await LogService.loadAndRenderLogs();
         
-        // Mettre à jour le statut global
         await updateGlobalStatus();
         
     } catch (e) {
@@ -328,9 +282,7 @@ async function loadInitialData() {
     }
 }
 
-// -------------------- Feedback Visuel --------------------
 function showCopiedFeedback() {
-    // Créer le toast notification s'il n'existe pas
     let toast = document.querySelector('.copied-feedback');
     if (!toast) {
         toast = document.createElement('div');
@@ -338,17 +290,13 @@ function showCopiedFeedback() {
         toast.textContent = '🔗 Magic link copié dans le presse-papiers !';
         document.body.appendChild(toast);
     }
-    
-    // Afficher le toast
     toast.classList.add('show');
     
-    // Cacher après 3 secondes
     setTimeout(() => {
         toast.classList.remove('show');
     }, 3000);
 }
 
-// -------------------- Magic Links --------------------
 async function generateMagicLink() {
     const btn = document.getElementById('generateMagicLinkBtn');
     const output = document.getElementById('magicLinkOutput');

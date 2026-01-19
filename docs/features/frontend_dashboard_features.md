@@ -71,6 +71,11 @@ static/
 - **Webhooks actifs** : Nombre de webhooks configurés et fonctionnels
 - **Bouton de rafraîchissement** : Mise à jour manuelle des métriques
 
+**Implémentation technique :**
+- `analyzeLogsForStatus()` : Analyse les logs pour extraire les métriques (dernière exécution, incidents 24h, erreurs critiques, webhooks actifs)
+- `updateStatusBanner()` : Met à jour l'interface avec les valeurs calculées et l'icône de statut
+- `updateGlobalStatus()` : Déclenche l'analyse et la mise à jour du bandeau
+
 **Impact UX :** -40% temps recherche information critique
 
 ### 2. Timeline Logs
@@ -83,6 +88,12 @@ static/
 - **Sparkline Canvas** : Graphique sur 24h montrant l'activité récente
 - **Animations progressives** : Apparition fluide des nouveaux logs
 - **Filtres intelligents** : Par niveau, période, et recherche
+
+**Implémentation technique :**
+- `renderLogs()` : Transformation du conteneur en timeline verticale avec marqueurs et cartes
+- `createSparkline()` : Création d'un graphique Canvas sur 24h avec données horaires groupées
+- `formatTimestamp()` : Formatage localisé des horodatages
+- `escapeHtml()` : Protection XSS lors de l'affichage des contenus
 
 **Impact UX :** +30% satisfaction perçue, identification rapide tendances
 
@@ -101,6 +112,13 @@ static/
 - **Horodatage** : Date et heure de dernière modification
 - **Badges de sauvegarde requise** : Indicateurs visuels pour les modifications non sauvegardées
 
+**Implémentation technique :**
+- `saveWebhookPanel()` : Fonction principale de sauvegarde avec routing vers les bons endpoints
+- `collectUrlsData()`, `collectAbsenceData()`, `collectTimeWindowData()` : Collecteurs spécialisés par panneau
+- `updatePanelStatus()` : Mise à jour des indicateurs visuels de statut
+- `updatePanelIndicator()` : Mise à jour des horodatages de dernière sauvegarde
+- `initializeCollapsiblePanels()` : Initialisation des événements de pliage/dépliage
+
 **Impact UX :** +25% taux complétion, organisation claire
 
 ### 4. Auto-sauvegarde Intelligente
@@ -112,6 +130,19 @@ static/
 - **Indicateurs visuels** : Sections modifiées clairement identifiées
 - **Feedback immédiat** : Notifications de succès/échec
 - **Sauvegarde sélective** : Seules les préférences non-critiques sont auto-sauvegardées
+
+**Implémentation technique :**
+- `initializeAutoSave()` : Configuration des écouteurs d'événements avec debounce
+- `handleAutoSaveChange()` : Gestion des changements et déclenchement de la sauvegarde
+- `collectPreferencesData()` : Collecte et formatage des données de préférences
+- `markSectionAsModified()` / `markSectionAsSaved()` : Gestion des indicateurs visuels
+- `showAutoSaveFeedback()` : Affichage des notifications de résultat
+
+**Champs auto-sauvegardés :**
+- Préférences de filtres (excludeKeywords, excludeKeywordsRecadrage, excludeKeywordsAutorepondeur)
+- Paramètres de fiabilité (retryCount, retryDelaySec, webhookTimeoutSec, rateLimitPerHour)
+- Toggle de notification d'échec (notifyOnFailureToggle)
+- Priorité des expéditeurs (senderPriority en JSON)
 
 **Impact UX :** Réduction erreurs, feedback immédiat, expérience fluide
 

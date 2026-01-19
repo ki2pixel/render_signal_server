@@ -124,6 +124,51 @@ pytest --cov=. --cov-report=html
 pytest -m "redis or r2 or resilience" --cov=. tests/test_lock_redis.py tests/test_r2_resilience.py
 ```
 
+### Tests Frontend UX Avancée
+
+#### Auto-sauvegarde Processing Prefs
+- **Fichier** : `tests/test_frontend_dashboard.py` (à créer)
+- **Format** : Given/When/Then
+- **Scénarios** :
+  - Given champ modifié / When debounce écoulé / Then POST `/api/processing_prefs` réussi
+  - Given textarea keywords modifié / When 3s écoulées / Then tableau formaté sauvegardé
+  - Given toggle fiabilité modifié / When changement immédiat / Then boolean persisté
+- **Validation** : Badge "Sauvegardé" affiché, indicateur horodatage mis à jour
+
+#### Panneaux Pliables Webhooks
+- **Fichier** : `tests/test_frontend_dashboard.py`
+- **Scénarios** :
+  - Given panel collapsed / When header click / Then content expand + indicateur réinitialisé
+  - Given panel URLs modifié / When bouton "Sauvegarder" cliqué / Then POST `/api/webhooks/config` + statut OK
+  - Given panel absence modifié / When sauvegarde / Then jours validés + horodatage mis à jour
+- **Validation** : `updatePanelStatus()` appelée, `updatePanelIndicator()` avec timestamp
+
+#### Bandeau Statut Global
+- **Fichier** : `tests/test_frontend_dashboard.py`
+- **Scénarios** :
+  - Given logs avec erreurs / When rafraîchissement / Then icône 🔴 + compteur erreurs mis à jour
+  - Given logs récents / When analyse / Then dernière exécution formatée ("Il y a X min")
+  - Given aucun log / When statut global / Then icône 🟢 + "—" pour compteurs
+- **Validation** : `analyzeLogsForStatus()` retourne métriques correctes, `updateStatusBanner()` met à jour UI
+
+#### Timeline Logs avec Sparkline
+- **Fichier** : `tests/test_frontend_dashboard.py`
+- **Scénarios** :
+  - Given logs variés / When renderLogs / Then timeline verticale + sparkline Canvas
+  - Given logs grouped by hour / When createSparkline / Then graphique 24h avec max count
+  - Given logs vides / When renderLogs / Then message "Aucun log trouvé"
+- **Validation** : Canvas créé, données horaires groupées, animations progressives
+
+#### Exécution Tests Frontend
+```bash
+# Tests frontend UX (navigateur headless)
+pytest -m frontend --cov=static/
+
+# Tests dashboard complet
+source /mnt/venv_ext4/venv_render_signal_server/bin/activate
+pytest tests/test_frontend_dashboard.py -v --cov=static/
+```
+
 ### 🧪 Tests Spécifiques R2 Offload
 
 ### Prérequis

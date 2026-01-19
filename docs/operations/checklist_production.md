@@ -40,6 +40,11 @@
 ## Données et persistance
 - Redis accessible et sécurisé (si utilisé): REDIS_URL avec auth/TLS
 - Politique de rétention des fichiers éphémères dans `RENDER_DISC_PATH`
+- **Vérification Config Store Redis** : Utiliser le bouton "Vérifier les données en Redis" du dashboard avant déploiement
+  - Toutes les clés doivent afficher "OK"
+  - En cas d'INVALID, activer "Inclure le JSON complet" pour diagnostic
+  - Utiliser "Migrer vers Redis" si les données sont obsolètes
+- **Auto-sauvegarde Processing Prefs** : Vérifier que les modifications sont automatiquement sauvegardées dans Redis (debounce 2-3s)
 
 ## Tests post-déploiement
 - `GET /api/ping` renvoie 200 et un `timestamp_utc`
