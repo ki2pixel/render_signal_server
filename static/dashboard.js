@@ -91,6 +91,50 @@ async function handleConfigMigration() {
     }
 }
 
+async function handleConfigVerification() {
+    const button = document.getElementById('verifyConfigStoreBtn');
+    const messageId = 'verifyConfigStoreMsg';
+    const logEl = document.getElementById('verifyConfigStoreLog');
+
+    if (!button) {
+        MessageHelper.showError(messageId, 'Bouton de vérification introuvable.');
+        return;
+    }
+
+    MessageHelper.setButtonLoading(button, true, '⏳ Vérification en cours...');
+    MessageHelper.showInfo(messageId, 'Vérification des données Redis en cours...');
+    if (logEl) {
+        logEl.style.display = 'none';
+        logEl.textContent = '';
+    }
+
+    try {
+        const response = await ApiService.post('/api/verify_config_store', {});
+        if (response?.success) {
+            MessageHelper.showSuccess(messageId, 'Toutes les configurations sont conformes.');
+        } else {
+            MessageHelper.showError(
+                messageId,
+                response?.message || 'Des incohérences ont été détectées.'
+            );
+        }
+
+        if (logEl) {
+            const lines = (response?.results || []).map((entry) => {
+                const status = entry.valid ? 'OK' : `INVALID (${entry.message})`;
+                return `${entry.key}: ${status}\n${entry.summary}`;
+            });
+            logEl.textContent = lines.length ? lines.join('\n\n') : 'Aucun résultat renvoyé.';
+            logEl.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Erreur vérification config store:', error);
+        MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
+    } finally {
+        MessageHelper.setButtonLoading(button, false);
+    }
+}
+
 /**
  * Initialise les services nécessaires
  */
@@ -233,6 +277,11 @@ function bindEvents() {
     const migrateBtn = document.getElementById('migrateConfigsBtn');
     if (migrateBtn) {
         migrateBtn.addEventListener('click', handleConfigMigration);
+    }
+
+    const verifyBtn = document.getElementById('verifyConfigStoreBtn');
+    if (verifyBtn) {
+        verifyBtn.addEventListener('click', handleConfigVerification);
     }
 }
 

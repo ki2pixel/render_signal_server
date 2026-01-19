@@ -66,18 +66,38 @@ def _fetch(key: str) -> Dict[str, Any]:
     return app_config_store.get_config_json(key)
 
 
-def _run(keys: Sequence[str], raw: bool) -> int:
+def inspect_configs(keys: Sequence[str], raw: bool = False) -> Tuple[int, list[dict[str, Any]]]:
+    """Inspecte les clés demandées et retourne (exit_code, résultats structurés)."""
     exit_code = 0
+    results: list[dict[str, Any]] = []
     for key in keys:
         payload = _fetch(key)
+        has_payload = bool(payload)
         valid, reason = _validate_payload(key, payload)
-        status = "OK" if valid else f"INVALID ({reason})"
-        formatted = _format_payload(payload, raw) if payload else "<vide>"
-        print(f"{key}: {status}")
-        print(formatted)
-        print("-" * 40)
+        summary = _format_payload(payload, raw) if has_payload else "<vide>"
         if not valid:
             exit_code = 1
+        results.append(
+            {
+                "key": key,
+                "valid": bool(valid),
+                "status": "OK" if valid else "INVALID",
+                "message": reason,
+                "summary": summary,
+                "payload_present": has_payload,
+                "payload": payload if raw and has_payload else None,
+            }
+        )
+    return exit_code, results
+
+
+def _run(keys: Sequence[str], raw: bool) -> int:
+    exit_code, results = inspect_configs(keys, raw)
+    for entry in results:
+        status = entry["status"] if entry["valid"] else f"INVALID ({entry['message']})"
+        print(f"{entry['key']}: {status}")
+        print(entry["summary"])
+        print("-" * 40)
     return exit_code
 
 

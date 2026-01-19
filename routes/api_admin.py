@@ -18,17 +18,14 @@ from email_processing import webhook_sender as email_webhook_sender
 from email_processing import orchestrator as email_orchestrator
 from app_logging.webhook_logger import append_webhook_log as _append_webhook_log
 from migrate_configs_to_redis import main as migrate_configs_main
+from scripts.check_config_store import KEY_CHOICES as CONFIG_STORE_KEYS
+from scripts.check_config_store import inspect_configs
 
 bp = Blueprint("api_admin", __name__, url_prefix="/api")
 
 # Phase 5: Initialiser ConfigService pour ce module
 _config_service = ConfigService()
-ALLOWED_CONFIG_KEYS = (
-    "magic_link_tokens",
-    "polling_config",
-    "processing_prefs",
-    "webhook_config",
-)
+ALLOWED_CONFIG_KEYS = CONFIG_STORE_KEYS
 
 
 def _invoke_config_migration(selected_keys: Iterable[str]) -> Tuple[int, str]:
@@ -47,6 +44,12 @@ def _invoke_config_migration(selected_keys: Iterable[str]) -> Tuple[int, str]:
         if segment
     )
     return exit_code, combined_output
+
+
+def _run_config_store_verification(selected_keys: Iterable[str], raw: bool = False) -> Tuple[int, list[dict]]:
+    keys = tuple(selected_keys) or ALLOWED_CONFIG_KEYS
+    exit_code, results = inspect_configs(keys, raw=raw)
+    return exit_code, results
 
 
 @bp.route("/restart_server", methods=["POST"])  # POST /api/restart_server
@@ -140,6 +143,73 @@ def migrate_configs_to_redis_endpoint():
                     "exit_code": exit_code,
                     "keys": list(selected_keys),
                     "log": output,
+                }
+            ),
+            status_code,
+        )
+    except Exception as exc:
+        return jsonify({"success": False, "message": str(exc)}), 500
+
+
+@bp.route("/verify_config_store", methods=["POST"])
+@login_required
+def verify_config_store():
+    """Vérifie les configurations persistées (Redis + fallback) directement depuis le dashboard."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        requested_keys = payload.get("keys")
+        raw = bool(payload.get("raw"))
+
+        if requested_keys is None:
+            selected_keys = ALLOWED_CONFIG_KEYS
+        elif isinstance(requested_keys, list) and all(isinstance(k, str) for k in requested_keys):
+            invalid = [k for k in requested_keys if k not in ALLOWED_CONFIG_KEYS]
+            if invalid:
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": f"Clés invalides: {', '.join(invalid)}",
+                            "allowed_keys": ALLOWED_CONFIG_KEYS,
+                        }
+                    ),
+                    400,
+                )
+            seen = set()
+            selected_keys = tuple(k for k in requested_keys if not (k in seen or seen.add(k)))
+        else:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Le champ 'keys' doit être une liste de chaînes.",
+                        "allowed_keys": ALLOWED_CONFIG_KEYS,
+                    }
+                ),
+                400,
+            )
+
+        exit_code, results = _run_config_store_verification(selected_keys, raw=raw)
+        success = exit_code == 0
+        status_code = 200 if success else 502
+
+        try:
+            current_app.logger.info(
+                "ADMIN: Config store verification requested by '%s' (keys=%s, exit=%s)",
+                getattr(current_user, "id", "unknown"),
+                list(selected_keys),
+                exit_code,
+            )
+        except Exception:
+            pass
+
+        return (
+            jsonify(
+                {
+                    "success": success,
+                    "exit_code": exit_code,
+                    "keys": list(selected_keys),
+                    "results": results,
                 }
             ),
             status_code,

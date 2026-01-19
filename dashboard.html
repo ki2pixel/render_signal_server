@@ -1611,6 +1611,13 @@
           </div>
           <div id="migrateConfigsMsg" class="status-msg"></div>
           <pre id="migrateConfigsLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
+          <hr style="margin: 18px 0; border-color: rgba(255,255,255,0.1);">
+          <p style="margin-bottom:10px;">Vérifiez l'état des données persistées dans Redis (structures JSON, attributs requis, dates de mise à jour).</p>
+          <div class="inline-group" style="margin-bottom: 10px;">
+            <button id="verifyConfigStoreBtn" class="btn btn-info">🔍 Vérifier les données en Redis</button>
+          </div>
+          <div id="verifyConfigStoreMsg" class="status-msg"></div>
+          <pre id="verifyConfigStoreLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
         </div>
         <div class="card" style="margin-top: 20px;">
           <div class="card-title">🔐 Accès Magic Link</div>
