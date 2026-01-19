@@ -448,39 +448,15 @@ async function loadTimeWindow() {
         // 0) Source principale : fenêtre horaire globale (ancien endpoint)
         const globalTimeResponse = await ApiService.get('/api/get_webhook_time_window');
         console.log('[loadTimeWindow] /api/get_webhook_time_window response:', globalTimeResponse);
-        if (globalTimeResponse.success && (globalTimeResponse.webhooks_time_start || globalTimeResponse.webhooks_time_end)) {
-            applyWindowValues(globalTimeResponse.webhooks_time_start, globalTimeResponse.webhooks_time_end);
+        if (globalTimeResponse.success) {
+            applyWindowValues(
+                globalTimeResponse.webhooks_time_start || '',
+                globalTimeResponse.webhooks_time_end || ''
+            );
             return;
         }
     } catch (e) {
         console.warn('Impossible de charger la fenêtre horaire globale:', e);
-    }
-    
-    try {
-        // 1) Fallback : configuration webhooks (valeurs webhook spécifiques)
-        const configResponse = await ApiService.get('/api/webhooks/config');
-        console.log('[loadTimeWindow] /api/webhooks/config response:', configResponse);
-        if (configResponse.success && configResponse.config) {
-            const cfg = configResponse.config;
-            if (cfg.global_time_start || cfg.global_time_end) {
-                applyWindowValues(cfg.global_time_start || '', cfg.global_time_end || '');
-                return;
-            }
-        }
-    } catch (e) {
-        console.warn('Impossible de charger la fenêtre horaire via /api/webhooks/config:', e);
-    }
-    
-    try {
-        // 1) Préférence: configuration persistée (webhook config service)
-        const persisted = await ApiService.get('/api/webhooks/time-window');
-        console.log('[loadTimeWindow] /api/webhooks/time-window response:', persisted);
-        if (persisted.success && (persisted.webhooks_time_start || persisted.webhooks_time_end)) {
-            applyWindowValues(persisted.webhooks_time_start, persisted.webhooks_time_end);
-            return;
-        }
-    } catch (e) {
-        console.warn('Impossible de charger la fenêtre horaire via /api/webhooks/time-window:', e);
     }
     
     try {
@@ -517,13 +493,15 @@ async function saveTimeWindow() {
     const normalizedEnd = end ? MessageHelper.normalizeTimeFormat(end) : '';
     
     try {
-        const data = await ApiService.post('/api/webhooks/time-window', { 
+        const data = await ApiService.post('/api/set_webhook_time_window', { 
             start: normalizedStart, 
             end: normalizedEnd 
         });
         
         if (data.success) {
             MessageHelper.showSuccess('timeWindowMsg', 'Fenêtre horaire enregistrée avec succès !');
+            updatePanelStatus('time-window', true);
+            updatePanelIndicator('time-window');
             
             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
@@ -540,10 +518,12 @@ async function saveTimeWindow() {
             return true;
         } else {
             MessageHelper.showError('timeWindowMsg', data.message || 'Erreur lors de la sauvegarde.');
+            updatePanelStatus('time-window', false);
             return false;
         }
     } catch (e) {
         MessageHelper.showError('timeWindowMsg', 'Erreur de communication avec le serveur.');
+        updatePanelStatus('time-window', false);
         return false;
     }
 }
@@ -1152,15 +1132,14 @@ async function loadGlobalWebhookTimeWindow() {
     };
     
     try {
-        // Utiliser la même source que la fenêtre horaire principale
-        const configResponse = await ApiService.get('/api/webhooks/config');
-        console.log('[loadGlobalWebhookTimeWindow] /api/webhooks/config response:', configResponse);
-        if (configResponse.success && configResponse.config) {
-            const cfg = configResponse.config;
-            if (cfg.webhook_time_start || cfg.webhook_time_end) {
-                applyGlobalWindowValues(cfg.webhook_time_start || '', cfg.webhook_time_end || '');
-                return;
-            }
+        const timeWindowResponse = await ApiService.get('/api/webhooks/time-window');
+        console.log('[loadGlobalWebhookTimeWindow] /api/webhooks/time-window response:', timeWindowResponse);
+        if (timeWindowResponse.success) {
+            applyGlobalWindowValues(
+                timeWindowResponse.webhooks_time_start || '',
+                timeWindowResponse.webhooks_time_end || ''
+            );
+            return;
         }
     } catch (e) {
         console.warn('Impossible de charger la fenêtre horaire webhook globale:', e);
@@ -1189,13 +1168,15 @@ async function saveGlobalWebhookTimeWindow() {
     const normalizedEnd = end ? MessageHelper.normalizeTimeFormat(end) : '';
     
     try {
-        const data = await ApiService.post('/api/set_webhook_time_window', { 
+        const data = await ApiService.post('/api/webhooks/time-window', { 
             start: normalizedStart, 
             end: normalizedEnd 
         });
         
         if (data.success) {
             MessageHelper.showSuccess('globalWebhookTimeMsg', 'Fenêtre horaire webhook enregistrée avec succès !');
+            updatePanelStatus('time-window', true);
+            updatePanelIndicator('time-window');
             
             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
@@ -1204,13 +1185,16 @@ async function saveGlobalWebhookTimeWindow() {
             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
                 endInput.value = data.webhooks_time_end || '';
             }
+            await loadGlobalWebhookTimeWindow();
             return true;
         } else {
             MessageHelper.showError('globalWebhookTimeMsg', data.message || 'Erreur lors de la sauvegarde.');
+            updatePanelStatus('time-window', false);
             return false;
         }
     } catch (e) {
         MessageHelper.showError('globalWebhookTimeMsg', 'Erreur de communication avec le serveur.');
+        updatePanelStatus('time-window', false);
         return false;
     }
 }
@@ -1480,32 +1464,37 @@ async function saveWebhookPanel(panelType) {
  */
 function collectUrlsData() {
     const webhookUrl = document.getElementById('webhookUrl')?.value || '';
-    const makeWebhookUrl = document.getElementById('makeWebhookUrl')?.value || '';
+    const webhookUrlPlaceholder = document.getElementById('webhookUrl')?.placeholder || '';
     const sslToggle = document.getElementById('sslVerifyToggle');
     const sendingToggle = document.getElementById('webhookSendingToggle');
     const sslVerify = sslToggle?.checked ?? true;
     const sendingEnabled = sendingToggle?.checked ?? true;
-    
-    return {
-        webhook_url: webhookUrl || null,
-        make_webhook_url: makeWebhookUrl || null,
+
+    const payload = {
         webhook_ssl_verify: sslVerify,
-        webhook_sending_enabled: sendingEnabled
+        webhook_sending_enabled: sendingEnabled,
     };
+
+    const trimmedWebhookUrl = webhookUrl.trim();
+    if (trimmedWebhookUrl && !MessageHelper.isPlaceholder(trimmedWebhookUrl, webhookUrlPlaceholder)) {
+        payload.webhook_url = trimmedWebhookUrl;
+    }
+
+    return payload;
 }
 
 /**
  * Collecte les données du panneau fenêtre horaire
  */
 function collectTimeWindowData() {
-    const startInput = document.getElementById('webhooksTimeStart');
-    const endInput = document.getElementById('webhooksTimeEnd');
+    const startInput = document.getElementById('globalWebhookTimeStart');
+    const endInput = document.getElementById('globalWebhookTimeEnd');
     const start = startInput?.value?.trim() || '';
     const end = endInput?.value?.trim() || '';
     
     // Normaliser les formats
-    const normalizedStart = start ? MessageHelper.normalizeTimeFormat(start) : '';
-    const normalizedEnd = end ? MessageHelper.normalizeTimeFormat(end) : '';
+    const normalizedStart = start ? (MessageHelper.normalizeTimeFormat(start) || '') : '';
+    const normalizedEnd = end ? (MessageHelper.normalizeTimeFormat(end) || '') : '';
     
     return {
         start: normalizedStart,

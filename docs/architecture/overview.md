@@ -75,22 +75,26 @@ Règles de fenêtre horaire (webhooks dédiés):
 - **Fallback** : Verrou fichier `fcntl` si Redis indisponible
 - **Usage** : Prévention du multi-polling sur Render multi-conteneurs
 - **Logging** : WARNING en cas de fallback vers verrou fichier
+- **Configuration** : `REDIS_URL` obligatoire pour multi-conteneurs, `REDIS_LOCK_TTL_SECONDS` configurable
 
 #### Fallback R2 Garanti
 - **Service** : `services/r2_transfer_service.py` avec gestion d'erreurs robuste
 - **Comportement** : Conservation explicite de `raw_url` en cas d'échec d'offload
 - **Logging** : `R2_TRANSFER:*` avec WARNING mais flux continu sans interruption
 - **Garantie** : Aucune perte de lien, même si Worker R2 indisponible
+- **Timeouts** : 120s pour Dropbox `/scl/fo/`, 15s par défaut
 
 #### Watchdog IMAP
 - **Timeout** : 30s pour éviter les processus zombies IMAP
 - **Sécurité** : Anti-blocage automatique des connexions
 - **Implémentation** : Timeout sur toutes les opérations IMAP dans `email_processing/imap_client.py`
+- **Configuration** : `IMAP_TIMEOUT_SECONDS` pour surcharge
 
 #### Tests Résilience
 - **Redis Lock** : `tests/test_lock_redis.py` avec scénarios distributed/fallback
 - **R2 Resilience** : `tests/test_r2_resilience.py` (exception/None/timeout)
 - **Anti-OOM** : Limite 1MB sur parsing HTML dans `email_processing/orchestrator.py`
+- **Commandes** : `pytest -m "redis or r2 or resilience"` avec environnement `/mnt/venv_ext4/venv_render_signal_server`
 
 ### Architecture Frontend Modulaire ES6 (2026-01-19)
 

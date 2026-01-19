@@ -85,6 +85,15 @@ render_signal_server-main/
   - TTL et expiration du verrou
   - Concurrence multi-processus
 - **Marqueur** : `@pytest.mark.redis`
+- **Commandes d'exécution** :
+```bash
+# Tests résilience uniquement
+pytest -m "redis or r2 or resilience"
+
+# Tests avec environnement partagé
+source /mnt/venv_ext4/venv_render_signal_server/bin/activate
+pytest --cov=. tests/test_lock_redis.py tests/test_r2_resilience.py
+```
 
 #### Fallback R2 Garanti
 - **Fichier** : `tests/test_r2_resilience.py`
@@ -105,13 +114,14 @@ render_signal_server-main/
 - **Scénario** : Timeout connexion IMAP
 - **Validation** : Fermeture propre, log timeout
 
-#### Exécution
+#### Exécution complète
 ```bash
-# Tests résilience uniquement
-pytest -m "redis or r2 or resilience"
-
 # Tous les tests avec couverture
+source /mnt/venv_ext4/venv_render_signal_server/bin/activate
 pytest --cov=. --cov-report=html
+
+# Tests résilience uniquement
+pytest -m "redis or r2 or resilience" --cov=. tests/test_lock_redis.py tests/test_r2_resilience.py
 ```
 
 ### 🧪 Tests Spécifiques R2 Offload

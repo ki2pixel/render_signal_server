@@ -4,7 +4,7 @@ description:
 globs: 
 ---
 
-# Coding Standards – render_signal_server (v2026-01-18)
+# Coding Standards – render_signal_server (v2026-01-19)
 
 ## Principes directeurs
 
@@ -16,7 +16,7 @@ Lisibilité > concision. Commenter le pourquoi, pas le comment. Nommage explicit
 
 **Backend Python**: Flask, services, email_processing, background, config, auth, dedup, app_logging, preferences.  
 **Frontend ES6**: static/ (services/, components/, utils/, dashboard.js modulaire).  
-**Services**: ConfigService, RuntimeFlagsService, WebhookConfigService, AuthService, PollingConfigService, DeduplicationService, R2TransferService, MagicLinkService.  
+**Services**: ConfigService, RuntimeFlagsService, WebhookConfigService, AuthService, PollingConfigService, DeduplicationService, R2TransferService, MagicLinkService, AppConfigStore.  
 **Infrastructure**: Redis distribué, R2 offload, Docker GHCR, tests résilience.
 
 ---
@@ -70,6 +70,13 @@ static/
 - WCAG AA : contrastes, labels, screen readers
 - Responsive mobile-first (breakpoints 768px/480px)
 
+### UX Avancé (2026-01-19)
+- **Bandeau Statut Global** : Vue d'ensemble avec métriques santé système
+- **Timeline Logs** : Timeline verticale avec sparkline Canvas 24h et animations
+- **Panneaux Pliables** : 3 panneaux (URLs & SSL, Absence Globale, Fenêtre Horaire)
+- **Auto-sauvegarde** : Sauvegarde auto préférences avec debounce 2-3s
+- **Micro-interactions** : Ripple effect CSS, toast notifications, transitions fluides
+
 ---
 
 ## Architecture Backend
@@ -83,6 +90,7 @@ static/
 - **DeduplicationService** : Redis + fallback mémoire
 - **R2TransferService** : offload Cloudflare R2, fallback garanti
 - **MagicLinkService** : magic links HMAC, TTL configurable
+- **AppConfigStore** : Redis-first store avec fallback PHP/fichiers, modes configurables
 
 ### Modules métier
 - **email_processing/orchestrator.py** : cycle polling, règles métier, anti-OOM
@@ -153,6 +161,18 @@ static/
 - **E2E** : flux critiques (polling, webhooks, absence globale)
 - **Résilience** : Redis lock, R2 fallback, anti-OOM, watchdog IMAP
 
+### Environnement & Commandes
+- **Environnement partagé** : `/mnt/venv_ext4/venv_render_signal_server`
+- **Activation** : `source /mnt/venv_ext4/venv_render_signal_server/bin/activate`
+- **Commandes résilience** :
+```bash
+# Tests résilience avec couverture
+pytest -m "redis or r2 or resilience" --cov=.
+
+# Tests complets
+pytest --cov=.
+```
+
 ### Marqueurs pytest
 - `@pytest.mark.unit`, `@pytest.mark.integration`, `@pytest.mark.e2e`
 - `@pytest.mark.redis`, `@pytest.mark.imap` pour services externes
@@ -188,6 +208,12 @@ static/
 - Utiliser services dédiés, pas accès direct fichiers JSON
 - ConfigService pour plupart, RuntimeFlagsService pour flags debug
 - WebhookConfigService pour config webhooks, PollingConfigService pour IMAP
+
+### Redis Config Store
+- **Service** : `config/app_config_store.py` avec modes `redis_first`/`php_first`
+- **Configurations** : magic_link_tokens, polling_config, processing_prefs, webhook_config
+- **Migration** : `migrate_configs_to_redis.py --verify`
+- **Vérification** : `/api/verify_config_store` ou `python -m scripts.check_config_store`
 
 ---
 
@@ -263,9 +289,10 @@ except Exception:
 
 - **Tests** : 389 passed, 13 skipped, 0 failed
 - **Couverture** : ~70%
-- **Frontend** : 5 modules ES6, 1488→600 lignes
-- **Résilience** : Redis lock, R2 fallback, anti-OOM implémentés
+- **Frontend** : 5 modules ES6, 1488→600 lignes, UX avancé complet
+- **Résilience** : Redis lock, R2 fallback, anti-OOM, watchdog IMAP
 - **Performance** : lazy loading, visibility API, timeouts robustes
+- **Documentation** : Synchronisée avec code via workflow docs-updater
 
 ---
 

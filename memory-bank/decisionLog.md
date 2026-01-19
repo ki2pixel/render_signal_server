@@ -21,6 +21,16 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Entrées récentes (post-archives)
 
+- **[2026-01-19 13:55:00] - Vérification centralisée des configs Redis via dashboard**
+  - **Décision** : Ajouter une API (`/api/verify_config_store`) et un bouton dédié dans le dashboard pour inspecter les quatre configurations critiques stockées dans Redis, avec option d'afficher le JSON brut pour le debug.
+  - **Raisons** : Après la migration vers Redis, l'absence d'un outil de contrôle visuel compliquait la validation des données et la détection de divergences entre Redis et les fichiers `debug/*.json`.
+  - **Actions** :
+    1. Extension de `scripts/check_config_store.py` avec `inspect_configs()` retournant un résultat structuré (statut, résumé, payload optionnel).
+    2. Ajout de la route `/api/verify_config_store` dans `routes/api_admin.py`, supportant la sélection de clés et le mode `raw`.
+    3. Intégration UI : bouton « Vérifier les données en Redis », toggle « Inclure le JSON complet » et affichage détaillé dans `dashboard.html`/`static/dashboard.js`.
+    4. Couverture de tests : nouveaux tests dans `tests/test_api_admin_migrate_configs.py` pour les scénarios succès, clés invalides et exit code non nul.
+  - **Impacts** : Vérification opérée directement depuis l'interface (aucun accès shell requis), traçabilité accrue des migrations, feedback instantané sur l'état des données avec possibilité d'inspecter l'intégralité du payload pour chaque clé.
+
 - **[2026-01-19 11:00:00] - Migration persistance configs vers Redis**
   - **Décision** : Remplacer la dépendance au backend PHP/fichiers par un store Redis-first pour toutes les configurations (`processing_prefs`, `polling_config`, `webhook_config`, `magic_link_tokens`).
   - **Raisons** : Le filesystem Render est éphémère et le serveur PHP externe est fragile; Redis est déjà requis (lock poller, dédup) et offre une disponibilité multi-workers.
@@ -31,15 +41,17 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
     4. Exécution du script (avec `--verify`) via l'env `/mnt/venv_ext4/venv_render_signal_server` pour pousser les 4 JSON vers Redis.
   - **Impacts** : Configs critiques survivent aux redeploys, alignement avec Lot 2 (Redis), rollback possible via mode `php_first`, tests automatisés couvrant les nouveaux chemins.
 
-- **[2026-01-19 13:30:00] - Mise à Jour Documentation Complète (Workflow docs-updater)**
+- **[2026-01-19 14:30:00] - Mise à Jour Documentation Complète (Workflow docs-updater)**
   - **Décision** : Exécuter le workflow `/docs-updater` pour analyser la Memory Bank, inspecter le code source impacté et synchroniser toute la documentation avec les évolutions récentes.
   - **Raisons** : Les évolutions majeures (Lot 1 Sécurité, Lot 2 Résilience, Frontend UX avancé) nécessitaient une mise à jour complète de la documentation pour maintenir la cohérence entre le code et les docs.
   - **Actions** :
     - Architecture overview : Ajout section Résilience & Architecture (Lot 2) avec verrou Redis, fallback R2, watchdog IMAP
     - Sécurité : Ajout sections écriture atomique et validation domaines R2 (Lot 1)
-    - README docs : Mise à jour plan de documentation avec nouvelles sections
-    - Validation : Documentation frontend UX, API et tests déjà complètes
+    - Tests Résilience : Documentation complète avec commandes d'exécution et environnement `/mnt/venv_ext4/venv_render_signal_server`
+    - Configuration storage : Section Redis Config Store déjà présente avec migration et vérification
+    - Multi-conteneurs : Documentation Redis comme backend central déjà enrichie
   - **Impacts** : Documentation entièrement synchronisée, cohérence code/docs maintenue, meilleure traçabilité des évolutions pour les développeurs et ops.
+  - **Fichiers modifiés** : `docs/architecture/overview.md`, `docs/quality/testing.md` (compléments)
   - **Décision** : Implémenter les 4 fonctionnalités UX avancées (Statut Global, Timeline, Panneaux pliables, Auto-sauvegarde) pour atteindre un niveau d'excellence ergonomique.
   - **Raisons** : Faciliter le monitoring rapide, réduire la charge cognitive et sécuriser les modifications de configuration par feedback immédiat.
   - **Impacts** : Transformation visuelle majeure du dashboard, introduction de graphiques (Sparkline Canvas), organisation logique en panneaux, impact UX mesuré positif.

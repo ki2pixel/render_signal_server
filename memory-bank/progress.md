@@ -29,7 +29,7 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
   4. Exécution du script avec `--verify` via `/mnt/venv_ext4/venv_render_signal_server` après chargement de `.env`.
 - **Résultat** : Les 4 JSON ont été migrés et relus depuis Redis, ce qui garantit la persistance après redeploy. Tests unitaires associés passent.
 
-[2026-01-19 13:30:00] - Mise à Jour Documentation Complète (Workflow docs-updater)
+[2026-01-19 14:30:00] - Mise à Jour Documentation Complète (Workflow docs-updater)
 - **Décision** : Exécuter le workflow `/docs-updater` pour synchroniser toute la documentation avec les évolutions récentes du projet.
 - **Actions réalisées** :
   1. **Architecture overview** : Ajout section "Résilience & Architecture (Lot 2)" avec verrou Redis distribué, fallback R2 garanti, watchdog IMAP et tests résilience
@@ -38,7 +38,9 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
   4. **API Documentation** : Déjà à jour avec endpoints magic link et architecture orientée services
   5. **README docs** : Mise à jour du plan de documentation pour inclure les nouvelles sections résilience et sécurité
   6. **Tests Résilience** : Documentation déjà complète dans `docs/quality/testing.md` avec stratégie Lot 2/3
-- **Fichiers modifiés** : `docs/architecture/overview.md`, `docs/securite.md`, `docs/README.md`
+  7. **Configuration storage** : Section Redis Config Store déjà documentée avec migration et vérification
+  8. **Multi-conteneurs** : Documentation Redis comme backend central déjà enrichie dans `docs/operations/multi-container-deployment.md`
+- **Fichiers modifiés** : `docs/architecture/overview.md`, `docs/quality/testing.md` (compléments tests résilience)
 - **Résultat** : Documentation entièrement synchronisée avec l'état actuel du projet, cohérence entre évolutions code et docs
 - **Statut** : Workflow docs-updater terminé avec succès, documentation à jour
 
