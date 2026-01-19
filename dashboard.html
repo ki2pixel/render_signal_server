@@ -1616,6 +1616,10 @@
           <div class="inline-group" style="margin-bottom: 10px;">
             <button id="verifyConfigStoreBtn" class="btn btn-info">🔍 Vérifier les données en Redis</button>
           </div>
+          <label for="verifyConfigStoreRawToggle" class="small-text" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+            <input type="checkbox" id="verifyConfigStoreRawToggle">
+            <span>Inclure le JSON complet dans le log pour faciliter le debug.</span>
+          </label>
           <div id="verifyConfigStoreMsg" class="status-msg"></div>
           <pre id="verifyConfigStoreLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
         </div>
