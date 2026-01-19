@@ -1,9 +1,6 @@
 """
-email_processing.webhook_sender
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Fonctions d'envoi de webhooks (Make.com, autorépondeur, etc.).
-Extraction depuis app_render.py pour améliorer la modularité et la testabilité.
+Webhook sending functions (Make.com, autoresponder, etc.).
+Extracted from app_render.py for improved modularity and testability.
 """
 
 from __future__ import annotations
@@ -67,10 +64,10 @@ def send_makecom_webhook(
         "Authorization": f"Bearer {settings.MAKECOM_API_KEY}",
     }
 
-    target_url = override_webhook_url or settings.RECADRAGE_MAKE_WEBHOOK_URL
+    target_url = override_webhook_url or settings.WEBHOOK_URL
     if not target_url:
-        # In test contexts, we still want to exercise retry logic. Use a placeholder URL.
-        log.error("MAKECOM: No webhook URL configured (target_url is empty). Proceeding with placeholder for retry behavior.")
+        # Use placeholder URL to maintain retry behavior when no webhook is configured
+        log.error("MAKECOM: No webhook URL configured (target_url is empty). Using placeholder for retry behavior.")
         target_url = "http://localhost/placeholder-webhook"
 
     # Valider le nombre de tentatives (au moins 1)

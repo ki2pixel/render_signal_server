@@ -1,14 +1,19 @@
 {
-    "example": true,
-    "_updated_at": "2026-01-19T01:48:22+00:00",
-    "presence_flag": true,
-    "webhook_ssl_verify": true,
-    "webhook_sending_enabled": true,
-    "webhook_time_start": "10:30",
-    "webhook_time_end": "19:00",
-    "global_time_start": "10:30",
-    "global_time_end": "19:00",
-    "absence_pause_enabled": false,
-    "absence_pause_days": [],
-    "webhook_url": "https:\/\/webhook.kidpixel.fr\/index.php"
+  "example": true,
+  "_updated_at": "2026-01-19T01:48:22+00:00",
+  "presence_flag": true,
+  "webhook_ssl_verify": true,
+  "webhook_sending_enabled": true,
+  "webhook_time_start": "10:30",
+  "webhook_time_end": "19:00",
+  "global_time_start": "10:30",
+  "global_time_end": "19:00",
+  "absence_pause_enabled": true,
+  "absence_pause_days": [
+    "monday",
+    "friday",
+    "wednesday"
+  ],
+  "webhook_url": "https://new.example.com/webhook",
+  "polling_enabled": false
 }

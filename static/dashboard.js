@@ -6,7 +6,9 @@ import { TabManager } from './components/TabManager.js';
 
 window.DASHBOARD_BUILD = 'modular-2026-01-19a';
 
-console.log('[build] static/dashboard.js loaded:', window.DASHBOARD_BUILD);
+if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    console.log('[build] static/dashboard.js loaded:', window.DASHBOARD_BUILD);
+}
 
 let tabManager = null;
 
@@ -28,7 +30,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         LogService.startLogPolling();
         
-        console.log('Dashboard initialisé avec succès');
+        console.log('Dashboard initialized successfully');
     } catch (e) {
         console.error('Erreur lors de l\'initialisation du dashboard:', e);
         MessageHelper.showError('global', 'Erreur lors du chargement du dashboard');

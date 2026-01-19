@@ -1,5 +1,3 @@
-// static/services/LogService.js
-// Service pour la gestion des logs et du timer de polling
 import { ApiService } from './ApiService.js';
 import { MessageHelper } from '../utils/MessageHelper.js';
 
@@ -12,18 +10,14 @@ export class LogService {
      * @param {number} intervalMs - Intervalle en millisecondes (défaut: 30000)
      */
     static startLogPolling(intervalMs = 30000) {
-        // Arrêter le polling existant
         this.stopLogPolling();
         
-        // Charger les logs immédiatement
         this.loadAndRenderLogs();
         
-        // Démarrer le polling périodique
         this.logPollingInterval = setInterval(() => {
             this.loadAndRenderLogs();
         }, intervalMs);
         
-        // Nettoyer le polling quand la page n'est plus visible
         document.addEventListener('visibilitychange', this.handleVisibilityChange);
     }
 
@@ -44,10 +38,8 @@ export class LogService {
      */
     static handleVisibilityChange() {
         if (document.hidden) {
-            // Mettre en pause le polling quand la page est cachée
             LogService.stopLogPolling();
         } else {
-            // Reprendre le polling quand la page redevient visible
             LogService.startLogPolling();
         }
     }
@@ -83,16 +75,13 @@ export class LogService {
             return;
         }
         
-        // Créer le conteneur timeline
         const timelineContainer = document.createElement('div');
         timelineContainer.className = 'timeline-container';
         
-        // Ajouter la ligne timeline
         const timelineLine = document.createElement('div');
         timelineLine.className = 'timeline-line';
         timelineContainer.appendChild(timelineLine);
         
-        // Ajouter la sparkline pour les tendances
         const sparkline = this.createSparkline(logs);
         if (sparkline) {
             timelineContainer.appendChild(sparkline);
@@ -103,17 +92,14 @@ export class LogService {
             timelineItem.className = 'timeline-item';
             timelineItem.style.animationDelay = `${index * 0.1}s`;
             
-            // Créer le marqueur
             const marker = document.createElement('div');
             marker.className = `timeline-marker ${log.status}`;
             marker.textContent = log.status === 'success' ? '✓' : '⚠';
             timelineItem.appendChild(marker);
             
-            // Créer le contenu
             const content = document.createElement('div');
             content.className = 'timeline-content';
             
-            // Header avec temps et statut
             const header = document.createElement('div');
             header.className = 'timeline-header';
             
@@ -129,7 +115,6 @@ export class LogService {
             
             content.appendChild(header);
             
-            // Détails
             const details = document.createElement('div');
             details.className = 'timeline-details';
             
@@ -301,7 +286,6 @@ export class LogService {
     static createSparkline(logs) {
         if (!logs || logs.length < 2) return null;
         
-        // Grouper les logs par heure
         const hourlyData = {};
         const now = new Date();
         
@@ -321,7 +305,6 @@ export class LogService {
             }
         });
         
-        // Créer les dernières 24 heures de données
         const sparklineContainer = document.createElement('div');
         sparklineContainer.className = 'timeline-sparkline';
         
@@ -332,7 +315,6 @@ export class LogService {
         
         const ctx = canvas.getContext('2d');
         
-        // Préparer les données
         const hours = 24;
         const data = [];
         const maxCount = Math.max(...Object.values(hourlyData).map(d => d.total), 1);
@@ -352,7 +334,6 @@ export class LogService {
         const height = canvas.height;
         const stepX = width / (data.length - 1);
         
-        // Dessiner la ligne
         ctx.beginPath();
         data.forEach((value, index) => {
             const x = index * stepX;
@@ -366,7 +347,6 @@ export class LogService {
         });
         ctx.stroke();
         
-        // Remplir sous la ligne
         ctx.lineTo(width, height);
         ctx.lineTo(0, height);
         ctx.closePath();
@@ -374,7 +354,6 @@ export class LogService {
         
         sparklineContainer.appendChild(canvas);
         
-        // Ajouter une légende simple
         const legend = document.createElement('div');
         legend.style.cssText = 'position: absolute; top: 5px; right: 10px; font-size: 0.7em; color: var(--cork-text-secondary);';
         legend.textContent = `24h - Max: ${maxCount}`;

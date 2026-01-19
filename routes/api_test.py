@@ -15,8 +15,6 @@ from config.settings import (
     WEBHOOK_CONFIG_FILE,
     WEBHOOK_LOGS_FILE,
     WEBHOOK_URL,
-    RECADRAGE_MAKE_WEBHOOK_URL,
-    AUTOREPONDEUR_MAKE_WEBHOOK_URL,
     WEBHOOK_SSL_VERIFY,
     POLLING_TIMEZONE_STR,
     POLLING_ACTIVE_DAYS,
@@ -108,8 +106,6 @@ def get_webhook_config():
         persisted = load_webhook_config(WEBHOOK_CONFIG_FILE)
         cfg = {
             "webhook_url": persisted.get("webhook_url") or _mask_url(WEBHOOK_URL),
-            "recadrage_webhook_url": persisted.get("recadrage_webhook_url") or _mask_url(RECADRAGE_MAKE_WEBHOOK_URL),
-            "autorepondeur_webhook_url": persisted.get("autorepondeur_webhook_url") or _mask_url(AUTOREPONDEUR_MAKE_WEBHOOK_URL),
             "webhook_ssl_verify": persisted.get("webhook_ssl_verify", WEBHOOK_SSL_VERIFY),
             "polling_enabled": persisted.get("polling_enabled", False),
         }

@@ -25,14 +25,10 @@ Usage:
         polling_config_service=polling_config
     )
     
-    # Vérifier si un email a été traité
     if not dedup.is_email_processed(email_id):
-        # Traiter l'email
         dedup.mark_email_processed(email_id)
     
-    # Vérifier un subject group
     if not dedup.is_subject_group_processed(subject):
-        # Traiter
         dedup.mark_subject_group_processed(subject)
 """
 
@@ -105,7 +101,6 @@ class DeduplicationService:
         if not email_id:
             return False
         
-        # Vérifier si la dédup email est désactivée
         if self.is_email_dedup_disabled():
             return False
         
@@ -174,7 +169,6 @@ class DeduplicationService:
         if not subject:
             return False
         
-        # Vérifier si la dédup subject est activée
         if not self.is_subject_dedup_enabled():
             return False
         
@@ -190,14 +184,12 @@ class DeduplicationService:
                 ttl_prefix = keys_config["subject_group_prefix"]
                 groups_key = keys_config["subject_groups_key"]
                 
-                # Vérifier dans la clé TTL si configuré
                 if ttl_seconds and ttl_seconds > 0:
                     ttl_key = ttl_prefix + scoped_id
                     val = self._redis.get(ttl_key)
                     if val is not None:
                         return True
                 
-                # Vérifier dans le set permanent
                 return bool(self._redis.sismember(groups_key, scoped_id))
             except Exception as e:
                 if self._logger:

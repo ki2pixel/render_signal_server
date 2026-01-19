@@ -1,5 +1,3 @@
-// static/components/TabManager.js
-// Gestionnaire des onglets du dashboard
 export class TabManager {
     constructor() {
         this.tabs = [];
@@ -22,10 +20,8 @@ export class TabManager {
      */
     findTabElements() {
         this.tabButtons = document.querySelectorAll('.tab-btn');
-        // Les panneaux de sections utilisent la classe .section-panel dans dashboard.html
         this.tabContents = document.querySelectorAll('.section-panel');
         
-        // Construire la liste des onglets
         this.tabButtons.forEach((button, index) => {
             const targetId = button.dataset.target;
             const targetContent = document.querySelector(targetId);

@@ -1,15 +1,13 @@
 {
-    "exclude_keywords": [],
-    "require_attachments": false,
-    "max_email_size_mb": null,
-    "sender_priority": [],
-    "retry_count": 2,
-    "retry_delay_sec": 1,
-    "webhook_timeout_sec": 30,
-    "rate_limit_per_hour": 5,
-    "notify_on_failure": false,
-    "mirror_media_to_custom": true,
-    "exclude_keywords_recadrage": [],
-    "exclude_keywords_autorepondeur": [],
-    "_updated_at": "2026-01-18T23:40:10+00:00"
+  "exclude_keywords": [],
+  "require_attachments": false,
+  "max_email_size_mb": null,
+  "sender_priority": {},
+  "retry_count": 2,
+  "retry_delay_sec": 1,
+  "webhook_timeout_sec": 30,
+  "rate_limit_per_hour": 5,
+  "notify_on_failure": false,
+  "mirror_media_to_custom": true,
+  "x": 1
 }

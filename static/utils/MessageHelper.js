@@ -1,5 +1,3 @@
-// static/utils/MessageHelper.js
-// Utilitaires pour les messages UI et notifications
 export class MessageHelper {
     /**
      * Affiche un message temporaire dans un élément

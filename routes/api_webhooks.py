@@ -10,7 +10,6 @@ from flask_login import login_required, current_user
 from utils.time_helpers import parse_time_hhmm
 from config import app_config_store as _store
 
-# Phase 5: Migration vers WebhookConfigService
 from services import WebhookConfigService
 
 bp = Blueprint("api_webhooks", __name__, url_prefix="/api/webhooks")
@@ -20,7 +19,6 @@ WEBHOOK_CONFIG_FILE = (
     Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
 )
 
-# Phase 5: Récupérer l'instance WebhookConfigService (Singleton)
 try:
     _webhook_service = WebhookConfigService.get_instance()
 except ValueError:
@@ -34,7 +32,7 @@ except ValueError:
 def _load_webhook_config() -> dict:
     """Load persisted config from DB if available, else file fallback.
     
-    Phase 5: Utilise WebhookConfigService (cache + validation).
+    Uses WebhookConfigService (cache + validation).
     """
     # Force a reload to avoid serving stale values when another endpoint
     # or external store updated the data recently (cache TTL = 60s).
@@ -45,7 +43,7 @@ def _load_webhook_config() -> dict:
 def _save_webhook_config(config: dict) -> bool:
     """Persist config to DB with file fallback.
     
-    Phase 5: Utilise WebhookConfigService (validation automatique + cache invalidation).
+    Uses WebhookConfigService (validation automatique + cache invalidation).
     """
     success, _ = _webhook_service.update_config(config)
     return success
@@ -67,7 +65,7 @@ def _mask_url(url: str | None) -> str | None:
 def get_webhook_config():
     persisted = _load_webhook_config()
 
-    # Defaults from environment to mirror legacy behavior in app_render
+    # Environment defaults for webhook configuration
     webhook_url = persisted.get("webhook_url") or os.environ.get("WEBHOOK_URL")
     webhook_ssl_verify = persisted.get(
         "webhook_ssl_verify",

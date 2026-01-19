@@ -197,7 +197,7 @@ def simulate_case_3_presence_and_desabo():
         delivery_time=None,
         sender_email="desabo@example.com",
         email_id="case3-desabo",
-        override_webhook_url=app.AUTOREPONDEUR_MAKE_WEBHOOK_URL,
+        override_webhook_url=app.WEBHOOK_URL,
         extra_payload={
             "detector": "desabonnement_journee_tarifs",
             "email_content": body_desabo,

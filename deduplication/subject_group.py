@@ -29,11 +29,9 @@ def generate_subject_group_id(subject: str) -> str:
     norm = _normalize_no_accents_lower_trim(subject or "")
     core = _strip_leading_reply_prefixes(norm)
 
-    # Try to extract lot number
     m_lot = re.search(r"\blot\s+(\d+)\b", core)
     lot_part = m_lot.group(1) if m_lot else None
 
-    # Detect Média Solution Missions Recadrage keywords
     is_media_solution = all(tok in core for tok in ["media solution", "missions recadrage", "lot"]) if core else False
 
     if is_media_solution and lot_part:
@@ -41,6 +39,5 @@ def generate_subject_group_id(subject: str) -> str:
     if lot_part:
         return f"lot_{lot_part}"
 
-    # Fallback: hash the core subject
     subject_hash = hashlib.md5(core.encode("utf-8")).hexdigest()
     return f"subject_hash_{subject_hash}"

@@ -11,30 +11,30 @@ import app_render as ar
 
 @pytest.mark.unit
 def test__load_processing_prefs_happy(monkeypatch, tmp_path):
-    # Monkeypatch loader to verify call and return value
+    # Monkeypatch _config_get to verify call and return value
     called = {}
-    def fake_load_processing_prefs(*, redis_client, file_path, defaults, logger, redis_key):
+    def fake_config_get(key, *, file_fallback, defaults=None):
         called['args'] = {
-            'redis_client': redis_client,
-            'file_path': file_path,
+            'key': key,
+            'file_fallback': file_fallback,
             'defaults': defaults,
-            'redis_key': redis_key,
         }
         return {'rate_limit_per_hour': 0, 'retry_count': 0}
-    monkeypatch.setattr(ar._processing_prefs, 'load_processing_prefs', fake_load_processing_prefs)
+    monkeypatch.setattr(ar, '_config_get', fake_config_get)
 
     res = ar._load_processing_prefs()
     assert isinstance(res, dict)
     assert 'rate_limit_per_hour' in res
-    assert called['args']['redis_key'] == ar.PROCESSING_PREFS_REDIS_KEY
+    assert called['args']['key'] == "processing_prefs"
+    assert called['args']['file_fallback'] == ar.PROCESSING_PREFS_FILE
 
 
 @pytest.mark.unit
 def test__save_processing_prefs_false(monkeypatch):
-    # Monkeypatch saver to return False
-    def fake_save_processing_prefs(prefs, *, redis_client, file_path, logger, redis_key):
+    # Monkeypatch _config_set to return False
+    def fake_config_set(key, value, *, file_fallback):
         return False
-    monkeypatch.setattr(ar._processing_prefs, 'save_processing_prefs', fake_save_processing_prefs)
+    monkeypatch.setattr(ar, '_config_set', fake_config_set)
 
     ok = ar._save_processing_prefs({'x': 1})
     assert ok is False

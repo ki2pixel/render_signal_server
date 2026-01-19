@@ -2,10 +2,8 @@
 email_processing.orchestrator
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Minimally centralizes orchestration calls for the email polling workflow.
-Step 4E-a: wrapper that delegates to the legacy implementation in app_render.py
-without moving the function body yet. This enables future extractions to
-happen behind this stable facade.
+Centralizes orchestration calls for the email polling workflow.
+Provides a stable interface for email processing with detector-specific routing.
 """
 from __future__ import annotations
 
@@ -23,17 +21,14 @@ from utils.text_helpers import mask_sensitive_data, strip_leading_reply_prefixes
 # CONSTANTS
 # =============================================================================
 
-# IMAP constants
 IMAP_MAILBOX_INBOX = "INBOX"
 IMAP_STATUS_OK = "OK"
 IMAP_SEARCH_CRITERIA_UNSEEN = "(UNSEEN)"
 IMAP_FETCH_RFC822 = "(RFC822)"
 
-# Detector types
 DETECTOR_RECADRAGE = "recadrage"
 DETECTOR_DESABO = "desabonnement_journee_tarifs"
 
-# Route identifiers
 ROUTE_DESABO = "DESABO"
 ROUTE_MEDIA_SOLUTION = "MEDIA_SOLUTION"
 
@@ -64,7 +59,6 @@ class ParsedEmail(TypedDict, total=False):
     body_plain: str
     body_html: str
 
-# NOTE: We import lazily inside functions to avoid circular imports at module load
 
 
 # =============================================================================
@@ -172,7 +166,7 @@ def _load_webhook_global_time_window() -> tuple[str, str]:
         data = _get_webhook_config_dict() or {}
         s = (data.get("webhook_time_start") or "").strip()
         e = (data.get("webhook_time_end") or "").strip()
-        # If file provided any values, use them but allow ENV to fill missing sides
+        # Use file values but allow ENV to fill missing sides
         env_s = (
             os.environ.get("WEBHOOKS_TIME_START")
             or os.environ.get("WEBHOOK_TIME_START")
@@ -222,13 +216,11 @@ def _fetch_and_parse_email(mail, num: bytes, logger, decode_fn, extract_sender_f
     from email import message_from_bytes
     
     try:
-        # Fetch full message
         status, msg_data = mail.fetch(num, '(RFC822)')
         if status != 'OK' or not msg_data:
             logger.warning("IMAP: Failed to fetch message %s (status=%s)", num, status)
             return None
         
-        # Extract raw bytes
         raw_bytes = None
         for part in msg_data:
             if isinstance(part, tuple) and isinstance(part[1], (bytes, bytearray)):
@@ -239,7 +231,6 @@ def _fetch_and_parse_email(mail, num: bytes, logger, decode_fn, extract_sender_f
             logger.warning("IMAP: No RFC822 bytes for message %s", num)
             return None
         
-        # Parse message
         msg = message_from_bytes(raw_bytes)
         subj_raw = msg.get('Subject', '')
         from_raw = msg.get('From', '')
@@ -248,7 +239,6 @@ def _fetch_and_parse_email(mail, num: bytes, logger, decode_fn, extract_sender_f
         subject = decode_fn(subj_raw) if decode_fn else subj_raw
         sender = extract_sender_fn(from_raw).lower() if extract_sender_fn else from_raw.lower()
         
-        # Extract body parts
         body_plain = ""
         body_html = ""
         try:
@@ -325,10 +315,7 @@ def check_new_emails_and_trigger_webhook() -> int:
     - Uses deduplication (Redis) to avoid processing same email multiple times
     - Subject-group deduplication prevents spam from repetitive emails
     """
-    # Legacy delegation removed to ensure this native flow is exercised consistently
-    # Rationale: tests validate detector-specific behavior (RECADRAGE/DESABO) implemented here.
-    # Keeping delegation would short-circuit these branches and hide regressions.
-    # Lazy imports to avoid cycles
+    # Legacy delegation removed: tests validate detector-specific behavior here
     try:
         import imaplib
         from email import message_from_bytes
@@ -337,15 +324,12 @@ def check_new_emails_and_trigger_webhook() -> int:
         return 0
 
     try:
-        # Pull runtime components from app_render (configured at app startup)
         import app_render as ar
         _app = ar.app
-        # Local modules
         from email_processing import imap_client
         from email_processing import payloads
         from email_processing import link_extraction
         from config import webhook_time_window as _w_tw
-        from config.settings import AUTOREPONDEUR_MAKE_WEBHOOK_URL
     except Exception as _imp_ex:
         try:
             # If wiring isn't ready, log and bail out
@@ -385,7 +369,6 @@ def check_new_emails_and_trigger_webhook() -> int:
     if not logger:
         return 0
 
-    # Enforce global absence at the start of the cycle
     try:
         if not _is_webhook_sending_enabled():
             try:
@@ -400,7 +383,6 @@ def check_new_emails_and_trigger_webhook() -> int:
     except Exception:
         pass
 
-    # Establish IMAP connection
     mail = ar.create_imap_connection()
     if not mail:
         logger.error("POLLER: Email polling cycle aborted: IMAP connection failed.")
@@ -408,7 +390,6 @@ def check_new_emails_and_trigger_webhook() -> int:
 
     triggered_count = 0
     try:
-        # Select INBOX
         try:
             status, _ = mail.select(IMAP_MAILBOX_INBOX)
             if status != IMAP_STATUS_OK:
@@ -418,7 +399,6 @@ def check_new_emails_and_trigger_webhook() -> int:
             logger.error("IMAP: Exception selecting INBOX: %s", e_sel)
             return 0
 
-        # Search unseen messages
         try:
             status, data = mail.search(None, 'UNSEEN')
             if status != IMAP_STATUS_OK:
@@ -429,17 +409,14 @@ def check_new_emails_and_trigger_webhook() -> int:
             logger.error("IMAP: Exception during search UNSEEN: %s", e_search)
             return 0
 
-        # Helper: is within Make webhook window (for presence route)
         def _is_within_time_window_local(now_local):
             try:
                 return _w_tw.is_within_global_time_window(now_local)
             except Exception:
                 return True
 
-        # Process each unseen message
         for num in email_nums:
             try:
-                # Fetch full message
                 status, msg_data = mail.fetch(num, '(RFC822)')
                 if status != 'OK' or not msg_data:
                     logger.warning("IMAP: Failed to fetch message %s (status=%s)", num, status)
@@ -495,7 +472,6 @@ def check_new_emails_and_trigger_webhook() -> int:
                         )
                     except Exception:
                         pass
-                # Observability: log when an email has been read and parsed (no sensitive content)
                 try:
                     logger.info(
                         "POLLER: Email read from IMAP: num=%s, subject='%s', sender='%s'",
@@ -506,7 +482,6 @@ def check_new_emails_and_trigger_webhook() -> int:
                 except Exception:
                     pass
 
-                # Filter by allowed senders
                 try:
                     sender_list = getattr(ar, 'SENDER_LIST_FOR_POLLING', []) or []
                     allowed = [str(s).lower() for s in sender_list]
@@ -541,7 +516,6 @@ def check_new_emails_and_trigger_webhook() -> int:
                         pass
                     continue
 
-                # Build a simple headers dict to compute email_id
                 headers_map = {
                     'Message-ID': msg.get('Message-ID', ''),
                     'Subject': subject or '',
@@ -561,12 +535,10 @@ def check_new_emails_and_trigger_webhook() -> int:
                         pass
                     continue
 
-                # Skip replies/forwards: if subject starts with reply/forward prefixes (Re:, Fw:, etc.)
                 try:
                     original_subject = subject or ''
                     core_subject = strip_leading_reply_prefixes(original_subject)
                     if core_subject != original_subject:
-                        # Treat as processed without sending any webhook
                         logger.info(
                             "IGNORED: Skipping webhook because subject is a reply/forward (email_id=%s, subject='%s')",
                             email_id,
@@ -581,10 +553,9 @@ def check_new_emails_and_trigger_webhook() -> int:
                                 pass
                         continue
                 except Exception:
-                    # Defensive: never break the loop due to subject filtering errors
                     pass
 
-                # Extract text/plain and text/html content for pattern checks and link extraction
+                combined_text_for_detection = ""
                 full_text = ""
                 html_text = ""
                 html_bytes_total = 0
@@ -623,7 +594,6 @@ def check_new_emails_and_trigger_webhook() -> int:
                                 logger.warning("HTML content truncated (exceeded 1MB limit)")
                                 payload = payload[:MAX_HTML_BYTES]
                         decoded = payload.decode(msg.get_content_charset() or 'utf-8', errors='ignore')
-                        # Fallback: if single-part, treat as plain, but keep HTML if content-type hints it
                         ctype_single = msg.get_content_type() or 'text/plain'
                         if ctype_single == 'text/html':
                             html_text = decoded
@@ -870,9 +840,7 @@ def check_new_emails_and_trigger_webhook() -> int:
                     except Exception:
                         pass
 
-                # Enforce dedicated webhook window with detector-specific exceptions
-                # - DESABO: bypass window and proceed to send immediately
-                # - RECADRAGE: skip sending and mark as read/processed to avoid retry at window open
+                # DESABO: bypass window, RECADRAGE: skip sending
                 if not within:
                     tw_start_str = (s_str or 'unset')
                     tw_end_str = (e_str or 'unset')
@@ -928,7 +896,6 @@ def check_new_emails_and_trigger_webhook() -> int:
                             pass
                         continue
 
-                # Build payload expected by PHP endpoint (see deployment/public_html/index.php)
                 # Required by validator: sender_address, subject, receivedDateTime
                 # Provide email_content to avoid server-side IMAP search and allow URL extraction.
                 preview = (combined_text_for_detection or "")[:200]
@@ -1282,8 +1249,6 @@ def handle_media_solution_route(
             extra_payload=extra_payload,
         )
         if makecom_success:
-            # Optional mirror to custom PHP endpoint (deployment/) to persist links
-            # Log mirror attempt or reason for skipping
             try:
                 mirror_enabled = bool(processing_prefs.get('mirror_media_to_custom'))
             except Exception:
@@ -1391,7 +1356,6 @@ def send_custom_webhook_flow(
     - Dashboard logging for success/error
     - Mark processed + mark as read upon success
     """
-    # Skip if no links and policy forbids
     try:
         if (not delivery_links) and (not allow_without_links):
             logger.info(
@@ -1451,7 +1415,6 @@ def send_custom_webhook_flow(
 
     for attempt in range(retries + 1):
         try:
-            # Build payload to send; include delivery_links if available so receiver can consume directly
             payload_to_send = dict(payload_for_webhook) if isinstance(payload_for_webhook, dict) else {
                 "microsoft_graph_email_id": email_id,
                 "subject": subject or "",
@@ -1484,7 +1447,6 @@ def send_custom_webhook_flow(
         try:
             response_data = webhook_response.json() if webhook_response.content else {}
         except Exception:
-            # Malformed or non-JSON body; treat as unsuccessful processing
             response_data = {}
         if response_data.get('success', False):
             logger.info("POLLER: Webhook triggered successfully for email %s.", email_id)

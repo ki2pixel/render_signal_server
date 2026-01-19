@@ -10,13 +10,12 @@ import fcntl
 import logging
 import os
 
-# Keep a global reference so the lock is held for the process lifetime
 BG_LOCK_FH = None
 REDIS_LOCK_CLIENT = None
 REDIS_LOCK_TOKEN = None
 
-_REDIS_LOCK_KEY = "render_signal:poller_lock"
-_REDIS_LOCK_TTL_SECONDS = 300
+REDIS_LOCK_KEY = "render_signal:poller_lock"
+REDIS_LOCK_TTL_SECONDS = 300
 
 
 def acquire_singleton_lock(lock_path: str) -> bool:
@@ -52,7 +51,7 @@ def acquire_singleton_lock(lock_path: str) -> bool:
         except Exception:
             pass
 
-    logger.warning("Using file-based lock (unsafe for multi-container deployments)")
+    # Fallback to file-based lock for single-container deployments
     try:
         BG_LOCK_FH = open(lock_path, "a+")
         fcntl.flock(BG_LOCK_FH.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)

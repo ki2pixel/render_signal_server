@@ -309,11 +309,9 @@ class WebhookConfigService:
         if not url:
             return True, "URL vide autorisée (désactivation)"
         
-        # Vérifier que c'est HTTPS
         if not url.startswith("https://"):
             return False, "L'URL doit commencer par https://"
         
-        # Vérifier format minimal
         if len(url) < 10 or "." not in url:
             return False, "Format d'URL invalide"
         

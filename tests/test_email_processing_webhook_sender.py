@@ -35,7 +35,7 @@ def test_send_makecom_webhook_retries_and_succeeds_on_second_try():
 @pytest.mark.unit
 def test_send_makecom_webhook_no_url_returns_false():
     # Force empty URL by overriding settings in the module
-    with patch.object(ws.settings, "RECADRAGE_MAKE_WEBHOOK_URL", None):
+    with patch.object(ws.settings, "WEBHOOK_URL", None):
         ok = ws.send_makecom_webhook(
             subject="S",
             delivery_time=None,

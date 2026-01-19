@@ -36,8 +36,11 @@ def test_desabo_before_window_sets_payload_start_to_configured_start(monkeypatch
     from config import app_config_store as store
     from config import settings
     
-    # Mock app_config_store to return empty config so ENV vars are used
-    monkeypatch.setattr(store, 'get_config_json', lambda key, file_fallback=None: {})
+    # Mock app_config_store to return config with 10:30 start time
+    monkeypatch.setattr(store, 'get_config_json', lambda key, file_fallback=None: {
+        'global_time_start': '10:30',
+        'webhook_time_start': '10:30'
+    })
 
     # Patch time and window check to be outside window
     monkeypatch.setattr(orch, 'datetime', FakeDT)

@@ -130,14 +130,11 @@ def is_polling_active(now_dt: datetime, active_days: list[int],
     Returns:
         True si le polling est actif, False sinon
     """
-    # Vérifier les vacances
     if is_in_vacation_period(now_dt.date()):
         return False
     
-    # Vérifier le jour de la semaine
     is_active_day = now_dt.weekday() in active_days
     
-    # Vérifier l'heure (support des plages qui traversent minuit)
     h = now_dt.hour
     if 0 <= start_hour <= 23 and 0 <= end_hour <= 23:
         if start_hour < end_hour:

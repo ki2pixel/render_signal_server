@@ -1,5 +1,3 @@
-// static/services/WebhookService.js
-// Service pour la gestion des webhooks et configuration associée
 import { ApiService } from './ApiService.js';
 import { MessageHelper } from '../utils/MessageHelper.js';
 
@@ -19,7 +17,6 @@ export class WebhookService {
             if (data.success) {
                 const config = data.config;
                 
-                // Afficher les valeurs (masquées partiellement pour sécurité)
                 const webhookUrlEl = document.getElementById('webhookUrl');
                 if (webhookUrlEl) {
                     webhookUrlEl.placeholder = config.webhook_url || 'Non configuré';
@@ -35,13 +32,11 @@ export class WebhookService {
                     sendingToggle.checked = config.webhook_sending_enabled ?? true;
                 }
                 
-                // Absence Globale
                 const absenceToggle = document.getElementById('absencePauseToggle');
                 if (absenceToggle) {
                     absenceToggle.checked = !!config.absence_pause_enabled;
                 }
                 
-                // Jours de pause
                 if (config.absence_pause_days && Array.isArray(config.absence_pause_days)) {
                     this.setAbsenceDayCheckboxes(config.absence_pause_days);
                 }
@@ -69,23 +64,19 @@ export class WebhookService {
         const hasNewWebhookUrl = webhookUrl.length > 0;
         
         if (hasNewWebhookUrl) {
-            // Validation placeholder
             if (MessageHelper.isPlaceholder(webhookUrl, placeholder)) {
                 MessageHelper.showError('configMsg', 'Veuillez saisir une URL webhook valide.');
                 return false;
             }
             
-            // Validation format URL
             if (!this.isValidWebhookUrl(webhookUrl)) {
                 MessageHelper.showError('configMsg', 'Format d\'URL webhook invalide.');
                 return false;
             }
         }
         
-        // Collecter les jours d'absence
         const selectedDays = this.collectAbsenceDayCheckboxes();
         
-        // Validation Absence Globale
         if (absenceToggle?.checked && selectedDays.length === 0) {
             MessageHelper.showError('configMsg', 'Au moins un jour doit être sélectionné pour l\'absence globale.');
             return false;
@@ -98,7 +89,6 @@ export class WebhookService {
             absence_pause_days: selectedDays
         };
         
-        // N'inclure l'URL que si une valeur est saisie
         if (hasNewWebhookUrl && webhookUrl !== placeholder) {
             payload.webhook_url = webhookUrl;
         }
@@ -109,10 +99,8 @@ export class WebhookService {
             if (data.success) {
                 MessageHelper.showSuccess('configMsg', 'Configuration enregistrée avec succès !');
                 
-                // Vider le champ URL après sauvegarde réussie
                 if (webhookUrlEl) webhookUrlEl.value = '';
                 
-                // Recharger la configuration pour mettre à jour les placeholders
                 await this.loadConfig();
                 return true;
             } else {

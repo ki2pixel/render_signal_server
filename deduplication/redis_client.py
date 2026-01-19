@@ -89,7 +89,8 @@ def is_subject_group_processed(
                 logger.error(
                     f"REDIS_DEDUP: Error checking subject group '{group_id}': {e}. Assuming NOT processed."
                 )
-            # fall through to memory
+            # Continue to memory fallback instead of returning False here
+
     if memory_set is not None:
         return scoped_id in memory_set
     return False
@@ -120,7 +121,8 @@ def mark_subject_group_processed(
         except Exception as e:
             if logger:
                 logger.error(f"REDIS_DEDUP: Error marking subject group '{group_id}': {e}")
-            # fall through to memory
+            # Continue to memory fallback instead of returning False here
+    
     if memory_set is not None:
         try:
             memory_set.add(scoped_id)

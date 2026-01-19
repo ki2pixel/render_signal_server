@@ -1,5 +1,3 @@
-// static/services/ApiService.js
-// Service centralisé pour les appels API avec gestion des erreurs
 export class ApiService {
     /**
      * Gère la réponse HTTP et redirige en cas d'erreur 401/403

@@ -16,10 +16,8 @@ Usage:
     config = ConfigService()
     auth = AuthService(config)
     
-    # Initialiser Flask-Login
     auth.init_flask_login(app)
     
-    # Vérifier credentials dashboard
     if auth.verify_dashboard_credentials(username, password):
         user = auth.create_user(username)
         login_user(user)

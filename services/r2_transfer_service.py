@@ -1,26 +1,12 @@
 """
-services.r2_transfer_service
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Service pour gérer le transfert de fichiers vers Cloudflare R2 avec mode "fetch".
+Service for transferring files to Cloudflare R2 with fetch mode.
 
 Features:
-- Pattern Singleton
-- Fetch distant (R2 télécharge directement depuis source) pour économiser bande passante Render
-- Persistance des paires source_url/r2_url dans webhook_links.json
-- Support fallback si R2 indisponible
-- Logs sécurisés (pas de secrets)
-
-Usage:
-    from services import R2TransferService
-    
-    service = R2TransferService.get_instance()
-    r2_url = service.request_remote_fetch(
-        source_url="https://www.dropbox.com/...",
-        provider="dropbox"
-    )
-    if r2_url:
-        service.persist_link_pair(source_url, r2_url, provider)
+- Singleton pattern
+- Remote fetch (R2 downloads directly from source) to save Render bandwidth
+- Persistence of source_url/r2_url pairs in webhook_links.json
+- Fallback support when R2 is unavailable
+- Secure logging (no secrets)
 """
 
 from __future__ import annotations
@@ -88,20 +74,16 @@ class R2TransferService:
         self._bucket_name = bucket_name or os.environ.get("R2_BUCKET_NAME", "")
         self._fetch_token = os.environ.get("R2_FETCH_TOKEN", "")
         
-        # Déterminer le chemin du fichier de liens
         if links_file:
             self._links_file = links_file
         else:
             default_path = Path(__file__).resolve().parents[1] / "deployment" / "data" / "webhook_links.json"
             self._links_file = Path(os.environ.get("WEBHOOK_LINKS_FILE", str(default_path)))
         
-        # Flag global d'activation
         enabled_str = os.environ.get("R2_FETCH_ENABLED", "false").strip().lower()
         self._enabled = enabled_str in ("1", "true", "yes", "on")
         
-        # Validation de la configuration
         if self._enabled and not self._fetch_endpoint:
-            # Log warning mais ne pas bloquer l'instanciation
             pass
     
     @classmethod
@@ -200,10 +182,8 @@ class R2TransferService:
                 )
                 return None, None
 
-            # Générer un nom d'objet unique basé sur le hash de l'URL source
             object_key = self._generate_object_key(normalized_url, provider)
             
-            # Construire le payload pour le Worker
             payload = {
                 "source_url": normalized_url,
                 "object_key": object_key,
@@ -214,7 +194,6 @@ class R2TransferService:
             if email_id:
                 payload["email_id"] = email_id
             
-            # Appeler le Worker R2 Fetch
             start_time = time.time()
             response = requests.post(
                 self._fetch_endpoint,
@@ -237,20 +216,15 @@ class R2TransferService:
                         original_filename = None
                     return r2_url, original_filename
                 else:
-                    # Worker a répondu mais sans URL valide
                     return None, None
             else:
-                # Erreur HTTP du Worker
                 return None, None
                 
         except requests.exceptions.Timeout:
-            # Timeout : le Worker met trop de temps
             return None, None
         except requests.exceptions.RequestException:
-            # Erreur réseau générique
             return None, None
         except Exception:
-            # Erreur inattendue
             return None, None
     
     def persist_link_pair(
@@ -280,20 +254,16 @@ class R2TransferService:
         normalized_source_url = self.normalize_source_url(source_url, provider)
         
         try:
-            # Créer le répertoire parent si nécessaire
             self._links_file.parent.mkdir(parents=True, exist_ok=True)
             
-            # Créer le fichier s'il n'existe pas
             if not self._links_file.exists():
                 with open(self._links_file, 'w', encoding='utf-8') as f:
                     json.dump([], f)
             
-            # Acquérir le verrou exclusif
             with open(self._links_file, 'r+', encoding='utf-8') as f:
                 fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                 
                 try:
-                    # Lire les liens existants
                     f.seek(0)
                     try:
                         links = json.load(f)
@@ -302,7 +272,6 @@ class R2TransferService:
                     except json.JSONDecodeError:
                         links = []
                     
-                    # Créer la nouvelle entrée
                     entry = {
                         "source_url": normalized_source_url,
                         "r2_url": r2_url,
@@ -315,7 +284,6 @@ class R2TransferService:
                         if cleaned_original_filename:
                             entry["original_filename"] = cleaned_original_filename
 
-                    # Déduplication: si la même paire existe déjà, ne pas la réinsérer.
                     for existing in reversed(links):
                         if not isinstance(existing, dict):
                             continue
@@ -326,15 +294,12 @@ class R2TransferService:
                         ):
                             return True
                     
-                    # Ajouter l'entrée
                     links.append(entry)
                     
-                    # Rotation optionnelle : conserver seulement les N dernières entrées
                     max_entries = int(os.environ.get("R2_LINKS_MAX_ENTRIES", "1000"))
                     if len(links) > max_entries:
                         links = links[-max_entries:]
                     
-                    # Écrire les données mises à jour
                     f.seek(0)
                     f.truncate()
                     json.dump(links, f, indent=2, ensure_ascii=False)
@@ -342,7 +307,6 @@ class R2TransferService:
                     return True
                     
                 finally:
-                    # Libérer le verrou
                     fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                     
         except Exception:
@@ -371,7 +335,6 @@ class R2TransferService:
                     if not isinstance(links, list):
                         return None
                     
-                    # Rechercher l'entrée correspondante (plus récente d'abord)
                     for entry in reversed(links):
                         if not isinstance(entry, dict):
                             continue
@@ -421,10 +384,8 @@ class R2TransferService:
         """
         normalized_url = self._normalize_source_url(source_url, provider)
 
-        # Hash de l'URL (normalisée) pour générer un identifiant unique
         url_hash = hashlib.sha256(normalized_url.encode('utf-8')).hexdigest()
         
-        # Extraire un nom de fichier depuis l'URL (best effort)
         filename = "file"
         try:
             from urllib.parse import urlparse, unquote
@@ -437,8 +398,6 @@ class R2TransferService:
         except Exception:
             pass
         
-        # Construire la clé d'objet avec structure de répertoires
-        # Utiliser les premiers caractères du hash pour éviter les collisions
         prefix = url_hash[:8]
         subdir = url_hash[8:16]
         

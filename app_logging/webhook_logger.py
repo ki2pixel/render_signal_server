@@ -27,17 +27,14 @@ def append_webhook_log(
     redis_list_key: str,
     max_entries: int = DEFAULT_MAX_ENTRIES,
 ) -> None:
-    # Try Redis first
     try:
         if redis_client is not None:
             redis_client.rpush(redis_list_key, json.dumps(log_entry, ensure_ascii=False))
-            # Trim to last max_entries
             redis_client.ltrim(redis_list_key, -max_entries, -1)
             return
     except Exception as e:
         if logger:
             logger.error(f"WEBHOOK_LOG: redis write error: {e}")
-    # Fallback to file
     try:
         file_path.parent.mkdir(parents=True, exist_ok=True)
         logs = []
@@ -66,10 +63,8 @@ def fetch_webhook_logs(
     days: int = 7,
     limit: int = 50,
 ) -> dict[str, Any]:
-    # Validate days bounds
     days = max(1, min(30, int(days)))
 
-    # Try Redis first
     all_logs = None
     try:
         if redis_client is not None:
@@ -85,7 +80,6 @@ def fetch_webhook_logs(
         if logger:
             logger.error(f"WEBHOOK_LOG: redis read error: {e}")
 
-    # Fallback to file
     if all_logs is None:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
@@ -104,7 +98,6 @@ def fetch_webhook_logs(
             # If timestamp unparsable, include the entry for backward-compat
             filtered_logs.append(log)
 
-    # Limit to last N and reverse to newest first
     filtered_logs = filtered_logs[-limit:]
     filtered_logs.reverse()
 
