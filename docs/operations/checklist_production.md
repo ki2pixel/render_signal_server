@@ -1,6 +1,7 @@
 # Check-list de mise en production
 
 ## Secrets et configuration
+- **Pré-flight variables obligatoires** : Vérifier que toutes les variables requises sont définies avant déploiement. L'application refusera de démarrer si l'une des variables suivantes manque : `FLASK_SECRET_KEY`, `TRIGGER_PAGE_PASSWORD`, `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `IMAP_SERVER`, `PROCESS_API_TOKEN`, `WEBHOOK_URL`, `MAKECOM_API_KEY`. En cas d'erreur, le message sera : `ValueError: Missing required environment variable: <NOM_VARIABLE>`
 - FLASK_SECRET_KEY défini (valeur forte, non commitée)
 - DASHBOARD_USER / DASHBOARD_PASSWORD définis (mots de passe forts)
 - Variables IMAP (EMAIL_ADDRESS, EMAIL_PASSWORD, IMAP_SERVER, IMAP_PORT, IMAP_USE_SSL) configurées

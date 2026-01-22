@@ -72,9 +72,9 @@ Règles de fenêtre horaire (webhooks dédiés):
 
 #### Verrou Distribué Redis
 - **Implémentation** : `background/lock.py` avec clé `render_signal:poller_lock` et TTL 5 minutes
-- **Fallback** : Verrou fichier `fcntl` si Redis indisponible
+- **Fallback** : Verrou fichier `fcntl` si Redis indisponible (non idéal pour multi-conteneurs)
 - **Usage** : Prévention du multi-polling sur Render multi-conteneurs
-- **Logging** : WARNING en cas de fallback vers verrou fichier
+- **Logging** : WARNING en cas de fallback vers verrou fichier ("Using file-based lock (unsafe for multi-container deployments)")
 - **Configuration** : `REDIS_URL` obligatoire pour multi-conteneurs, `REDIS_LOCK_TTL_SECONDS` configurable
 
 #### Fallback R2 Garanti

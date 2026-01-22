@@ -170,20 +170,29 @@ def get_polling_config():
         live_settings = _import_module('config.settings')
         # Prefer values from external store/file if available to reflect persisted UI choices
         persisted = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
+        default_active_days = getattr(live_settings, 'POLLING_ACTIVE_DAYS', settings.POLLING_ACTIVE_DAYS)
+        default_start_hour = getattr(live_settings, 'POLLING_ACTIVE_START_HOUR', settings.POLLING_ACTIVE_START_HOUR)
+        default_end_hour = getattr(live_settings, 'POLLING_ACTIVE_END_HOUR', settings.POLLING_ACTIVE_END_HOUR)
+        default_enable_subject_dedup = getattr(
+            live_settings,
+            'ENABLE_SUBJECT_GROUP_DEDUP',
+            settings.ENABLE_SUBJECT_GROUP_DEDUP,
+        )
         cfg = {
-            # Days and hours: reflect live settings (runtime-updated), not the import-time aliases
-            "active_days": getattr(live_settings, 'POLLING_ACTIVE_DAYS', settings.POLLING_ACTIVE_DAYS),
-            "active_start_hour": getattr(live_settings, 'POLLING_ACTIVE_START_HOUR', settings.POLLING_ACTIVE_START_HOUR),
-            "active_end_hour": getattr(live_settings, 'POLLING_ACTIVE_END_HOUR', settings.POLLING_ACTIVE_END_HOUR),
-            # Dedup flag: reflect live settings
-            "enable_subject_group_dedup": getattr(live_settings, 'ENABLE_SUBJECT_GROUP_DEDUP', settings.ENABLE_SUBJECT_GROUP_DEDUP),
-            "timezone": POLLING_TIMEZONE_STR,
+            "active_days": persisted.get("active_days", default_active_days),
+            "active_start_hour": persisted.get("active_start_hour", default_start_hour),
+            "active_end_hour": persisted.get("active_end_hour", default_end_hour),
+            "enable_subject_group_dedup": persisted.get(
+                "enable_subject_group_dedup",
+                default_enable_subject_dedup,
+            ),
+            "timezone": getattr(live_settings, 'POLLING_TIMEZONE_STR', POLLING_TIMEZONE_STR),
             # Still expose persisted sender list if present, else settings default
             "sender_of_interest_for_polling": persisted.get("sender_of_interest_for_polling", getattr(live_settings, 'SENDER_LIST_FOR_POLLING', settings.SENDER_LIST_FOR_POLLING)),
             "vacation_start": persisted.get("vacation_start", polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None),
             "vacation_end": persisted.get("vacation_end", polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None),
             # Global enable toggle: prefer persisted, fallback helper
-            "enable_polling": persisted.get("enable_polling", polling_config.get_enable_polling(True)),
+            "enable_polling": persisted.get("enable_polling", True),
         }
         return jsonify({"success": True, "config": cfg}), 200
     except Exception:
@@ -302,28 +311,19 @@ def update_polling_config():
         new_enable_polling = None
         if 'enable_polling' in payload:
             try:
-                new_enable_polling = bool(payload.get('enable_polling'))
+                val = payload.get('enable_polling')
+                if isinstance(val, bool):
+                    new_enable_polling = val
+                elif isinstance(val, (int, float)):
+                    new_enable_polling = bool(val)
+                elif isinstance(val, str):
+                    s = val.strip().lower()
+                    if s in {"1", "true", "yes", "y", "on"}:
+                        new_enable_polling = True
+                    elif s in {"0", "false", "no", "n", "off"}:
+                        new_enable_polling = False
             except Exception:
                 new_enable_polling = None
-
-        # Mettre à jour les variables runtime du module polling_config
-        if new_vac_start is not None:
-            polling_config.POLLING_VACATION_START_DATE = new_vac_start
-        if new_vac_end is not None:
-            polling_config.POLLING_VACATION_END_DATE = new_vac_end
-
-        # Mettre à jour dynamiquement les réglages globaux dans settings
-        # Les consommateurs (comme PollingConfigService) liront directement depuis settings
-        if new_days is not None:
-            settings.POLLING_ACTIVE_DAYS = new_days
-        if new_start is not None:
-            settings.POLLING_ACTIVE_START_HOUR = new_start
-        if new_end is not None:
-            settings.POLLING_ACTIVE_END_HOUR = new_end
-        if new_dedup is not None:
-            settings.ENABLE_SUBJECT_GROUP_DEDUP = new_dedup
-        if new_senders is not None:
-            settings.SENDER_LIST_FOR_POLLING = new_senders
 
         # Persistance via store (avec fallback fichier)
         merged = dict(existing)
@@ -338,9 +338,9 @@ def update_polling_config():
         if new_senders is not None:
             merged['sender_of_interest_for_polling'] = new_senders
         if 'vacation_start' in payload:
-            merged['vacation_start'] = polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None
+            merged['vacation_start'] = new_vac_start.isoformat() if new_vac_start else None
         if 'vacation_end' in payload:
-            merged['vacation_end'] = polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None
+            merged['vacation_end'] = new_vac_end.isoformat() if new_vac_end else None
         if new_enable_polling is not None:
             merged['enable_polling'] = new_enable_polling
 

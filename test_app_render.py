@@ -6,6 +6,15 @@ import pytest
 # Ensure background tasks are disabled when importing the app
 os.environ.setdefault("DISABLE_BACKGROUND_TASKS", "1")
 
+os.environ.setdefault("FLASK_SECRET_KEY", "test-secret-key")
+os.environ.setdefault("TRIGGER_PAGE_PASSWORD", "test-dashboard-password")
+os.environ.setdefault("EMAIL_ADDRESS", "test@example.com")
+os.environ.setdefault("EMAIL_PASSWORD", "test-email-password")
+os.environ.setdefault("IMAP_SERVER", "imap.example.com")
+os.environ.setdefault("PROCESS_API_TOKEN", "test-process-api-token")
+os.environ.setdefault("WEBHOOK_URL", "https://example.com/webhook")
+os.environ.setdefault("MAKECOM_API_KEY", "test-makecom-api-key")
+
 app_render = importlib.import_module("app_render")
 
 # Import blueprints modules to patch their constants for file locations

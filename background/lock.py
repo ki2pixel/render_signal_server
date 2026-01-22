@@ -38,10 +38,10 @@ def acquire_singleton_lock(lock_path: str) -> bool:
             token = f"pid={os.getpid()}"
             acquired = bool(
                 client.set(
-                    _REDIS_LOCK_KEY,
+                    "render_signal:poller_lock",
                     token,
                     nx=True,
-                    ex=_REDIS_LOCK_TTL_SECONDS,
+                    ex=300,
                 )
             )
             if acquired:
@@ -52,6 +52,7 @@ def acquire_singleton_lock(lock_path: str) -> bool:
             pass
 
     # Fallback to file-based lock for single-container deployments
+    logger.warning("Using file-based lock (unsafe for multi-container deployments)")
     try:
         BG_LOCK_FH = open(lock_path, "a+")
         fcntl.flock(BG_LOCK_FH.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)

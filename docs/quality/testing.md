@@ -74,6 +74,27 @@ render_signal_server-main/
 - **Couverture** : Maintenue à 70.12% (+3 tests, même couverture)
 - **Scénarios testés** : Worker R2 down, timeout IMAP, HTML volumineux
 
+### Tests Configuration Obligatoire
+
+#### Variables d'environnement requises
+- **Fichier** : `tests/test_settings_required_env.py`
+- **Format** : Given/When/Then avec paramétrage pytest
+- **Scénarios** :
+  - Given toutes les variables obligatoires présentes / When import settings / Then succès
+  - Given une variable manquante / When import settings / Then ValueError avec message explicite
+- **Variables testées** : `FLASK_SECRET_KEY`, `TRIGGER_PAGE_PASSWORD`, `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `IMAP_SERVER`, `PROCESS_API_TOKEN`, `WEBHOOK_URL`, `MAKECOM_API_KEY`
+- **Validation** : La fonction `_get_required_env()` lève bien une erreur si une variable critique manque
+
+#### Exécution Tests Configuration
+```bash
+# Tests configuration uniquement
+pytest tests/test_settings_required_env.py -v
+
+# Tests configuration avec couverture
+source /mnt/venv_ext4/venv_render_signal_server/bin/activate
+pytest --cov=. tests/test_settings_required_env.py
+```
+
 ### Tests Résilience (Lot 2/3)
 
 #### Verrou Distribué Redis

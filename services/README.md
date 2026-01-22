@@ -8,7 +8,7 @@
 
 ## 📋 Vue d'Ensemble
 
-Le dossier `services/` contient 5 services professionnels qui encapsulent la logique métier de l'application. Ces services fournissent des interfaces cohérentes et testables pour accéder aux fonctionnalités clés.
+Le dossier `services/` contient 8 services professionnels qui encapsulent la logique métier de l'application. Ces services fournissent des interfaces cohérentes et testables pour accéder aux fonctionnalités clés.
 
 ### Philosophie
 
@@ -30,6 +30,8 @@ services/
 ├── webhook_config_service.py      # Webhooks + validation (Singleton)
 ├── auth_service.py                # Authentification unifiée
 ├── deduplication_service.py       # Déduplication emails/subject groups
+├── magic_link_service.py          # Magic links authentification (Singleton)
+├── r2_transfer_service.py         # Offload Cloudflare R2 (Singleton)
 └── README.md                      # Ce fichier
 ```
 
@@ -48,7 +50,6 @@ services/
 - Configuration Webhooks
 - Tokens API
 - Configuration Render (déploiement)
-- Configuration Présence
 - Authentification Dashboard
 - Clés Redis Déduplication
 
@@ -127,7 +128,7 @@ service.update_flags({
 **Fonctionnalités:**
 - Validation stricte URLs (HTTPS requis)
 - Normalisation URLs Make.com
-- Configuration présence
+- Configuration Absence Globale
 - SSL verify toggle
 - Cache avec invalidation
 
@@ -152,11 +153,11 @@ else:
 ok, msg = service.set_webhook_url("abc123@hook.eu2.make.com")
 # Converti en: https://hook.eu2.make.com/abc123
 
-# Configuration présence
-presence = service.get_presence_config()
-service.update_presence_config({
-    "presence_flag": True,
-    "presence_true_url": "https://...",
+# Configuration Absence Globale
+absence = service.get_absence_config()
+service.update_absence_config({
+    "absence_pause_enabled": True,
+    "absence_pause_days": ["saturday", "sunday"],
 })
 ```
 
@@ -277,6 +278,8 @@ _webhook_service = WebhookConfigService.get_instance(...)
 _auth_service = AuthService(_config_service)
 _polling_service = PollingConfigService(settings)
 _dedup_service = DeduplicationService(...)
+_magic_link_service = MagicLinkService.get_instance(...)
+_r2_transfer_service = R2TransferService.get_instance(...)
 ```
 
 **Utiliser directement:**
@@ -286,6 +289,163 @@ def my_function():
     if _config_service.is_email_config_valid():
         # Faire quelque chose
         pass
+```
+
+---
+
+### 6. MagicLinkService
+
+**Fichier:** `magic_link_service.py`  
+**Pattern:** Singleton  
+**Responsabilité:** Génération et validation des magic links pour authentification sans mot de passe
+
+**Fonctionnalités:**
+- Génération tokens HMAC SHA-256 signés
+- Support one-shot (TTL configurable) et permanent
+- Stockage partagé via API PHP ou fallback fichier JSON
+- Nettoyage automatique tokens expirés
+- Validation et consommation sécurisées
+
+**Usage:**
+```python
+from services import MagicLinkService
+
+# Initialisation (automatique via get_instance)
+service = MagicLinkService.get_instance()
+
+# Générer un magic link one-shot
+link_data = service.generate_magic_link(unlimited=False)
+print(f"Lien: {link_data['url']}")
+print(f"Expire: {link_data['expires_at']}")
+
+# Générer un magic link permanent
+permanent_link = service.generate_magic_link(unlimited=True)
+print(f"Lien permanent: {permanent_link['url']}")
+
+# Valider un token
+validation = service.validate_magic_link(token)
+if validation['valid']:
+    print(f"Token valide pour: {validation['purpose']}")
+
+# Consommer un token one-shot
+if service.consume_magic_link(token):
+    print("Token consommé avec succès")
+
+# Révoquer manuellement un token
+if service.revoke_magic_link(token):
+    print("Token révoqué")
+
+# Nettoyer les tokens expirés
+cleaned = service.cleanup_expired_tokens()
+print(f"{cleaned} tokens expirés supprimés")
+```
+
+---
+
+### 7. R2TransferService
+
+**Fichier:** `r2_transfer_service.py`  
+**Pattern:** Singleton  
+**Responsabilité:** Offload Cloudflare R2 pour économiser la bande passante
+
+**Fonctionnalités:**
+- Normalisation URLs Dropbox (y compris `/scl/fo/`)
+- Fetch distant via Worker Cloudflare sécurisé (token X-R2-FETCH-TOKEN)
+- Persistance paires `source_url`/`r2_url` + `original_filename`
+- Fallback gracieux si Worker indisponible
+- Timeout spécifique pour dossiers Dropbox (120s)
+- Validation ZIP et métadonnées
+
+**Usage:**
+```python
+from services import R2TransferService
+
+# Initialisation (automatique via get_instance)
+service = R2TransferService.get_instance()
+
+# Vérifier si le service est activé
+if service.is_enabled():
+    print("Service R2 activé")
+    print(f"Endpoint: {service.get_fetch_endpoint()}")
+    print(f"Bucket: {service.get_bucket_name()}")
+
+# Demander un offload distant
+try:
+    result = service.request_remote_fetch(
+        source_url="https://www.dropbox.com/scl/fi/...",
+        provider="dropbox",
+        original_filename="document.pdf"
+    )
+    if result and result.get('r2_url'):
+        print(f"Offload réussi: {result['r2_url']}")
+        print(f"Nom original: {result.get('original_filename')}")
+    else:
+        print("Offload échoué, utilisation URL source")
+except Exception as e:
+    print(f"Erreur R2: {e}")
+
+# Persister manuellement une paire source/R2
+service.persist_link_pair(
+    source_url="https://example.com/file.pdf",
+    r2_url="https://cdn.example.com/file.pdf",
+    original_filename="file.pdf"
+)
+
+# Lister les liens récents
+recent_links = service.get_recent_links(limit=10)
+for link in recent_links:
+    print(f"{link['provider']}: {link['original_filename']}")
+```
+
+---
+
+### 8. PollingConfigService
+
+**Fichier:** `config/polling_config.py`  
+**Pattern:** Standard  
+**Responsabilité:** Configuration du polling IMAP et fenêtres actives
+
+**Fonctionnalités:**
+- Jours actifs pour polling (0=Lundi à 6=Dimanche)
+- Fenêtres horaires (début/fin)
+- Liste expéditeurs d'intérêt
+- Intervalles polling (actif/inactif)
+- Timezone configuration
+- Flag UI `enable_polling` persisté
+
+**Usage:**
+```python
+from config.polling_config import PollingConfigService
+
+# Initialisation
+service = PollingConfigService()
+
+# Jours actifs
+active_days = service.get_active_days()  # [0, 1, 2, 3, 4] (Lundi-Vendredi)
+
+# Fenêtre horaire
+start_hour = service.get_active_start_hour()  # 9
+end_hour = service.get_active_end_hour()  # 17
+
+# Expéditeurs
+senders = service.get_sender_list()  # ["media@example.com", "recadrage@example.com"]
+
+# Intervalles
+active_interval = service.get_email_poll_interval_s()  # 300 (5 minutes)
+inactive_interval = service.get_inactive_check_interval_s()  # 1800 (30 minutes)
+
+# Timezone
+tz = service.get_tz()  # ZoneInfo("Europe/Paris") ou UTC
+
+# Vacances
+if service.is_in_vacation():
+    print("Période de vacances - polling désactivé")
+
+# Flag UI
+if service.get_enable_polling():
+    print("Polling activé via UI")
+else:
+    print("Polling désactivé via UI")
 ```
 
 ### Utilisation dans les Routes (Blueprints)

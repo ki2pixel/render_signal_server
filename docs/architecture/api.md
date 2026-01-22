@@ -13,7 +13,8 @@ L'application utilise une architecture orientée services avec les composants pr
 | `WebhookConfigService` | `services/webhook_config_service.py` | Configuration des webhooks (singleton) |
 | `DeduplicationService` | `services/deduplication_service.py` | Gestion de la déduplication (Redis ou mémoire) |
 | `AuthService` | `services/auth_service.py` | Authentification et autorisation |
-| `PollingConfigService` | `services/polling_config_service.py` | Configuration du polling IMAP |
+| `PollingConfigService` | `config/polling_config.py` | Configuration du polling IMAP |
+| `MagicLinkService` | `services/magic_link_service.py` | Génération/validation magic links HMAC (singleton) |
 | `R2TransferService` | `services/r2_transfer_service.py` | Offload Cloudflare R2 (fetch distant + persistance des paires source/R2) |
 
 ## Organisation des routes
@@ -676,14 +677,20 @@ Ces endpoints permettent de gérer les flags runtime pour le contrôle dynamique
 
 ## Préférences de Traitement (protégés)
 
-- `GET /api/get_processing_prefs` (protégé)
-  - Retourne les préférences de traitement actuelles (max_email_size_mb, require_attachments, exclude_keywords, retry_count, retry_delay_sec, webhook_timeout_sec).
+- `GET /api/processing_prefs` (protégé)
+  - Retourne les préférences de traitement actuelles (max_email_size_mb, require_attachments, exclude_keywords, retry_count, retry_delay_sec, webhook_timeout_sec, mirror_media_to_custom).
   - Réponse: { "success": true, "prefs": { ... } }
 
-- `POST /api/update_processing_prefs` (protégé)
+- `POST /api/processing_prefs` (protégé)
   - Met à jour les préférences de traitement.
   - Corps JSON: champs optionnels comme max_email_size_mb, etc.
-  - Réponse: { "success": true, "message": "Préférences mises à jour." }
+  - Réponse: { "success": true, "message": "Préférences mises à jour.", "prefs": { ... } }
+
+### Endpoints Legacy (compatibilité)
+
+Pour maintenir la compatibilité avec l'UI et les tests existants, les alias suivants sont disponibles:
+- `GET /api/get_processing_prefs` → redirige vers `GET /api/processing_prefs`
+- `POST /api/update_processing_prefs` → redirige vers `POST /api/processing_prefs`
 
 ## Endpoints de Test Supplémentaires (CORS-enabled avec X-API-Key)
 

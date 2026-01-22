@@ -90,6 +90,25 @@ Notes:
 - `R2_ACCOUNT_ID`
 - `CONFIG_API_TOKEN`
 
+### Variables obligatoires (enforcement au démarrage)
+
+L'application refuse de démarrer si les variables suivantes ne sont pas définies :
+
+- `FLASK_SECRET_KEY` – Clé secrète Flask pour sessions et signatures
+- `TRIGGER_PAGE_PASSWORD` – Mot de passe du dashboard
+- `EMAIL_ADDRESS` – Adresse email IMAP
+- `EMAIL_PASSWORD` – Mot de passe IMAP
+- `IMAP_SERVER` – Serveur IMAP
+- `PROCESS_API_TOKEN` – Token API pour les appels externes
+- `WEBHOOK_URL` – URL du webhook personnalisé
+- `MAKECOM_API_KEY` – Clé API Make.com
+
+Ces variables sont validées par la fonction `_get_required_env()` dans `config/settings.py` qui lève un `ValueError` explicite si une variable est manquante. Exemple d'erreur :
+
+```
+ValueError: Missing required environment variable: FLASK_SECRET_KEY
+```
+
 ## Politique SSL des webhooks
 
 - `WEBHOOK_SSL_VERIFY=false` n'est à utiliser qu'en développement. En production, laisser `true` pour la vérification TLS/SSL.
@@ -111,13 +130,13 @@ La configuration est gérée via une API PHP sécurisée avec un système de fal
 ### Variables Magic Links
 
 - `MAGIC_LINK_TTL_SECONDS` : Durée de validité des liens à usage unique (défaut: 900 secondes = 15 minutes)
-- `MAGIC_LINK_TOKENS_FILE` : Chemin du fichier de stockage des tokens (défaut: `./magic_link_tokens.json`)
+- `MAGIC_LINK_TOKENS_FILE` : Chemin du fichier de stockage local des tokens (défaut: `./magic_link_tokens.json`)
 - `FLASK_SECRET_KEY` : Clé secrète HMAC pour signer les tokens (obligatoire, doit être robuste)
 - `EXTERNAL_CONFIG_BASE_URL` : (optionnel) URL de l’API PHP `config_api.php`. Active le stockage partagé des tokens permanents via `MagicLinkService`.
 - `CONFIG_API_TOKEN` : (optionnel) Jeton HMAC pour appeler `config_api.php`. Doit être identique côté Render et côté PHP (`deployment/config/config_api.php`).
 - `CONFIG_API_STORAGE_DIR` : (optionnel) Répertoire de stockage côté PHP (ex: `/home/kidp0/domains/.../data/app_config`). Permet au serveur PHP de persister `magic_link_tokens.json` hors webroot.
 
-Lorsque les trois variables optionnelles sont définies, `MagicLinkService` lit/écrit les tokens dans l’API PHP pour supporter plusieurs workers Render et survivre aux redeploys. En cas d’erreur réseau ou de variable manquante, il retombe automatiquement sur `MAGIC_LINK_TOKENS_FILE`.
+Lorsque les trois variables optionnelles sont définies, `MagicLinkService` lit/écrit les tokens dans l’API PHP pour supporter plusieurs workers Render et survivre aux redeploys. L’approche est « store partagé d’abord » avec fallback automatique sur `MAGIC_LINK_TOKENS_FILE` (verrouillé par `RLock`) dès que l’API distante est indisponible ou mal configurée. Aucune variable `MAGIC_LINK_ENABLED` n’est nécessaire : l’activation dépend uniquement de la présence de `FLASK_SECRET_KEY` + fichier/tier store valide.
 
 ### Variables Cloudflare R2 (Offload fichiers)
 
@@ -187,7 +206,7 @@ Pour plus de détails sur la configuration avancée, consultez le fichier `deplo
 ### Magic Links
 - `MAGIC_LINK_TTL_SECONDS` – durée de validité des liens à usage unique en secondes (défaut: 900 - 15 minutes)
 - `MAGIC_LINK_TOKENS_FILE` – chemin vers le fichier de stockage des tokens (défaut: `./magic_link_tokens.json`)
-- `MAGIC_LINK_ENABLED` – active/désactive la fonctionnalité de Magic Links (défaut: `true`)
+- `EXTERNAL_CONFIG_BASE_URL` / `CONFIG_API_TOKEN` / `CONFIG_API_STORAGE_DIR` – voir section précédente pour activer le store partagé optionnel.
 
 #### Recommandations pour les Magic Links
 - Le fichier de tokens doit être stocké dans un répertoire sécurisé avec des permissions restrictives
@@ -354,10 +373,13 @@ Le fichier `debug/processing_prefs.json` contient des paramètres de traitement 
 
 ### Gestion via l'API
 
-Les préférences de traitement peuvent être gérées via les endpoints suivants :
-- `GET /api/processing/prefs` - Récupère les préférences actuelles
-- `POST /api/processing/prefs` - Met à jour les préférences
-- `GET /api/processing/prefs/defaults` - Récupère les valeurs par défaut
+Les préférences de traitement sont gérées via les endpoints canoniques :
+- `GET /api/processing_prefs` - Récupère les préférences actuelles
+- `POST /api/processing_prefs` - Met à jour les préférences
+
+Pour compatibilité (tests/legacy UI), les alias suivants restent disponibles et délèguent vers les routes ci-dessus :
+- `GET /api/get_processing_prefs`
+- `POST /api/update_processing_prefs`
 
 ### Validation
 

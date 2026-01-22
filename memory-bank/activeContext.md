@@ -1,11 +1,11 @@
 # Contexte Actif
 
 ## Tâches Terminées
-- [2026-01-19 14:20:00] - Audit cohérence dashboard (configs persistées)
-  - Corrections frontend sur Polling (enable_polling), Runtime Flags, Processing Prefs, Import/Export config.
+- **[2026-01-22 01:00:00]** - Refactor Settings Passwords Terminé : Suppression des mots de passe hardcodés dans `config/settings.py` et enforcement des variables d'environnement obligatoires avec `ValueError` explicite au démarrage.
+- **[2026-01-22 01:00:00]** - Tests d'intégration corrigés : Correction de 6 tests échoués (Redis lock, polling config, deduplication) suite au refactor settings.
 
 ## Questions Ouvertes
 - Aucune question en attente.
 
 ## Prochaine Étape
-- Effectuer un smoke test UI : chargement + sauvegarde des sections Polling / Flags Runtime / Préférences de traitement + import/export JSON.
+- Synchronisation finale de la Memory Bank avec les changements réalisés.

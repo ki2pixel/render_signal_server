@@ -5,7 +5,23 @@ Ce document enregistre les décisions techniques et architecturales importantes 
 Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 - [decisionLog_2025Q4.md](archive/decisionLog_2025Q4.md) - Archives Q4 2025 (décembre 2025 et antérieur)
 
-## Highlights 2025 Q4
+## Décisions 2026
+
+[2026-01-22 01:00:00] - **Sécurisation des Configuration : Enforcement Variables d'Environnement**
+- **Décision** : Supprimer tous les mots de passe et secrets hardcodés dans `config/settings.py` et exiger des variables d'environnement obligatoires avec erreur explicite au démarrage.
+- **Raisonnement** : Éliminer les risques de sécurité liés aux secrets en clair dans le code source ; garantir que les déploiements ne puissent pas démarrer sans configuration explicite.
+- **Implémentation** : Fonction `_get_required_env()` qui lève `ValueError` si ENV manquante ; 8 variables obligatoires identifiées ; tests dédiés pour valider le comportement.
+- **Alternatives considérées** : Garder les fallbacks avec des valeurs de développement (rejeté pour sécurité) ; utiliser un système de configuration externe (retenu pour d'autres configs mais pas pour les secrets critiques).
+- **Impact** : Sécurité renforcée ; erreur explicite au démarrage si configuration incomplète ; tous les tests adaptés.
+
+[2026-01-22 00:18:00] - **Architecture Polling : Store-as-Source-of-Truth**
+- **Décision** : Éliminer les écritures runtime dans les globals de configuration et forcer l'API et le poller à lire depuis un store persistant (Redis/fichier) comme source unique de vérité.
+- **Raisonnement** : Éviter les incohérences entre configuration UI et configuration effective du poller ; permettre les changements de configuration à chaud sans redémarrage ; supporter les déploiements multi-workers.
+- **Implémentation** : `PollingConfigService` avec lecture dynamique ; API ne modifie plus les globals ; wrapper `check_new_emails_and_trigger_webhook()` pour rafraîchir les valeurs avant chaque cycle.
+- **Alternatives considérées** : Maintenir les écritures runtime (rejeté pour incohérence) ; utiliser uniquement les ENV (rejeté pour perte des modifications UI).
+- **Impact** : Configuration résiliente et dynamique ; architecture adaptée au multi-conteneurs ; tests E2E validant les rechargements à chaud.
+
+## Décisions 2025 Q4
 - **Standardisation des environnements virtuels** (2025-12-21) : Priorité à l'environnement partagé `/mnt/venv_ext4/venv_render_signal_server` avec alternative locale.
 - **Architecture orientée services finalisée** (2025-11-17) : 6 services (ConfigService, RuntimeFlagsService, WebhookConfigService, AuthService, PollingConfigService, DeduplicationService) intégrés, 83/83 tests OK.
 - **Absence Globale** (2025-11-21/24) : Refactoring terminologique "presence_pause" → "absence_pause" et application stricte avec garde de cycle.

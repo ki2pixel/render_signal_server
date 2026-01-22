@@ -20,6 +20,33 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-01-22 01:00:00] - Refactor Settings Passwords Terminé
+- **Objectif** : Supprimer les mots de passe en clair dans `config/settings.py` et exiger des variables d'environnement obligatoires avec erreur explicite au démarrage.
+- **Actions réalisées** :
+  1. **Refactor `config/settings.py`** : Suppression des constantes sensibles hardcodées (`REF_TRIGGER_PAGE_PASSWORD`, `REF_EMAIL_PASSWORD`, etc.) et ajout de `_get_required_env()` qui lève `ValueError` si une ENV obligatoire est manquante.
+  2. **Variables ENV obligatoires** : `FLASK_SECRET_KEY`, `TRIGGER_PAGE_PASSWORD`, `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `IMAP_SERVER`, `PROCESS_API_TOKEN`, `WEBHOOK_URL`, `MAKECOM_API_KEY`.
+  3. **Tests adaptés** : Mise à jour de `tests/conftest.py` et `test_app_render.py` pour injecter des ENV de test via `os.environ.setdefault()`.
+  4. **Nouveau test dédié** : `tests/test_settings_required_env.py` avec tests Given/When/Then validant le succès/échec au chargement selon la présence des ENV.
+  5. **Correction des tests échoués** : 
+     - `background/lock.py` : Remplacement des constantes globales par valeurs littérales pour éviter les erreurs d'import dans les tests
+     - `app_render.py` : Ajout de `SUBJECT_GROUPS_MEMORY = set()` pour corriger le `NameError`
+     - `tests/test_routes_api_config_happy.py` : Ajout de `importlib.reload()` et `patch.dict(os.environ)` pour forcer les patches à être pris en compte
+- **Résultat** : Plus aucun mot de passe en clair dans le code ; erreur explicite au démarrage si ENV manquante ; tous les tests passent (418 passed, 13 skipped).
+- **Fichiers modifiés** : `config/settings.py`, `tests/conftest.py`, `test_app_render.py`, `tests/test_settings_required_env.py`, `background/lock.py`, `app_render.py`, `tests/test_routes_api_config_happy.py`.
+- **Statut** : Terminé avec succès, sécurité renforcée.
+
+[2026-01-22 00:18:00] - Refactor Configuration Polling (Store-as-Source-of-Truth) Terminé
+- **Objectif** : Éliminer les écritures runtime dans `config.settings` et `config.polling_config` depuis l’API et le démarrage, et garantir que le poller lit sa configuration dynamiquement depuis Redis/fichier à chaque itération.
+- **Actions réalisées** :
+  1. **API polling** (`routes/api_config.py`) : GET/POST ne modifient plus les globals ; persistance unique via `app_config_store` (Redis/fichier) ; parsing robuste `enable_polling` (bool/string/int) ; vacation dates ISO strings ou None.
+  2. **PollingConfigService** (`config/polling_config.py`) : lecture dynamique depuis le store à chaque appel ; parsing/validation pour `active_days`, heures, senders, vacation, flags ; normalisation et déduplication emails ; fallback sur settings si store vide.
+  3. **Démarrage et poller** (`app_render.py`) : suppression des écritures runtime au démarrage ; wrapper `check_new_emails_and_trigger_webhook()` rafraîchit `SENDER_LIST_FOR_POLLING` et `ENABLE_SUBJECT_GROUP_DEDUP` avant chaque cycle ; boucle poller utilise les getters injectés.
+  4. **Tests E2E** (`test_polling_dynamic_reload.py`) : 5 tests Given/When/Then prouvant que les changements dans Redis sont pris en compte **sans redémarrage** ; couverture store vide → settings, store préféré, parsing vacation, normalisation senders, parsing booléens.
+- **Résultat** : Plus aucune écriture runtime dans les globals pour la configuration polling ; l’API et le poller partagent la même source de vérité (store persistant) ; les changements sont effectifs immédiatement, même en multi-workers ; architecture maintenue (services injectés, pas de rupture d’API).
+- **Fichiers modifiés** : `routes/api_config.py`, `config/polling_config.py`, `app_render.py`, `tests/test_routes_api_config_happy.py`, `tests/test_polling_dynamic_reload.py`.
+- **Impact** : Configuration polling maintenant résiliente et dynamique, adaptée aux déploiements multi-workers avec Redis centralisé.
+- **Statut** : Terminé avec succès, tests OK.
+
 [2026-01-19 14:20:00] - Audit cohérence dashboard (configs persistées) + correctifs frontend
 - **Objectif** : Identifier/corriger les incohérences UI après migration Redis (placeholders, mapping clés, endpoints, handlers).
 - **Corrections** :

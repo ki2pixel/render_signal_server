@@ -134,7 +134,8 @@ Pour assurer la rétrocompatibilité :
 
 La fonctionnalité de miroir des médias permet d'envoyer automatiquement les liens de téléchargement vers le webhook configuré :
 
-- **Activation** : Définir `mirror_media_to_custom: true` dans `processing_prefs.json` ou via l'interface
+- **Valeur par défaut** : `mirror_media_to_custom` est à `true` dans `DEFAULT_PROCESSING_PREFS` (@routes/api_processing.py#17-29), ce qui signifie que l'URL personnalisée (WEBHOOK_URL) reçoit les liens dès l'installation.
+- **Activation / Désactivation** : Modifier `mirror_media_to_custom` dans `processing_prefs.json` ou via l'UI (section Préférences). Mettre `false` limite l'envoi des liens aux seuls scénarios Make.com.
 - **Format** : Les liens sont envoyés dans le champ `delivery_links` du payload webhook
 - **Fournisseurs supportés** :
   - SwissTransfer

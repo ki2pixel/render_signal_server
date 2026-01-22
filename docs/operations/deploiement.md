@@ -28,6 +28,9 @@ WorkingDirectory=/opt/render_signal_server
 Environment="FLASK_SECRET_KEY=..."
 Environment="DASHBOARD_USER=..."
 Environment="DASHBOARD_PASSWORD=..."
+# Note : L'application refusera de démarrer si les variables obligatoires suivantes manquent :
+# FLASK_SECRET_KEY, TRIGGER_PAGE_PASSWORD, EMAIL_ADDRESS, EMAIL_PASSWORD, 
+# IMAP_SERVER, PROCESS_API_TOKEN, WEBHOOK_URL, MAKECOM_API_KEY
 # ... autres ENV (voir configuration.md)
 ExecStart=/mnt/venv_ext4/venv_render_signal_server/bin/gunicorn -w 2 -b 127.0.0.1:10000 app_render:app
 Restart=always

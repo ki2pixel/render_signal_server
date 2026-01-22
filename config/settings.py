@@ -8,22 +8,7 @@ from pathlib import Path
 from utils.validators import env_bool
 
 
-# --- Reference Constants ---
 REF_TRIGGER_PAGE_USER = "admin"
-REF_TRIGGER_PAGE_PASSWORD = "UDPVA#esKf40r@"
-
-REF_PROCESS_API_TOKEN = "rnd_PW5cGYVf4gl3limu9cYkFw27u8dY"
-
-REF_EMAIL_ADDRESS = "kidpixel@inbox.lt"
-REF_EMAIL_PASSWORD = "YvP3Zw66Xx"
-REF_IMAP_SERVER = "mail.inbox.lt"
-REF_IMAP_PORT = 993
-REF_IMAP_USE_SSL = True
-
-REF_WEBHOOK_URL = "https://webhook.kidpixel.fr/index.php"
-REF_MAKECOM_API_KEY = "12e8b61d-a78e-47f5-9f87-359af19f46cb"
-
-REF_SENDER_OF_INTEREST_FOR_POLLING = "achats@media-solution.fr,camille.moine.pro@gmail.com,a.peault@media-solution.fr,v.lorent@media-solution.fr,technique@media-solution.fr,t.deslus@media-solution.fr"
 REF_POLLING_TIMEZONE = "Europe/Paris"
 REF_POLLING_ACTIVE_START_HOUR = 9
 REF_POLLING_ACTIVE_END_HOUR = 23
@@ -32,23 +17,28 @@ REF_EMAIL_POLLING_INTERVAL_SECONDS = 30
 
 
 # --- Environment Variables ---
-FLASK_SECRET_KEY = os.environ.get(
-    "FLASK_SECRET_KEY", "une-cle-secrete-tres-complexe-pour-le-developpement-a-changer"
-)
+def _get_required_env(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise ValueError(f"Missing required environment variable: {name}")
+    return value
+
+
+FLASK_SECRET_KEY = _get_required_env("FLASK_SECRET_KEY")
 
 TRIGGER_PAGE_USER = os.environ.get("TRIGGER_PAGE_USER", REF_TRIGGER_PAGE_USER)
-TRIGGER_PAGE_PASSWORD = os.environ.get("TRIGGER_PAGE_PASSWORD", REF_TRIGGER_PAGE_PASSWORD)
+TRIGGER_PAGE_PASSWORD = _get_required_env("TRIGGER_PAGE_PASSWORD")
 
-EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS", REF_EMAIL_ADDRESS)
-EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD", REF_EMAIL_PASSWORD)
-IMAP_SERVER = os.environ.get("IMAP_SERVER", REF_IMAP_SERVER)
-IMAP_PORT = int(os.environ.get("IMAP_PORT", REF_IMAP_PORT))
-IMAP_USE_SSL = env_bool("IMAP_USE_SSL", REF_IMAP_USE_SSL)
+EMAIL_ADDRESS = _get_required_env("EMAIL_ADDRESS")
+EMAIL_PASSWORD = _get_required_env("EMAIL_PASSWORD")
+IMAP_SERVER = _get_required_env("IMAP_SERVER")
+IMAP_PORT = int(os.environ.get("IMAP_PORT", 993))
+IMAP_USE_SSL = env_bool("IMAP_USE_SSL", True)
 
-EXPECTED_API_TOKEN = os.environ.get("PROCESS_API_TOKEN", REF_PROCESS_API_TOKEN)
+EXPECTED_API_TOKEN = _get_required_env("PROCESS_API_TOKEN")
 
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", REF_WEBHOOK_URL)
-MAKECOM_API_KEY = os.environ.get("MAKECOM_API_KEY", REF_MAKECOM_API_KEY)
+WEBHOOK_URL = _get_required_env("WEBHOOK_URL")
+MAKECOM_API_KEY = _get_required_env("MAKECOM_API_KEY")
 WEBHOOK_SSL_VERIFY = env_bool("WEBHOOK_SSL_VERIFY", default=True)
 
 # --- Render API Configuration ---
@@ -63,8 +53,8 @@ RENDER_DEPLOY_HOOK_URL = os.environ.get("RENDER_DEPLOY_HOOK_URL", "")
 
 
 SENDER_OF_INTEREST_FOR_POLLING_RAW = os.environ.get(
-    "SENDER_OF_INTEREST_FOR_POLLING", 
-    REF_SENDER_OF_INTEREST_FOR_POLLING
+    "SENDER_OF_INTEREST_FOR_POLLING",
+    "",
 )
 SENDER_LIST_FOR_POLLING = [
     e.strip().lower() for e in SENDER_OF_INTEREST_FOR_POLLING_RAW.split(',') 
@@ -155,7 +145,7 @@ def log_configuration(logger):
     if not EXPECTED_API_TOKEN:
         logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
     else:
-        logger.info(f"CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: '{EXPECTED_API_TOKEN[:5]}...')")
+        logger.info("CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured.")
     
     logger.info(f"CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP={ENABLE_SUBJECT_GROUP_DEDUP}")
     logger.info(f"CFG DEDUP: DISABLE_EMAIL_ID_DEDUP={DISABLE_EMAIL_ID_DEDUP}")

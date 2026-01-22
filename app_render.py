@@ -148,6 +148,7 @@ IMAP_USE_SSL = settings.IMAP_USE_SSL
 EXPECTED_API_TOKEN = settings.EXPECTED_API_TOKEN
 
 ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
+SENDER_LIST_FOR_POLLING = settings.SENDER_LIST_FOR_POLLING
 
 # Runtime flags and files
 DISABLE_EMAIL_ID_DEDUP = settings.DISABLE_EMAIL_ID_DEDUP
@@ -298,51 +299,20 @@ try:
         _pc.get("active_end_hour"),
         _pc.get("enable_polling"),
     )
-    if isinstance(_pc.get("active_days"), list) and _pc.get("active_days"):
-        settings.POLLING_ACTIVE_DAYS = [int(d) for d in _pc["active_days"] if isinstance(d, (int, str))]
-    if "active_start_hour" in _pc:
-        try:
-            v = int(_pc["active_start_hour"]) ;
-            if 0 <= v <= 23:
-                settings.POLLING_ACTIVE_START_HOUR = v
-        except Exception:
-            pass
-    if "active_end_hour" in _pc:
-        try:
-            v = int(_pc["active_end_hour"]) ;
-            if 0 <= v <= 23:
-                settings.POLLING_ACTIVE_END_HOUR = v
-        except Exception:
-            pass
-    if "enable_subject_group_dedup" in _pc:
-        try:
-            settings.ENABLE_SUBJECT_GROUP_DEDUP = bool(_pc["enable_subject_group_dedup"])
-        except Exception:
-            pass
-    if isinstance(_pc.get("sender_of_interest_for_polling"), list):
-        try:
-            settings.SENDER_LIST_FOR_POLLING = [str(e).strip().lower() for e in _pc["sender_of_interest_for_polling"] if str(e).strip()]
-        except Exception:
-            pass
-    # Vacation dates
-    if "vacation_start" in _pc:
-        try:
-            vs = _pc.get("vacation_start")
-            polling_config.POLLING_VACATION_START_DATE = None if not vs else datetime.fromisoformat(str(vs)).date()
-        except Exception:
-            polling_config.POLLING_VACATION_START_DATE = None
-    if "vacation_end" in _pc:
-        try:
-            ve = _pc.get("vacation_end")
-            polling_config.POLLING_VACATION_END_DATE = None if not ve else datetime.fromisoformat(str(ve)).date()
-        except Exception:
-            polling_config.POLLING_VACATION_END_DATE = None
-    app.logger.info(
-        f"CFG POLL(override): days={settings.POLLING_ACTIVE_DAYS}; start={settings.POLLING_ACTIVE_START_HOUR}; end={settings.POLLING_ACTIVE_END_HOUR}; dedup_monthly_scope={settings.ENABLE_SUBJECT_GROUP_DEDUP}"
-    )
-    app.logger.info(
-        f"CFG POLL(effective): days={settings.POLLING_ACTIVE_DAYS}; start={settings.POLLING_ACTIVE_START_HOUR}; end={settings.POLLING_ACTIVE_END_HOUR}; senders={len(settings.SENDER_LIST_FOR_POLLING)}; dedup_monthly_scope={settings.ENABLE_SUBJECT_GROUP_DEDUP}"
-    )
+    try:
+        app.logger.info(
+            "CFG POLL(effective): days=%s; start=%s; end=%s; senders=%s; dedup_monthly_scope=%s; enable_polling=%s; vacation_start=%s; vacation_end=%s",
+            _polling_service.get_active_days(),
+            _polling_service.get_active_start_hour(),
+            _polling_service.get_active_end_hour(),
+            len(_polling_service.get_sender_list() or []),
+            _polling_service.is_subject_group_dedup_enabled(),
+            _polling_service.get_enable_polling(True),
+            (_pc.get("vacation_start") if isinstance(_pc, dict) else None),
+            (_pc.get("vacation_end") if isinstance(_pc, dict) else None),
+        )
+    except Exception:
+        pass
 except Exception:
     pass
 
@@ -351,6 +321,8 @@ PROCESSED_EMAIL_IDS_REDIS_KEY = settings.PROCESSED_EMAIL_IDS_REDIS_KEY
 PROCESSED_SUBJECT_GROUPS_REDIS_KEY = settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY
 SUBJECT_GROUP_REDIS_PREFIX = settings.SUBJECT_GROUP_REDIS_PREFIX
 SUBJECT_GROUP_TTL_SECONDS = settings.SUBJECT_GROUP_TTL_SECONDS
+
+# Memory fallback set for subject groups when Redis is not available
 SUBJECT_GROUPS_MEMORY = set()
 
 # 7. Deduplication Service (avec Redis ou fallback mémoire)
@@ -458,7 +430,6 @@ def mark_email_id_as_processed_redis(email_id):
 
 
 
-
 def generate_subject_group_id(subject: str) -> str:
     """Wrapper vers deduplication.subject_group.generate_subject_group_id."""
     return _gen_subject_group_id(subject)
@@ -474,7 +445,7 @@ def is_subject_group_processed(group_id: str) -> bool:
         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
-        enable_monthly_scope=ENABLE_SUBJECT_GROUP_DEDUP,
+        enable_monthly_scope=_polling_service.is_subject_group_dedup_enabled(),
         tz=TZ_FOR_POLLING,
         memory_set=SUBJECT_GROUPS_MEMORY,
     )
@@ -490,16 +461,25 @@ def mark_subject_group_processed(group_id: str) -> bool:
         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
-        enable_monthly_scope=ENABLE_SUBJECT_GROUP_DEDUP,
+        enable_monthly_scope=_polling_service.is_subject_group_dedup_enabled(),
         tz=TZ_FOR_POLLING,
         memory_set=SUBJECT_GROUPS_MEMORY,
     )
 
 
-
-
+ 
+ 
 def check_new_emails_and_trigger_webhook():
     """Delegate to orchestrator entry-point."""
+    global SENDER_LIST_FOR_POLLING, ENABLE_SUBJECT_GROUP_DEDUP
+    try:
+        SENDER_LIST_FOR_POLLING = _polling_service.get_sender_list() or []
+    except Exception:
+        pass
+    try:
+        ENABLE_SUBJECT_GROUP_DEDUP = _polling_service.is_subject_group_dedup_enabled()
+    except Exception:
+        pass
     return email_orchestrator.check_new_emails_and_trigger_webhook()
 
 def background_email_poller() -> None:
@@ -508,7 +488,7 @@ def background_email_poller() -> None:
         return all([email_config_valid, _polling_service.get_sender_list(), WEBHOOK_URL])
 
     def _run_cycle() -> int:
-        return email_orchestrator.check_new_emails_and_trigger_webhook()
+        return check_new_emails_and_trigger_webhook()
 
     def _is_in_vacation(now_dt: datetime) -> bool:
         try:

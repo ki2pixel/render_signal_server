@@ -81,6 +81,16 @@ Consultez [la documentation opérationnelle](docs/operational-guide.md) pour plu
 - **Anti-OOM** : Troncature HTML à 1MB avant parsing pour prévenir les OOM kills sur conteneurs 512MB
 - **Tests résilience** : `test_lock_redis.py`, `test_r2_resilience.py` avec validation complète des scénarios de défaillance
 
+### Services Principaux
+- **`ConfigService`** – Gestion centralisée de la configuration
+- **`AuthService`** – Authentification et autorisation
+- **`RuntimeFlagsService`** – Gestion dynamique des fonctionnalités (Singleton)
+- **`WebhookConfigService`** – Configuration et validation des webhooks (Singleton)
+- **`DeduplicationService`** – Prévention des doublons (Redis + fallback mémoire)
+- **`PollingConfigService`** – Configuration du polling IMAP
+- **`MagicLinkService`** – Gestion des magic links pour l’authentification sans mot de passe (Singleton)
+- **`R2TransferService`** – Offload Cloudflare R2 pour économiser la bande passante (Singleton)
+
 ## Architecture
 
 ```

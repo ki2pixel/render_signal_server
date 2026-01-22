@@ -17,13 +17,17 @@
 
 ## Vue d'ensemble
 
-Le dashboard a été refactorisé pour utiliser une architecture orientée services, avec une séparation claire entre l'interface utilisateur et la logique métier. Les principales caractéristiques sont :
+Le dashboard est désormais un orchestrateur modulaire ES6 :
 
-- **Navigation par onglets** : Vue d'ensemble, Webhooks, Configuration, Outils
-- **Authentification** : Gérée par `AuthService`
-- **Configuration** : Gérée par `ConfigService` et `WebhookConfigService`
-- **Déduplication** : Gérée par `DeduplicationService` (Redis ou mémoire)
-- **Polling** : Géré par `PollingConfigService`
+- **Orchestrateur** : `static/dashboard.js` coordonne le chargement initial, la gestion des événements et l'orchestration des services.
+- **Services frontend** :
+  - `static/services/ApiService.js` : client API centralisé avec gestion 401/403.
+  - `static/services/WebhookService.js` : lecture/écriture de la configuration webhooks + timeline logs.
+  - `static/services/LogService.js` : polling intelligent (visibility API) + rendu timeline.
+- **Composant UI** : `static/components/TabManager.js` pilote les onglets (ARIA + lazy loading).
+- **Utilitaires** : `static/utils/MessageHelper.js` fournit les helpers UI (messages, validations, loaders).
+
+La logique backend continue de s’appuyer sur les services Flask (`AuthService`, `ConfigService`, `WebhookConfigService`, `PollingConfigService`, `DeduplicationService`, `MagicLinkService`).
 
 ## Intégration avec les services
 
@@ -129,9 +133,11 @@ MAGIC_LINK: token abc123 consommé par admin_user
   - Bouton d'ajout: `#addSenderBtn` (inputs email individuels avec bouton « ❌ » par ligne)
   - Validation côté client: normalisation lowercase, regex email, déduplication
 
-**Appels API**:
-- `GET /api/get_polling_config` pour charger la configuration polling (jours, heures, expéditeurs, dédup)
-- `POST /api/update_polling_config` pour sauvegarder les modifications
+**Appels API (canonique)**:
+- `GET /api/get_polling_config` (legacy, maintenu pour compatibilité)
+- `POST /api/update_polling_config` (legacy)
+- `GET /api/polling/config` et `POST /api/polling/update` ne sont plus utilisés.
+> ⚠️ L’UI utilise aujourd’hui `WebhookService` + `ApiService` : côté backend, la route canonique reste `routes/api_polling.py` (blueprint `api_polling`). Les endpoints historiques `/api/get_polling_config` et `/api/update_polling_config` sont conservés comme alias pour compatibilité et redirigent vers la logique actuelle.
 
 **Comportement**:
 - Les jours actifs sont désormais gérés exclusivement via cases à cocher; l'ancienne saisie texte n'est plus utilisée.
@@ -205,22 +211,27 @@ Permet de configurer l'URL de webhook principale et les options associées :
   - `#retryCount`, `#retryDelaySec`, `#webhookTimeoutSec`, `#rateLimitPerHour` (numbers)
   - `#notifyOnFailureToggle` (checkbox)
   - Bouton: `#processingPrefsSaveBtn`
-- API:
-  - `GET /api/get_processing_prefs` (chargement)
-  - `POST /api/update_processing_prefs` (sauvegarde)
+- API (canonique):
+  - `GET /api/processing_prefs` (chargement)
+  - `POST /api/processing_prefs` (sauvegarde)
+- Alias legacy (compat) :
+  - `GET /api/get_processing_prefs`
+  - `POST /api/update_processing_prefs`
 - Normalisation côté serveur: types (bool/int), JSON valide pour `sender_priority`, valeurs par défaut raisonnables.
 
 ### 6. Gestion des Configurations (Export/Import)
 
 - Boutons: `#exportConfigBtn`, `#importConfigBtn` + input fichier `#importConfigFile`
 - Export regroupe:
-  - `GET /api/get_webhook_config`, `GET /api/get_polling_config`, `GET /api/get_webhook_time_window`
+  - `GET /api/webhooks/config` (canonique, URL masquée)
+  - `GET /api/get_polling_config` (alias legacy)
+  - `GET /api/webhooks/time-window`
   - Préférences UI locales (localStorage)
 - Import applique automatiquement:
-  - `POST /api/update_webhook_config`
-  - `POST /api/update_polling_config`
-  - `POST /api/set_webhook_time_window`
-- Notes: les champs non supportés sont ignorés; certaines mises à jour peuvent nécessiter un redémarrage.
+  - `POST /api/webhooks/config`
+  - `POST /api/update_polling_config` (alias legacy)
+  - `POST /api/webhooks/time-window`
+- Notes: les champs non supportés sont ignorés; certaines mises à jour peuvent nécessiter un redémarrage. Les anciens endpoints (`/api/get_webhook_config`, `/api/set_webhook_time_window`, etc.) sont conservés pour compatibilité mais ne doivent plus être utilisés dans de nouveaux scripts.
 
 ### 7. Outils de Test (client)
 

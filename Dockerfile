@@ -26,8 +26,8 @@ RUN useradd --create-home --shell /bin/bash appuser \
 USER appuser
 
 ENV PORT=8000 \
-    GUNICORN_WORKERS=2 \
-    GUNICORN_THREADS=2 \
+    GUNICORN_WORKERS=1 \
+    GUNICORN_THREADS=4 \
     GUNICORN_TIMEOUT=120 \
     GUNICORN_GRACEFUL_TIMEOUT=30 \
     GUNICORN_KEEP_ALIVE=75 \

@@ -9,7 +9,9 @@ Gère le timezone, la fenêtre horaire, et les paramètres de vacances.
 from datetime import timezone, datetime, date
 from typing import Optional
 import json
+import re
 
+from config import app_config_store as _app_config_store
 from config.settings import (
     POLLING_TIMEZONE_STR,
     POLLING_CONFIG_FILE,
@@ -204,16 +206,46 @@ class PollingConfigService:
     via injection de dépendances.
     """
     
-    def __init__(self, settings_module=None):
+    def __init__(self, settings_module=None, config_store=None):
         """Initialise le service avec un module de settings.
         
         Args:
             settings_module: Module de configuration (par défaut: config.settings)
         """
         self._settings = settings_module
+        self._store = config_store
+
+    def _get_persisted_polling_config(self) -> dict:
+        store = self._store or _app_config_store
+        file_fallback = None
+        try:
+            if self._settings is not None:
+                file_fallback = getattr(self._settings, "POLLING_CONFIG_FILE", None)
+        except Exception:
+            file_fallback = None
+
+        try:
+            cfg = store.get_config_json("polling_config", file_fallback=file_fallback)
+            return cfg if isinstance(cfg, dict) else {}
+        except Exception:
+            return {}
     
     def get_active_days(self) -> list[int]:
         """Retourne la liste des jours actifs pour le polling (0=Lundi, 6=Dimanche)."""
+        cfg = self._get_persisted_polling_config()
+        raw = cfg.get("active_days")
+        parsed: list[int] = []
+        if isinstance(raw, list):
+            for d in raw:
+                try:
+                    v = int(d)
+                    if 0 <= v <= 6:
+                        parsed.append(v)
+                except Exception:
+                    continue
+        if parsed:
+            return sorted(set(parsed))
+
         if self._settings:
             return self._settings.POLLING_ACTIVE_DAYS
         from config import settings
@@ -221,6 +253,15 @@ class PollingConfigService:
     
     def get_active_start_hour(self) -> int:
         """Retourne l'heure de début de la fenêtre de polling (0-23)."""
+        cfg = self._get_persisted_polling_config()
+        if "active_start_hour" in cfg:
+            try:
+                v = int(cfg.get("active_start_hour"))
+                if 0 <= v <= 23:
+                    return v
+            except Exception:
+                pass
+
         if self._settings:
             return self._settings.POLLING_ACTIVE_START_HOUR
         from config import settings
@@ -228,6 +269,15 @@ class PollingConfigService:
     
     def get_active_end_hour(self) -> int:
         """Retourne l'heure de fin de la fenêtre de polling (0-23)."""
+        cfg = self._get_persisted_polling_config()
+        if "active_end_hour" in cfg:
+            try:
+                v = int(cfg.get("active_end_hour"))
+                if 0 <= v <= 23:
+                    return v
+            except Exception:
+                pass
+
         if self._settings:
             return self._settings.POLLING_ACTIVE_END_HOUR
         from config import settings
@@ -235,6 +285,24 @@ class PollingConfigService:
     
     def get_sender_list(self) -> list[str]:
         """Retourne la liste des expéditeurs d'intérêt pour le polling."""
+        cfg = self._get_persisted_polling_config()
+        raw = cfg.get("sender_of_interest_for_polling")
+        senders: list[str] = []
+        if isinstance(raw, list):
+            senders = [str(s).strip().lower() for s in raw if str(s).strip()]
+        elif isinstance(raw, str):
+            senders = [p.strip().lower() for p in raw.split(",") if p.strip()]
+        if senders:
+            email_re = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+            filtered = [s for s in senders if email_re.match(s)]
+            seen = set()
+            unique = []
+            for s in filtered:
+                if s not in seen:
+                    seen.add(s)
+                    unique.append(s)
+            return unique
+
         if self._settings:
             return self._settings.SENDER_LIST_FOR_POLLING
         from config import settings
@@ -277,6 +345,22 @@ class PollingConfigService:
             check_date = check_date_or_dt
         else:
             check_date = None
+
+        cfg = self._get_persisted_polling_config()
+        vs = cfg.get("vacation_start")
+        ve = cfg.get("vacation_end")
+        if vs and ve:
+            try:
+                start_date = datetime.fromisoformat(str(vs)).date()
+                end_date = datetime.fromisoformat(str(ve)).date()
+                if check_date is None:
+                    check_date = datetime.now(
+                        TZ_FOR_POLLING if TZ_FOR_POLLING else timezone.utc
+                    ).date()
+                return start_date <= check_date <= end_date
+            except Exception:
+                pass
+
         return is_in_vacation_period(check_date)
     
     def get_enable_polling(self, default: bool = True) -> bool:
@@ -288,4 +372,25 @@ class PollingConfigService:
         Returns:
             True si le polling est activé, False sinon
         """
-        return get_enable_polling(default)
+        cfg = self._get_persisted_polling_config()
+        val = cfg.get("enable_polling")
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, (int, float)):
+            return bool(val)
+        if isinstance(val, str):
+            s = val.strip().lower()
+            if s in {"1", "true", "yes", "y", "on"}:
+                return True
+            if s in {"0", "false", "no", "n", "off"}:
+                return False
+        return bool(default)
+
+    def is_subject_group_dedup_enabled(self) -> bool:
+        cfg = self._get_persisted_polling_config()
+        if "enable_subject_group_dedup" in cfg:
+            return bool(cfg.get("enable_subject_group_dedup"))
+        if self._settings:
+            return bool(getattr(self._settings, "ENABLE_SUBJECT_GROUP_DEDUP", False))
+        from config import settings
+        return bool(getattr(settings, "ENABLE_SUBJECT_GROUP_DEDUP", False))

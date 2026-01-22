@@ -1,0 +1,41 @@
+{
+  "output": {
+    "style": "markdown",
+    "filePath": "repomix-output.md"
+  },
+  "include": [
+    "app_render.py",
+    "app_logging/**",
+    "auth/**",
+    "background/**",
+    "config/**",
+    "deduplication/**",
+    "email_processing/**",
+    "routes/**",
+    "services/**",
+    "static/**",
+    "utils/**",
+    "scripts/**",
+    "deployment/**",
+    "preferences/**",
+    "make/**",
+    "dashboard.html",
+    "login.html",
+    "requirements*.txt",
+    "Dockerfile"
+  ],
+  "ignore": {
+    "customPatterns": [
+      "docs/**",
+      "tests/**",
+      "memory-bank/**",
+      ".github/**",
+      ".idea/**",
+      ".venv/**",
+      "htmlcov/**",
+      "__pycache__/**",
+      "*.log",
+      "repomix-output.*"
+    ]
+  }
+}
