@@ -1,7 +1,19 @@
 {
   "output": {
+    "filePath": "repomix-output.md",
     "style": "markdown",
-    "filePath": "repomix-output.md"
+    "parsableStyle": false,
+    "compress": false,
+    "headerText": "Render Signal",
+    "fileSummary": true,
+    "directoryStructure": true,
+    "files": true,
+    "removeComments": false,
+    "removeEmptyLines": false,
+    "topFilesLength": 10,
+    "showLineNumbers": true,
+    "includeEmptyDirectories": false,
+    "truncateBase64": true
   },
   "include": [
     "app_render.py",
