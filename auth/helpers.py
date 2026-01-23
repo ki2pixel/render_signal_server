@@ -9,9 +9,7 @@ import os
 from flask import request
 
 
-# =============================================================================
 # AUTHENTIFICATION API (TEST ENDPOINTS)
-# =============================================================================
 
 def testapi_authorized(req: request) -> bool:
     """

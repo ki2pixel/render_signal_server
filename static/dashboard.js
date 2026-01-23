@@ -6,10 +6,6 @@ import { TabManager } from './components/TabManager.js';
 
 window.DASHBOARD_BUILD = 'modular-2026-01-19a';
 
-if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    console.log('[build] static/dashboard.js loaded:', window.DASHBOARD_BUILD);
-}
-
 let tabManager = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -30,7 +26,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         LogService.startLogPolling();
         
-        console.log('Dashboard initialized successfully');
     } catch (e) {
         console.error('Erreur lors de l\'initialisation du dashboard:', e);
         MessageHelper.showError('global', 'Erreur lors du chargement du dashboard');
@@ -260,8 +255,6 @@ function bindEvents() {
 }
 
 async function loadInitialData() {
-    console.log('[loadInitialData] Function called - hostname:', window.location.hostname);
-    
     try {
         await Promise.all([
             WebhookService.loadConfig(),
@@ -341,7 +334,7 @@ async function generateMagicLink() {
     }
 }
 
-// -------------------- Polling Control --------------------
+// Polling control
 async function loadPollingStatus() {
     try {
         const data = await ApiService.get('/api/get_polling_config');
@@ -383,14 +376,11 @@ async function togglePolling() {
     }
 }
 
-// -------------------- Time Window --------------------
+// Time window
 async function loadTimeWindow() {
-    console.log('[loadTimeWindow] Function called - hostname:', window.location.hostname);
-    
     const applyWindowValues = (startValue = '', endValue = '') => {
         const startInput = document.getElementById('webhooksTimeStart');
         const endInput = document.getElementById('webhooksTimeEnd');
-        console.log('[loadTimeWindow] Applying values:', { startValue, endValue, startInput: !!startInput, endInput: !!endInput });
         if (startInput) startInput.value = startValue || '';
         if (endInput) endInput.value = endValue || '';
         renderTimeWindowDisplay(startValue || '', endValue || '');
@@ -399,7 +389,6 @@ async function loadTimeWindow() {
     try {
         // 0) Source principale : fenêtre horaire globale (ancien endpoint)
         const globalTimeResponse = await ApiService.get('/api/get_webhook_time_window');
-        console.log('[loadTimeWindow] /api/get_webhook_time_window response:', globalTimeResponse);
         if (globalTimeResponse.success) {
             applyWindowValues(
                 globalTimeResponse.webhooks_time_start || '',
@@ -414,7 +403,6 @@ async function loadTimeWindow() {
     try {
         // 2) Fallback: ancienne source (time window override)
         const data = await ApiService.get('/api/get_webhook_time_window');
-        console.log('[loadTimeWindow] /api/get_webhook_time_window response:', data);
         if (data.success) {
             applyWindowValues(data.webhooks_time_start, data.webhooks_time_end);
         }
@@ -497,7 +485,7 @@ function renderTimeWindowDisplay(start, end) {
     displayEl.textContent = `Dernière fenêtre enregistrée: ${startText} → ${endText}`;
 }
 
-// -------------------- Polling Configuration --------------------
+// Polling configuration
 async function loadPollingConfig() {
     try {
         const data = await ApiService.get('/api/get_polling_config');
@@ -593,7 +581,7 @@ async function savePollingConfig(event) {
     }
 }
 
-// -------------------- Runtime Flags --------------------
+// Runtime flags
 async function loadRuntimeFlags() {
     try {
         const data = await ApiService.get('/api/get_runtime_flags');
@@ -648,7 +636,7 @@ async function saveRuntimeFlags() {
     }
 }
 
-// -------------------- Processing Preferences --------------------
+// Processing preferences
 async function loadProcessingPrefsFromServer() {
     try {
         const data = await ApiService.get('/api/processing_prefs');
@@ -797,7 +785,7 @@ async function saveProcessingPrefsToServer() {
     }
 }
 
-// -------------------- Local Preferences --------------------
+// Local preferences
 function loadLocalPreferences() {
     try {
         const raw = localStorage.getItem('dashboard_prefs_v1');
@@ -842,7 +830,7 @@ function saveLocalPreferences() {
     }
 }
 
-// -------------------- Configuration Management --------------------
+// Configuration management
 async function exportAllConfig() {
     try {
         const [webhookCfg, pollingCfg, timeWin, processingPrefs] = await Promise.all([
@@ -967,7 +955,7 @@ async function applyImportedServerConfig(obj) {
     }
 }
 
-// -------------------- Validation --------------------
+// Validation
 function validateWebhookUrlFromInput() {
     const inp = document.getElementById('testWebhookUrl');
     const msgId = 'webhookUrlValidationMsg';
@@ -1007,7 +995,7 @@ function buildPayloadPreview() {
     if (pre) pre.textContent = JSON.stringify(payload, null, 2);
 }
 
-// -------------------- UI Helpers --------------------
+// UI helpers
 function setDayCheckboxes(days) {
     const group = document.getElementById('pollingActiveDaysGroup');
     if (!group) return;
@@ -1092,28 +1080,17 @@ function collectSenderInputs() {
     return out;
 }
 
-// -------------------- Fenêtre Horaire Global Webhook --------------------
+// Fenêtre horaire global webhook
 async function loadGlobalWebhookTimeWindow() {
-    console.log('[loadGlobalWebhookTimeWindow] Function called - hostname:', window.location.hostname);
-    
     const applyGlobalWindowValues = (startValue = '', endValue = '') => {
         const startInput = document.getElementById('globalWebhookTimeStart');
         const endInput = document.getElementById('globalWebhookTimeEnd');
-        console.log('[loadGlobalWebhookTimeWindow] Applying values:', { startValue, endValue, startInput: !!startInput, endInput: !!endInput });
         if (startInput) startInput.value = startValue || '';
         if (endInput) endInput.value = endValue || '';
-        
-        // Vérifier immédiatement après application
-        setTimeout(() => {
-            const startAfter = document.getElementById('globalWebhookTimeStart')?.value || '';
-            const endAfter = document.getElementById('globalWebhookTimeEnd')?.value || '';
-            console.log('[loadGlobalWebhookTimeWindow] Values after apply (delayed):', { startAfter, endAfter });
-        }, 100);
     };
     
     try {
         const timeWindowResponse = await ApiService.get('/api/webhooks/time-window');
-        console.log('[loadGlobalWebhookTimeWindow] /api/webhooks/time-window response:', timeWindowResponse);
         if (timeWindowResponse.success) {
             applyGlobalWindowValues(
                 timeWindowResponse.webhooks_time_start || '',

@@ -19,12 +19,11 @@ from config.settings import (
     POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
     POLLING_CONFIG_FILE,
 )
-# Phase 3: Import des services
 from services import RuntimeFlagsService
 
 bp = Blueprint("api_config", __name__, url_prefix="/api")
 
-# Phase 3: Récupérer l'instance RuntimeFlagsService (Singleton)
+# Récupérer l'instance RuntimeFlagsService (Singleton)
 # L'instance est déjà initialisée dans app_render.py
 try:
     _runtime_flags_service = RuntimeFlagsService.get_instance()
@@ -39,12 +38,12 @@ except ValueError:
     )
 
 
-# Phase 4: Wrappers legacy supprimés - Appels directs aux services
+# Wrappers legacy supprimés - Appels directs aux services
 
 
 # ---- Time window (session-protected) ----
 
-@bp.route("/get_webhook_time_window", methods=["GET"])  # GET /api/get_webhook_time_window
+@bp.route("/get_webhook_time_window", methods=["GET"])
 @login_required
 def get_webhook_time_window():
     try:
@@ -74,7 +73,7 @@ def get_webhook_time_window():
         return jsonify({"success": False, "message": "Erreur lors de la récupération de la fenêtre horaire."}), 500
 
 
-@bp.route("/set_webhook_time_window", methods=["POST"])  # POST /api/set_webhook_time_window
+@bp.route("/set_webhook_time_window", methods=["POST"])
 @login_required
 def set_webhook_time_window():
     try:
@@ -112,12 +111,12 @@ def set_webhook_time_window():
 
 # ---- Runtime flags (session-protected) ----
 
-@bp.route("/get_runtime_flags", methods=["GET"])  # GET /api/get_runtime_flags
+@bp.route("/get_runtime_flags", methods=["GET"])
 @login_required
 def get_runtime_flags():
     """Récupère les flags runtime.
     
-    Phase 4: Appel direct à RuntimeFlagsService (cache intelligent 60s).
+    Appel direct à RuntimeFlagsService (cache intelligent 60s).
     """
     try:
         # Appel direct au service (cache si valide, sinon reload)
@@ -127,12 +126,12 @@ def get_runtime_flags():
         return jsonify({"success": False, "message": "Erreur interne"}), 500
 
 
-@bp.route("/update_runtime_flags", methods=["POST"])  # POST /api/update_runtime_flags
+@bp.route("/update_runtime_flags", methods=["POST"])
 @login_required
 def update_runtime_flags():
     """Met à jour les flags runtime.
     
-    Phase 4: Appel direct à RuntimeFlagsService.update_flags() - Atomic update + invalidation cache.
+    Appel direct à RuntimeFlagsService.update_flags() - Atomic update + invalidation cache.
     """
     try:
         payload = request.get_json(silent=True) or {}
@@ -161,7 +160,7 @@ def update_runtime_flags():
 
 # ---- Polling configuration (session-protected) ----
 
-@bp.route("/get_polling_config", methods=["GET"])  # GET /api/get_polling_config
+@bp.route("/get_polling_config", methods=["GET"])
 @login_required
 def get_polling_config():
     try:
@@ -199,7 +198,7 @@ def get_polling_config():
         return jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration polling."}), 500
 
 
-@bp.route("/update_polling_config", methods=["POST"])  # POST /api/update_polling_config
+@bp.route("/update_polling_config", methods=["POST"])
 @login_required
 def update_polling_config():
     try:

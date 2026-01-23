@@ -55,7 +55,7 @@ export class LogService {
             const logs = await ApiService.get(`/api/webhook_logs?days=${daysToLoad}`);
             this.renderLogs(logs.logs || []);
         } catch (e) {
-            console.error('Erreur chargement logs:', e);
+            MessageHelper.showError('logMsg', 'Erreur lors du chargement des logs.');
             this.renderLogs([]);
         }
     }

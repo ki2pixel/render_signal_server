@@ -12,7 +12,6 @@ import requests
 from flask import Blueprint, jsonify, request, current_app
 from flask_login import login_required, current_user
 
-# Phase 5: Migration vers ConfigService (suppression imports directs)
 from services import ConfigService
 from email_processing import webhook_sender as email_webhook_sender
 from email_processing import orchestrator as email_orchestrator
@@ -23,7 +22,6 @@ from scripts.check_config_store import inspect_configs
 
 bp = Blueprint("api_admin", __name__, url_prefix="/api")
 
-# Phase 5: Initialiser ConfigService pour ce module
 _config_service = ConfigService()
 ALLOWED_CONFIG_KEYS = CONFIG_STORE_KEYS
 
@@ -52,7 +50,7 @@ def _run_config_store_verification(selected_keys: Iterable[str], raw: bool = Fal
     return exit_code, results
 
 
-@bp.route("/restart_server", methods=["POST"])  # POST /api/restart_server
+@bp.route("/restart_server", methods=["POST"])
 @login_required
 def restart_server():
     try:
@@ -218,7 +216,7 @@ def verify_config_store():
         return jsonify({"success": False, "message": str(exc)}), 500
 
 
-@bp.route("/deploy_application", methods=["POST"])  # POST /api/deploy_application
+@bp.route("/deploy_application", methods=["POST"])
 @login_required
 def deploy_application():
     """Déclenche un déploiement applicatif côté serveur.
@@ -362,7 +360,7 @@ def deploy_application():
 # Obsolete presence test endpoint removed
 
 
-@bp.route("/check_emails_and_download", methods=["POST"])  # POST /api/check_emails_and_download
+@bp.route("/check_emails_and_download", methods=["POST"])
 @login_required
 def check_emails_and_download():
     try:

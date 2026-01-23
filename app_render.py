@@ -157,7 +157,7 @@ POLLING_CONFIG_FILE = settings.POLLING_CONFIG_FILE
 TRIGGER_SIGNAL_FILE = settings.TRIGGER_SIGNAL_FILE
 RUNTIME_FLAGS_FILE = settings.RUNTIME_FLAGS_FILE
 
-# --- Configuration du Logging ---
+# Configuration du logging
 log_level_str = os.environ.get('FLASK_LOG_LEVEL', 'INFO').upper()
 log_level = getattr(logging, log_level_str, logging.INFO)
 logging.basicConfig(level=log_level,
@@ -167,7 +167,7 @@ if not REDIS_AVAILABLE:
         "CFG REDIS (module level): 'redis' Python library not installed. Redis-based features will be disabled or use fallbacks.")
 
 
-# --- Diagnostics (process start + heartbeat) ---
+# Diagnostics (process start + heartbeat)
 try:
     from datetime import datetime, timezone as _tz
     PROCESS_START_TIME = datetime.now(_tz.utc)
@@ -184,6 +184,7 @@ def _heartbeat_loop():
             mk_alive = bool(mk and mk.is_alive())
             app.logger.info("HEARTBEAT: alive (bg_poller=%s, make_watcher=%s)", bg_alive, mk_alive)
         except Exception:
+            # Ignored intentionally: heartbeat logging must never crash the loop
             pass
         time.sleep(interval)
 
@@ -195,7 +196,7 @@ try:
 except Exception:
     pass
 
-# --- Process Signal Handlers (observability) ---
+# Process signal handlers (observability)
 def _handle_sigterm(signum, frame):  # pragma: no cover - environment dependent
     try:
         app.logger.info("PROCESS: SIGTERM received; shutting down gracefully (platform restart/deploy).")
@@ -209,7 +210,7 @@ except Exception:
     pass
 
 
-# --- Configuration (log centralisé) ---
+# Configuration (log centralisé)
 settings.log_configuration(app.logger)
 if not WEBHOOK_SSL_VERIFY:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -217,7 +218,7 @@ if not WEBHOOK_SSL_VERIFY:
     
 TZ_FOR_POLLING = polling_config.initialize_polling_timezone(app.logger)
 
-# --- Polling Config Service (accès centralisé à la configuration) ---
+# Polling Config Service (accès centralisé à la configuration)
 _polling_service = PollingConfigService(settings)
 
 # =============================================================================

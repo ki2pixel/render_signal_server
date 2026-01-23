@@ -60,7 +60,7 @@ def _mask_url(url: str | None) -> str | None:
     return None
 
 
-@bp.route("/config", methods=["GET"])  # GET /api/webhooks/config
+@bp.route("/config", methods=["GET"])
 @login_required
 def get_webhook_config():
     persisted = _load_webhook_config()
@@ -102,7 +102,7 @@ def get_webhook_config():
     return jsonify({"success": True, "config": config}), 200
 
 
-@bp.route("/config", methods=["POST"])  # POST /api/webhooks/config
+@bp.route("/config", methods=["POST"])
 @login_required
 def update_webhook_config():
     payload = request.get_json(silent=True) or {}
@@ -193,7 +193,7 @@ def update_webhook_config():
 
 # ---- Dedicated time window for global webhook toggle ----
 
-@bp.route("/time-window", methods=["GET"])  # GET /api/webhooks/time-window
+@bp.route("/time-window", methods=["GET"])
 @login_required
 def get_webhook_global_time_window():
     cfg = _load_webhook_config()
@@ -206,7 +206,7 @@ def get_webhook_global_time_window():
     }), 200
 
 
-@bp.route("/time-window", methods=["POST"])  # POST /api/webhooks/time-window
+@bp.route("/time-window", methods=["POST"])
 @login_required
 def set_webhook_global_time_window():
     payload = request.get_json(silent=True) or {}

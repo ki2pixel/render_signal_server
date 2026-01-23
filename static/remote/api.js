@@ -1,8 +1,6 @@
 // static/remote/api.js
 
-// Création d'un espace de noms pour nos fonctions API
 window.appAPI = window.appAPI || {};
-console.log("appAPI initialisé", window.appAPI);
 
 /**
  * Interroge le backend pour obtenir le statut du worker local.
@@ -20,11 +18,8 @@ window.appAPI.fetchStatus = async function() {
             // Renvoie un objet d'erreur structuré pour que l'UI puisse l'afficher.
             return { error: true, data: errorData };
         }
-        // Renvoie les données en cas de succès.
         return { error: false, data: await response.json() };
     } catch (e) {
-        // Gère les erreurs réseau (serveur inaccessible, etc.).
-        console.error("Erreur de communication lors du polling:", e);
         return {
             error: true,
             data: {
@@ -81,7 +76,6 @@ window.appAPI.triggerWorkflow = async function() {
         const data = await response.json();
         return { success: response.ok, data };
     } catch (e) {
-        console.error("Erreur de communication lors du déclenchement:", e);
         return {
             success: false,
             data: { message: "Impossible de joindre le serveur pour le déclenchement." }
@@ -97,13 +91,11 @@ window.appAPI.checkEmails = async function() {
     try {
         const response = await fetch('/api/check_emails_and_download', { method: 'POST' });
         const data = await response.json();
-        // Gère le cas où la session a expiré (401 Unauthorized)
         if (response.status === 401) {
             return { success: false, sessionExpired: true, data };
         }
         return { success: response.ok, data };
     } catch (e) {
-        console.error("Erreur de communication lors de la vérification des emails:", e);
         return {
             success: false,
             data: { message: "Erreur de communication avec le serveur." }

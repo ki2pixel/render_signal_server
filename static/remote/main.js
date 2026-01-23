@@ -131,7 +131,6 @@ function initialize() {
     document.getElementById('triggerBtn').addEventListener('click', handleTriggerClick);
     document.getElementById('checkEmailsBtn').addEventListener('click', handleEmailCheckClick);
 
-    console.log("🚀 Télécommande initialisée.");
     startPolling();
 
     // Time window UI wiring (if present)
@@ -153,7 +152,6 @@ function initialize() {
             }
             try {
                 if (!ready) {
-                    console.warn('appAPI.getWebhookTimeWindow indisponible (timeout)');
                     msgEl.textContent = 'API non prête. Rechargez la page (Ctrl+Shift+R).';
                     return;
                 }
@@ -166,7 +164,6 @@ function initialize() {
                     msgEl.textContent = 'Impossible de charger la fenêtre horaire.';
                 }
             } catch (e) {
-                console.error('Erreur chargement fenêtre horaire:', e);
                 msgEl.textContent = 'Erreur de chargement de la fenêtre horaire.';
             }
         })();

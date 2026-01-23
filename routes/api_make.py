@@ -99,7 +99,7 @@ def toggle_all_scenarios(enable: bool, logger=None) -> Dict[str, dict]:
     return results
 
 
-@bp.route("/toggle_all", methods=["POST"])  # POST /api/make/toggle_all { enable: bool }
+@bp.route("/toggle_all", methods=["POST"])
 @login_required
 def api_toggle_all():
     try:
@@ -113,7 +113,7 @@ def api_toggle_all():
         return jsonify({"success": False, "message": "Erreur interne lors de l'appel Make."}), 500
 
 
-@bp.route("/status_all", methods=["GET"])  # Optional placeholder; Make API lacks direct status endpoint
+@bp.route("/status_all", methods=["GET"])
 @login_required
 def api_status_all():
     # Make n'expose pas de /status simple par scénario dans v2 publique.

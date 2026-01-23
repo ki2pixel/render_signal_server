@@ -87,7 +87,7 @@ def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
     return True, "ok", validated_prefs
 
 
-@bp.route("", methods=["GET"])  # GET /api/processing_prefs
+@bp.route("", methods=["GET"])
 @login_required
 def get_processing_prefs():
     try:
@@ -96,7 +96,7 @@ def get_processing_prefs():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
-@bp.route("", methods=["POST"])  # POST /api/processing_prefs
+@bp.route("", methods=["POST"])
 @login_required
 def update_processing_prefs():
     try:
@@ -112,13 +112,13 @@ def update_processing_prefs():
 
 
 # --- Legacy alias routes to maintain backward-compat URLs used by tests/UI ---
-@legacy_bp.route("/api/get_processing_prefs", methods=["GET"])  # legacy URL
+@legacy_bp.route("/api/get_processing_prefs", methods=["GET"])
 @login_required
 def legacy_get_processing_prefs():
     return get_processing_prefs()
 
 
-@legacy_bp.route("/api/update_processing_prefs", methods=["POST"])  # legacy URL
+@legacy_bp.route("/api/update_processing_prefs", methods=["POST"])
 @login_required
 def legacy_update_processing_prefs():
     return update_processing_prefs()

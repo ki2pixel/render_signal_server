@@ -9,9 +9,7 @@ from flask_login import LoginManager, UserMixin
 from config.settings import TRIGGER_PAGE_USER, TRIGGER_PAGE_PASSWORD
 
 
-# =============================================================================
 # CLASSE USER
-# =============================================================================
 
 class User(UserMixin):
     """Représente un utilisateur simple, identifié par son username."""
@@ -20,11 +18,9 @@ class User(UserMixin):
         self.id = username
 
 
-# =============================================================================
 # CONFIGURATION FLASK-LOGIN
-# =============================================================================
 
-login_manager = None  # sera initialisé par init_login_manager
+login_manager = None
 
 
 def init_login_manager(app, login_view: str = 'dashboard.login'):
@@ -48,9 +44,7 @@ def init_login_manager(app, login_view: str = 'dashboard.login'):
     return login_manager
 
 
-# =============================================================================
 # HELPERS D'AUTHENTIFICATION
-# =============================================================================
 
 def verify_credentials(username: str, password: str) -> bool:
     """

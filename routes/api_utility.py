@@ -12,7 +12,7 @@ from config.settings import TRIGGER_SIGNAL_FILE
 bp = Blueprint("api_utility", __name__, url_prefix="/api")
 
 
-@bp.route("/ping", methods=["GET", "HEAD"])  # GET /api/ping
+@bp.route("/ping", methods=["GET", "HEAD"])
 def ping():
     return (
         jsonify({"status": "pong", "timestamp_utc": datetime.now(timezone.utc).isoformat()}),
@@ -20,7 +20,7 @@ def ping():
     )
 
 
-@bp.route("/diag/runtime", methods=["GET"])  # GET /api/diag/runtime
+@bp.route("/diag/runtime", methods=["GET"])
 def diag_runtime():
     """Expose basic runtime state without requiring auth.
 
@@ -83,7 +83,7 @@ def diag_runtime():
     return jsonify(payload), 200
 
 
-@bp.route("/check_trigger", methods=["GET"])  # GET /api/check_trigger
+@bp.route("/check_trigger", methods=["GET"])
 def check_local_workflow_trigger():
     if TRIGGER_SIGNAL_FILE.exists():
         try:
@@ -99,7 +99,7 @@ def check_local_workflow_trigger():
     return jsonify({"command_pending": False, "payload": None})
 
 
-@bp.route("/get_local_status", methods=["GET"])  # GET /api/get_local_status
+@bp.route("/get_local_status", methods=["GET"])
 @login_required
 def api_get_local_status():
     """Retourne un snapshot minimal de statut pour l'UI distante."""

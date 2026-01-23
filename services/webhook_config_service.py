@@ -92,16 +92,9 @@ class WebhookConfigService:
         """Réinitialise l'instance (pour tests)."""
         cls._instance = None
     
-    # =========================================================================
     # Configuration Webhook Principal
-    # =========================================================================
     
     def get_webhook_url(self) -> str:
-        """Retourne l'URL webhook principale.
-        
-        Returns:
-            URL webhook ou chaîne vide si non configurée
-        """
         config = self._get_cached_config()
         return config.get("webhook_url", "")
     
@@ -131,12 +124,9 @@ class WebhookConfigService:
             return False, "Erreur lors de la sauvegarde."
     
     def has_webhook_url(self) -> bool:
-        """Vérifie si une URL webhook est configurée."""
         return bool(self.get_webhook_url())
     
-    # =========================================================================
     # Absence Globale (Pause Webhook)
-    # =========================================================================
     
     def get_absence_pause_enabled(self) -> bool:
         """Retourne si la pause absence est activée.
@@ -199,9 +189,7 @@ class WebhookConfigService:
                 return True, "Jours de pause mis à jour avec succès."
             return False, "Erreur lors de la sauvegarde."
     
-    # =========================================================================
     # Configuration SSL et Enabled
-    # =========================================================================
     
     def get_ssl_verify(self) -> bool:
         """Retourne si la vérification SSL est activée.
@@ -255,9 +243,7 @@ class WebhookConfigService:
                 return True
             return False
     
-    # =========================================================================
     # Fenêtre Horaire
-    # =========================================================================
     
     def get_time_window(self) -> Dict[str, str]:
         """Retourne la fenêtre horaire pour les webhooks.
@@ -292,9 +278,7 @@ class WebhookConfigService:
                 return True
             return False
     
-    # =========================================================================
     # Validation
-    # =========================================================================
     
     @staticmethod
     def validate_webhook_url(url: str) -> Tuple[bool, str]:

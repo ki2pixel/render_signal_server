@@ -45,7 +45,7 @@ def _mask_url(url: str | None) -> str | None:
 
 # --- Endpoints ---
 
-@bp.route("/get_webhook_time_window", methods=["GET"])  # GET /api/test/get_webhook_time_window
+@bp.route("/get_webhook_time_window", methods=["GET"])
 def get_webhook_time_window():
     if not _testapi_authorized(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
@@ -69,7 +69,7 @@ def get_webhook_time_window():
         )
 
 
-@bp.route("/set_webhook_time_window", methods=["POST"])  # POST /api/test/set_webhook_time_window
+@bp.route("/set_webhook_time_window", methods=["POST"])
 def set_webhook_time_window():
     if not _testapi_authorized(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
@@ -98,7 +98,7 @@ def set_webhook_time_window():
         )
 
 
-@bp.route("/get_webhook_config", methods=["GET"])  # GET /api/test/get_webhook_config
+@bp.route("/get_webhook_config", methods=["GET"])
 def get_webhook_config():
     if not _testapi_authorized(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
@@ -117,7 +117,7 @@ def get_webhook_config():
         )
 
 
-@bp.route("/update_webhook_config", methods=["POST"])  # POST /api/test/update_webhook_config
+@bp.route("/update_webhook_config", methods=["POST"])
 def update_webhook_config():
     if not _testapi_authorized(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
@@ -167,7 +167,7 @@ def update_webhook_config():
         )
 
 
-@bp.route("/get_polling_config", methods=["GET"])  # GET /api/test/get_polling_config
+@bp.route("/get_polling_config", methods=["GET"])
 def get_polling_config():
     if not _testapi_authorized(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
@@ -194,7 +194,7 @@ def get_polling_config():
         )
 
 
-@bp.route("/webhook_logs", methods=["GET"])  # GET /api/test/webhook_logs
+@bp.route("/webhook_logs", methods=["GET"])
 def webhook_logs():
     if not _testapi_authorized(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
@@ -233,7 +233,7 @@ def webhook_logs():
         )
 
 
-@bp.route("/clear_email_dedup", methods=["POST"])  # POST /api/test/clear_email_dedup
+@bp.route("/clear_email_dedup", methods=["POST"])
 def clear_email_dedup():
     if not _testapi_authorized(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401

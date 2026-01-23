@@ -1918,634 +1918,6 @@ def api_get_local_status():
 """Utility scripts package for render_signal_server."""
 ````
 
-## File: services/README.md
-````markdown
-# Services - Architecture Orientée Services
-
-**Date de création:** 2025-11-17  
-**Version:** 1.0  
-**Status:** ✅ Production Ready
-
----
-
-## 📋 Vue d'Ensemble
-
-Le dossier `services/` contient 8 services professionnels qui encapsulent la logique métier de l'application. Ces services fournissent des interfaces cohérentes et testables pour accéder aux fonctionnalités clés.
-
-### Philosophie
-
-- **Separation of Concerns** - Un service = Une responsabilité
-- **Dependency Injection** - Services configurables via injection
-- **Testabilité** - Mocks faciles, tests isolés
-- **Robustesse** - Gestion d'erreurs, fallbacks automatiques
-- **Performance** - Cache intelligent, Singletons
-
----
-
-## 🗂️ Structure
-
-```
-services/
-├── __init__.py                    # Module principal - exports all services
-├── config_service.py              # Configuration centralisée
-├── runtime_flags_service.py       # Flags runtime avec cache (Singleton)
-├── webhook_config_service.py      # Webhooks + validation (Singleton)
-├── auth_service.py                # Authentification unifiée
-├── deduplication_service.py       # Déduplication emails/subject groups
-├── magic_link_service.py          # Magic links authentification (Singleton)
-├── r2_transfer_service.py         # Offload Cloudflare R2 (Singleton)
-└── README.md                      # Ce fichier
-```
-
----
-
-## 📦 Services Disponibles
-
-### 1. ConfigService
-
-**Fichier:** `config_service.py`  
-**Pattern:** Standard (instance par appel)  
-**Responsabilité:** Accès centralisé à toute la configuration applicative
-
-**Fonctionnalités:**
-- Configuration Email/IMAP
-- Configuration Webhooks
-- Tokens API
-- Configuration Render (déploiement)
-- Authentification Dashboard
-- Clés Redis Déduplication
-
-**Usage:**
-```python
-from services import ConfigService
-
-config = ConfigService()
-
-# Email config
-if config.is_email_config_valid():
-    email_cfg = config.get_email_config()
-    print(f"Email: {email_cfg['address']}")
-
-# Webhook config
-if config.has_webhook_url():
-    url = config.get_webhook_url()
-
-# API token
-if config.verify_api_token(token):
-    # Token valide
-    pass
-```
-
----
-
-### 2. RuntimeFlagsService
-
-**Fichier:** `runtime_flags_service.py`  
-**Pattern:** Singleton  
-**Responsabilité:** Gestion flags runtime avec cache intelligent
-
-**Fonctionnalités:**
-- Cache mémoire avec TTL (60s par défaut)
-- Persistence JSON automatique
-- Invalidation cache intelligente
-- Lecture/écriture atomique
-
-**Usage:**
-```python
-from services import RuntimeFlagsService
-from pathlib import Path
-
-# Initialisation (une fois au démarrage)
-service = RuntimeFlagsService.get_instance(
-    file_path=Path("debug/runtime_flags.json"),
-    defaults={
-        "disable_dedup": False,
-        "enable_feature": True,
-    }
-)
-
-# Utilisation
-if service.get_flag("disable_dedup"):
-    # Bypass dedup
-    pass
-
-# Modifier un flag (persiste immédiatement)
-service.set_flag("disable_dedup", True)
-
-# Mise à jour multiple atomique
-service.update_flags({
-    "disable_dedup": False,
-    "enable_feature": True,
-})
-```
-
----
-
-### 3. WebhookConfigService
-
-**Fichier:** `webhook_config_service.py`  
-**Pattern:** Singleton  
-**Responsabilité:** Configuration webhooks avec validation stricte
-
-**Fonctionnalités:**
-- Validation stricte URLs (HTTPS requis)
-- Normalisation URLs Make.com
-- Configuration Absence Globale
-- SSL verify toggle
-- Cache avec invalidation
-
-**Usage:**
-```python
-from services import WebhookConfigService
-from pathlib import Path
-
-# Initialisation
-service = WebhookConfigService.get_instance(
-    file_path=Path("debug/webhook_config.json")
-)
-
-# Définir URL avec validation
-ok, msg = service.set_webhook_url("https://hook.eu2.make.com/abc123")
-if ok:
-    print("URL valide et enregistrée")
-else:
-    print(f"Erreur: {msg}")
-
-# Format Make.com auto-normalisé
-ok, msg = service.set_webhook_url("abc123@hook.eu2.make.com")
-# Converti en: https://hook.eu2.make.com/abc123
-
-# Configuration Absence Globale
-absence = service.get_absence_config()
-service.update_absence_config({
-    "absence_pause_enabled": True,
-    "absence_pause_days": ["saturday", "sunday"],
-})
-```
-
----
-
-### 4. AuthService
-
-**Fichier:** `auth_service.py`  
-**Pattern:** Standard (inject ConfigService)  
-**Responsabilité:** Authentification unifiée (dashboard + API)
-
-**Fonctionnalités:**
-- Authentification dashboard (Flask-Login)
-- Authentification API (Bearer token)
-- Authentification endpoints test (X-API-Key)
-- Gestion LoginManager
-- Décorateurs réutilisables
-
-**Usage:**
-```python
-from services import ConfigService, AuthService
-from flask import Flask, request
-
-app = Flask(__name__)
-config = ConfigService()
-auth = AuthService(config)
-
-# Initialiser Flask-Login
-auth.init_flask_login(app)
-
-# Dashboard login
-username = request.form.get('username')
-password = request.form.get('password')
-if auth.verify_dashboard_credentials(username, password):
-    user = auth.create_user(username)
-    login_user(user)
-
-# Décorateur API
-@app.route('/api/protected')
-@auth.api_key_required
-def protected():
-    return {"data": "secret"}
-
-# Décorateur test API
-@app.route('/api/test/validate')
-@auth.test_api_key_required
-def test_endpoint():
-    return {"status": "ok"}
-```
-
----
-
-### 5. DeduplicationService
-
-**Fichier:** `deduplication_service.py`  
-**Pattern:** Standard (inject services)  
-**Responsabilité:** Déduplication emails et subject groups
-
-**Fonctionnalités:**
-- Dédup par email ID
-- Dédup par subject group
-- Fallback mémoire si Redis down
-- Scoping mensuel automatique
-- Génération subject group ID intelligente
-
-**Usage:**
-```python
-from services import DeduplicationService, ConfigService
-from config.polling_config import PollingConfigService
-
-config = ConfigService()
-polling_config = PollingConfigService()
-
-dedup = DeduplicationService(
-    redis_client=redis_client,  # None = fallback mémoire
-    logger=app.logger,
-    config_service=config,
-    polling_config_service=polling_config,
-)
-
-# Email ID dedup
-email_id = "unique-email-id-123"
-if not dedup.is_email_processed(email_id):
-    # Traiter l'email
-    process_email(email_id)
-    dedup.mark_email_processed(email_id)
-
-# Subject group dedup
-subject = "Média Solution - Missions Recadrage - Lot 42"
-if not dedup.is_subject_group_processed(subject):
-    # Traiter
-    process_subject(subject)
-    dedup.mark_subject_group_processed(subject)
-
-# Générer ID de groupe
-group_id = dedup.generate_subject_group_id(subject)
-# → "media_solution_missions_recadrage_lot_42"
-
-# Stats
-stats = dedup.get_memory_stats()
-print(f"Email IDs in memory: {stats['email_ids_count']}")
-print(f"Using Redis: {stats['using_redis']}")
-```
-
----
-
-## 🚀 Quick Start
-
-### Utilisation dans app_render.py
-
-Les services sont **déjà initialisés** dans `app_render.py` :
-
-```python
-# Services disponibles globalement dans app_render.py
-_config_service = ConfigService()
-_runtime_flags_service = RuntimeFlagsService.get_instance(...)
-_webhook_service = WebhookConfigService.get_instance(...)
-_auth_service = AuthService(_config_service)
-_polling_service = PollingConfigService(settings)
-_dedup_service = DeduplicationService(...)
-_magic_link_service = MagicLinkService.get_instance(...)
-_r2_transfer_service = R2TransferService.get_instance(...)
-```
-
-**Utiliser directement:**
-```python
-# Dans une fonction de app_render.py
-def my_function():
-    if _config_service.is_email_config_valid():
-        # Faire quelque chose
-        pass
-```
-
----
-
-### 6. MagicLinkService
-
-**Fichier:** `magic_link_service.py`  
-**Pattern:** Singleton  
-**Responsabilité:** Génération et validation des magic links pour authentification sans mot de passe
-
-**Fonctionnalités:**
-- Génération tokens HMAC SHA-256 signés
-- Support one-shot (TTL configurable) et permanent
-- Stockage partagé via API PHP ou fallback fichier JSON
-- Nettoyage automatique tokens expirés
-- Validation et consommation sécurisées
-
-**Usage:**
-```python
-from services import MagicLinkService
-
-# Initialisation (automatique via get_instance)
-service = MagicLinkService.get_instance()
-
-# Générer un magic link one-shot
-link_data = service.generate_magic_link(unlimited=False)
-print(f"Lien: {link_data['url']}")
-print(f"Expire: {link_data['expires_at']}")
-
-# Générer un magic link permanent
-permanent_link = service.generate_magic_link(unlimited=True)
-print(f"Lien permanent: {permanent_link['url']}")
-
-# Valider un token
-validation = service.validate_magic_link(token)
-if validation['valid']:
-    print(f"Token valide pour: {validation['purpose']}")
-
-# Consommer un token one-shot
-if service.consume_magic_link(token):
-    print("Token consommé avec succès")
-
-# Révoquer manuellement un token
-if service.revoke_magic_link(token):
-    print("Token révoqué")
-
-# Nettoyer les tokens expirés
-cleaned = service.cleanup_expired_tokens()
-print(f"{cleaned} tokens expirés supprimés")
-```
-
----
-
-### 7. R2TransferService
-
-**Fichier:** `r2_transfer_service.py`  
-**Pattern:** Singleton  
-**Responsabilité:** Offload Cloudflare R2 pour économiser la bande passante
-
-**Fonctionnalités:**
-- Normalisation URLs Dropbox (y compris `/scl/fo/`)
-- Fetch distant via Worker Cloudflare sécurisé (token X-R2-FETCH-TOKEN)
-- Persistance paires `source_url`/`r2_url` + `original_filename`
-- Fallback gracieux si Worker indisponible
-- Timeout spécifique pour dossiers Dropbox (120s)
-- Validation ZIP et métadonnées
-
-**Usage:**
-```python
-from services import R2TransferService
-
-# Initialisation (automatique via get_instance)
-service = R2TransferService.get_instance()
-
-# Vérifier si le service est activé
-if service.is_enabled():
-    print("Service R2 activé")
-    print(f"Endpoint: {service.get_fetch_endpoint()}")
-    print(f"Bucket: {service.get_bucket_name()}")
-
-# Demander un offload distant
-try:
-    result = service.request_remote_fetch(
-        source_url="https://www.dropbox.com/scl/fi/...",
-        provider="dropbox",
-        original_filename="document.pdf"
-    )
-    if result and result.get('r2_url'):
-        print(f"Offload réussi: {result['r2_url']}")
-        print(f"Nom original: {result.get('original_filename')}")
-    else:
-        print("Offload échoué, utilisation URL source")
-except Exception as e:
-    print(f"Erreur R2: {e}")
-
-# Persister manuellement une paire source/R2
-service.persist_link_pair(
-    source_url="https://example.com/file.pdf",
-    r2_url="https://cdn.example.com/file.pdf",
-    original_filename="file.pdf"
-)
-
-# Lister les liens récents
-recent_links = service.get_recent_links(limit=10)
-for link in recent_links:
-    print(f"{link['provider']}: {link['original_filename']}")
-```
-
----
-
-### 8. PollingConfigService
-
-**Fichier:** `config/polling_config.py`  
-**Pattern:** Standard  
-**Responsabilité:** Configuration du polling IMAP et fenêtres actives
-
-**Fonctionnalités:**
-- Jours actifs pour polling (0=Lundi à 6=Dimanche)
-- Fenêtres horaires (début/fin)
-- Liste expéditeurs d'intérêt
-- Intervalles polling (actif/inactif)
-- Timezone configuration
-- Flag UI `enable_polling` persisté
-
-**Usage:**
-```python
-from config.polling_config import PollingConfigService
-
-# Initialisation
-service = PollingConfigService()
-
-# Jours actifs
-active_days = service.get_active_days()  # [0, 1, 2, 3, 4] (Lundi-Vendredi)
-
-# Fenêtre horaire
-start_hour = service.get_active_start_hour()  # 9
-end_hour = service.get_active_end_hour()  # 17
-
-# Expéditeurs
-senders = service.get_sender_list()  # ["media@example.com", "recadrage@example.com"]
-
-# Intervalles
-active_interval = service.get_email_poll_interval_s()  # 300 (5 minutes)
-inactive_interval = service.get_inactive_check_interval_s()  # 1800 (30 minutes)
-
-# Timezone
-tz = service.get_tz()  # ZoneInfo("Europe/Paris") ou UTC
-
-# Vacances
-if service.is_in_vacation():
-    print("Période de vacances - polling désactivé")
-
-# Flag UI
-if service.get_enable_polling():
-    print("Polling activé via UI")
-else:
-    print("Polling désactivé via UI")
-```
-
-### Utilisation dans les Routes (Blueprints)
-
-**Option 1: Importer depuis app_render**
-```python
-# Dans routes/api_webhooks.py par exemple
-from app_render import _config_service, _webhook_service
-
-@bp.route('/webhook/config')
-def get_config():
-    return {
-        "url": _webhook_service.get_webhook_url(),
-        "ssl_verify": _config_service.get_webhook_ssl_verify(),
-    }
-```
-
-**Option 2: Créer vos propres instances**
-```python
-from services import ConfigService
-
-def my_route():
-    config = ConfigService()
-    # Utiliser config
-```
-
----
-
-## ✅ Tests
-
-Tous les services ont des tests unitaires complets :
-
-```bash
-# Lancer tests des services
-pytest tests/test_services.py -v
-
-# Résultat: 25/25 tests passed (100%)
-```
-
-**Couverture:**
-- ConfigService: 66.22%
-- RuntimeFlagsService: 86.02%
-- WebhookConfigService: 57.41%
-- AuthService: 49.23%
-- DeduplicationService: 41.22%
-
----
-
-## 📚 Documentation
-
-| Document | Description |
-|----------|-------------|
-| `SERVICES_USAGE_EXAMPLES.md` | Exemples détaillés d'utilisation |
-| `REFACTORING_ARCHITECTURE_PLAN.md` | Plan architectural complet |
-| `REFACTORING_SERVICES_SUMMARY.md` | Résumé Phase 1 |
-| `REFACTORING_PHASE2_SUMMARY.md` | Résumé Phase 2 |
-| `tests/test_services.py` | Tests = documentation vivante |
-
----
-
-## 🔧 Dépannage
-
-### Le service retourne None
-
-**Cause:** Échec d'initialisation  
-**Solution:** Vérifier les logs au démarrage (préfixe `SVC:`)
-
-```
-INFO - SVC: RuntimeFlagsService initialized (cache_ttl=60s)
-ERROR - SVC: Failed to initialize WebhookConfigService: ...
-```
-
-### Cache pas mis à jour
-
-**Service:** RuntimeFlagsService, WebhookConfigService  
-**Solution:** Forcer rechargement
-
-```python
-service.reload()  # Invalide cache, force reload depuis disque
-```
-
-### Redis indisponible
-
-**Service:** DeduplicationService  
-**Comportement:** Fallback automatique en mémoire (process-local)  
-**Vérification:**
-
-```python
-stats = dedup.get_memory_stats()
-print(stats['using_redis'])  # False = fallback mémoire
-```
-
----
-
-## 🎯 Bonnes Pratiques
-
-### 1. Injecter les Dépendances
-
-```python
-# ✅ BON
-def my_function(config_service: ConfigService):
-    return config_service.get_webhook_url()
-
-# ❌ ÉVITER
-def my_function():
-    config = ConfigService()  # Nouvelle instance à chaque appel
-    return config.get_webhook_url()
-```
-
-### 2. Utiliser les Singletons Correctement
-
-```python
-# ✅ BON - Initialisation une fois
-service = RuntimeFlagsService.get_instance(path, defaults)
-
-# ✅ BON - Récupération ensuite
-service = RuntimeFlagsService.get_instance()
-
-# ❌ ÉVITER - Re-initialisation inutile
-service = RuntimeFlagsService.get_instance(path, defaults)  # À chaque fois
-```
-
-### 3. Gérer les Erreurs
-
-```python
-# ✅ BON
-try:
-    ok, msg = webhook_service.set_webhook_url(url)
-    if not ok:
-        logger.error(f"Invalid webhook: {msg}")
-except Exception as e:
-    logger.error(f"Failed to set webhook: {e}")
-
-# ❌ ÉVITER - Pas de gestion d'erreur
-webhook_service.set_webhook_url(url)  # Peut lever exception
-```
-
----
-
-## 💡 Contribuer
-
-### Ajouter un Nouveau Service
-
-1. Créer `services/my_service.py`
-2. Implémenter la classe avec docstrings
-3. Ajouter au `services/__init__.py`
-4. Créer tests dans `tests/test_services.py`
-5. Documenter dans ce README
-
-### Standards de Code
-
-- ✅ Annotations de types complètes
-- ✅ Docstrings Google style
-- ✅ Gestion d'erreurs robuste
-- ✅ Tests unitaires (>70% couverture)
-- ✅ Logs avec préfixe `SVC:`
-
----
-
-## 📞 Support
-
-**Questions ?**  
-Voir les exemples dans `SERVICES_USAGE_EXAMPLES.md`
-
-**Bugs ?**  
-Vérifier les logs (préfixe `SVC:`) et les tests
-
-**Améliora tions ?**  
-Suivre le plan dans `REFACTORING_ARCHITECTURE_PLAN.md`
-
----
-
-**Version:** 1.0  
-**Status:** ✅ Production Ready  
-**Tests:** 25/25 passed (100%)  
-**Last Update:** 2025-11-17
-````
-
 ## File: static/dashboard_legacy.js
 ````javascript
 // static/dashboard.js
@@ -4304,85 +3676,6 @@ def fetch_webhook_logs(
         "count": len(filtered_logs),
         "days_filter": days,
     }
-````
-
-## File: background/lock.py
-````python
-"""
-background.lock
-~~~~~~~~~~~~~~~~
-
-Singleton file lock utility to prevent multiple background pollers across processes.
-"""
-from __future__ import annotations
-
-import fcntl
-import logging
-import os
-
-BG_LOCK_FH = None
-REDIS_LOCK_CLIENT = None
-REDIS_LOCK_TOKEN = None
-
-REDIS_LOCK_KEY = "render_signal:poller_lock"
-REDIS_LOCK_TTL_SECONDS = 300
-
-
-def acquire_singleton_lock(lock_path: str) -> bool:
-    """Try to acquire an exclusive, non-blocking lock on a file.
-
-    Returns True if the lock is acquired, False otherwise.
-    """
-    global BG_LOCK_FH
-    global REDIS_LOCK_CLIENT
-    global REDIS_LOCK_TOKEN
-
-    logger = logging.getLogger(__name__)
-
-    redis_url = os.environ.get("REDIS_URL")
-    if isinstance(redis_url, str) and redis_url.strip():
-        try:
-            import redis
-
-            client = redis.Redis.from_url(redis_url)
-            token = f"pid={os.getpid()}"
-            acquired = bool(
-                client.set(
-                    "render_signal:poller_lock",
-                    token,
-                    nx=True,
-                    ex=300,
-                )
-            )
-            if acquired:
-                REDIS_LOCK_CLIENT = client
-                REDIS_LOCK_TOKEN = token
-            return acquired
-        except Exception:
-            pass
-
-    # Fallback to file-based lock for single-container deployments
-    logger.warning("Using file-based lock (unsafe for multi-container deployments)")
-    try:
-        BG_LOCK_FH = open(lock_path, "a+")
-        fcntl.flock(BG_LOCK_FH.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        BG_LOCK_FH.write(f"pid={os.getpid()}\n")
-        BG_LOCK_FH.flush()
-        return True
-    except BlockingIOError:
-        try:
-            if BG_LOCK_FH:
-                BG_LOCK_FH.close()
-        finally:
-            BG_LOCK_FH = None
-        return False
-    except Exception:
-        try:
-            if BG_LOCK_FH:
-                BG_LOCK_FH.close()
-        finally:
-            BG_LOCK_FH = None
-        return False
 ````
 
 ## File: background/polling_thread.py
@@ -6767,6 +6060,634 @@ class DeduplicationService:
         )
 ````
 
+## File: services/README.md
+````markdown
+# Services - Architecture Orientée Services
+
+**Date de création:** 2025-11-17  
+**Version:** 1.0  
+**Status:** ✅ Production Ready
+
+---
+
+## 📋 Vue d'Ensemble
+
+Le dossier `services/` contient 8 services professionnels qui encapsulent la logique métier de l'application. Ces services fournissent des interfaces cohérentes et testables pour accéder aux fonctionnalités clés.
+
+### Philosophie
+
+- **Separation of Concerns** - Un service = Une responsabilité
+- **Dependency Injection** - Services configurables via injection
+- **Testabilité** - Mocks faciles, tests isolés
+- **Robustesse** - Gestion d'erreurs, fallbacks automatiques
+- **Performance** - Cache intelligent, Singletons
+
+---
+
+## 🗂️ Structure
+
+```
+services/
+├── __init__.py                    # Module principal - exports all services
+├── config_service.py              # Configuration centralisée
+├── runtime_flags_service.py       # Flags runtime avec cache (Singleton)
+├── webhook_config_service.py      # Webhooks + validation (Singleton)
+├── auth_service.py                # Authentification unifiée
+├── deduplication_service.py       # Déduplication emails/subject groups
+├── magic_link_service.py          # Magic links authentification (Singleton)
+├── r2_transfer_service.py         # Offload Cloudflare R2 (Singleton)
+└── README.md                      # Ce fichier
+```
+
+---
+
+## 📦 Services Disponibles
+
+### 1. ConfigService
+
+**Fichier:** `config_service.py`  
+**Pattern:** Standard (instance par appel)  
+**Responsabilité:** Accès centralisé à toute la configuration applicative
+
+**Fonctionnalités:**
+- Configuration Email/IMAP
+- Configuration Webhooks
+- Tokens API
+- Configuration Render (déploiement)
+- Authentification Dashboard
+- Clés Redis Déduplication
+
+**Usage:**
+```python
+from services import ConfigService
+
+config = ConfigService()
+
+# Email config
+if config.is_email_config_valid():
+    email_cfg = config.get_email_config()
+    print(f"Email: {email_cfg['address']}")
+
+# Webhook config
+if config.has_webhook_url():
+    url = config.get_webhook_url()
+
+# API token
+if config.verify_api_token(token):
+    # Token valide
+    pass
+```
+
+---
+
+### 2. RuntimeFlagsService
+
+**Fichier:** `runtime_flags_service.py`  
+**Pattern:** Singleton  
+**Responsabilité:** Gestion flags runtime avec cache intelligent
+
+**Fonctionnalités:**
+- Cache mémoire avec TTL (60s par défaut)
+- Persistence JSON automatique
+- Invalidation cache intelligente
+- Lecture/écriture atomique
+
+**Usage:**
+```python
+from services import RuntimeFlagsService
+from pathlib import Path
+
+# Initialisation (une fois au démarrage)
+service = RuntimeFlagsService.get_instance(
+    file_path=Path("debug/runtime_flags.json"),
+    defaults={
+        "disable_dedup": False,
+        "enable_feature": True,
+    }
+)
+
+# Utilisation
+if service.get_flag("disable_dedup"):
+    # Bypass dedup
+    pass
+
+# Modifier un flag (persiste immédiatement)
+service.set_flag("disable_dedup", True)
+
+# Mise à jour multiple atomique
+service.update_flags({
+    "disable_dedup": False,
+    "enable_feature": True,
+})
+```
+
+---
+
+### 3. WebhookConfigService
+
+**Fichier:** `webhook_config_service.py`  
+**Pattern:** Singleton  
+**Responsabilité:** Configuration webhooks avec validation stricte
+
+**Fonctionnalités:**
+- Validation stricte URLs (HTTPS requis)
+- Normalisation URLs Make.com
+- Configuration Absence Globale
+- SSL verify toggle
+- Cache avec invalidation
+
+**Usage:**
+```python
+from services import WebhookConfigService
+from pathlib import Path
+
+# Initialisation
+service = WebhookConfigService.get_instance(
+    file_path=Path("debug/webhook_config.json")
+)
+
+# Définir URL avec validation
+ok, msg = service.set_webhook_url("https://hook.eu2.make.com/abc123")
+if ok:
+    print("URL valide et enregistrée")
+else:
+    print(f"Erreur: {msg}")
+
+# Format Make.com auto-normalisé
+ok, msg = service.set_webhook_url("abc123@hook.eu2.make.com")
+# Converti en: https://hook.eu2.make.com/abc123
+
+# Configuration Absence Globale
+absence = service.get_absence_config()
+service.update_absence_config({
+    "absence_pause_enabled": True,
+    "absence_pause_days": ["saturday", "sunday"],
+})
+```
+
+---
+
+### 4. AuthService
+
+**Fichier:** `auth_service.py`  
+**Pattern:** Standard (inject ConfigService)  
+**Responsabilité:** Authentification unifiée (dashboard + API)
+
+**Fonctionnalités:**
+- Authentification dashboard (Flask-Login)
+- Authentification API (Bearer token)
+- Authentification endpoints test (X-API-Key)
+- Gestion LoginManager
+- Décorateurs réutilisables
+
+**Usage:**
+```python
+from services import ConfigService, AuthService
+from flask import Flask, request
+
+app = Flask(__name__)
+config = ConfigService()
+auth = AuthService(config)
+
+# Initialiser Flask-Login
+auth.init_flask_login(app)
+
+# Dashboard login
+username = request.form.get('username')
+password = request.form.get('password')
+if auth.verify_dashboard_credentials(username, password):
+    user = auth.create_user(username)
+    login_user(user)
+
+# Décorateur API
+@app.route('/api/protected')
+@auth.api_key_required
+def protected():
+    return {"data": "secret"}
+
+# Décorateur test API
+@app.route('/api/test/validate')
+@auth.test_api_key_required
+def test_endpoint():
+    return {"status": "ok"}
+```
+
+---
+
+### 5. DeduplicationService
+
+**Fichier:** `deduplication_service.py`  
+**Pattern:** Standard (inject services)  
+**Responsabilité:** Déduplication emails et subject groups
+
+**Fonctionnalités:**
+- Dédup par email ID
+- Dédup par subject group
+- Fallback mémoire si Redis down
+- Scoping mensuel automatique
+- Génération subject group ID intelligente
+
+**Usage:**
+```python
+from services import DeduplicationService, ConfigService
+from config.polling_config import PollingConfigService
+
+config = ConfigService()
+polling_config = PollingConfigService()
+
+dedup = DeduplicationService(
+    redis_client=redis_client,  # None = fallback mémoire
+    logger=app.logger,
+    config_service=config,
+    polling_config_service=polling_config,
+)
+
+# Email ID dedup
+email_id = "unique-email-id-123"
+if not dedup.is_email_processed(email_id):
+    # Traiter l'email
+    process_email(email_id)
+    dedup.mark_email_processed(email_id)
+
+# Subject group dedup
+subject = "Média Solution - Missions Recadrage - Lot 42"
+if not dedup.is_subject_group_processed(subject):
+    # Traiter
+    process_subject(subject)
+    dedup.mark_subject_group_processed(subject)
+
+# Générer ID de groupe
+group_id = dedup.generate_subject_group_id(subject)
+# → "media_solution_missions_recadrage_lot_42"
+
+# Stats
+stats = dedup.get_memory_stats()
+print(f"Email IDs in memory: {stats['email_ids_count']}")
+print(f"Using Redis: {stats['using_redis']}")
+```
+
+---
+
+## 🚀 Quick Start
+
+### Utilisation dans app_render.py
+
+Les services sont **déjà initialisés** dans `app_render.py` :
+
+```python
+# Services disponibles globalement dans app_render.py
+_config_service = ConfigService()
+_runtime_flags_service = RuntimeFlagsService.get_instance(...)
+_webhook_service = WebhookConfigService.get_instance(...)
+_auth_service = AuthService(_config_service)
+_polling_service = PollingConfigService(settings)
+_dedup_service = DeduplicationService(...)
+_magic_link_service = MagicLinkService.get_instance(...)
+_r2_transfer_service = R2TransferService.get_instance(...)
+```
+
+**Utiliser directement:**
+```python
+# Dans une fonction de app_render.py
+def my_function():
+    if _config_service.is_email_config_valid():
+        # Faire quelque chose
+        pass
+```
+
+---
+
+### 6. MagicLinkService
+
+**Fichier:** `magic_link_service.py`  
+**Pattern:** Singleton  
+**Responsabilité:** Génération et validation des magic links pour authentification sans mot de passe
+
+**Fonctionnalités:**
+- Génération tokens HMAC SHA-256 signés
+- Support one-shot (TTL configurable) et permanent
+- Stockage partagé via API PHP ou fallback fichier JSON
+- Nettoyage automatique tokens expirés
+- Validation et consommation sécurisées
+
+**Usage:**
+```python
+from services import MagicLinkService
+
+# Initialisation (automatique via get_instance)
+service = MagicLinkService.get_instance()
+
+# Générer un magic link one-shot
+link_data = service.generate_magic_link(unlimited=False)
+print(f"Lien: {link_data['url']}")
+print(f"Expire: {link_data['expires_at']}")
+
+# Générer un magic link permanent
+permanent_link = service.generate_magic_link(unlimited=True)
+print(f"Lien permanent: {permanent_link['url']}")
+
+# Valider un token
+validation = service.validate_magic_link(token)
+if validation['valid']:
+    print(f"Token valide pour: {validation['purpose']}")
+
+# Consommer un token one-shot
+if service.consume_magic_link(token):
+    print("Token consommé avec succès")
+
+# Révoquer manuellement un token
+if service.revoke_magic_link(token):
+    print("Token révoqué")
+
+# Nettoyer les tokens expirés
+cleaned = service.cleanup_expired_tokens()
+print(f"{cleaned} tokens expirés supprimés")
+```
+
+---
+
+### 7. R2TransferService
+
+**Fichier:** `r2_transfer_service.py`  
+**Pattern:** Singleton  
+**Responsabilité:** Offload Cloudflare R2 pour économiser la bande passante
+
+**Fonctionnalités:**
+- Normalisation URLs Dropbox (y compris `/scl/fo/`)
+- Fetch distant via Worker Cloudflare sécurisé (token X-R2-FETCH-TOKEN)
+- Persistance paires `source_url`/`r2_url` + `original_filename`
+- Fallback gracieux si Worker indisponible
+- Timeout spécifique pour dossiers Dropbox (120s)
+- Validation ZIP et métadonnées
+
+**Usage:**
+```python
+from services import R2TransferService
+
+# Initialisation (automatique via get_instance)
+service = R2TransferService.get_instance()
+
+# Vérifier si le service est activé
+if service.is_enabled():
+    print("Service R2 activé")
+    print(f"Endpoint: {service.get_fetch_endpoint()}")
+    print(f"Bucket: {service.get_bucket_name()}")
+
+# Demander un offload distant
+try:
+    result = service.request_remote_fetch(
+        source_url="https://www.dropbox.com/scl/fi/...",
+        provider="dropbox",
+        original_filename="document.pdf"
+    )
+    if result and result.get('r2_url'):
+        print(f"Offload réussi: {result['r2_url']}")
+        print(f"Nom original: {result.get('original_filename')}")
+    else:
+        print("Offload échoué, utilisation URL source")
+except Exception as e:
+    print(f"Erreur R2: {e}")
+
+# Persister manuellement une paire source/R2
+service.persist_link_pair(
+    source_url="https://example.com/file.pdf",
+    r2_url="https://cdn.example.com/file.pdf",
+    original_filename="file.pdf"
+)
+
+# Lister les liens récents
+recent_links = service.get_recent_links(limit=10)
+for link in recent_links:
+    print(f"{link['provider']}: {link['original_filename']}")
+```
+
+---
+
+### 8. PollingConfigService
+
+**Fichier:** `config/polling_config.py`  
+**Pattern:** Standard  
+**Responsabilité:** Configuration du polling IMAP et fenêtres actives
+
+**Fonctionnalités:**
+- Jours actifs pour polling (0=Lundi à 6=Dimanche)
+- Fenêtres horaires (début/fin)
+- Liste expéditeurs d'intérêt
+- Intervalles polling (actif/inactif)
+- Timezone configuration
+- Flag UI `enable_polling` persisté
+
+**Usage:**
+```python
+from config.polling_config import PollingConfigService
+
+# Initialisation
+service = PollingConfigService()
+
+# Jours actifs
+active_days = service.get_active_days()  # [0, 1, 2, 3, 4] (Lundi-Vendredi)
+
+# Fenêtre horaire
+start_hour = service.get_active_start_hour()  # 9
+end_hour = service.get_active_end_hour()  # 17
+
+# Expéditeurs
+senders = service.get_sender_list()  # ["media@example.com", "recadrage@example.com"]
+
+# Intervalles
+active_interval = service.get_email_poll_interval_s()  # 300 (5 minutes)
+inactive_interval = service.get_inactive_check_interval_s()  # 1800 (30 minutes)
+
+# Timezone
+tz = service.get_tz()  # ZoneInfo("Europe/Paris") ou UTC
+
+# Vacances
+if service.is_in_vacation():
+    print("Période de vacances - polling désactivé")
+
+# Flag UI
+if service.get_enable_polling():
+    print("Polling activé via UI")
+else:
+    print("Polling désactivé via UI")
+```
+
+### Utilisation dans les Routes (Blueprints)
+
+**Option 1: Importer depuis app_render**
+```python
+# Dans routes/api_webhooks.py par exemple
+from app_render import _config_service, _webhook_service
+
+@bp.route('/webhook/config')
+def get_config():
+    return {
+        "url": _webhook_service.get_webhook_url(),
+        "ssl_verify": _config_service.get_webhook_ssl_verify(),
+    }
+```
+
+**Option 2: Créer vos propres instances**
+```python
+from services import ConfigService
+
+def my_route():
+    config = ConfigService()
+    # Utiliser config
+```
+
+---
+
+## ✅ Tests
+
+Tous les services ont des tests unitaires complets :
+
+```bash
+# Lancer tests des services
+pytest tests/test_services.py -v
+
+# Résultat: 25/25 tests passed (100%)
+```
+
+**Couverture:**
+- ConfigService: 66.22%
+- RuntimeFlagsService: 86.02%
+- WebhookConfigService: 57.41%
+- AuthService: 49.23%
+- DeduplicationService: 41.22%
+
+---
+
+## 📚 Documentation
+
+| Document | Description |
+|----------|-------------|
+| `SERVICES_USAGE_EXAMPLES.md` | Exemples détaillés d'utilisation |
+| `REFACTORING_ARCHITECTURE_PLAN.md` | Plan architectural complet |
+| `REFACTORING_SERVICES_SUMMARY.md` | Résumé Phase 1 |
+| `REFACTORING_PHASE2_SUMMARY.md` | Résumé Phase 2 |
+| `tests/test_services.py` | Tests = documentation vivante |
+
+---
+
+## 🔧 Dépannage
+
+### Le service retourne None
+
+**Cause:** Échec d'initialisation  
+**Solution:** Vérifier les logs au démarrage (préfixe `SVC:`)
+
+```
+INFO - SVC: RuntimeFlagsService initialized (cache_ttl=60s)
+ERROR - SVC: Failed to initialize WebhookConfigService: ...
+```
+
+### Cache pas mis à jour
+
+**Service:** RuntimeFlagsService, WebhookConfigService  
+**Solution:** Forcer rechargement
+
+```python
+service.reload()  # Invalide cache, force reload depuis disque
+```
+
+### Redis indisponible
+
+**Service:** DeduplicationService  
+**Comportement:** Fallback automatique en mémoire (process-local)  
+**Vérification:**
+
+```python
+stats = dedup.get_memory_stats()
+print(stats['using_redis'])  # False = fallback mémoire
+```
+
+---
+
+## 🎯 Bonnes Pratiques
+
+### 1. Injecter les Dépendances
+
+```python
+# ✅ BON
+def my_function(config_service: ConfigService):
+    return config_service.get_webhook_url()
+
+# ❌ ÉVITER
+def my_function():
+    config = ConfigService()  # Nouvelle instance à chaque appel
+    return config.get_webhook_url()
+```
+
+### 2. Utiliser les Singletons Correctement
+
+```python
+# ✅ BON - Initialisation une fois
+service = RuntimeFlagsService.get_instance(path, defaults)
+
+# ✅ BON - Récupération ensuite
+service = RuntimeFlagsService.get_instance()
+
+# ❌ ÉVITER - Re-initialisation inutile
+service = RuntimeFlagsService.get_instance(path, defaults)  # À chaque fois
+```
+
+### 3. Gérer les Erreurs
+
+```python
+# ✅ BON
+try:
+    ok, msg = webhook_service.set_webhook_url(url)
+    if not ok:
+        logger.error(f"Invalid webhook: {msg}")
+except Exception as e:
+    logger.error(f"Failed to set webhook: {e}")
+
+# ❌ ÉVITER - Pas de gestion d'erreur
+webhook_service.set_webhook_url(url)  # Peut lever exception
+```
+
+---
+
+## 💡 Contribuer
+
+### Ajouter un Nouveau Service
+
+1. Créer `services/my_service.py`
+2. Implémenter la classe avec docstrings
+3. Ajouter au `services/__init__.py`
+4. Créer tests dans `tests/test_services.py`
+5. Documenter dans ce README
+
+### Standards de Code
+
+- ✅ Annotations de types complètes
+- ✅ Docstrings Google style
+- ✅ Gestion d'erreurs robuste
+- ✅ Tests unitaires (>70% couverture)
+- ✅ Logs avec préfixe `SVC:`
+
+---
+
+## 📞 Support
+
+**Questions ?**  
+Voir les exemples dans `SERVICES_USAGE_EXAMPLES.md`
+
+**Bugs ?**  
+Vérifier les logs (préfixe `SVC:`) et les tests
+
+**Améliora tions ?**  
+Suivre le plan dans `REFACTORING_ARCHITECTURE_PLAN.md`
+
+---
+
+**Version:** 1.0  
+**Status:** ✅ Production Ready  
+**Tests:** 25/25 passed (100%)  
+**Last Update:** 2025-11-17
+````
+
 ## File: services/runtime_flags_service.py
 ````python
 """
@@ -7275,59 +7196,6 @@ export class MessageHelper {
 }
 ````
 
-## File: Dockerfile
-````dockerfile
-# syntax=docker/dockerfile:1
-FROM python:3.11-slim
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
-
-WORKDIR /app
-
-# Les dépendances Python actuelles n'exigent pas de bibliothèques système exotiques,
-# mais on installe les utilitaires essentiels pour sécuriser les builds futurs.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt requirements.txt
-RUN pip install --upgrade pip \
-    && pip install -r requirements.txt
-
-COPY . .
-
-# Utilisateur non root pour l'exécution.
-RUN useradd --create-home --shell /bin/bash appuser \
-    && chown -R appuser:appuser /app
-
-USER appuser
-
-ENV PORT=8000 \
-    GUNICORN_WORKERS=1 \
-    GUNICORN_THREADS=4 \
-    GUNICORN_TIMEOUT=120 \
-    GUNICORN_GRACEFUL_TIMEOUT=30 \
-    GUNICORN_KEEP_ALIVE=75 \
-    GUNICORN_MAX_REQUESTS=15000 \
-    GUNICORN_MAX_REQUESTS_JITTER=3000
-EXPOSE 8000
-
-# Gunicorn écrit déjà ses logs sur stdout/stderr ;
-# PYTHONUNBUFFERED assure la remontée immédiate des logs applicatifs (BG_POLLER, HEARTBEAT, etc.).
-CMD gunicorn \
-    --bind 0.0.0.0:$PORT \
-    --workers $GUNICORN_WORKERS \
-    --threads $GUNICORN_THREADS \
-    --timeout $GUNICORN_TIMEOUT \
-    --graceful-timeout $GUNICORN_GRACEFUL_TIMEOUT \
-    --keep-alive $GUNICORN_KEEP_ALIVE \
-    --max-requests $GUNICORN_MAX_REQUESTS \
-    --max-requests-jitter $GUNICORN_MAX_REQUESTS_JITTER \
-    app_render:app
-````
-
 ## File: login.html
 ````html
 <!DOCTYPE html>
@@ -7467,6 +7335,645 @@ CMD gunicorn \
     </div>
 </body>
 </html>
+````
+
+## File: background/lock.py
+````python
+"""
+background.lock
+~~~~~~~~~~~~~~~~
+
+Singleton file lock utility to prevent multiple background pollers across processes.
+"""
+from __future__ import annotations
+
+import fcntl
+import logging
+import os
+
+BG_LOCK_FH = None
+REDIS_LOCK_CLIENT = None
+REDIS_LOCK_TOKEN = None
+
+REDIS_LOCK_KEY = "render_signal:poller_lock"
+REDIS_LOCK_TTL_SECONDS = 300
+
+
+def acquire_singleton_lock(lock_path: str) -> bool:
+    """Try to acquire an exclusive, non-blocking lock on a file.
+
+    Returns True if the lock is acquired, False otherwise.
+    """
+    global BG_LOCK_FH
+    global REDIS_LOCK_CLIENT
+    global REDIS_LOCK_TOKEN
+
+    logger = logging.getLogger(__name__)
+
+    redis_url = os.environ.get("REDIS_URL")
+    if isinstance(redis_url, str) and redis_url.strip():
+        try:
+            import redis
+
+            client = redis.Redis.from_url(redis_url)
+            token = f"pid={os.getpid()}"
+            acquired = bool(
+                client.set(
+                    "render_signal:poller_lock",
+                    token,
+                    nx=True,
+                    ex=300,
+                )
+            )
+            if acquired:
+                REDIS_LOCK_CLIENT = client
+                REDIS_LOCK_TOKEN = token
+            return acquired
+        except Exception:
+            pass
+
+    # Fallback to file-based lock for single-container deployments
+    logger.warning("Using file-based lock (unsafe for multi-container deployments)")
+    try:
+        BG_LOCK_FH = open(lock_path, "a+")
+        fcntl.flock(BG_LOCK_FH.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        BG_LOCK_FH.write(f"pid={os.getpid()}\n")
+        BG_LOCK_FH.flush()
+        return True
+    except BlockingIOError:
+        try:
+            if BG_LOCK_FH:
+                BG_LOCK_FH.close()
+        finally:
+            BG_LOCK_FH = None
+        return False
+    except Exception:
+        try:
+            if BG_LOCK_FH:
+                BG_LOCK_FH.close()
+        finally:
+            BG_LOCK_FH = None
+        return False
+````
+
+## File: email_processing/link_extraction.py
+````python
+"""
+email_processing.link_extraction
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Extraction des liens de fournisseurs (Dropbox, FromSmash, SwissTransfer)
+depuis un texte d'email.
+
+Cette extraction réutilise le regex `URL_PROVIDERS_PATTERN` défini dans
+`email_processing.pattern_matching` et le helper `detect_provider()` de
+`utils.text_helpers`.
+"""
+from __future__ import annotations
+
+import html
+from typing import List
+from typing_extensions import TypedDict
+
+from email_processing.pattern_matching import URL_PROVIDERS_PATTERN
+from utils.text_helpers import detect_provider as _detect_provider
+
+
+class ProviderLink(TypedDict):
+    """Structure d'un lien de fournisseur extrait d'un email."""
+    provider: str
+    raw_url: str
+
+
+def extract_provider_links_from_text(text: str) -> List[ProviderLink]:
+    """Extrait toutes les URLs supportées présentes dans un texte.
+
+    Les URLs sont dédupliquées tout en préservant l'ordre d'apparition.
+    Normalisation appliquée: strip() des URLs avant déduplication.
+
+    Args:
+        text: Chaîne source (plain + HTML brut possible)
+
+    Returns:
+        Liste de dicts {"provider": str, "raw_url": str}
+    """
+    results: List[ProviderLink] = []
+    if not text:
+        return results
+
+    def _should_skip_provider_url(provider: str, url: str) -> bool:
+        if provider != "dropbox":
+            return False
+        if not url:
+            return False
+
+        # Dropbox peut inclure dans certains emails des assets de preview (ex: avatar/logo).
+        # Cas observé: .../scl/fi/.../MS.png?...&raw=1
+        try:
+            parsed = html.unescape(url)
+        except Exception:
+            parsed = url
+
+        try:
+            from urllib.parse import urlsplit, parse_qs
+
+            parts = urlsplit(parsed)
+            host = (parts.hostname or "").lower()
+            path = (parts.path or "")
+            path_lower = path.lower()
+            if not host.endswith("dropbox.com"):
+                return False
+
+            filename = path_lower.split("/")[-1]
+            if not filename:
+                return False
+
+            qs = parse_qs(parts.query or "")
+            raw_values = qs.get("raw", [])
+            has_raw_one = any(str(v).strip() == "1" for v in raw_values)
+
+            if path_lower.startswith("/scl/fi/") and has_raw_one:
+                is_image = filename.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
+                if not is_image:
+                    return False
+
+                # Heuristique volontairement restrictive pour éviter de filtrer des livrables.
+                logo_like_prefixes = ("ms", "logo", "avatar", "profile")
+                base = filename.rsplit(".", 1)[0]
+                if base in logo_like_prefixes or any(base.startswith(p) for p in logo_like_prefixes):
+                    return True
+
+            return False
+        except Exception:
+            return False
+
+    seen_urls = set()
+    for m in URL_PROVIDERS_PATTERN.finditer(text):
+        raw = m.group(1).strip()
+        try:
+            raw = html.unescape(raw)
+        except Exception:
+            pass
+        if not raw:
+            continue
+        
+        provider = _detect_provider(raw)
+        if not provider:
+            continue
+
+        if _should_skip_provider_url(provider, raw):
+            continue
+            
+        # Déduplication: garder la première occurrence de chaque URL
+        if raw not in seen_urls:
+            seen_urls.add(raw)
+            results.append({"provider": provider, "raw_url": raw})
+    
+    return results
+````
+
+## File: routes/api_processing.py
+````python
+from __future__ import annotations
+
+from pathlib import Path
+
+from flask import Blueprint, jsonify, request
+from flask_login import login_required
+from config import app_config_store as _store
+from preferences import processing_prefs as _prefs_module
+
+bp = Blueprint("api_processing", __name__, url_prefix="/api/processing_prefs")
+legacy_bp = Blueprint("api_processing_legacy", __name__)
+
+# Storage compatible with legacy locations
+PROCESSING_PREFS_FILE = (
+    Path(__file__).resolve().parents[1] / "debug" / "processing_prefs.json"
+)
+DEFAULT_PROCESSING_PREFS = {
+    "exclude_keywords": [],
+    "require_attachments": False,
+    "max_email_size_mb": None,
+    "sender_priority": {},
+    "retry_count": 0,
+    "retry_delay_sec": 2,
+    "webhook_timeout_sec": 30,
+    "rate_limit_per_hour": 5,
+    "notify_on_failure": False,
+    "mirror_media_to_custom": True,  # Activer le miroir vers le webhook personnalisé par défaut
+}
+
+
+def _load_processing_prefs() -> dict:
+    """Load prefs from DB if available, else file; merge with defaults."""
+    data = _store.get_config_json(
+        "processing_prefs", file_fallback=PROCESSING_PREFS_FILE
+    ) or {}
+    if isinstance(data, dict):
+        return {**DEFAULT_PROCESSING_PREFS, **data}
+    return DEFAULT_PROCESSING_PREFS.copy()
+
+
+def _save_processing_prefs(prefs: dict) -> bool:
+    """Persist prefs to DB with file fallback."""
+    return _store.set_config_json(
+        "processing_prefs", prefs, file_fallback=PROCESSING_PREFS_FILE
+    )
+
+
+def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
+    """
+    Valide les préférences en normalisant les alias puis en déléguant à preferences.processing_prefs.
+    Les alias 'exclude_keywords_recadrage' et 'exclude_keywords_autorepondeur' sont conservés dans le résultat
+    mais la validation core est déléguée au module centralisé.
+    """
+    base_prefs = _load_processing_prefs()
+    
+    # Normalisation des alias: conserver les clés alias dans payload_normalized
+    payload_normalized = dict(payload)
+    
+    # Validation des alias spécifiques (extend keys used by UI and tests)
+    try:
+        if "exclude_keywords_recadrage" in payload:
+            val = payload["exclude_keywords_recadrage"]
+            if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
+                return False, "exclude_keywords_recadrage doit être une liste de chaînes", base_prefs
+            payload_normalized["exclude_keywords_recadrage"] = [x.strip() for x in val if x and isinstance(x, str)]
+        
+        if "exclude_keywords_autorepondeur" in payload:
+            val = payload["exclude_keywords_autorepondeur"]
+            if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
+                return False, "exclude_keywords_autorepondeur doit être une liste de chaînes", base_prefs
+            payload_normalized["exclude_keywords_autorepondeur"] = [x.strip() for x in val if x and isinstance(x, str)]
+    except Exception as e:
+        return False, f"Alias validation error: {e}", base_prefs
+    
+    # Déléguer la validation des champs core au module centralisé
+    ok, msg, validated_prefs = _prefs_module.validate_processing_prefs(payload_normalized, base_prefs)
+    
+    if not ok:
+        return ok, msg, validated_prefs
+    
+    # Ajouter les alias validés au résultat final si présents
+    if "exclude_keywords_recadrage" in payload_normalized:
+        validated_prefs["exclude_keywords_recadrage"] = payload_normalized["exclude_keywords_recadrage"]
+    if "exclude_keywords_autorepondeur" in payload_normalized:
+        validated_prefs["exclude_keywords_autorepondeur"] = payload_normalized["exclude_keywords_autorepondeur"]
+    
+    return True, "ok", validated_prefs
+
+
+@bp.route("", methods=["GET"])  # GET /api/processing_prefs
+@login_required
+def get_processing_prefs():
+    try:
+        return jsonify({"success": True, "prefs": _load_processing_prefs()})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@bp.route("", methods=["POST"])  # POST /api/processing_prefs
+@login_required
+def update_processing_prefs():
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        ok, msg, new_prefs = _validate_processing_prefs(payload)
+        if not ok:
+            return jsonify({"success": False, "message": msg}), 400
+        if _save_processing_prefs(new_prefs):
+            return jsonify({"success": True, "message": "Préférences mises à jour.", "prefs": new_prefs})
+        return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+# --- Legacy alias routes to maintain backward-compat URLs used by tests/UI ---
+@legacy_bp.route("/api/get_processing_prefs", methods=["GET"])  # legacy URL
+@login_required
+def legacy_get_processing_prefs():
+    return get_processing_prefs()
+
+
+@legacy_bp.route("/api/update_processing_prefs", methods=["POST"])  # legacy URL
+@login_required
+def legacy_update_processing_prefs():
+    return update_processing_prefs()
+````
+
+## File: services/__init__.py
+````python
+"""
+services
+~~~~~~~~
+
+Module contenant les services applicatifs pour une architecture orientée services.
+
+Les services encapsulent la logique métier et fournissent des interfaces cohérentes
+pour accéder aux différentes fonctionnalités de l'application.
+
+Services disponibles:
+- ConfigService: Configuration applicative centralisée
+- RuntimeFlagsService: Gestion des flags runtime avec cache
+- WebhookConfigService: Configuration webhooks avec validation
+- AuthService: Authentification unifiée (dashboard + API)
+- DeduplicationService: Déduplication emails et subject groups
+- R2TransferService: Transfert de fichiers vers Cloudflare R2
+
+Usage:
+    from services import ConfigService, AuthService
+    
+    config = ConfigService()
+    auth = AuthService(config)
+"""
+
+from services.config_service import ConfigService
+from services.runtime_flags_service import RuntimeFlagsService
+from services.webhook_config_service import WebhookConfigService
+from services.auth_service import AuthService
+from services.deduplication_service import DeduplicationService
+from services.magic_link_service import MagicLinkService
+from services.r2_transfer_service import R2TransferService
+
+__all__ = [
+    "ConfigService",
+    "RuntimeFlagsService",
+    "WebhookConfigService",
+    "AuthService",
+    "DeduplicationService",
+    "MagicLinkService",
+    "R2TransferService",
+]
+````
+
+## File: Dockerfile
+````dockerfile
+# syntax=docker/dockerfile:1
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Les dépendances Python actuelles n'exigent pas de bibliothèques système exotiques,
+# mais on installe les utilitaires essentiels pour sécuriser les builds futurs.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt requirements.txt
+RUN pip install --upgrade pip \
+    && pip install -r requirements.txt
+
+COPY . .
+
+# Utilisateur non root pour l'exécution.
+RUN useradd --create-home --shell /bin/bash appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
+ENV PORT=8000 \
+    GUNICORN_WORKERS=1 \
+    GUNICORN_THREADS=4 \
+    GUNICORN_TIMEOUT=120 \
+    GUNICORN_GRACEFUL_TIMEOUT=30 \
+    GUNICORN_KEEP_ALIVE=75 \
+    GUNICORN_MAX_REQUESTS=15000 \
+    GUNICORN_MAX_REQUESTS_JITTER=3000
+EXPOSE 8000
+
+# Gunicorn écrit déjà ses logs sur stdout/stderr ;
+# PYTHONUNBUFFERED assure la remontée immédiate des logs applicatifs (BG_POLLER, HEARTBEAT, etc.).
+CMD gunicorn \
+    --bind 0.0.0.0:$PORT \
+    --workers $GUNICORN_WORKERS \
+    --threads $GUNICORN_THREADS \
+    --timeout $GUNICORN_TIMEOUT \
+    --graceful-timeout $GUNICORN_GRACEFUL_TIMEOUT \
+    --keep-alive $GUNICORN_KEEP_ALIVE \
+    --max-requests $GUNICORN_MAX_REQUESTS \
+    --max-requests-jitter $GUNICORN_MAX_REQUESTS_JITTER \
+    app_render:app
+````
+
+## File: requirements.txt
+````
+Flask>=2.0
+gunicorn
+Flask-Login
+Flask-Cors>=4.0
+requests
+redis>=4.0
+email-validator
+typing_extensions>=4.7,<5
+````
+
+## File: config/app_config_store.py
+````python
+"""
+config.app_config_store
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Key-Value configuration store with External JSON backend and file fallback.
+- Provides get_config_json()/set_config_json() for dict payloads.
+- External backend configured via env vars: EXTERNAL_CONFIG_BASE_URL, CONFIG_API_TOKEN.
+- If external backend is unavailable, falls back to per-key JSON files provided by callers.
+
+Security: no secrets are logged; errors are swallowed and caller can fallback.
+"""
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+try:
+    import requests  # type: ignore
+except Exception:  # requests may be unavailable in some test contexts
+    requests = None  # type: ignore
+
+
+_REDIS_CLIENT = None
+
+
+def _get_redis_client():
+    global _REDIS_CLIENT
+
+    if _REDIS_CLIENT is not None:
+        return _REDIS_CLIENT
+
+    redis_url = os.environ.get("REDIS_URL")
+    if not isinstance(redis_url, str) or not redis_url.strip():
+        return None
+
+    try:
+        import redis  # type: ignore
+
+        _REDIS_CLIENT = redis.Redis.from_url(redis_url, decode_responses=True)
+        return _REDIS_CLIENT
+    except Exception:
+        return None
+
+
+def _config_redis_key(key: str) -> str:
+    prefix = os.environ.get("CONFIG_STORE_REDIS_PREFIX", "r:ss:config:")
+    return f"{prefix}{key}"
+
+
+def _store_mode() -> str:
+    mode = os.environ.get("CONFIG_STORE_MODE", "redis_first")
+    if not isinstance(mode, str):
+        return "redis_first"
+    mode = mode.strip().lower()
+    return mode if mode in {"redis_first", "php_first"} else "redis_first"
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _redis_get_json(key: str) -> Optional[Dict[str, Any]]:
+    if _env_bool("CONFIG_STORE_DISABLE_REDIS", False):
+        return None
+
+    client = _get_redis_client()
+    if client is None:
+        return None
+
+    try:
+        raw = client.get(_config_redis_key(key))
+        if not raw:
+            return None
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _redis_set_json(key: str, value: Dict[str, Any]) -> bool:
+    if _env_bool("CONFIG_STORE_DISABLE_REDIS", False):
+        return False
+
+    client = _get_redis_client()
+    if client is None:
+        return False
+
+    try:
+        client.set(_config_redis_key(key), json.dumps(value, ensure_ascii=False))
+        return True
+    except Exception:
+        return False
+
+def get_config_json(key: str, *, file_fallback: Optional[Path] = None) -> Dict[str, Any]:
+    """Fetch config dict for a key from External JSON backend, with file fallback.
+    Returns empty dict on any error.
+    """
+    mode = _store_mode()
+
+    if mode == "redis_first":
+        data = _redis_get_json(key)
+        if isinstance(data, dict):
+            return data
+
+    base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
+    api_token = os.environ.get("CONFIG_API_TOKEN")
+    if base_url and api_token and requests is not None:
+        try:
+            data = _external_config_get(base_url, api_token, key)
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+
+    if mode == "php_first":
+        data = _redis_get_json(key)
+        if isinstance(data, dict):
+            return data
+
+    # File fallback
+    if file_fallback and file_fallback.exists():
+        try:
+            with open(file_fallback, "r", encoding="utf-8") as f:
+                data = json.load(f) or {}
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+    return {}
+
+
+def set_config_json(key: str, value: Dict[str, Any], *, file_fallback: Optional[Path] = None) -> bool:
+    """Persist config dict for a key into External backend, fallback to file if needed."""
+    mode = _store_mode()
+
+    if mode == "redis_first":
+        if _redis_set_json(key, value):
+            return True
+
+    base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
+    api_token = os.environ.get("CONFIG_API_TOKEN")
+    if base_url and api_token and requests is not None:
+        try:
+            ok = _external_config_set(base_url, api_token, key, value)
+            if ok:
+                return True
+        except Exception:
+            pass
+
+    if mode == "php_first":
+        if _redis_set_json(key, value):
+            return True
+
+    # File fallback
+    if file_fallback is not None:
+        try:
+            file_fallback.parent.mkdir(parents=True, exist_ok=True)
+            with open(file_fallback, "w", encoding="utf-8") as f:
+                json.dump(value, f, indent=2, ensure_ascii=False)
+            return True
+        except Exception:
+            return False
+    return False
+
+
+# ---------------------------------------------------------------------------
+# External JSON backend helpers
+# ---------------------------------------------------------------------------
+def _external_config_get(base_url: str, token: str, key: str) -> Dict[str, Any]:
+    """GET config JSON from external PHP service. Raises on error."""
+    url = base_url.rstrip('/') + '/config_api.php'
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    params = {"key": key}
+    # Small timeout for robustness
+    resp = requests.get(url, headers=headers, params=params, timeout=6)  # type: ignore
+    if resp.status_code != 200:
+        raise RuntimeError(f"external get http={resp.status_code}")
+    data = resp.json()
+    if not isinstance(data, dict) or not data.get("success"):
+        raise RuntimeError("external get failed")
+    cfg = data.get("config") or {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _external_config_set(base_url: str, token: str, key: str, value: Dict[str, Any]) -> bool:
+    """POST config JSON to external PHP service. Returns True on success."""
+    url = base_url.rstrip('/') + '/config_api.php'
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json"}
+    body = {"key": key, "config": value}
+    resp = requests.post(url, headers=headers, data=json.dumps(body), timeout=8)  # type: ignore
+    if resp.status_code != 200:
+        return False
+    try:
+        data = resp.json()
+    except Exception:
+        return False
+    return bool(isinstance(data, dict) and data.get("success"))
 ````
 
 ## File: config/polling_config.py
@@ -7867,513 +8374,6 @@ class PollingConfigService:
             return bool(getattr(self._settings, "ENABLE_SUBJECT_GROUP_DEDUP", False))
         from config import settings
         return bool(getattr(settings, "ENABLE_SUBJECT_GROUP_DEDUP", False))
-````
-
-## File: email_processing/link_extraction.py
-````python
-"""
-email_processing.link_extraction
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Extraction des liens de fournisseurs (Dropbox, FromSmash, SwissTransfer)
-depuis un texte d'email.
-
-Cette extraction réutilise le regex `URL_PROVIDERS_PATTERN` défini dans
-`email_processing.pattern_matching` et le helper `detect_provider()` de
-`utils.text_helpers`.
-"""
-from __future__ import annotations
-
-import html
-from typing import List
-from typing_extensions import TypedDict
-
-from email_processing.pattern_matching import URL_PROVIDERS_PATTERN
-from utils.text_helpers import detect_provider as _detect_provider
-
-
-class ProviderLink(TypedDict):
-    """Structure d'un lien de fournisseur extrait d'un email."""
-    provider: str
-    raw_url: str
-
-
-def extract_provider_links_from_text(text: str) -> List[ProviderLink]:
-    """Extrait toutes les URLs supportées présentes dans un texte.
-
-    Les URLs sont dédupliquées tout en préservant l'ordre d'apparition.
-    Normalisation appliquée: strip() des URLs avant déduplication.
-
-    Args:
-        text: Chaîne source (plain + HTML brut possible)
-
-    Returns:
-        Liste de dicts {"provider": str, "raw_url": str}
-    """
-    results: List[ProviderLink] = []
-    if not text:
-        return results
-
-    def _should_skip_provider_url(provider: str, url: str) -> bool:
-        if provider != "dropbox":
-            return False
-        if not url:
-            return False
-
-        # Dropbox peut inclure dans certains emails des assets de preview (ex: avatar/logo).
-        # Cas observé: .../scl/fi/.../MS.png?...&raw=1
-        try:
-            parsed = html.unescape(url)
-        except Exception:
-            parsed = url
-
-        try:
-            from urllib.parse import urlsplit, parse_qs
-
-            parts = urlsplit(parsed)
-            host = (parts.hostname or "").lower()
-            path = (parts.path or "")
-            path_lower = path.lower()
-            if not host.endswith("dropbox.com"):
-                return False
-
-            filename = path_lower.split("/")[-1]
-            if not filename:
-                return False
-
-            qs = parse_qs(parts.query or "")
-            raw_values = qs.get("raw", [])
-            has_raw_one = any(str(v).strip() == "1" for v in raw_values)
-
-            if path_lower.startswith("/scl/fi/") and has_raw_one:
-                is_image = filename.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
-                if not is_image:
-                    return False
-
-                # Heuristique volontairement restrictive pour éviter de filtrer des livrables.
-                logo_like_prefixes = ("ms", "logo", "avatar", "profile")
-                base = filename.rsplit(".", 1)[0]
-                if base in logo_like_prefixes or any(base.startswith(p) for p in logo_like_prefixes):
-                    return True
-
-            return False
-        except Exception:
-            return False
-
-    seen_urls = set()
-    for m in URL_PROVIDERS_PATTERN.finditer(text):
-        raw = m.group(1).strip()
-        try:
-            raw = html.unescape(raw)
-        except Exception:
-            pass
-        if not raw:
-            continue
-        
-        provider = _detect_provider(raw)
-        if not provider:
-            continue
-
-        if _should_skip_provider_url(provider, raw):
-            continue
-            
-        # Déduplication: garder la première occurrence de chaque URL
-        if raw not in seen_urls:
-            seen_urls.add(raw)
-            results.append({"provider": provider, "raw_url": raw})
-    
-    return results
-````
-
-## File: routes/api_processing.py
-````python
-from __future__ import annotations
-
-from pathlib import Path
-
-from flask import Blueprint, jsonify, request
-from flask_login import login_required
-from config import app_config_store as _store
-from preferences import processing_prefs as _prefs_module
-
-bp = Blueprint("api_processing", __name__, url_prefix="/api/processing_prefs")
-legacy_bp = Blueprint("api_processing_legacy", __name__)
-
-# Storage compatible with legacy locations
-PROCESSING_PREFS_FILE = (
-    Path(__file__).resolve().parents[1] / "debug" / "processing_prefs.json"
-)
-DEFAULT_PROCESSING_PREFS = {
-    "exclude_keywords": [],
-    "require_attachments": False,
-    "max_email_size_mb": None,
-    "sender_priority": {},
-    "retry_count": 0,
-    "retry_delay_sec": 2,
-    "webhook_timeout_sec": 30,
-    "rate_limit_per_hour": 5,
-    "notify_on_failure": False,
-    "mirror_media_to_custom": True,  # Activer le miroir vers le webhook personnalisé par défaut
-}
-
-
-def _load_processing_prefs() -> dict:
-    """Load prefs from DB if available, else file; merge with defaults."""
-    data = _store.get_config_json(
-        "processing_prefs", file_fallback=PROCESSING_PREFS_FILE
-    ) or {}
-    if isinstance(data, dict):
-        return {**DEFAULT_PROCESSING_PREFS, **data}
-    return DEFAULT_PROCESSING_PREFS.copy()
-
-
-def _save_processing_prefs(prefs: dict) -> bool:
-    """Persist prefs to DB with file fallback."""
-    return _store.set_config_json(
-        "processing_prefs", prefs, file_fallback=PROCESSING_PREFS_FILE
-    )
-
-
-def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
-    """
-    Valide les préférences en normalisant les alias puis en déléguant à preferences.processing_prefs.
-    Les alias 'exclude_keywords_recadrage' et 'exclude_keywords_autorepondeur' sont conservés dans le résultat
-    mais la validation core est déléguée au module centralisé.
-    """
-    base_prefs = _load_processing_prefs()
-    
-    # Normalisation des alias: conserver les clés alias dans payload_normalized
-    payload_normalized = dict(payload)
-    
-    # Validation des alias spécifiques (extend keys used by UI and tests)
-    try:
-        if "exclude_keywords_recadrage" in payload:
-            val = payload["exclude_keywords_recadrage"]
-            if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
-                return False, "exclude_keywords_recadrage doit être une liste de chaînes", base_prefs
-            payload_normalized["exclude_keywords_recadrage"] = [x.strip() for x in val if x and isinstance(x, str)]
-        
-        if "exclude_keywords_autorepondeur" in payload:
-            val = payload["exclude_keywords_autorepondeur"]
-            if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
-                return False, "exclude_keywords_autorepondeur doit être une liste de chaînes", base_prefs
-            payload_normalized["exclude_keywords_autorepondeur"] = [x.strip() for x in val if x and isinstance(x, str)]
-    except Exception as e:
-        return False, f"Alias validation error: {e}", base_prefs
-    
-    # Déléguer la validation des champs core au module centralisé
-    ok, msg, validated_prefs = _prefs_module.validate_processing_prefs(payload_normalized, base_prefs)
-    
-    if not ok:
-        return ok, msg, validated_prefs
-    
-    # Ajouter les alias validés au résultat final si présents
-    if "exclude_keywords_recadrage" in payload_normalized:
-        validated_prefs["exclude_keywords_recadrage"] = payload_normalized["exclude_keywords_recadrage"]
-    if "exclude_keywords_autorepondeur" in payload_normalized:
-        validated_prefs["exclude_keywords_autorepondeur"] = payload_normalized["exclude_keywords_autorepondeur"]
-    
-    return True, "ok", validated_prefs
-
-
-@bp.route("", methods=["GET"])  # GET /api/processing_prefs
-@login_required
-def get_processing_prefs():
-    try:
-        return jsonify({"success": True, "prefs": _load_processing_prefs()})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
-
-
-@bp.route("", methods=["POST"])  # POST /api/processing_prefs
-@login_required
-def update_processing_prefs():
-    try:
-        payload = request.get_json(force=True, silent=True) or {}
-        ok, msg, new_prefs = _validate_processing_prefs(payload)
-        if not ok:
-            return jsonify({"success": False, "message": msg}), 400
-        if _save_processing_prefs(new_prefs):
-            return jsonify({"success": True, "message": "Préférences mises à jour.", "prefs": new_prefs})
-        return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
-
-
-# --- Legacy alias routes to maintain backward-compat URLs used by tests/UI ---
-@legacy_bp.route("/api/get_processing_prefs", methods=["GET"])  # legacy URL
-@login_required
-def legacy_get_processing_prefs():
-    return get_processing_prefs()
-
-
-@legacy_bp.route("/api/update_processing_prefs", methods=["POST"])  # legacy URL
-@login_required
-def legacy_update_processing_prefs():
-    return update_processing_prefs()
-````
-
-## File: services/__init__.py
-````python
-"""
-services
-~~~~~~~~
-
-Module contenant les services applicatifs pour une architecture orientée services.
-
-Les services encapsulent la logique métier et fournissent des interfaces cohérentes
-pour accéder aux différentes fonctionnalités de l'application.
-
-Services disponibles:
-- ConfigService: Configuration applicative centralisée
-- RuntimeFlagsService: Gestion des flags runtime avec cache
-- WebhookConfigService: Configuration webhooks avec validation
-- AuthService: Authentification unifiée (dashboard + API)
-- DeduplicationService: Déduplication emails et subject groups
-- R2TransferService: Transfert de fichiers vers Cloudflare R2
-
-Usage:
-    from services import ConfigService, AuthService
-    
-    config = ConfigService()
-    auth = AuthService(config)
-"""
-
-from services.config_service import ConfigService
-from services.runtime_flags_service import RuntimeFlagsService
-from services.webhook_config_service import WebhookConfigService
-from services.auth_service import AuthService
-from services.deduplication_service import DeduplicationService
-from services.magic_link_service import MagicLinkService
-from services.r2_transfer_service import R2TransferService
-
-__all__ = [
-    "ConfigService",
-    "RuntimeFlagsService",
-    "WebhookConfigService",
-    "AuthService",
-    "DeduplicationService",
-    "MagicLinkService",
-    "R2TransferService",
-]
-````
-
-## File: requirements.txt
-````
-Flask>=2.0
-gunicorn
-Flask-Login
-Flask-Cors>=4.0
-requests
-redis>=4.0
-email-validator
-typing_extensions>=4.7,<5
-````
-
-## File: config/app_config_store.py
-````python
-"""
-config.app_config_store
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-Key-Value configuration store with External JSON backend and file fallback.
-- Provides get_config_json()/set_config_json() for dict payloads.
-- External backend configured via env vars: EXTERNAL_CONFIG_BASE_URL, CONFIG_API_TOKEN.
-- If external backend is unavailable, falls back to per-key JSON files provided by callers.
-
-Security: no secrets are logged; errors are swallowed and caller can fallback.
-"""
-from __future__ import annotations
-
-import json
-import os
-from pathlib import Path
-from typing import Any, Dict, Optional
-
-try:
-    import requests  # type: ignore
-except Exception:  # requests may be unavailable in some test contexts
-    requests = None  # type: ignore
-
-
-_REDIS_CLIENT = None
-
-
-def _get_redis_client():
-    global _REDIS_CLIENT
-
-    if _REDIS_CLIENT is not None:
-        return _REDIS_CLIENT
-
-    redis_url = os.environ.get("REDIS_URL")
-    if not isinstance(redis_url, str) or not redis_url.strip():
-        return None
-
-    try:
-        import redis  # type: ignore
-
-        _REDIS_CLIENT = redis.Redis.from_url(redis_url, decode_responses=True)
-        return _REDIS_CLIENT
-    except Exception:
-        return None
-
-
-def _config_redis_key(key: str) -> str:
-    prefix = os.environ.get("CONFIG_STORE_REDIS_PREFIX", "r:ss:config:")
-    return f"{prefix}{key}"
-
-
-def _store_mode() -> str:
-    mode = os.environ.get("CONFIG_STORE_MODE", "redis_first")
-    if not isinstance(mode, str):
-        return "redis_first"
-    mode = mode.strip().lower()
-    return mode if mode in {"redis_first", "php_first"} else "redis_first"
-
-
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return bool(default)
-    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
-
-
-def _redis_get_json(key: str) -> Optional[Dict[str, Any]]:
-    if _env_bool("CONFIG_STORE_DISABLE_REDIS", False):
-        return None
-
-    client = _get_redis_client()
-    if client is None:
-        return None
-
-    try:
-        raw = client.get(_config_redis_key(key))
-        if not raw:
-            return None
-        data = json.loads(raw)
-        return data if isinstance(data, dict) else None
-    except Exception:
-        return None
-
-
-def _redis_set_json(key: str, value: Dict[str, Any]) -> bool:
-    if _env_bool("CONFIG_STORE_DISABLE_REDIS", False):
-        return False
-
-    client = _get_redis_client()
-    if client is None:
-        return False
-
-    try:
-        client.set(_config_redis_key(key), json.dumps(value, ensure_ascii=False))
-        return True
-    except Exception:
-        return False
-
-def get_config_json(key: str, *, file_fallback: Optional[Path] = None) -> Dict[str, Any]:
-    """Fetch config dict for a key from External JSON backend, with file fallback.
-    Returns empty dict on any error.
-    """
-    mode = _store_mode()
-
-    if mode == "redis_first":
-        data = _redis_get_json(key)
-        if isinstance(data, dict):
-            return data
-
-    base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
-    api_token = os.environ.get("CONFIG_API_TOKEN")
-    if base_url and api_token and requests is not None:
-        try:
-            data = _external_config_get(base_url, api_token, key)
-            if isinstance(data, dict):
-                return data
-        except Exception:
-            pass
-
-    if mode == "php_first":
-        data = _redis_get_json(key)
-        if isinstance(data, dict):
-            return data
-
-    # File fallback
-    if file_fallback and file_fallback.exists():
-        try:
-            with open(file_fallback, "r", encoding="utf-8") as f:
-                data = json.load(f) or {}
-                if isinstance(data, dict):
-                    return data
-        except Exception:
-            pass
-    return {}
-
-
-def set_config_json(key: str, value: Dict[str, Any], *, file_fallback: Optional[Path] = None) -> bool:
-    """Persist config dict for a key into External backend, fallback to file if needed."""
-    mode = _store_mode()
-
-    if mode == "redis_first":
-        if _redis_set_json(key, value):
-            return True
-
-    base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
-    api_token = os.environ.get("CONFIG_API_TOKEN")
-    if base_url and api_token and requests is not None:
-        try:
-            ok = _external_config_set(base_url, api_token, key, value)
-            if ok:
-                return True
-        except Exception:
-            pass
-
-    if mode == "php_first":
-        if _redis_set_json(key, value):
-            return True
-
-    # File fallback
-    if file_fallback is not None:
-        try:
-            file_fallback.parent.mkdir(parents=True, exist_ok=True)
-            with open(file_fallback, "w", encoding="utf-8") as f:
-                json.dump(value, f, indent=2, ensure_ascii=False)
-            return True
-        except Exception:
-            return False
-    return False
-
-
-# ---------------------------------------------------------------------------
-# External JSON backend helpers
-# ---------------------------------------------------------------------------
-def _external_config_get(base_url: str, token: str, key: str) -> Dict[str, Any]:
-    """GET config JSON from external PHP service. Raises on error."""
-    url = base_url.rstrip('/') + '/config_api.php'
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-    params = {"key": key}
-    # Small timeout for robustness
-    resp = requests.get(url, headers=headers, params=params, timeout=6)  # type: ignore
-    if resp.status_code != 200:
-        raise RuntimeError(f"external get http={resp.status_code}")
-    data = resp.json()
-    if not isinstance(data, dict) or not data.get("success"):
-        raise RuntimeError("external get failed")
-    cfg = data.get("config") or {}
-    return cfg if isinstance(cfg, dict) else {}
-
-
-def _external_config_set(base_url: str, token: str, key: str, value: Dict[str, Any]) -> bool:
-    """POST config JSON to external PHP service. Returns True on success."""
-    url = base_url.rstrip('/') + '/config_api.php'
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json"}
-    body = {"key": key, "config": value}
-    resp = requests.post(url, headers=headers, data=json.dumps(body), timeout=8)  # type: ignore
-    if resp.status_code != 200:
-        return False
-    try:
-        data = resp.json()
-    except Exception:
-        return False
-    return bool(isinstance(data, dict) and data.get("success"))
 ````
 
 ## File: email_processing/webhook_sender.py
@@ -10671,379 +10671,6 @@ export class WebhookService {
 }
 ````
 
-## File: routes/api_config.py
-````python
-from __future__ import annotations
-
-import json
-import re
-from datetime import datetime
-from typing import Tuple
-
-from flask import Blueprint, jsonify, request
-from flask_login import login_required
-
-from config import webhook_time_window, polling_config, settings
-from config import app_config_store as _store
-from config.settings import (
-    RUNTIME_FLAGS_FILE,
-    DISABLE_EMAIL_ID_DEDUP as DEFAULT_DISABLE_EMAIL_ID_DEDUP,
-    ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS as DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS,
-    POLLING_TIMEZONE_STR,
-    EMAIL_POLLING_INTERVAL_SECONDS,
-    POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
-    POLLING_CONFIG_FILE,
-)
-# Phase 3: Import des services
-from services import RuntimeFlagsService
-
-bp = Blueprint("api_config", __name__, url_prefix="/api")
-
-# Phase 3: Récupérer l'instance RuntimeFlagsService (Singleton)
-# L'instance est déjà initialisée dans app_render.py
-try:
-    _runtime_flags_service = RuntimeFlagsService.get_instance()
-except ValueError:
-    # Fallback: initialiser si pas encore fait (cas tests)
-    _runtime_flags_service = RuntimeFlagsService.get_instance(
-        file_path=RUNTIME_FLAGS_FILE,
-        defaults={
-            "disable_email_id_dedup": bool(DEFAULT_DISABLE_EMAIL_ID_DEDUP),
-            "allow_custom_webhook_without_links": bool(DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
-        }
-    )
-
-
-# Phase 4: Wrappers legacy supprimés - Appels directs aux services
-
-
-# ---- Time window (session-protected) ----
-
-@bp.route("/get_webhook_time_window", methods=["GET"])  # GET /api/get_webhook_time_window
-@login_required
-def get_webhook_time_window():
-    try:
-        # Best-effort: pull latest values from external store to reflect remote edits
-        try:
-            cfg = _store.get_config_json("webhook_config") or {}
-            gs = (cfg.get("global_time_start") or "").strip()
-            ge = (cfg.get("global_time_end") or "").strip()
-            # Only sync when BOTH values are provided (non-empty). Do NOT clear on double-empty here.
-            if (gs != "" and ge != ""):
-                webhook_time_window.update_time_window(gs, ge)
-        except Exception:
-            pass
-        info = webhook_time_window.get_time_window_info()
-        return (
-            jsonify(
-                {
-                    "success": True,
-                    "webhooks_time_start": info.get("start") or None,
-                    "webhooks_time_end": info.get("end") or None,
-                    "timezone": POLLING_TIMEZONE_STR,
-                }
-            ),
-            200,
-        )
-    except Exception:
-        return jsonify({"success": False, "message": "Erreur lors de la récupération de la fenêtre horaire."}), 500
-
-
-@bp.route("/set_webhook_time_window", methods=["POST"])  # POST /api/set_webhook_time_window
-@login_required
-def set_webhook_time_window():
-    try:
-        payload = request.get_json(silent=True) or {}
-        start = payload.get("start", "")
-        end = payload.get("end", "")
-        ok, msg = webhook_time_window.update_time_window(start, end)
-        status = 200 if ok else 400
-        info = webhook_time_window.get_time_window_info()
-        # Best-effort: mirror the global time window to external config store under
-        # webhook_config as global_time_start/global_time_end so that
-        # https://webhook.kidpixel.fr/data/app_config/webhook_config.json reflects it too.
-        try:
-            cfg = _store.get_config_json("webhook_config") or {}
-            cfg["global_time_start"] = (info.get("start") or "") or None
-            cfg["global_time_end"] = (info.get("end") or "") or None
-            # Do not fail the request if external store is unavailable
-            _store.set_config_json("webhook_config", cfg)
-        except Exception:
-            pass
-        return (
-            jsonify(
-                {
-                    "success": ok,
-                    "message": msg,
-                    "webhooks_time_start": info.get("start") or None,
-                    "webhooks_time_end": info.get("end") or None,
-                }
-            ),
-            status,
-        )
-    except Exception:
-        return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}), 500
-
-
-# ---- Runtime flags (session-protected) ----
-
-@bp.route("/get_runtime_flags", methods=["GET"])  # GET /api/get_runtime_flags
-@login_required
-def get_runtime_flags():
-    """Récupère les flags runtime.
-    
-    Phase 4: Appel direct à RuntimeFlagsService (cache intelligent 60s).
-    """
-    try:
-        # Appel direct au service (cache si valide, sinon reload)
-        data = _runtime_flags_service.get_all_flags()
-        return jsonify({"success": True, "flags": data}), 200
-    except Exception:
-        return jsonify({"success": False, "message": "Erreur interne"}), 500
-
-
-@bp.route("/update_runtime_flags", methods=["POST"])  # POST /api/update_runtime_flags
-@login_required
-def update_runtime_flags():
-    """Met à jour les flags runtime.
-    
-    Phase 4: Appel direct à RuntimeFlagsService.update_flags() - Atomic update + invalidation cache.
-    """
-    try:
-        payload = request.get_json(silent=True) or {}
-        
-        # Préparer les mises à jour (validation)
-        updates = {}
-        if "disable_email_id_dedup" in payload:
-            updates["disable_email_id_dedup"] = bool(payload.get("disable_email_id_dedup"))
-        if "allow_custom_webhook_without_links" in payload:
-            updates["allow_custom_webhook_without_links"] = bool(payload.get("allow_custom_webhook_without_links"))
-        
-        # Appel direct au service (mise à jour atomique + persiste + invalide cache)
-        if not _runtime_flags_service.update_flags(updates):
-            return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
-        
-        # Récupérer les flags à jour
-        data = _runtime_flags_service.get_all_flags()
-        return jsonify({
-            "success": True,
-            "flags": data,
-            "message": "Modifications enregistrées. Un redémarrage peut être nécessaire."
-        }), 200
-    except Exception:
-        return jsonify({"success": False, "message": "Erreur interne"}), 500
-
-
-# ---- Polling configuration (session-protected) ----
-
-@bp.route("/get_polling_config", methods=["GET"])  # GET /api/get_polling_config
-@login_required
-def get_polling_config():
-    try:
-        # Read live settings at call time to honor pytest patch.object overrides
-        from importlib import import_module as _import_module
-        live_settings = _import_module('config.settings')
-        # Prefer values from external store/file if available to reflect persisted UI choices
-        persisted = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
-        default_active_days = getattr(live_settings, 'POLLING_ACTIVE_DAYS', settings.POLLING_ACTIVE_DAYS)
-        default_start_hour = getattr(live_settings, 'POLLING_ACTIVE_START_HOUR', settings.POLLING_ACTIVE_START_HOUR)
-        default_end_hour = getattr(live_settings, 'POLLING_ACTIVE_END_HOUR', settings.POLLING_ACTIVE_END_HOUR)
-        default_enable_subject_dedup = getattr(
-            live_settings,
-            'ENABLE_SUBJECT_GROUP_DEDUP',
-            settings.ENABLE_SUBJECT_GROUP_DEDUP,
-        )
-        cfg = {
-            "active_days": persisted.get("active_days", default_active_days),
-            "active_start_hour": persisted.get("active_start_hour", default_start_hour),
-            "active_end_hour": persisted.get("active_end_hour", default_end_hour),
-            "enable_subject_group_dedup": persisted.get(
-                "enable_subject_group_dedup",
-                default_enable_subject_dedup,
-            ),
-            "timezone": getattr(live_settings, 'POLLING_TIMEZONE_STR', POLLING_TIMEZONE_STR),
-            # Still expose persisted sender list if present, else settings default
-            "sender_of_interest_for_polling": persisted.get("sender_of_interest_for_polling", getattr(live_settings, 'SENDER_LIST_FOR_POLLING', settings.SENDER_LIST_FOR_POLLING)),
-            "vacation_start": persisted.get("vacation_start", polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None),
-            "vacation_end": persisted.get("vacation_end", polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None),
-            # Global enable toggle: prefer persisted, fallback helper
-            "enable_polling": persisted.get("enable_polling", True),
-        }
-        return jsonify({"success": True, "config": cfg}), 200
-    except Exception:
-        return jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration polling."}), 500
-
-
-@bp.route("/update_polling_config", methods=["POST"])  # POST /api/update_polling_config
-@login_required
-def update_polling_config():
-    try:
-        payload = request.get_json(silent=True) or {}
-        # Charger l'existant depuis le store (fallback fichier)
-        existing: dict = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
-
-        # Normalisation des champs
-        new_days = None
-        if 'active_days' in payload:
-            days_val = payload['active_days']
-            parsed_days: list[int] = []
-            if isinstance(days_val, str):
-                parts = [p.strip() for p in days_val.split(',') if p.strip()]
-                for p in parts:
-                    if p.isdigit():
-                        d = int(p)
-                        if 0 <= d <= 6:
-                            parsed_days.append(d)
-            elif isinstance(days_val, list):
-                for p in days_val:
-                    try:
-                        d = int(p)
-                        if 0 <= d <= 6:
-                            parsed_days.append(d)
-                    except Exception:
-                        continue
-            if parsed_days:
-                new_days = sorted(set(parsed_days))
-            else:
-                new_days = [0, 1, 2, 3, 4]
-
-        new_start = None
-        if 'active_start_hour' in payload:
-            try:
-                v = int(payload['active_start_hour'])
-                if 0 <= v <= 23:
-                    new_start = v
-                else:
-                    return jsonify({"success": False, "message": "active_start_hour doit être entre 0 et 23."}), 400
-            except Exception:
-                return jsonify({"success": False, "message": "active_start_hour invalide (entier attendu)."}), 400
-
-        new_end = None
-        if 'active_end_hour' in payload:
-            try:
-                v = int(payload['active_end_hour'])
-                if 0 <= v <= 23:
-                    new_end = v
-                else:
-                    return jsonify({"success": False, "message": "active_end_hour doit être entre 0 et 23."}), 400
-            except Exception:
-                return jsonify({"success": False, "message": "active_end_hour invalide (entier attendu)."}), 400
-
-        new_dedup = None
-        if 'enable_subject_group_dedup' in payload:
-            new_dedup = bool(payload['enable_subject_group_dedup'])
-
-        new_senders = None
-        if 'sender_of_interest_for_polling' in payload:
-            candidates = payload['sender_of_interest_for_polling']
-            normalized: list[str] = []
-            if isinstance(candidates, str):
-                parts = [p.strip() for p in candidates.split(',') if p.strip()]
-            elif isinstance(candidates, list):
-                parts = [str(p).strip() for p in candidates if str(p).strip()]
-            else:
-                parts = []
-            email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-            for p in parts:
-                low = p.lower()
-                if email_re.match(low):
-                    normalized.append(low)
-            seen = set()
-            unique_norm = []
-            for s in normalized:
-                if s not in seen:
-                    seen.add(s)
-                    unique_norm.append(s)
-            new_senders = unique_norm
-
-        # Vacation dates (ISO YYYY-MM-DD)
-        new_vac_start = None
-        if 'vacation_start' in payload:
-            vs = payload['vacation_start']
-            if vs in (None, ""):
-                new_vac_start = None
-            else:
-                try:
-                    new_vac_start = datetime.fromisoformat(str(vs)).date()
-                except Exception:
-                    return jsonify({"success": False, "message": "vacation_start invalide (format YYYY-MM-DD)."}), 400
-
-        new_vac_end = None
-        if 'vacation_end' in payload:
-            ve = payload['vacation_end']
-            if ve in (None, ""):
-                new_vac_end = None
-            else:
-                try:
-                    new_vac_end = datetime.fromisoformat(str(ve)).date()
-                except Exception:
-                    return jsonify({"success": False, "message": "vacation_end invalide (format YYYY-MM-DD)."}), 400
-
-        if new_vac_start is not None and new_vac_end is not None and new_vac_start > new_vac_end:
-            return jsonify({"success": False, "message": "vacation_start doit être <= vacation_end."}), 400
-
-        # Global enable (boolean)
-        new_enable_polling = None
-        if 'enable_polling' in payload:
-            try:
-                val = payload.get('enable_polling')
-                if isinstance(val, bool):
-                    new_enable_polling = val
-                elif isinstance(val, (int, float)):
-                    new_enable_polling = bool(val)
-                elif isinstance(val, str):
-                    s = val.strip().lower()
-                    if s in {"1", "true", "yes", "y", "on"}:
-                        new_enable_polling = True
-                    elif s in {"0", "false", "no", "n", "off"}:
-                        new_enable_polling = False
-            except Exception:
-                new_enable_polling = None
-
-        # Persistance via store (avec fallback fichier)
-        merged = dict(existing)
-        if new_days is not None:
-            merged['active_days'] = new_days
-        if new_start is not None:
-            merged['active_start_hour'] = new_start
-        if new_end is not None:
-            merged['active_end_hour'] = new_end
-        if new_dedup is not None:
-            merged['enable_subject_group_dedup'] = new_dedup
-        if new_senders is not None:
-            merged['sender_of_interest_for_polling'] = new_senders
-        if 'vacation_start' in payload:
-            merged['vacation_start'] = new_vac_start.isoformat() if new_vac_start else None
-        if 'vacation_end' in payload:
-            merged['vacation_end'] = new_vac_end.isoformat() if new_vac_end else None
-        if new_enable_polling is not None:
-            merged['enable_polling'] = new_enable_polling
-
-        try:
-            ok = _store.set_config_json("polling_config", merged, file_fallback=POLLING_CONFIG_FILE)
-            if not ok:
-                return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
-        except Exception:
-            return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
-
-        return jsonify({
-            "success": True,
-            "config": {
-                "active_days": merged.get('active_days', settings.POLLING_ACTIVE_DAYS),
-                "active_start_hour": merged.get('active_start_hour', settings.POLLING_ACTIVE_START_HOUR),
-                "active_end_hour": merged.get('active_end_hour', settings.POLLING_ACTIVE_END_HOUR),
-                "enable_subject_group_dedup": merged.get('enable_subject_group_dedup', settings.ENABLE_SUBJECT_GROUP_DEDUP),
-                "sender_of_interest_for_polling": merged.get('sender_of_interest_for_polling', settings.SENDER_LIST_FOR_POLLING),
-                "vacation_start": merged.get('vacation_start'),
-                "vacation_end": merged.get('vacation_end'),
-                "enable_polling": merged.get('enable_polling', polling_config.get_enable_polling(True)),
-            },
-            "message": "Configuration polling mise à jour. Un redémarrage peut être nécessaire pour prise en compte complète."
-        }), 200
-    except Exception:
-        return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour du polling."}), 500
-````
-
 ## File: services/webhook_config_service.py
 ````python
 """
@@ -11536,6 +11163,379 @@ class WebhookConfigService:
         """Représentation du service."""
         has_url = "yes" if self.has_webhook_url() else "no"
         return f"<WebhookConfigService(file={self._file_path.name}, has_url={has_url})>"
+````
+
+## File: routes/api_config.py
+````python
+from __future__ import annotations
+
+import json
+import re
+from datetime import datetime
+from typing import Tuple
+
+from flask import Blueprint, jsonify, request
+from flask_login import login_required
+
+from config import webhook_time_window, polling_config, settings
+from config import app_config_store as _store
+from config.settings import (
+    RUNTIME_FLAGS_FILE,
+    DISABLE_EMAIL_ID_DEDUP as DEFAULT_DISABLE_EMAIL_ID_DEDUP,
+    ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS as DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS,
+    POLLING_TIMEZONE_STR,
+    EMAIL_POLLING_INTERVAL_SECONDS,
+    POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
+    POLLING_CONFIG_FILE,
+)
+# Phase 3: Import des services
+from services import RuntimeFlagsService
+
+bp = Blueprint("api_config", __name__, url_prefix="/api")
+
+# Phase 3: Récupérer l'instance RuntimeFlagsService (Singleton)
+# L'instance est déjà initialisée dans app_render.py
+try:
+    _runtime_flags_service = RuntimeFlagsService.get_instance()
+except ValueError:
+    # Fallback: initialiser si pas encore fait (cas tests)
+    _runtime_flags_service = RuntimeFlagsService.get_instance(
+        file_path=RUNTIME_FLAGS_FILE,
+        defaults={
+            "disable_email_id_dedup": bool(DEFAULT_DISABLE_EMAIL_ID_DEDUP),
+            "allow_custom_webhook_without_links": bool(DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
+        }
+    )
+
+
+# Phase 4: Wrappers legacy supprimés - Appels directs aux services
+
+
+# ---- Time window (session-protected) ----
+
+@bp.route("/get_webhook_time_window", methods=["GET"])  # GET /api/get_webhook_time_window
+@login_required
+def get_webhook_time_window():
+    try:
+        # Best-effort: pull latest values from external store to reflect remote edits
+        try:
+            cfg = _store.get_config_json("webhook_config") or {}
+            gs = (cfg.get("global_time_start") or "").strip()
+            ge = (cfg.get("global_time_end") or "").strip()
+            # Only sync when BOTH values are provided (non-empty). Do NOT clear on double-empty here.
+            if (gs != "" and ge != ""):
+                webhook_time_window.update_time_window(gs, ge)
+        except Exception:
+            pass
+        info = webhook_time_window.get_time_window_info()
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "webhooks_time_start": info.get("start") or None,
+                    "webhooks_time_end": info.get("end") or None,
+                    "timezone": POLLING_TIMEZONE_STR,
+                }
+            ),
+            200,
+        )
+    except Exception:
+        return jsonify({"success": False, "message": "Erreur lors de la récupération de la fenêtre horaire."}), 500
+
+
+@bp.route("/set_webhook_time_window", methods=["POST"])  # POST /api/set_webhook_time_window
+@login_required
+def set_webhook_time_window():
+    try:
+        payload = request.get_json(silent=True) or {}
+        start = payload.get("start", "")
+        end = payload.get("end", "")
+        ok, msg = webhook_time_window.update_time_window(start, end)
+        status = 200 if ok else 400
+        info = webhook_time_window.get_time_window_info()
+        # Best-effort: mirror the global time window to external config store under
+        # webhook_config as global_time_start/global_time_end so that
+        # https://webhook.kidpixel.fr/data/app_config/webhook_config.json reflects it too.
+        try:
+            cfg = _store.get_config_json("webhook_config") or {}
+            cfg["global_time_start"] = (info.get("start") or "") or None
+            cfg["global_time_end"] = (info.get("end") or "") or None
+            # Do not fail the request if external store is unavailable
+            _store.set_config_json("webhook_config", cfg)
+        except Exception:
+            pass
+        return (
+            jsonify(
+                {
+                    "success": ok,
+                    "message": msg,
+                    "webhooks_time_start": info.get("start") or None,
+                    "webhooks_time_end": info.get("end") or None,
+                }
+            ),
+            status,
+        )
+    except Exception:
+        return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}), 500
+
+
+# ---- Runtime flags (session-protected) ----
+
+@bp.route("/get_runtime_flags", methods=["GET"])  # GET /api/get_runtime_flags
+@login_required
+def get_runtime_flags():
+    """Récupère les flags runtime.
+    
+    Phase 4: Appel direct à RuntimeFlagsService (cache intelligent 60s).
+    """
+    try:
+        # Appel direct au service (cache si valide, sinon reload)
+        data = _runtime_flags_service.get_all_flags()
+        return jsonify({"success": True, "flags": data}), 200
+    except Exception:
+        return jsonify({"success": False, "message": "Erreur interne"}), 500
+
+
+@bp.route("/update_runtime_flags", methods=["POST"])  # POST /api/update_runtime_flags
+@login_required
+def update_runtime_flags():
+    """Met à jour les flags runtime.
+    
+    Phase 4: Appel direct à RuntimeFlagsService.update_flags() - Atomic update + invalidation cache.
+    """
+    try:
+        payload = request.get_json(silent=True) or {}
+        
+        # Préparer les mises à jour (validation)
+        updates = {}
+        if "disable_email_id_dedup" in payload:
+            updates["disable_email_id_dedup"] = bool(payload.get("disable_email_id_dedup"))
+        if "allow_custom_webhook_without_links" in payload:
+            updates["allow_custom_webhook_without_links"] = bool(payload.get("allow_custom_webhook_without_links"))
+        
+        # Appel direct au service (mise à jour atomique + persiste + invalide cache)
+        if not _runtime_flags_service.update_flags(updates):
+            return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
+        
+        # Récupérer les flags à jour
+        data = _runtime_flags_service.get_all_flags()
+        return jsonify({
+            "success": True,
+            "flags": data,
+            "message": "Modifications enregistrées. Un redémarrage peut être nécessaire."
+        }), 200
+    except Exception:
+        return jsonify({"success": False, "message": "Erreur interne"}), 500
+
+
+# ---- Polling configuration (session-protected) ----
+
+@bp.route("/get_polling_config", methods=["GET"])  # GET /api/get_polling_config
+@login_required
+def get_polling_config():
+    try:
+        # Read live settings at call time to honor pytest patch.object overrides
+        from importlib import import_module as _import_module
+        live_settings = _import_module('config.settings')
+        # Prefer values from external store/file if available to reflect persisted UI choices
+        persisted = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
+        default_active_days = getattr(live_settings, 'POLLING_ACTIVE_DAYS', settings.POLLING_ACTIVE_DAYS)
+        default_start_hour = getattr(live_settings, 'POLLING_ACTIVE_START_HOUR', settings.POLLING_ACTIVE_START_HOUR)
+        default_end_hour = getattr(live_settings, 'POLLING_ACTIVE_END_HOUR', settings.POLLING_ACTIVE_END_HOUR)
+        default_enable_subject_dedup = getattr(
+            live_settings,
+            'ENABLE_SUBJECT_GROUP_DEDUP',
+            settings.ENABLE_SUBJECT_GROUP_DEDUP,
+        )
+        cfg = {
+            "active_days": persisted.get("active_days", default_active_days),
+            "active_start_hour": persisted.get("active_start_hour", default_start_hour),
+            "active_end_hour": persisted.get("active_end_hour", default_end_hour),
+            "enable_subject_group_dedup": persisted.get(
+                "enable_subject_group_dedup",
+                default_enable_subject_dedup,
+            ),
+            "timezone": getattr(live_settings, 'POLLING_TIMEZONE_STR', POLLING_TIMEZONE_STR),
+            # Still expose persisted sender list if present, else settings default
+            "sender_of_interest_for_polling": persisted.get("sender_of_interest_for_polling", getattr(live_settings, 'SENDER_LIST_FOR_POLLING', settings.SENDER_LIST_FOR_POLLING)),
+            "vacation_start": persisted.get("vacation_start", polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None),
+            "vacation_end": persisted.get("vacation_end", polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None),
+            # Global enable toggle: prefer persisted, fallback helper
+            "enable_polling": persisted.get("enable_polling", True),
+        }
+        return jsonify({"success": True, "config": cfg}), 200
+    except Exception:
+        return jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration polling."}), 500
+
+
+@bp.route("/update_polling_config", methods=["POST"])  # POST /api/update_polling_config
+@login_required
+def update_polling_config():
+    try:
+        payload = request.get_json(silent=True) or {}
+        # Charger l'existant depuis le store (fallback fichier)
+        existing: dict = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
+
+        # Normalisation des champs
+        new_days = None
+        if 'active_days' in payload:
+            days_val = payload['active_days']
+            parsed_days: list[int] = []
+            if isinstance(days_val, str):
+                parts = [p.strip() for p in days_val.split(',') if p.strip()]
+                for p in parts:
+                    if p.isdigit():
+                        d = int(p)
+                        if 0 <= d <= 6:
+                            parsed_days.append(d)
+            elif isinstance(days_val, list):
+                for p in days_val:
+                    try:
+                        d = int(p)
+                        if 0 <= d <= 6:
+                            parsed_days.append(d)
+                    except Exception:
+                        continue
+            if parsed_days:
+                new_days = sorted(set(parsed_days))
+            else:
+                new_days = [0, 1, 2, 3, 4]
+
+        new_start = None
+        if 'active_start_hour' in payload:
+            try:
+                v = int(payload['active_start_hour'])
+                if 0 <= v <= 23:
+                    new_start = v
+                else:
+                    return jsonify({"success": False, "message": "active_start_hour doit être entre 0 et 23."}), 400
+            except Exception:
+                return jsonify({"success": False, "message": "active_start_hour invalide (entier attendu)."}), 400
+
+        new_end = None
+        if 'active_end_hour' in payload:
+            try:
+                v = int(payload['active_end_hour'])
+                if 0 <= v <= 23:
+                    new_end = v
+                else:
+                    return jsonify({"success": False, "message": "active_end_hour doit être entre 0 et 23."}), 400
+            except Exception:
+                return jsonify({"success": False, "message": "active_end_hour invalide (entier attendu)."}), 400
+
+        new_dedup = None
+        if 'enable_subject_group_dedup' in payload:
+            new_dedup = bool(payload['enable_subject_group_dedup'])
+
+        new_senders = None
+        if 'sender_of_interest_for_polling' in payload:
+            candidates = payload['sender_of_interest_for_polling']
+            normalized: list[str] = []
+            if isinstance(candidates, str):
+                parts = [p.strip() for p in candidates.split(',') if p.strip()]
+            elif isinstance(candidates, list):
+                parts = [str(p).strip() for p in candidates if str(p).strip()]
+            else:
+                parts = []
+            email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+            for p in parts:
+                low = p.lower()
+                if email_re.match(low):
+                    normalized.append(low)
+            seen = set()
+            unique_norm = []
+            for s in normalized:
+                if s not in seen:
+                    seen.add(s)
+                    unique_norm.append(s)
+            new_senders = unique_norm
+
+        # Vacation dates (ISO YYYY-MM-DD)
+        new_vac_start = None
+        if 'vacation_start' in payload:
+            vs = payload['vacation_start']
+            if vs in (None, ""):
+                new_vac_start = None
+            else:
+                try:
+                    new_vac_start = datetime.fromisoformat(str(vs)).date()
+                except Exception:
+                    return jsonify({"success": False, "message": "vacation_start invalide (format YYYY-MM-DD)."}), 400
+
+        new_vac_end = None
+        if 'vacation_end' in payload:
+            ve = payload['vacation_end']
+            if ve in (None, ""):
+                new_vac_end = None
+            else:
+                try:
+                    new_vac_end = datetime.fromisoformat(str(ve)).date()
+                except Exception:
+                    return jsonify({"success": False, "message": "vacation_end invalide (format YYYY-MM-DD)."}), 400
+
+        if new_vac_start is not None and new_vac_end is not None and new_vac_start > new_vac_end:
+            return jsonify({"success": False, "message": "vacation_start doit être <= vacation_end."}), 400
+
+        # Global enable (boolean)
+        new_enable_polling = None
+        if 'enable_polling' in payload:
+            try:
+                val = payload.get('enable_polling')
+                if isinstance(val, bool):
+                    new_enable_polling = val
+                elif isinstance(val, (int, float)):
+                    new_enable_polling = bool(val)
+                elif isinstance(val, str):
+                    s = val.strip().lower()
+                    if s in {"1", "true", "yes", "y", "on"}:
+                        new_enable_polling = True
+                    elif s in {"0", "false", "no", "n", "off"}:
+                        new_enable_polling = False
+            except Exception:
+                new_enable_polling = None
+
+        # Persistance via store (avec fallback fichier)
+        merged = dict(existing)
+        if new_days is not None:
+            merged['active_days'] = new_days
+        if new_start is not None:
+            merged['active_start_hour'] = new_start
+        if new_end is not None:
+            merged['active_end_hour'] = new_end
+        if new_dedup is not None:
+            merged['enable_subject_group_dedup'] = new_dedup
+        if new_senders is not None:
+            merged['sender_of_interest_for_polling'] = new_senders
+        if 'vacation_start' in payload:
+            merged['vacation_start'] = new_vac_start.isoformat() if new_vac_start else None
+        if 'vacation_end' in payload:
+            merged['vacation_end'] = new_vac_end.isoformat() if new_vac_end else None
+        if new_enable_polling is not None:
+            merged['enable_polling'] = new_enable_polling
+
+        try:
+            ok = _store.set_config_json("polling_config", merged, file_fallback=POLLING_CONFIG_FILE)
+            if not ok:
+                return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
+        except Exception:
+            return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
+
+        return jsonify({
+            "success": True,
+            "config": {
+                "active_days": merged.get('active_days', settings.POLLING_ACTIVE_DAYS),
+                "active_start_hour": merged.get('active_start_hour', settings.POLLING_ACTIVE_START_HOUR),
+                "active_end_hour": merged.get('active_end_hour', settings.POLLING_ACTIVE_END_HOUR),
+                "enable_subject_group_dedup": merged.get('enable_subject_group_dedup', settings.ENABLE_SUBJECT_GROUP_DEDUP),
+                "sender_of_interest_for_polling": merged.get('sender_of_interest_for_polling', settings.SENDER_LIST_FOR_POLLING),
+                "vacation_start": merged.get('vacation_start'),
+                "vacation_end": merged.get('vacation_end'),
+                "enable_polling": merged.get('enable_polling', polling_config.get_enable_polling(True)),
+            },
+            "message": "Configuration polling mise à jour. Un redémarrage peut être nécessaire pour prise en compte complète."
+        }), 200
+    except Exception:
+        return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour du polling."}), 500
 ````
 
 ## File: routes/api_admin.py

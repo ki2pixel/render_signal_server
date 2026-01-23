@@ -13,7 +13,7 @@ bp = Blueprint("api_polling", __name__, url_prefix="/api/polling")
 WEBHOOK_CONFIG_FILE = _WEBHOOK_CONFIG_FILE
 
 
-@bp.route("/toggle", methods=["POST"])  # POST /api/polling/toggle
+@bp.route("/toggle", methods=["POST"])
 @login_required
 def toggle_polling():
     """Minimal legacy-compatible endpoint to toggle polling.

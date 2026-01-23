@@ -125,6 +125,20 @@ export class TabManager {
     }
 
     /**
+     * Signale une erreur lors du chargement d'un onglet via un événement personnalisé
+     * @param {string} tabId
+     * @param {Error} error
+     */
+    dispatchTabLoadError(tabId, error) {
+        document.dispatchEvent(new CustomEvent('tabloaderror', {
+            detail: {
+                tabId,
+                error
+            }
+        }));
+    }
+
+    /**
      * Obtient l'onglet actuellement actif
      * @returns {string|null} ID de l'onglet actif
      */
@@ -255,7 +269,7 @@ export class TabManager {
             // Marquer l'onglet comme chargé
             this.markTabAsLoaded(tabId);
         } catch (error) {
-            console.warn(`Erreur lors du chargement de l'onglet ${tabId}:`, error);
+            this.dispatchTabLoadError(tabId, error);
         }
     }
 

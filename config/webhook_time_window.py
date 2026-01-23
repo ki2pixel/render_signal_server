@@ -16,10 +16,6 @@ from utils.time_helpers import parse_time_hhmm, is_within_time_window_local
 from config.settings import TIME_WINDOW_OVERRIDE_FILE
 
 
-# =============================================================================
-# VARIABLES GLOBALES - FENÊTRE HORAIRE DES WEBHOOKS
-# =============================================================================
-
 # Fenêtre horaire par défaut (depuis variables d'environnement)
 WEBHOOKS_TIME_START_STR = ""
 WEBHOOKS_TIME_END_STR = ""

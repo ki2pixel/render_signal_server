@@ -77,9 +77,7 @@ class AuthService:
         self._config = config_service
         self._login_manager: Optional[LoginManager] = None
     
-    # =========================================================================
     # Authentification Dashboard (Flask-Login)
-    # =========================================================================
     
     def verify_dashboard_credentials(self, username: str, password: str) -> bool:
         """Vérifie les credentials du dashboard.
@@ -94,47 +92,20 @@ class AuthService:
         return self._config.verify_dashboard_credentials(username, password)
     
     def create_user(self, username: str) -> User:
-        """Crée une instance User pour Flask-Login.
-        
-        Args:
-            username: Nom d'utilisateur
-            
-        Returns:
-            Instance User
-        """
         return User(username)
     
     def create_user_from_credentials(self, username: str, password: str) -> Optional[User]:
-        """Crée un User si les credentials sont valides.
-        
-        Args:
-            username: Nom d'utilisateur
-            password: Mot de passe
-            
-        Returns:
-            Instance User si valide, None sinon
-        """
         if self.verify_dashboard_credentials(username, password):
             return User(username)
         return None
     
     def load_user(self, user_id: str) -> Optional[User]:
-        """User loader pour Flask-Login.
-        
-        Args:
-            user_id: ID de l'utilisateur
-            
-        Returns:
-            Instance User si l'ID correspond à l'utilisateur configuré
-        """
         expected_user = self._config.get_dashboard_user()
         if user_id == expected_user:
             return User(user_id)
         return None
     
-    # =========================================================================
     # Authentification API (Make.com endpoints)
-    # =========================================================================
     
     def verify_api_token(self, token: str) -> bool:
         """Vérifie un token API pour les endpoints Make.com.
@@ -148,18 +119,8 @@ class AuthService:
         return self._config.verify_api_token(token)
     
     def verify_api_key_from_request(self, request: Request) -> bool:
-        """Vérifie la clé API depuis les headers d'une requête Flask.
-        
-        Args:
-            request: Objet Flask request
-            
-        Returns:
-            True si le token dans Authorization header est valide
-        """
-        # Récupérer le token depuis le header Authorization
         auth_header = request.headers.get("Authorization", "")
         
-        # Format attendu: "Bearer <token>" ou juste "<token>"
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
         else:
@@ -167,9 +128,7 @@ class AuthService:
         
         return self.verify_api_token(token)
     
-    # =========================================================================
     # Authentification Test Endpoints (CORS)
-    # =========================================================================
     
     def verify_test_api_key(self, key: str) -> bool:
         """Vérifie une clé API pour les endpoints de test.
@@ -183,20 +142,10 @@ class AuthService:
         return self._config.verify_test_api_key(key)
     
     def verify_test_api_key_from_request(self, request: Request) -> bool:
-        """Vérifie la clé API de test depuis une requête.
-        
-        Args:
-            request: Objet Flask request
-            
-        Returns:
-            True si X-API-Key header est valide
-        """
         key = request.headers.get("X-API-Key", "")
         return self.verify_test_api_key(key)
     
-    # =========================================================================
     # Flask-Login Integration
-    # =========================================================================
     
     def init_flask_login(self, app: Flask, login_view: str = 'dashboard.login') -> LoginManager:
         """Initialise Flask-Login pour l'application.
@@ -222,16 +171,9 @@ class AuthService:
         return self._login_manager
     
     def get_login_manager(self) -> Optional[LoginManager]:
-        """Retourne le LoginManager configuré.
-        
-        Returns:
-            Instance LoginManager ou None si pas initialisé
-        """
         return self._login_manager
     
-    # =========================================================================
     # Décorateurs
-    # =========================================================================
     
     def api_key_required(self, func):
         """Décorateur pour protéger un endpoint avec authentification API token.
@@ -285,9 +227,7 @@ class AuthService:
         
         return wrapper
     
-    # =========================================================================
     # Fonctions Statiques (Compatibilité)
-    # =========================================================================
     
     @staticmethod
     def testapi_authorized(request: Request) -> bool:
@@ -308,6 +248,5 @@ class AuthService:
         return request.headers.get("X-API-Key") == expected
     
     def __repr__(self) -> str:
-        """Représentation du service."""
         login_mgr = "initialized" if self._login_manager else "not initialized"
         return f"<AuthService(login_manager={login_mgr})>"

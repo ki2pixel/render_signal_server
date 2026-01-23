@@ -44,7 +44,6 @@ export class WebhookService {
                 return config;
             }
         } catch (e) {
-            console.error('Erreur chargement configuration webhooks:', e);
             throw e;
         }
     }
@@ -123,7 +122,6 @@ export class WebhookService {
             const data = await ApiService.get(`/api/webhook_logs?days=${days}`);
             return data.logs || [];
         } catch (e) {
-            console.error('Erreur chargement logs webhooks:', e);
             return [];
         }
     }

@@ -3,12 +3,11 @@ from __future__ import annotations
 from flask import Blueprint, render_template, request, redirect, url_for
 from flask_login import login_required, login_user, logout_user, current_user
 
-# Phase 3: Utiliser AuthService au lieu de auth.user
 from services import AuthService, ConfigService, MagicLinkService
 
 bp = Blueprint("dashboard", __name__)
 
-# Phase 3: Initialiser AuthService pour ce module
+# Initialiser AuthService pour ce module
 _config_service = ConfigService()
 _auth_service = AuthService(_config_service)
 _magic_link_service = MagicLinkService.get_instance()

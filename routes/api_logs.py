@@ -8,7 +8,7 @@ from app_logging.webhook_logger import fetch_webhook_logs as _fetch_webhook_logs
 bp = Blueprint("api_logs", __name__)
 
 
-@bp.route("/api/webhook_logs", methods=["GET"])  # Keep legacy URL for compatibility
+@bp.route("/api/webhook_logs", methods=["GET"])
 @login_required
 def get_webhook_logs():
     """

@@ -1,9 +1,5 @@
 export class ApiService {
-    /**
-     * Gère la réponse HTTP et redirige en cas d'erreur 401/403
-     * @param {Response} res - Réponse HTTP
-     * @returns {Promise<Response>} - Réponse traitée
-     */
+    /** Gère la réponse HTTP et redirige en cas d'erreur 401/403 */
     static async handleResponse(res) {
         if (res.status === 401) {
             window.location.href = '/login';
@@ -18,33 +14,19 @@ export class ApiService {
         return res;
     }
     
-    /**
-     * Effectue une requête API avec gestion centralisée des erreurs
-     * @param {string} url - URL de l'API
-     * @param {RequestInit} options - Options de la requête
-     * @returns {Promise<Response>} - Réponse HTTP
-     */
+    /** Effectue une requête API avec gestion centralisée des erreurs */
     static async request(url, options = {}) {
         const res = await fetch(url, options);
         return ApiService.handleResponse(res);
     }
 
-    /**
-     * Requête GET avec parsing JSON automatique
-     * @param {string} url - URL de l'API
-     * @returns {Promise<any>} - Données JSON
-     */
+    /** Requête GET avec parsing JSON automatique */
     static async get(url) {
         const res = await ApiService.request(url);
         return res.json();
     }
 
-    /**
-     * Requête POST avec envoi JSON
-     * @param {string} url - URL de l'API
-     * @param {object} data - Données à envoyer
-     * @returns {Promise<any>} - Réponse JSON
-     */
+    /** Requête POST avec envoi JSON */
     static async post(url, data) {
         const res = await ApiService.request(url, {
             method: 'POST',
@@ -54,12 +36,7 @@ export class ApiService {
         return res.json();
     }
 
-    /**
-     * Requête PUT avec envoi JSON
-     * @param {string} url - URL de l'API
-     * @param {object} data - Données à envoyer
-     * @returns {Promise<any>} - Réponse JSON
-     */
+    /** Requête PUT avec envoi JSON */
     static async put(url, data) {
         const res = await ApiService.request(url, {
             method: 'PUT',
@@ -69,11 +46,7 @@ export class ApiService {
         return res.json();
     }
 
-    /**
-     * Requête DELETE
-     * @param {string} url - URL de l'API
-     * @returns {Promise<any>} - Réponse JSON
-     */
+    /** Requête DELETE */
     static async delete(url) {
         const res = await ApiService.request(url, { method: 'DELETE' });
         return res.json();
