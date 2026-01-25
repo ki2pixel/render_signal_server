@@ -84,13 +84,18 @@ export class RoutingRulesService {
             const config = response?.config || {};
             const rules = Array.isArray(config.rules) ? config.rules : [];
             const fallbackRule = response?.fallback_rule;
+            const fallbackRules = Array.isArray(response?.fallback_rules)
+                ? response.fallback_rules
+                : [];
             // Pourquoi : montrer la règle backend existante quand aucune règle UI n'est encore enregistrée.
             const hydratedRules = rules.length
                 ? rules
-                : (fallbackRule && typeof fallbackRule === 'object'
-                    ? [{ ...fallbackRule, _isBackendFallback: true }]
-                    : []);
-            this._usingBackendFallback = !rules.length && Boolean(fallbackRule);
+                : (fallbackRules.length
+                    ? fallbackRules.map((rule) => ({ ...rule, _isBackendFallback: true }))
+                    : (fallbackRule && typeof fallbackRule === 'object'
+                        ? [{ ...fallbackRule, _isBackendFallback: true }]
+                        : []));
+            this._usingBackendFallback = !rules.length && (fallbackRules.length || Boolean(fallbackRule));
             this.rules = hydratedRules;
             this._renderRules();
             this._setPanelStatus('saved', false);

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
@@ -49,28 +50,149 @@ def _resolve_backend_webhook_url() -> str | None:
     return None
 
 
-def _build_backend_fallback_rule() -> dict | None:
+def _resolve_sender_allowlist_pattern() -> str | None:
+    try:
+        from config import polling_config as _polling_config
+        from config import settings as _settings
+
+        service = _polling_config.PollingConfigService(
+            settings_module=_settings,
+            config_store=_store,
+        )
+        senders = service.get_sender_list()
+    except Exception:
+        senders = []
+
+    cleaned = []
+    for sender in senders or []:
+        if isinstance(sender, str) and sender.strip():
+            cleaned.append(re.escape(sender.strip().lower()))
+
+    if not cleaned:
+        return None
+    return rf"^({'|'.join(cleaned)})$"
+
+
+def _build_backend_fallback_rules() -> list[dict] | None:
     webhook_url = _resolve_backend_webhook_url()
     if not webhook_url:
         return None
-    # Pourquoi : rendre visible la règle backend (webhook par défaut) lorsqu'aucune règle UI n'existe.
-    return {
-        "id": "backend-default",
-        "name": "Webhook par défaut (backend)",
-        "conditions": [
+
+    sender_pattern = _resolve_sender_allowlist_pattern()
+    sender_condition = None
+    if sender_pattern:
+        sender_condition = {
+            "field": "sender",
+            "operator": "regex",
+            "value": sender_pattern,
+            "case_sensitive": False,
+        }
+
+    recadrage_conditions = []
+    if sender_condition:
+        recadrage_conditions.append(dict(sender_condition))
+    recadrage_conditions.extend(
+        [
             {
                 "field": "subject",
                 "operator": "regex",
-                "value": ".*",
+                "value": r"m[ée]dia solution.*missions recadrage.*\blot\b",
                 "case_sensitive": False,
-            }
-        ],
-        "actions": {
-            "webhook_url": webhook_url,
-            "priority": "normal",
-            "stop_processing": False,
+            },
+            {
+                "field": "body",
+                "operator": "regex",
+                "value": r"(dropbox\.com/scl/fo|fromsmash\.com/|swisstransfer\.com/d/)",
+                "case_sensitive": False,
+            },
+        ]
+    )
+
+    desabo_subject_conditions = []
+    if sender_condition:
+        desabo_subject_conditions.append(dict(sender_condition))
+    desabo_subject_conditions.extend(
+        [
+            {
+                "field": "subject",
+                "operator": "regex",
+                "value": r"d[ée]sabonn",
+                "case_sensitive": False,
+            },
+            {
+                "field": "body",
+                "operator": "contains",
+                "value": "journee",
+                "case_sensitive": False,
+            },
+            {
+                "field": "body",
+                "operator": "contains",
+                "value": "tarifs habituels",
+                "case_sensitive": False,
+            },
+        ]
+    )
+
+    desabo_body_conditions = []
+    if sender_condition:
+        desabo_body_conditions.append(dict(sender_condition))
+    desabo_body_conditions.extend(
+        [
+            {
+                "field": "body",
+                "operator": "regex",
+                "value": r"(d[ée]sabonn|dropbox\.com/request/)",
+                "case_sensitive": False,
+            },
+            {
+                "field": "body",
+                "operator": "contains",
+                "value": "journee",
+                "case_sensitive": False,
+            },
+            {
+                "field": "body",
+                "operator": "contains",
+                "value": "tarifs habituels",
+                "case_sensitive": False,
+            },
+        ]
+    )
+
+    # Pourquoi : exposer la logique Recadrage/Désabo existante en règles UI modifiables.
+    return [
+        {
+            "id": "backend-recadrage",
+            "name": "Confirmation Mission Recadrage (backend)",
+            "conditions": recadrage_conditions,
+            "actions": {
+                "webhook_url": webhook_url,
+                "priority": "normal",
+                "stop_processing": False,
+            },
         },
-    }
+        {
+            "id": "backend-desabo-subject",
+            "name": "Confirmation Disponibilité Mission Recadrage (backend - sujet)",
+            "conditions": desabo_subject_conditions,
+            "actions": {
+                "webhook_url": webhook_url,
+                "priority": "normal",
+                "stop_processing": False,
+            },
+        },
+        {
+            "id": "backend-desabo-body",
+            "name": "Confirmation Disponibilité Mission Recadrage (backend - corps)",
+            "conditions": desabo_body_conditions,
+            "actions": {
+                "webhook_url": webhook_url,
+                "priority": "normal",
+                "stop_processing": False,
+            },
+        },
+    ]
 
 
 @bp.route("", methods=["GET"])
@@ -79,12 +201,13 @@ def get_routing_rules():
     try:
         payload = _load_routing_rules()
         rules = payload.get("rules") if isinstance(payload, dict) else None
-        fallback_rule = None
+        fallback_rules = None
         if not isinstance(rules, list) or not rules:
-            fallback_rule = _build_backend_fallback_rule()
+            fallback_rules = _build_backend_fallback_rules()
         response_payload = {"success": True, "config": payload}
-        if fallback_rule is not None:
-            response_payload["fallback_rule"] = fallback_rule
+        if fallback_rules:
+            response_payload["fallback_rules"] = fallback_rules
+            response_payload["fallback_rule"] = fallback_rules[0]
         return jsonify(response_payload), 200
     except Exception as exc:
         return jsonify({"success": False, "message": str(exc)}), 500
