@@ -195,6 +195,19 @@ def _build_backend_fallback_rules() -> list[dict] | None:
     ]
 
 
+def _is_falsey_flag(value: object) -> bool:
+    # Pourquoi : tolérer les payloads legacy où case_sensitive est sérialisé en string.
+    if value is None:
+        return True
+    if isinstance(value, bool):
+        return value is False
+    if isinstance(value, (int, float)):
+        return value == 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"", "false", "0", "no", "off"}
+    return False
+
+
 def _is_legacy_backend_default_rule(rule: dict) -> bool:
     if not isinstance(rule, dict):
         return False
@@ -212,7 +225,7 @@ def _is_legacy_backend_default_rule(rule: dict) -> bool:
         str(condition.get("field") or "").strip().lower() == "subject"
         and str(condition.get("operator") or "").strip().lower() == "regex"
         and str(condition.get("value") or "").strip() == ".*"
-        and bool(condition.get("case_sensitive", False)) is False
+        and _is_falsey_flag(condition.get("case_sensitive"))
     )
 
 

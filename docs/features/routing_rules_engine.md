@@ -65,6 +65,15 @@ Le moteur de routage dynamique permet de configurer le traitement des emails via
 2. Logique historique DESABO/Media Solution (fallback)
 3. Webhook par défaut (settings)
 
+### Règles de secours générées côté backend
+
+Lorsque aucun jeu de règles personnalisé n'est encore configuré, l'API `/api/routing_rules` expose automatiquement trois règles "backend-*" générées par `_build_backend_fallback_rules()` pour reproduire les comportements historiques :
+
+1. **Confirmation Mission Recadrage** : chaîne de conditions (subject regex + body regex) qui ciblent les emails "Média Solution". Le webhook utilisé est déduit de `webhook_config` (store Redis) et un filtre expéditeur optionnel est construit à partir de la allowlist provenant de `PollingConfigService` (`sender_of_interest_for_polling`).
+2. **Confirmation Disponibilité Mission Recadrage (sujet/corps)** : deux variantes DESABO qui vérifient respectivement le sujet et le contenu du corps pour les mots-clés `désabonn`/`journee`/`tarifs habituels`. Chaque règle réutilise la même URL webhook et reste en `priority="normal"` sans `stop_processing` pour laisser passer les règles utilisateur plus spécifiques.
+
+Ces règles apparaissent dans le payload retourné par `GET /api/routing_rules` tant que le store persistant ne contient pas d'entrées utilisateur, garantissant que la migration vers le moteur dynamique ne casse pas les flux Recadrage/DÉSABO existants. Elles sont construites dans `routes/api_routing_rules.py` à partir du webhook actif et des patterns calculés dynamiquement.@routes/api_routing_rules.py#32-195
+
 ## Frontend Interface
 
 ### Panneau Routage Dynamique
