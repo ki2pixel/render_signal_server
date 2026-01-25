@@ -195,16 +195,42 @@ def _build_backend_fallback_rules() -> list[dict] | None:
     ]
 
 
+def _is_legacy_backend_default_rule(rule: dict) -> bool:
+    if not isinstance(rule, dict):
+        return False
+    rule_id = str(rule.get("id") or "").strip()
+    rule_name = str(rule.get("name") or "").strip()
+    if rule_id != "backend-default" and rule_name != "Webhook par défaut (backend)":
+        return False
+    conditions = rule.get("conditions")
+    if not isinstance(conditions, list) or len(conditions) != 1:
+        return False
+    condition = conditions[0]
+    if not isinstance(condition, dict):
+        return False
+    return (
+        str(condition.get("field") or "").strip().lower() == "subject"
+        and str(condition.get("operator") or "").strip().lower() == "regex"
+        and str(condition.get("value") or "").strip() == ".*"
+        and bool(condition.get("case_sensitive", False)) is False
+    )
+
+
 @bp.route("", methods=["GET"])
 @login_required
 def get_routing_rules():
     try:
         payload = _load_routing_rules()
         rules = payload.get("rules") if isinstance(payload, dict) else None
+        response_config = payload if isinstance(payload, dict) else {}
+        if isinstance(rules, list) and len(rules) == 1 and _is_legacy_backend_default_rule(rules[0]):
+            response_config = dict(response_config)
+            response_config["rules"] = []
+            rules = []
         fallback_rules = None
         if not isinstance(rules, list) or not rules:
             fallback_rules = _build_backend_fallback_rules()
-        response_payload = {"success": True, "config": payload}
+        response_payload = {"success": True, "config": response_config}
         if fallback_rules:
             response_payload["fallback_rules"] = fallback_rules
             response_payload["fallback_rule"] = fallback_rules[0]

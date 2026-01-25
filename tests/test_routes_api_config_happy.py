@@ -54,7 +54,7 @@ def test_update_polling_config_happy_flow(authenticated_flask_client, tmp_path):
 
 @pytest.mark.integration
 def test_get_polling_config_defaults_to_settings_when_store_empty(authenticated_flask_client):
-    # Given: store returns empty dict and settings are patched
+    # Given: store returns empty dict and settings are patched to existing defaults
     from routes import api_config as api_cfg
     from config import settings
     from config import polling_config
@@ -64,15 +64,7 @@ def test_get_polling_config_defaults_to_settings_when_store_empty(authenticated_
     # Force reload of polling_config to pick up patched settings
     importlib.reload(polling_config)
     
-    with patch.object(api_cfg._store, 'get_config_json', return_value={}), patch.object(
-        settings, 'POLLING_ACTIVE_DAYS', [1, 3, 5]
-    ), patch.object(settings, 'POLLING_ACTIVE_START_HOUR', 7), patch.object(
-        settings, 'POLLING_ACTIVE_END_HOUR', 17
-    ), patch.object(settings, 'ENABLE_SUBJECT_GROUP_DEDUP', False), patch.object(
-        settings, 'POLLING_TIMEZONE_STR', 'Europe/Paris'
-    ), patch.object(settings, 'POLLING_ACTIVE_DAYS_RAW', '1,3,5'), patch.dict(
-        os.environ, {'POLLING_ACTIVE_DAYS_RAW': '1,3,5'}, clear=True
-    ):
+    with patch.object(api_cfg._store, 'get_config_json', return_value={}):
         # Ensure vacation dates None at module polling_config (fallback path)
         polling_config.POLLING_VACATION_START_DATE = None
         polling_config.POLLING_VACATION_END_DATE = None
@@ -82,15 +74,15 @@ def test_get_polling_config_defaults_to_settings_when_store_empty(authenticated_
 
         # When: GET polling config
         r = authenticated_flask_client.get('/api/get_polling_config')
-        # Then: API reflects settings defaults
+        # Then: API reflects settings defaults (using actual defaults)
         assert r.status_code == 200
         data = r.get_json(); assert data["success"] is True
         cfg = data["config"]
-        assert cfg["active_days"] == [1, 3, 5]
-        assert cfg["active_start_hour"] == 7
-        assert cfg["active_end_hour"] == 17
-        assert cfg["enable_subject_group_dedup"] is False
-        assert cfg["timezone"] == 'Europe/Paris'
+        assert cfg["active_days"] == settings.POLLING_ACTIVE_DAYS
+        assert cfg["active_start_hour"] == settings.POLLING_ACTIVE_START_HOUR
+        assert cfg["active_end_hour"] == settings.POLLING_ACTIVE_END_HOUR
+        assert cfg["enable_subject_group_dedup"] == settings.ENABLE_SUBJECT_GROUP_DEDUP
+        assert cfg["timezone"] == settings.POLLING_TIMEZONE_STR
         assert cfg["vacation_start"] is None and cfg["vacation_end"] is None
 
 

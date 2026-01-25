@@ -15,6 +15,16 @@ echo -e "${GREEN}  Tests - render_signal_server${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
+# Activer explicitement le venv partagé pour garantir l'accès aux dépendances (fakeredis, etc.).
+VENV_PATH="/mnt/venv_ext4/venv_render_signal_server"
+if [ -d "$VENV_PATH" ] && [ -f "$VENV_PATH/bin/activate" ]; then
+    # shellcheck disable=SC1090
+    source "$VENV_PATH/bin/activate"
+    PYTHON_BIN="$(command -v python3)"
+else
+    PYTHON_BIN="python3"
+fi
+
 # Fonction pour afficher l'aide
 show_help() {
     echo "Usage: ./run_tests.sh [OPTIONS]"
@@ -96,14 +106,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Vérifier que pytest est installé
-if ! python3 -m pytest --version &> /dev/null; then
+if ! "$PYTHON_BIN" -m pytest --version &> /dev/null; then
     echo -e "${RED}Erreur: pytest n'est pas installé${NC}"
     echo "Installer les dépendances avec: pip install -r requirements-dev.txt"
     exit 1
 fi
 
 # Construire la commande pytest
-CMD="python3 -m pytest $TEST_PATH $PYTEST_ARGS $MARKER $COVERAGE"
+CMD="$PYTHON_BIN -m pytest $TEST_PATH $PYTEST_ARGS $MARKER $COVERAGE"
 
 echo -e "${YELLOW}Commande: $CMD${NC}"
 echo ""

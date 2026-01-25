@@ -69,3 +69,26 @@ def test_update_routing_rules_validation_error(authenticated_flask_client, monke
     data = resp.get_json()
     assert data["success"] is False
     assert "règle" in data["message"].lower()
+
+
+@pytest.mark.unit
+def test_get_routing_rules_returns_backend_fallback(monkeypatch, authenticated_flask_client):
+    _stub_service(monkeypatch, payload={"rules": [], "_updated_at": "ts"})
+    fallback_rules = [
+        {"id": "a", "name": "rule-a", "conditions": [], "actions": {"webhook_url": "https://foo", "priority": "normal", "stop_processing": False}},
+        {"id": "b", "name": "rule-b", "conditions": [], "actions": {"webhook_url": "https://foo", "priority": "normal", "stop_processing": False}},
+        {"id": "c", "name": "rule-c", "conditions": [], "actions": {"webhook_url": "https://foo", "priority": "normal", "stop_processing": False}},
+    ]
+    monkeypatch.setattr(
+        "routes.api_routing_rules._build_backend_fallback_rules",
+        lambda: fallback_rules,
+    )
+
+    resp = authenticated_flask_client.get("/api/routing_rules")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["success"] is True
+    assert data["config"] == {"rules": [], "_updated_at": "ts"}
+    assert data["fallback_rules"] == fallback_rules
+    assert data["fallback_rule"] == fallback_rules[0]
