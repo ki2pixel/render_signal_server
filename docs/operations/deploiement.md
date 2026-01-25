@@ -1,5 +1,45 @@
 # Déploiement
 
+---
+
+## 📅 Dernière mise à jour / Engagements Lot 2
+
+**Date de refonte** : 2026-01-25 (protocol code-doc)
+
+### Terminologie unifiée
+- **`DASHBOARD_*`** : Variables d'environnement (anciennement `TRIGGER_PAGE_*`)
+- **`MagicLinkService`** : Service singleton pour authentification sans mot de passe
+- **`R2TransferService`** : Service singleton pour offload Cloudflare R2
+- **"Absence Globale"** : Fonctionnalité de blocage configurable par jour de semaine
+
+### Engagements Lot 2 (Résilience & Architecture)
+- ✅ **Verrou distribué Redis** : Implémenté avec clé `render_signal:poller_lock`, TTL 5 min
+- ✅ **Fallback R2 garanti** : Conservation URLs sources si Worker R2 indisponible
+- ✅ **Watchdog IMAP** : Timeout 30s pour éviter processus zombies
+- ✅ **Tests résilience** : `test_lock_redis.py`, `test_r2_resilience.py` avec marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`
+- ✅ **Store-as-Source-of-Truth** : Configuration dynamique depuis Redis/fichier, pas d'écriture runtime dans les globals
+
+### Métriques de documentation
+- **Volume** : 7 388 lignes de contenu réparties dans 25 fichiers actifs
+- **Densité** : Justifie le découpage modulaire pour maintenir la lisibilité
+- **Exclusions** : `archive/` et `audits/` maintenus séparément pour éviter le bruit
+
+---
+
+## Déploiement Docker GHCR (2026-01-07)
+
+### Pipeline Docker
+
+- **Dockerfile** racine construit une image avec Gunicorn, variables `GUNICORN_*` et logs stdout/stderr
+- **Workflow GitHub Actions** : `.github/workflows/render-image.yml` build l'image, la pousse sur GHCR (`ghcr.io/<owner>/<repo>:latest` + `:<sha>`), puis déclenche Render
+- **Déclenchement Render** : Priorité au Deploy Hook (`RENDER_DEPLOY_HOOK_URL`), puis API Render (`RENDER_API_KEY`, `RENDER_SERVICE_ID`), fallback manuel
+- **Avantages** : Temps de déploiement réduit, image pré-buildée, logs centralisés, URL de production `https://render-signal-server-latest.onrender.com`
+
+### Variables Docker
+
+Les variables d'environnement obligatoires doivent être configurées dans Render :
+- `FLASK_SECRET_KEY`, `TRIGGER_PAGE_PASSWORD`, `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `IMAP_SERVER`, `PROCESS_API_TOKEN`, `WEBHOOK_URL`, `MAKECOM_API_KEY`
+
 ## Gunicorn + Reverse Proxy
 
 1. Préparer l’environnement Python (prioritaire)
@@ -32,6 +72,7 @@ Environment="DASHBOARD_PASSWORD=..."
 # FLASK_SECRET_KEY, TRIGGER_PAGE_PASSWORD, EMAIL_ADDRESS, EMAIL_PASSWORD, 
 # IMAP_SERVER, PROCESS_API_TOKEN, WEBHOOK_URL, MAKECOM_API_KEY
 # ... autres ENV (voir configuration.md)
+# Pré-flight variables obligatoires : enforcement au démarrage via _get_required_env()
 ExecStart=/mnt/venv_ext4/venv_render_signal_server/bin/gunicorn -w 2 -b 127.0.0.1:10000 app_render:app
 Restart=always
 

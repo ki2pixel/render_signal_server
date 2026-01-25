@@ -6155,6 +6155,18 @@ requirements.txt
 137: </html>
 ````
 
+## File: requirements.txt
+````
+1: Flask>=2.0
+2: gunicorn
+3: Flask-Login
+4: Flask-Cors>=4.0
+5: requests
+6: redis>=4.0
+7: email-validator
+8: typing_extensions>=4.7,<5
+````
+
 ## File: background/lock.py
 ````python
  1: """
@@ -6232,6 +6244,212 @@ requirements.txt
 73:         finally:
 74:             BG_LOCK_FH = None
 75:         return False
+````
+
+## File: config/app_config_store.py
+````python
+  1: """
+  2: config.app_config_store
+  3: ~~~~~~~~~~~~~~~~~~~~~~~~
+  4: 
+  5: Key-Value configuration store with External JSON backend and file fallback.
+  6: - Provides get_config_json()/set_config_json() for dict payloads.
+  7: - External backend configured via env vars: EXTERNAL_CONFIG_BASE_URL, CONFIG_API_TOKEN.
+  8: - If external backend is unavailable, falls back to per-key JSON files provided by callers.
+  9: 
+ 10: Security: no secrets are logged; errors are swallowed and caller can fallback.
+ 11: """
+ 12: from __future__ import annotations
+ 13: 
+ 14: import json
+ 15: import os
+ 16: from pathlib import Path
+ 17: from typing import Any, Dict, Optional
+ 18: 
+ 19: try:
+ 20:     import requests  # type: ignore
+ 21: except Exception:  # requests may be unavailable in some test contexts
+ 22:     requests = None  # type: ignore
+ 23: 
+ 24: 
+ 25: _REDIS_CLIENT = None
+ 26: 
+ 27: 
+ 28: def _get_redis_client():
+ 29:     global _REDIS_CLIENT
+ 30: 
+ 31:     if _REDIS_CLIENT is not None:
+ 32:         return _REDIS_CLIENT
+ 33: 
+ 34:     redis_url = os.environ.get("REDIS_URL")
+ 35:     if not isinstance(redis_url, str) or not redis_url.strip():
+ 36:         return None
+ 37: 
+ 38:     try:
+ 39:         import redis  # type: ignore
+ 40: 
+ 41:         _REDIS_CLIENT = redis.Redis.from_url(redis_url, decode_responses=True)
+ 42:         return _REDIS_CLIENT
+ 43:     except Exception:
+ 44:         return None
+ 45: 
+ 46: 
+ 47: def _config_redis_key(key: str) -> str:
+ 48:     prefix = os.environ.get("CONFIG_STORE_REDIS_PREFIX", "r:ss:config:")
+ 49:     return f"{prefix}{key}"
+ 50: 
+ 51: 
+ 52: def _store_mode() -> str:
+ 53:     mode = os.environ.get("CONFIG_STORE_MODE", "redis_first")
+ 54:     if not isinstance(mode, str):
+ 55:         return "redis_first"
+ 56:     mode = mode.strip().lower()
+ 57:     return mode if mode in {"redis_first", "php_first"} else "redis_first"
+ 58: 
+ 59: 
+ 60: def _env_bool(name: str, default: bool = False) -> bool:
+ 61:     raw = os.environ.get(name)
+ 62:     if raw is None:
+ 63:         return bool(default)
+ 64:     return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+ 65: 
+ 66: 
+ 67: def _redis_get_json(key: str) -> Optional[Dict[str, Any]]:
+ 68:     if _env_bool("CONFIG_STORE_DISABLE_REDIS", False):
+ 69:         return None
+ 70: 
+ 71:     client = _get_redis_client()
+ 72:     if client is None:
+ 73:         return None
+ 74: 
+ 75:     try:
+ 76:         raw = client.get(_config_redis_key(key))
+ 77:         if not raw:
+ 78:             return None
+ 79:         data = json.loads(raw)
+ 80:         return data if isinstance(data, dict) else None
+ 81:     except Exception:
+ 82:         return None
+ 83: 
+ 84: 
+ 85: def _redis_set_json(key: str, value: Dict[str, Any]) -> bool:
+ 86:     if _env_bool("CONFIG_STORE_DISABLE_REDIS", False):
+ 87:         return False
+ 88: 
+ 89:     client = _get_redis_client()
+ 90:     if client is None:
+ 91:         return False
+ 92: 
+ 93:     try:
+ 94:         client.set(_config_redis_key(key), json.dumps(value, ensure_ascii=False))
+ 95:         return True
+ 96:     except Exception:
+ 97:         return False
+ 98: 
+ 99: def get_config_json(key: str, *, file_fallback: Optional[Path] = None) -> Dict[str, Any]:
+100:     """Fetch config dict for a key from External JSON backend, with file fallback.
+101:     Returns empty dict on any error.
+102:     """
+103:     mode = _store_mode()
+104: 
+105:     if mode == "redis_first":
+106:         data = _redis_get_json(key)
+107:         if isinstance(data, dict):
+108:             return data
+109: 
+110:     base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
+111:     api_token = os.environ.get("CONFIG_API_TOKEN")
+112:     if base_url and api_token and requests is not None:
+113:         try:
+114:             data = _external_config_get(base_url, api_token, key)
+115:             if isinstance(data, dict):
+116:                 return data
+117:         except Exception:
+118:             pass
+119: 
+120:     if mode == "php_first":
+121:         data = _redis_get_json(key)
+122:         if isinstance(data, dict):
+123:             return data
+124: 
+125:     # File fallback
+126:     if file_fallback and file_fallback.exists():
+127:         try:
+128:             with open(file_fallback, "r", encoding="utf-8") as f:
+129:                 data = json.load(f) or {}
+130:                 if isinstance(data, dict):
+131:                     return data
+132:         except Exception:
+133:             pass
+134:     return {}
+135: 
+136: 
+137: def set_config_json(key: str, value: Dict[str, Any], *, file_fallback: Optional[Path] = None) -> bool:
+138:     """Persist config dict for a key into External backend, fallback to file if needed."""
+139:     mode = _store_mode()
+140: 
+141:     if mode == "redis_first":
+142:         if _redis_set_json(key, value):
+143:             return True
+144: 
+145:     base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
+146:     api_token = os.environ.get("CONFIG_API_TOKEN")
+147:     if base_url and api_token and requests is not None:
+148:         try:
+149:             ok = _external_config_set(base_url, api_token, key, value)
+150:             if ok:
+151:                 return True
+152:         except Exception:
+153:             pass
+154: 
+155:     if mode == "php_first":
+156:         if _redis_set_json(key, value):
+157:             return True
+158: 
+159:     # File fallback
+160:     if file_fallback is not None:
+161:         try:
+162:             file_fallback.parent.mkdir(parents=True, exist_ok=True)
+163:             with open(file_fallback, "w", encoding="utf-8") as f:
+164:                 json.dump(value, f, indent=2, ensure_ascii=False)
+165:             return True
+166:         except Exception:
+167:             return False
+168:     return False
+169: 
+170: 
+171: # ---------------------------------------------------------------------------
+172: # External JSON backend helpers
+173: # ---------------------------------------------------------------------------
+174: def _external_config_get(base_url: str, token: str, key: str) -> Dict[str, Any]:
+175:     """GET config JSON from external PHP service. Raises on error."""
+176:     url = base_url.rstrip('/') + '/config_api.php'
+177:     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+178:     params = {"key": key}
+179:     # Small timeout for robustness
+180:     resp = requests.get(url, headers=headers, params=params, timeout=6)  # type: ignore
+181:     if resp.status_code != 200:
+182:         raise RuntimeError(f"external get http={resp.status_code}")
+183:     data = resp.json()
+184:     if not isinstance(data, dict) or not data.get("success"):
+185:         raise RuntimeError("external get failed")
+186:     cfg = data.get("config") or {}
+187:     return cfg if isinstance(cfg, dict) else {}
+188: 
+189: 
+190: def _external_config_set(base_url: str, token: str, key: str, value: Dict[str, Any]) -> bool:
+191:     """POST config JSON to external PHP service. Returns True on success."""
+192:     url = base_url.rstrip('/') + '/config_api.php'
+193:     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json"}
+194:     body = {"key": key, "config": value}
+195:     resp = requests.post(url, headers=headers, data=json.dumps(body), timeout=8)  # type: ignore
+196:     if resp.status_code != 200:
+197:         return False
+198:     try:
+199:         data = resp.json()
+200:     except Exception:
+201:         return False
+202:     return bool(isinstance(data, dict) and data.get("success"))
 ````
 
 ## File: email_processing/link_extraction.py
@@ -6482,6 +6700,134 @@ requirements.txt
 128:         }), 200
 129:     except Exception:
 130:         return jsonify({"success": False, "message": "Erreur interne."}), 500
+````
+
+## File: routes/api_processing.py
+````python
+  1: from __future__ import annotations
+  2: 
+  3: from pathlib import Path
+  4: 
+  5: from flask import Blueprint, jsonify, request
+  6: from flask_login import login_required
+  7: from config import app_config_store as _store
+  8: from preferences import processing_prefs as _prefs_module
+  9: 
+ 10: bp = Blueprint("api_processing", __name__, url_prefix="/api/processing_prefs")
+ 11: legacy_bp = Blueprint("api_processing_legacy", __name__)
+ 12: 
+ 13: # Storage compatible with legacy locations
+ 14: PROCESSING_PREFS_FILE = (
+ 15:     Path(__file__).resolve().parents[1] / "debug" / "processing_prefs.json"
+ 16: )
+ 17: DEFAULT_PROCESSING_PREFS = {
+ 18:     "exclude_keywords": [],
+ 19:     "require_attachments": False,
+ 20:     "max_email_size_mb": None,
+ 21:     "sender_priority": {},
+ 22:     "retry_count": 0,
+ 23:     "retry_delay_sec": 2,
+ 24:     "webhook_timeout_sec": 30,
+ 25:     "rate_limit_per_hour": 5,
+ 26:     "notify_on_failure": False,
+ 27:     "mirror_media_to_custom": True,  # Activer le miroir vers le webhook personnalisé par défaut
+ 28: }
+ 29: 
+ 30: 
+ 31: def _load_processing_prefs() -> dict:
+ 32:     """Load prefs from DB if available, else file; merge with defaults."""
+ 33:     data = _store.get_config_json(
+ 34:         "processing_prefs", file_fallback=PROCESSING_PREFS_FILE
+ 35:     ) or {}
+ 36:     if isinstance(data, dict):
+ 37:         return {**DEFAULT_PROCESSING_PREFS, **data}
+ 38:     return DEFAULT_PROCESSING_PREFS.copy()
+ 39: 
+ 40: 
+ 41: def _save_processing_prefs(prefs: dict) -> bool:
+ 42:     """Persist prefs to DB with file fallback."""
+ 43:     return _store.set_config_json(
+ 44:         "processing_prefs", prefs, file_fallback=PROCESSING_PREFS_FILE
+ 45:     )
+ 46: 
+ 47: 
+ 48: def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
+ 49:     """
+ 50:     Valide les préférences en normalisant les alias puis en déléguant à preferences.processing_prefs.
+ 51:     Les alias 'exclude_keywords_recadrage' et 'exclude_keywords_autorepondeur' sont conservés dans le résultat
+ 52:     mais la validation core est déléguée au module centralisé.
+ 53:     """
+ 54:     base_prefs = _load_processing_prefs()
+ 55:     
+ 56:     # Normalisation des alias: conserver les clés alias dans payload_normalized
+ 57:     payload_normalized = dict(payload)
+ 58:     
+ 59:     # Validation des alias spécifiques (extend keys used by UI and tests)
+ 60:     try:
+ 61:         if "exclude_keywords_recadrage" in payload:
+ 62:             val = payload["exclude_keywords_recadrage"]
+ 63:             if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
+ 64:                 return False, "exclude_keywords_recadrage doit être une liste de chaînes", base_prefs
+ 65:             payload_normalized["exclude_keywords_recadrage"] = [x.strip() for x in val if x and isinstance(x, str)]
+ 66:         
+ 67:         if "exclude_keywords_autorepondeur" in payload:
+ 68:             val = payload["exclude_keywords_autorepondeur"]
+ 69:             if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
+ 70:                 return False, "exclude_keywords_autorepondeur doit être une liste de chaînes", base_prefs
+ 71:             payload_normalized["exclude_keywords_autorepondeur"] = [x.strip() for x in val if x and isinstance(x, str)]
+ 72:     except Exception as e:
+ 73:         return False, f"Alias validation error: {e}", base_prefs
+ 74:     
+ 75:     # Déléguer la validation des champs core au module centralisé
+ 76:     ok, msg, validated_prefs = _prefs_module.validate_processing_prefs(payload_normalized, base_prefs)
+ 77:     
+ 78:     if not ok:
+ 79:         return ok, msg, validated_prefs
+ 80:     
+ 81:     # Ajouter les alias validés au résultat final si présents
+ 82:     if "exclude_keywords_recadrage" in payload_normalized:
+ 83:         validated_prefs["exclude_keywords_recadrage"] = payload_normalized["exclude_keywords_recadrage"]
+ 84:     if "exclude_keywords_autorepondeur" in payload_normalized:
+ 85:         validated_prefs["exclude_keywords_autorepondeur"] = payload_normalized["exclude_keywords_autorepondeur"]
+ 86:     
+ 87:     return True, "ok", validated_prefs
+ 88: 
+ 89: 
+ 90: @bp.route("", methods=["GET"])
+ 91: @login_required
+ 92: def get_processing_prefs():
+ 93:     try:
+ 94:         return jsonify({"success": True, "prefs": _load_processing_prefs()})
+ 95:     except Exception as e:
+ 96:         return jsonify({"success": False, "message": str(e)}), 500
+ 97: 
+ 98: 
+ 99: @bp.route("", methods=["POST"])
+100: @login_required
+101: def update_processing_prefs():
+102:     try:
+103:         payload = request.get_json(force=True, silent=True) or {}
+104:         ok, msg, new_prefs = _validate_processing_prefs(payload)
+105:         if not ok:
+106:             return jsonify({"success": False, "message": msg}), 400
+107:         if _save_processing_prefs(new_prefs):
+108:             return jsonify({"success": True, "message": "Préférences mises à jour.", "prefs": new_prefs})
+109:         return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
+110:     except Exception as e:
+111:         return jsonify({"success": False, "message": str(e)}), 500
+112: 
+113: 
+114: # --- Legacy alias routes to maintain backward-compat URLs used by tests/UI ---
+115: @legacy_bp.route("/api/get_processing_prefs", methods=["GET"])
+116: @login_required
+117: def legacy_get_processing_prefs():
+118:     return get_processing_prefs()
+119: 
+120: 
+121: @legacy_bp.route("/api/update_processing_prefs", methods=["POST"])
+122: @login_required
+123: def legacy_update_processing_prefs():
+124:     return update_processing_prefs()
 ````
 
 ## File: routes/api_test.py
@@ -7461,224 +7807,6 @@ requirements.txt
 49:     app_render:app
 ````
 
-## File: requirements.txt
-````
-1: Flask>=2.0
-2: gunicorn
-3: Flask-Login
-4: Flask-Cors>=4.0
-5: requests
-6: redis>=4.0
-7: email-validator
-8: typing_extensions>=4.7,<5
-````
-
-## File: config/app_config_store.py
-````python
-  1: """
-  2: config.app_config_store
-  3: ~~~~~~~~~~~~~~~~~~~~~~~~
-  4: 
-  5: Key-Value configuration store with External JSON backend and file fallback.
-  6: - Provides get_config_json()/set_config_json() for dict payloads.
-  7: - External backend configured via env vars: EXTERNAL_CONFIG_BASE_URL, CONFIG_API_TOKEN.
-  8: - If external backend is unavailable, falls back to per-key JSON files provided by callers.
-  9: 
- 10: Security: no secrets are logged; errors are swallowed and caller can fallback.
- 11: """
- 12: from __future__ import annotations
- 13: 
- 14: import json
- 15: import os
- 16: from pathlib import Path
- 17: from typing import Any, Dict, Optional
- 18: 
- 19: try:
- 20:     import requests  # type: ignore
- 21: except Exception:  # requests may be unavailable in some test contexts
- 22:     requests = None  # type: ignore
- 23: 
- 24: 
- 25: _REDIS_CLIENT = None
- 26: 
- 27: 
- 28: def _get_redis_client():
- 29:     global _REDIS_CLIENT
- 30: 
- 31:     if _REDIS_CLIENT is not None:
- 32:         return _REDIS_CLIENT
- 33: 
- 34:     redis_url = os.environ.get("REDIS_URL")
- 35:     if not isinstance(redis_url, str) or not redis_url.strip():
- 36:         return None
- 37: 
- 38:     try:
- 39:         import redis  # type: ignore
- 40: 
- 41:         _REDIS_CLIENT = redis.Redis.from_url(redis_url, decode_responses=True)
- 42:         return _REDIS_CLIENT
- 43:     except Exception:
- 44:         return None
- 45: 
- 46: 
- 47: def _config_redis_key(key: str) -> str:
- 48:     prefix = os.environ.get("CONFIG_STORE_REDIS_PREFIX", "r:ss:config:")
- 49:     return f"{prefix}{key}"
- 50: 
- 51: 
- 52: def _store_mode() -> str:
- 53:     mode = os.environ.get("CONFIG_STORE_MODE", "redis_first")
- 54:     if not isinstance(mode, str):
- 55:         return "redis_first"
- 56:     mode = mode.strip().lower()
- 57:     return mode if mode in {"redis_first", "php_first"} else "redis_first"
- 58: 
- 59: 
- 60: def _env_bool(name: str, default: bool = False) -> bool:
- 61:     raw = os.environ.get(name)
- 62:     if raw is None:
- 63:         return bool(default)
- 64:     return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
- 65: 
- 66: 
- 67: def _redis_get_json(key: str) -> Optional[Dict[str, Any]]:
- 68:     if _env_bool("CONFIG_STORE_DISABLE_REDIS", False):
- 69:         return None
- 70: 
- 71:     client = _get_redis_client()
- 72:     if client is None:
- 73:         return None
- 74: 
- 75:     try:
- 76:         raw = client.get(_config_redis_key(key))
- 77:         if not raw:
- 78:             return None
- 79:         data = json.loads(raw)
- 80:         return data if isinstance(data, dict) else None
- 81:     except Exception:
- 82:         return None
- 83: 
- 84: 
- 85: def _redis_set_json(key: str, value: Dict[str, Any]) -> bool:
- 86:     if _env_bool("CONFIG_STORE_DISABLE_REDIS", False):
- 87:         return False
- 88: 
- 89:     client = _get_redis_client()
- 90:     if client is None:
- 91:         return False
- 92: 
- 93:     try:
- 94:         client.set(_config_redis_key(key), json.dumps(value, ensure_ascii=False))
- 95:         return True
- 96:     except Exception:
- 97:         return False
- 98: 
- 99: def get_config_json(key: str, *, file_fallback: Optional[Path] = None) -> Dict[str, Any]:
-100:     """Fetch config dict for a key from External JSON backend, with file fallback.
-101:     Returns empty dict on any error.
-102:     """
-103:     mode = _store_mode()
-104: 
-105:     if mode == "redis_first":
-106:         data = _redis_get_json(key)
-107:         if isinstance(data, dict):
-108:             return data
-109: 
-110:     base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
-111:     api_token = os.environ.get("CONFIG_API_TOKEN")
-112:     if base_url and api_token and requests is not None:
-113:         try:
-114:             data = _external_config_get(base_url, api_token, key)
-115:             if isinstance(data, dict):
-116:                 return data
-117:         except Exception:
-118:             pass
-119: 
-120:     if mode == "php_first":
-121:         data = _redis_get_json(key)
-122:         if isinstance(data, dict):
-123:             return data
-124: 
-125:     # File fallback
-126:     if file_fallback and file_fallback.exists():
-127:         try:
-128:             with open(file_fallback, "r", encoding="utf-8") as f:
-129:                 data = json.load(f) or {}
-130:                 if isinstance(data, dict):
-131:                     return data
-132:         except Exception:
-133:             pass
-134:     return {}
-135: 
-136: 
-137: def set_config_json(key: str, value: Dict[str, Any], *, file_fallback: Optional[Path] = None) -> bool:
-138:     """Persist config dict for a key into External backend, fallback to file if needed."""
-139:     mode = _store_mode()
-140: 
-141:     if mode == "redis_first":
-142:         if _redis_set_json(key, value):
-143:             return True
-144: 
-145:     base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
-146:     api_token = os.environ.get("CONFIG_API_TOKEN")
-147:     if base_url and api_token and requests is not None:
-148:         try:
-149:             ok = _external_config_set(base_url, api_token, key, value)
-150:             if ok:
-151:                 return True
-152:         except Exception:
-153:             pass
-154: 
-155:     if mode == "php_first":
-156:         if _redis_set_json(key, value):
-157:             return True
-158: 
-159:     # File fallback
-160:     if file_fallback is not None:
-161:         try:
-162:             file_fallback.parent.mkdir(parents=True, exist_ok=True)
-163:             with open(file_fallback, "w", encoding="utf-8") as f:
-164:                 json.dump(value, f, indent=2, ensure_ascii=False)
-165:             return True
-166:         except Exception:
-167:             return False
-168:     return False
-169: 
-170: 
-171: # ---------------------------------------------------------------------------
-172: # External JSON backend helpers
-173: # ---------------------------------------------------------------------------
-174: def _external_config_get(base_url: str, token: str, key: str) -> Dict[str, Any]:
-175:     """GET config JSON from external PHP service. Raises on error."""
-176:     url = base_url.rstrip('/') + '/config_api.php'
-177:     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-178:     params = {"key": key}
-179:     # Small timeout for robustness
-180:     resp = requests.get(url, headers=headers, params=params, timeout=6)  # type: ignore
-181:     if resp.status_code != 200:
-182:         raise RuntimeError(f"external get http={resp.status_code}")
-183:     data = resp.json()
-184:     if not isinstance(data, dict) or not data.get("success"):
-185:         raise RuntimeError("external get failed")
-186:     cfg = data.get("config") or {}
-187:     return cfg if isinstance(cfg, dict) else {}
-188: 
-189: 
-190: def _external_config_set(base_url: str, token: str, key: str, value: Dict[str, Any]) -> bool:
-191:     """POST config JSON to external PHP service. Returns True on success."""
-192:     url = base_url.rstrip('/') + '/config_api.php'
-193:     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json"}
-194:     body = {"key": key, "config": value}
-195:     resp = requests.post(url, headers=headers, data=json.dumps(body), timeout=8)  # type: ignore
-196:     if resp.status_code != 200:
-197:         return False
-198:     try:
-199:         data = resp.json()
-200:     except Exception:
-201:         return False
-202:     return bool(isinstance(data, dict) and data.get("success"))
-````
-
 ## File: config/polling_config.py
 ````python
   1: """
@@ -8229,134 +8357,6 @@ requirements.txt
 146:                     pass
 147: 
 148:     return last_ok
-````
-
-## File: routes/api_processing.py
-````python
-  1: from __future__ import annotations
-  2: 
-  3: from pathlib import Path
-  4: 
-  5: from flask import Blueprint, jsonify, request
-  6: from flask_login import login_required
-  7: from config import app_config_store as _store
-  8: from preferences import processing_prefs as _prefs_module
-  9: 
- 10: bp = Blueprint("api_processing", __name__, url_prefix="/api/processing_prefs")
- 11: legacy_bp = Blueprint("api_processing_legacy", __name__)
- 12: 
- 13: # Storage compatible with legacy locations
- 14: PROCESSING_PREFS_FILE = (
- 15:     Path(__file__).resolve().parents[1] / "debug" / "processing_prefs.json"
- 16: )
- 17: DEFAULT_PROCESSING_PREFS = {
- 18:     "exclude_keywords": [],
- 19:     "require_attachments": False,
- 20:     "max_email_size_mb": None,
- 21:     "sender_priority": {},
- 22:     "retry_count": 0,
- 23:     "retry_delay_sec": 2,
- 24:     "webhook_timeout_sec": 30,
- 25:     "rate_limit_per_hour": 5,
- 26:     "notify_on_failure": False,
- 27:     "mirror_media_to_custom": True,  # Activer le miroir vers le webhook personnalisé par défaut
- 28: }
- 29: 
- 30: 
- 31: def _load_processing_prefs() -> dict:
- 32:     """Load prefs from DB if available, else file; merge with defaults."""
- 33:     data = _store.get_config_json(
- 34:         "processing_prefs", file_fallback=PROCESSING_PREFS_FILE
- 35:     ) or {}
- 36:     if isinstance(data, dict):
- 37:         return {**DEFAULT_PROCESSING_PREFS, **data}
- 38:     return DEFAULT_PROCESSING_PREFS.copy()
- 39: 
- 40: 
- 41: def _save_processing_prefs(prefs: dict) -> bool:
- 42:     """Persist prefs to DB with file fallback."""
- 43:     return _store.set_config_json(
- 44:         "processing_prefs", prefs, file_fallback=PROCESSING_PREFS_FILE
- 45:     )
- 46: 
- 47: 
- 48: def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
- 49:     """
- 50:     Valide les préférences en normalisant les alias puis en déléguant à preferences.processing_prefs.
- 51:     Les alias 'exclude_keywords_recadrage' et 'exclude_keywords_autorepondeur' sont conservés dans le résultat
- 52:     mais la validation core est déléguée au module centralisé.
- 53:     """
- 54:     base_prefs = _load_processing_prefs()
- 55:     
- 56:     # Normalisation des alias: conserver les clés alias dans payload_normalized
- 57:     payload_normalized = dict(payload)
- 58:     
- 59:     # Validation des alias spécifiques (extend keys used by UI and tests)
- 60:     try:
- 61:         if "exclude_keywords_recadrage" in payload:
- 62:             val = payload["exclude_keywords_recadrage"]
- 63:             if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
- 64:                 return False, "exclude_keywords_recadrage doit être une liste de chaînes", base_prefs
- 65:             payload_normalized["exclude_keywords_recadrage"] = [x.strip() for x in val if x and isinstance(x, str)]
- 66:         
- 67:         if "exclude_keywords_autorepondeur" in payload:
- 68:             val = payload["exclude_keywords_autorepondeur"]
- 69:             if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
- 70:                 return False, "exclude_keywords_autorepondeur doit être une liste de chaînes", base_prefs
- 71:             payload_normalized["exclude_keywords_autorepondeur"] = [x.strip() for x in val if x and isinstance(x, str)]
- 72:     except Exception as e:
- 73:         return False, f"Alias validation error: {e}", base_prefs
- 74:     
- 75:     # Déléguer la validation des champs core au module centralisé
- 76:     ok, msg, validated_prefs = _prefs_module.validate_processing_prefs(payload_normalized, base_prefs)
- 77:     
- 78:     if not ok:
- 79:         return ok, msg, validated_prefs
- 80:     
- 81:     # Ajouter les alias validés au résultat final si présents
- 82:     if "exclude_keywords_recadrage" in payload_normalized:
- 83:         validated_prefs["exclude_keywords_recadrage"] = payload_normalized["exclude_keywords_recadrage"]
- 84:     if "exclude_keywords_autorepondeur" in payload_normalized:
- 85:         validated_prefs["exclude_keywords_autorepondeur"] = payload_normalized["exclude_keywords_autorepondeur"]
- 86:     
- 87:     return True, "ok", validated_prefs
- 88: 
- 89: 
- 90: @bp.route("", methods=["GET"])
- 91: @login_required
- 92: def get_processing_prefs():
- 93:     try:
- 94:         return jsonify({"success": True, "prefs": _load_processing_prefs()})
- 95:     except Exception as e:
- 96:         return jsonify({"success": False, "message": str(e)}), 500
- 97: 
- 98: 
- 99: @bp.route("", methods=["POST"])
-100: @login_required
-101: def update_processing_prefs():
-102:     try:
-103:         payload = request.get_json(force=True, silent=True) or {}
-104:         ok, msg, new_prefs = _validate_processing_prefs(payload)
-105:         if not ok:
-106:             return jsonify({"success": False, "message": msg}), 400
-107:         if _save_processing_prefs(new_prefs):
-108:             return jsonify({"success": True, "message": "Préférences mises à jour.", "prefs": new_prefs})
-109:         return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
-110:     except Exception as e:
-111:         return jsonify({"success": False, "message": str(e)}), 500
-112: 
-113: 
-114: # --- Legacy alias routes to maintain backward-compat URLs used by tests/UI ---
-115: @legacy_bp.route("/api/get_processing_prefs", methods=["GET"])
-116: @login_required
-117: def legacy_get_processing_prefs():
-118:     return get_processing_prefs()
-119: 
-120: 
-121: @legacy_bp.route("/api/update_processing_prefs", methods=["POST"])
-122: @login_required
-123: def legacy_update_processing_prefs():
-124:     return update_processing_prefs()
 ````
 
 ## File: routes/api_logs.py
@@ -12011,766 +12011,6 @@ requirements.txt
 250:     }), 200
 ````
 
-## File: app_render.py
-````python
-  1: redis_client = None
-  2: 
-  3: from background.lock import acquire_singleton_lock
-  4: from flask import Flask, jsonify, request
-  5: from flask_login import login_required
-  6: from flask_cors import CORS
-  7: import os
-  8: import threading
-  9: import time
- 10: from pathlib import Path
- 11: import json
- 12: import logging
- 13: from datetime import datetime, timedelta, timezone
- 14: import urllib3
- 15: import signal
- 16: from collections import deque
- 17: from utils.time_helpers import parse_time_hhmm as _parse_time_hhmm
- 18: from utils.validators import normalize_make_webhook_url as _normalize_make_webhook_url
- 19: 
- 20: from config import settings
- 21: from config import polling_config
- 22: from config.polling_config import PollingConfigService
- 23: from config import webhook_time_window
- 24: from config.app_config_store import get_config_json as _config_get
- 25: from config.app_config_store import set_config_json as _config_set
- 26: 
- 27: from services import (
- 28:     ConfigService,
- 29:     RuntimeFlagsService,
- 30:     WebhookConfigService,
- 31:     AuthService,
- 32:     DeduplicationService,
- 33: )
- 34: 
- 35: from auth import user as auth_user
- 36: from auth import helpers as auth_helpers
- 37: from auth.helpers import testapi_authorized as _testapi_authorized
- 38: 
- 39: from email_processing import imap_client as email_imap_client
- 40: from email_processing import pattern_matching as email_pattern_matching
- 41: from email_processing import webhook_sender as email_webhook_sender
- 42: from email_processing import orchestrator as email_orchestrator
- 43: from email_processing import link_extraction as email_link_extraction
- 44: from email_processing import payloads as email_payloads
- 45: from app_logging.webhook_logger import (
- 46:     append_webhook_log as _append_webhook_log_helper,
- 47:     fetch_webhook_logs as _fetch_webhook_logs_helper,
- 48: )
- 49: from utils.rate_limit import (
- 50:     prune_and_allow_send as _rate_prune_and_allow,
- 51:     record_send_event as _rate_record_event,
- 52: )
- 53: from preferences import processing_prefs as _processing_prefs
- 54: from deduplication import redis_client as _dedup
- 55: from deduplication.subject_group import generate_subject_group_id as _gen_subject_group_id
- 56: from routes import (
- 57:     health_bp,
- 58:     api_webhooks_bp,
- 59:     api_polling_bp,
- 60:     api_processing_bp,
- 61:     api_processing_legacy_bp,
- 62:     api_test_bp,
- 63:     dashboard_bp,
- 64:     api_logs_bp,
- 65:     api_admin_bp,
- 66:     api_utility_bp,
- 67:     api_config_bp,
- 68:     api_make_bp,
- 69:     api_auth_bp,
- 70: )
- 71: from routes.api_processing import DEFAULT_PROCESSING_PREFS as _DEFAULT_PROCESSING_PREFS
- 72: DEFAULT_PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS
- 73: from background.polling_thread import background_email_poller_loop
- 74: 
- 75: 
- 76: def append_webhook_log(webhook_id: str, webhook_url: str, webhook_status_code: int, webhook_response: str):
- 77:     """Append a webhook log entry to the webhook log file."""
- 78:     return _append_webhook_log_helper(webhook_id, webhook_url, webhook_status_code, webhook_response)
- 79: 
- 80: try:
- 81:     from zoneinfo import ZoneInfo
- 82: except ImportError:
- 83:     ZoneInfo = None
- 84: 
- 85: try:
- 86:     import redis
- 87: 
- 88:     REDIS_AVAILABLE = True
- 89: except ImportError:
- 90:     REDIS_AVAILABLE = False
- 91: 
- 92: 
- 93: app = Flask(__name__, template_folder='.', static_folder='static')
- 94: app.secret_key = settings.FLASK_SECRET_KEY
- 95: 
- 96: _config_service = ConfigService()
- 97: 
- 98: _runtime_flags_service = RuntimeFlagsService.get_instance(...)
- 99: 
-100: _webhook_service = WebhookConfigService.get_instance(...)
-101: 
-102: _auth_service = AuthService(_config_service)
-103: 
-104: 
-105: app.register_blueprint(health_bp)
-106: app.register_blueprint(api_webhooks_bp)
-107: app.register_blueprint(api_polling_bp)
-108: app.register_blueprint(api_processing_bp)
-109: app.register_blueprint(api_processing_legacy_bp)
-110: app.register_blueprint(api_test_bp)
-111: app.register_blueprint(dashboard_bp)
-112: app.register_blueprint(api_logs_bp)
-113: app.register_blueprint(api_admin_bp)
-114: app.register_blueprint(api_utility_bp)
-115: app.register_blueprint(api_config_bp)
-116: app.register_blueprint(api_make_bp)
-117: app.register_blueprint(api_auth_bp)
-118: 
-119: _cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
-120: if _cors_origins:
-121:     CORS(
-122:         app,
-123:         resources={
-124:             r"/api/test/*": {
-125:                 "origins": _cors_origins,
-126:                 "supports_credentials": False,
-127:                 "methods": ["GET", "POST", "OPTIONS"],
-128:                 "allow_headers": ["Content-Type", "X-API-Key"],
-129:                 "max_age": 600,
-130:             }
-131:         },
-132:     )
-133: 
-134: login_manager = _auth_service.init_flask_login(app, login_view='dashboard.login')
-135: 
-136: auth_user.init_login_manager(app, login_view='dashboard.login')
-137: 
-138: WEBHOOK_URL = settings.WEBHOOK_URL
-139: MAKECOM_API_KEY = settings.MAKECOM_API_KEY
-140: WEBHOOK_SSL_VERIFY = settings.WEBHOOK_SSL_VERIFY
-141: 
-142: EMAIL_ADDRESS = settings.EMAIL_ADDRESS
-143: EMAIL_PASSWORD = settings.EMAIL_PASSWORD
-144: IMAP_SERVER = settings.IMAP_SERVER
-145: IMAP_PORT = settings.IMAP_PORT
-146: IMAP_USE_SSL = settings.IMAP_USE_SSL
-147: 
-148: EXPECTED_API_TOKEN = settings.EXPECTED_API_TOKEN
-149: 
-150: ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
-151: SENDER_LIST_FOR_POLLING = settings.SENDER_LIST_FOR_POLLING
-152: 
-153: # Runtime flags and files
-154: DISABLE_EMAIL_ID_DEDUP = settings.DISABLE_EMAIL_ID_DEDUP
-155: ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS
-156: POLLING_CONFIG_FILE = settings.POLLING_CONFIG_FILE
-157: TRIGGER_SIGNAL_FILE = settings.TRIGGER_SIGNAL_FILE
-158: RUNTIME_FLAGS_FILE = settings.RUNTIME_FLAGS_FILE
-159: 
-160: # Configuration du logging
-161: log_level_str = os.environ.get('FLASK_LOG_LEVEL', 'INFO').upper()
-162: log_level = getattr(logging, log_level_str, logging.INFO)
-163: logging.basicConfig(level=log_level,
-164:                     format='%(asctime)s - %(levelname)s - %(name)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s')
-165: if not REDIS_AVAILABLE:
-166:     logging.warning(
-167:         "CFG REDIS (module level): 'redis' Python library not installed. Redis-based features will be disabled or use fallbacks.")
-168: 
-169: 
-170: # Diagnostics (process start + heartbeat)
-171: try:
-172:     from datetime import datetime, timezone as _tz
-173:     PROCESS_START_TIME = datetime.now(_tz.utc)
-174: except Exception:
-175:     PROCESS_START_TIME = None
-176: 
-177: def _heartbeat_loop():
-178:     interval = 60
-179:     while True:
-180:         try:
-181:             bg = globals().get("_bg_email_poller_thread")
-182:             mk = globals().get("_make_watcher_thread")
-183:             bg_alive = bool(bg and bg.is_alive())
-184:             mk_alive = bool(mk and mk.is_alive())
-185:             app.logger.info("HEARTBEAT: alive (bg_poller=%s, make_watcher=%s)", bg_alive, mk_alive)
-186:         except Exception:
-187:             # Ignored intentionally: heartbeat logging must never crash the loop
-188:             pass
-189:         time.sleep(interval)
-190: 
-191: try:
-192:     disable_bg_hb = os.environ.get("DISABLE_BACKGROUND_TASKS", "").strip().lower() in ["1", "true", "yes"]
-193:     if getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and not disable_bg_hb:
-194:         _heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
-195:         _heartbeat_thread.start()
-196: except Exception:
-197:     pass
-198: 
-199: # Process signal handlers (observability)
-200: def _handle_sigterm(signum, frame):  # pragma: no cover - environment dependent
-201:     try:
-202:         app.logger.info("PROCESS: SIGTERM received; shutting down gracefully (platform restart/deploy).")
-203:     except Exception:
-204:         pass
-205: 
-206: try:
-207:     signal.signal(signal.SIGTERM, _handle_sigterm)
-208: except Exception:
-209:     # Some environments may not allow setting signal handlers (e.g., Windows)
-210:     pass
-211: 
-212: 
-213: # Configuration (log centralisé)
-214: settings.log_configuration(app.logger)
-215: if not WEBHOOK_SSL_VERIFY:
-216:     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-217:     app.logger.warning("CFG WEBHOOK: SSL verification DISABLED for webhook calls (development/legacy). Use valid certificates in production.")
-218:     
-219: TZ_FOR_POLLING = polling_config.initialize_polling_timezone(app.logger)
-220: 
-221: # Polling Config Service (accès centralisé à la configuration)
-222: _polling_service = PollingConfigService(settings)
-223: 
-224: # =============================================================================
-225: # SERVICES INITIALIZATION
-226: # =============================================================================
-227: 
-228: # 5. Runtime Flags Service (Singleton)
-229: try:
-230:     _runtime_flags_service = RuntimeFlagsService.get_instance(
-231:         file_path=settings.RUNTIME_FLAGS_FILE,
-232:         defaults={
-233:             "disable_email_id_dedup": bool(settings.DISABLE_EMAIL_ID_DEDUP),
-234:             "allow_custom_webhook_without_links": bool(settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
-235:         }
-236:     )
-237:     app.logger.info(f"SVC: RuntimeFlagsService initialized (cache_ttl={_runtime_flags_service.get_cache_ttl()}s)")
-238: except Exception as e:
-239:     app.logger.error(f"SVC: Failed to initialize RuntimeFlagsService: {e}")
-240:     _runtime_flags_service = None
-241: 
-242: # 6. Webhook Config Service (Singleton)
-243: try:
-244:     from config import app_config_store
-245:     _webhook_service = WebhookConfigService.get_instance(
-246:         file_path=Path(__file__).parent / "debug" / "webhook_config.json",
-247:         external_store=app_config_store
-248:     )
-249:     app.logger.info(f"SVC: WebhookConfigService initialized (has_url={_webhook_service.has_webhook_url()})")
-250: except Exception as e:
-251:     app.logger.error(f"SVC: Failed to initialize WebhookConfigService: {e}")
-252:     _webhook_service = None
-253: 
-254: 
-255: if not EXPECTED_API_TOKEN:
-256:     app.logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
-257: else:
-258:     app.logger.info(f"CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: '{EXPECTED_API_TOKEN[:5]}...')")
-259: 
-260: # --- Configuration des Webhooks de Présence ---
-261: # Présence: déjà fournie par settings (alias ci-dessus)
-262: 
-263: # --- Email server config validation flag (maintenant via ConfigService) ---
-264: email_config_valid = _config_service.is_email_config_valid()
-265: 
-266: # --- Webhook time window initialization (env -> then optional UI override from disk) ---
-267: try:
-268:     webhook_time_window.initialize_webhook_time_window(
-269:         start_str=(
-270:             os.environ.get("WEBHOOKS_TIME_START")
-271:             or os.environ.get("WEBHOOK_TIME_START")
-272:             or ""
-273:         ),
-274:         end_str=(
-275:             os.environ.get("WEBHOOKS_TIME_END")
-276:             or os.environ.get("WEBHOOK_TIME_END")
-277:             or ""
-278:         ),
-279:     )
-280:     webhook_time_window.reload_time_window_from_disk()
-281: except Exception:
-282:     pass
-283: 
-284: # --- Polling config overrides (optional UI overrides from external store with file fallback) ---
-285: try:
-286:     _poll_cfg_path = settings.POLLING_CONFIG_FILE
-287:     app.logger.info(
-288:         f"CFG POLL(file): path={_poll_cfg_path}; exists={_poll_cfg_path.exists()}"
-289:     )
-290:     _pc = {}
-291:     try:
-292:         _pc = _config_get("polling_config", file_fallback=_poll_cfg_path) or {}
-293:     except Exception:
-294:         _pc = {}
-295:     app.logger.info(
-296:         "CFG POLL(loaded): keys=%s; snippet={active_days=%s,start=%s,end=%s,enable_polling=%s}",
-297:         list(_pc.keys()),
-298:         _pc.get("active_days"),
-299:         _pc.get("active_start_hour"),
-300:         _pc.get("active_end_hour"),
-301:         _pc.get("enable_polling"),
-302:     )
-303:     try:
-304:         app.logger.info(
-305:             "CFG POLL(effective): days=%s; start=%s; end=%s; senders=%s; dedup_monthly_scope=%s; enable_polling=%s; vacation_start=%s; vacation_end=%s",
-306:             _polling_service.get_active_days(),
-307:             _polling_service.get_active_start_hour(),
-308:             _polling_service.get_active_end_hour(),
-309:             len(_polling_service.get_sender_list() or []),
-310:             _polling_service.is_subject_group_dedup_enabled(),
-311:             _polling_service.get_enable_polling(True),
-312:             (_pc.get("vacation_start") if isinstance(_pc, dict) else None),
-313:             (_pc.get("vacation_end") if isinstance(_pc, dict) else None),
-314:         )
-315:     except Exception:
-316:         pass
-317: except Exception:
-318:     pass
-319: 
-320: # --- Dedup constants mapping (from central settings) ---
-321: PROCESSED_EMAIL_IDS_REDIS_KEY = settings.PROCESSED_EMAIL_IDS_REDIS_KEY
-322: PROCESSED_SUBJECT_GROUPS_REDIS_KEY = settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY
-323: SUBJECT_GROUP_REDIS_PREFIX = settings.SUBJECT_GROUP_REDIS_PREFIX
-324: SUBJECT_GROUP_TTL_SECONDS = settings.SUBJECT_GROUP_TTL_SECONDS
-325: 
-326: # Memory fallback set for subject groups when Redis is not available
-327: SUBJECT_GROUPS_MEMORY = set()
-328: 
-329: # 7. Deduplication Service (avec Redis ou fallback mémoire)
-330: try:
-331:     _dedup_service = DeduplicationService(
-332:         redis_client=redis_client,  # None = fallback mémoire automatique
-333:         logger=app.logger,
-334:         config_service=_config_service,
-335:         polling_config_service=_polling_service,
-336:     )
-337:     app.logger.info(f"SVC: DeduplicationService initialized {_dedup_service}")
-338: except Exception as e:
-339:     app.logger.error(f"SVC: Failed to initialize DeduplicationService: {e}")
-340:     _dedup_service = None
-341: 
-342: # --- Fonctions Utilitaires IMAP ---
-343: def create_imap_connection():
-344:     """Wrapper vers email_processing.imap_client.create_imap_connection."""
-345:     return email_imap_client.create_imap_connection(app.logger)
-346: 
-347: 
-348: def close_imap_connection(mail):
-349:     """Wrapper vers email_processing.imap_client.close_imap_connection."""
-350:     return email_imap_client.close_imap_connection(app.logger, mail)
-351: 
-352: 
-353: def generate_email_id(msg_data):
-354:     """Wrapper vers email_processing.imap_client.generate_email_id."""
-355:     return email_imap_client.generate_email_id(msg_data)
-356: 
-357: 
-358: def extract_sender_email(from_header):
-359:     """Wrapper vers email_processing.imap_client.extract_sender_email."""
-360:     return email_imap_client.extract_sender_email(from_header)
-361: 
-362: 
-363: def decode_email_header(header_value):
-364:     """Wrapper vers email_processing.imap_client.decode_email_header_value."""
-365:     return email_imap_client.decode_email_header_value(header_value)
-366: 
-367: 
-368: def mark_email_as_read_imap(mail, email_num):
-369:     """Wrapper vers email_processing.imap_client.mark_email_as_read_imap."""
-370:     return email_imap_client.mark_email_as_read_imap(app.logger, mail, email_num)
-371: 
-372: 
-373: def check_media_solution_pattern(subject, email_content):
-374:     """Compatibility wrapper delegating to email_processing.pattern_matching.
-375: 
-376:     Maintains backward compatibility while centralizing pattern detection.
-377:     """
-378:     try:
-379:         return email_pattern_matching.check_media_solution_pattern(
-380:             subject=subject,
-381:             email_content=email_content,
-382:             tz_for_polling=TZ_FOR_POLLING,
-383:             logger=app.logger,
-384:         )
-385:     except Exception as e:
-386:         try:
-387:             app.logger.error(f"MEDIA_PATTERN_WRAPPER: Exception: {e}")
-388:         except Exception:
-389:             pass
-390:         return {"matches": False, "delivery_time": None}
-391: 
-392: 
-393: def send_makecom_webhook(subject, delivery_time, sender_email, email_id, override_webhook_url: str | None = None, extra_payload: dict | None = None):
-394:     """Délègue l'envoi du webhook Make.com au module email_processing.webhook_sender.
-395: 
-396:     Maintient la compatibilité tout en centralisant la logique d'envoi.
-397:     """
-398:     return email_webhook_sender.send_makecom_webhook(
-399:         subject=subject,
-400:         delivery_time=delivery_time,
-401:         sender_email=sender_email,
-402:         email_id=email_id,
-403:         override_webhook_url=override_webhook_url,
-404:         extra_payload=extra_payload,
-405:         logger=app.logger,
-406:         log_hook=_append_webhook_log,
-407:     )
-408: 
-409: 
-410: # --- Fonctions de Déduplication avec Redis ---
-411: def is_email_id_processed_redis(email_id):
-412:     """Back-compat wrapper: delegate to dedup module; returns False on errors or no Redis."""
-413:     rc = globals().get("redis_client")
-414:     return _dedup.is_email_id_processed(
-415:         rc,
-416:         email_id=email_id,
-417:         logger=app.logger,
-418:         processed_ids_key=PROCESSED_EMAIL_IDS_REDIS_KEY,
-419:     )
-420: 
-421: 
-422: def mark_email_id_as_processed_redis(email_id):
-423:     """Back-compat wrapper: delegate to dedup module; returns False without Redis."""
-424:     rc = globals().get("redis_client")
-425:     return _dedup.mark_email_id_processed(
-426:         rc,
-427:         email_id=email_id,
-428:         logger=app.logger,
-429:         processed_ids_key=PROCESSED_EMAIL_IDS_REDIS_KEY,
-430:     )
-431: 
-432: 
-433: 
-434: def generate_subject_group_id(subject: str) -> str:
-435:     """Wrapper vers deduplication.subject_group.generate_subject_group_id."""
-436:     return _gen_subject_group_id(subject)
-437: 
-438: 
-439: def is_subject_group_processed(group_id: str) -> bool:
-440:     """Check subject-group dedup via Redis or memory using the centralized helper."""
-441:     rc = globals().get("redis_client")
-442:     return _dedup.is_subject_group_processed(
-443:         rc,
-444:         group_id=group_id,
-445:         logger=app.logger,
-446:         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
-447:         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
-448:         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
-449:         enable_monthly_scope=_polling_service.is_subject_group_dedup_enabled(),
-450:         tz=TZ_FOR_POLLING,
-451:         memory_set=SUBJECT_GROUPS_MEMORY,
-452:     )
-453: 
-454: 
-455: def mark_subject_group_processed(group_id: str) -> bool:
-456:     """Mark subject-group as processed using centralized helper (Redis or memory)."""
-457:     rc = globals().get("redis_client")
-458:     return _dedup.mark_subject_group_processed(
-459:         rc,
-460:         group_id=group_id,
-461:         logger=app.logger,
-462:         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
-463:         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
-464:         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
-465:         enable_monthly_scope=_polling_service.is_subject_group_dedup_enabled(),
-466:         tz=TZ_FOR_POLLING,
-467:         memory_set=SUBJECT_GROUPS_MEMORY,
-468:     )
-469: 
-470: 
-471:  
-472:  
-473: def check_new_emails_and_trigger_webhook():
-474:     """Delegate to orchestrator entry-point."""
-475:     global SENDER_LIST_FOR_POLLING, ENABLE_SUBJECT_GROUP_DEDUP
-476:     try:
-477:         SENDER_LIST_FOR_POLLING = _polling_service.get_sender_list() or []
-478:     except Exception:
-479:         pass
-480:     try:
-481:         ENABLE_SUBJECT_GROUP_DEDUP = _polling_service.is_subject_group_dedup_enabled()
-482:     except Exception:
-483:         pass
-484:     return email_orchestrator.check_new_emails_and_trigger_webhook()
-485: 
-486: def background_email_poller() -> None:
-487:     """Delegate polling loop to background.polling_thread with injected deps."""
-488:     def _is_ready_to_poll() -> bool:
-489:         return all([email_config_valid, _polling_service.get_sender_list(), WEBHOOK_URL])
-490: 
-491:     def _run_cycle() -> int:
-492:         return check_new_emails_and_trigger_webhook()
-493: 
-494:     def _is_in_vacation(now_dt: datetime) -> bool:
-495:         try:
-496:             return _polling_service.is_in_vacation(now_dt)
-497:         except Exception:
-498:             return False
-499: 
-500:     background_email_poller_loop(
-501:         logger=app.logger,
-502:         tz_for_polling=_polling_service.get_tz(),
-503:         get_active_days=_polling_service.get_active_days,
-504:         get_active_start_hour=_polling_service.get_active_start_hour,
-505:         get_active_end_hour=_polling_service.get_active_end_hour,
-506:         inactive_sleep_seconds=_polling_service.get_inactive_check_interval_s(),
-507:         active_sleep_seconds=_polling_service.get_email_poll_interval_s(),
-508:         is_in_vacation=_is_in_vacation,
-509:         is_ready_to_poll=_is_ready_to_poll,
-510:         run_poll_cycle=_run_cycle,
-511:         max_consecutive_errors=5,
-512:     )
-513: 
-514: 
-515: def make_scenarios_vacation_watcher() -> None:
-516:     """Background watcher that enforces Make scenarios ON/OFF according to
-517:     - UI global toggle enable_polling (persisted via /api/update_polling_config)
-518:     - Vacation window in polling_config (POLLING_VACATION_START/END)
-519: 
-520:     Logic:
-521:     - If enable_polling is False => ensure scenarios are OFF
-522:     - If enable_polling is True and in vacation => ensure scenarios are OFF
-523:     - If enable_polling is True and not in vacation => ensure scenarios are ON
-524: 
-525:     To minimize API calls, apply only on state changes.
-526:     """
-527:     last_applied = None  # None|True|False meaning desired state last set
-528:     interval = max(60, _polling_service.get_inactive_check_interval_s())
-529:     while True:
-530:         try:
-531:             enable_ui = _polling_service.get_enable_polling(True)
-532:             in_vac = False
-533:             try:
-534:                 in_vac = _polling_service.is_in_vacation(None)
-535:             except Exception:
-536:                 in_vac = False
-537:             desired = bool(enable_ui and not in_vac)
-538:             if last_applied is None or desired != last_applied:
-539:                 try:
-540:                     from routes.api_make import toggle_all_scenarios  # local import to avoid cycles
-541:                     res = toggle_all_scenarios(desired, logger=app.logger)
-542:                     app.logger.info(
-543:                         "MAKE_WATCHER: applied desired=%s (enable_ui=%s, in_vacation=%s) results_keys=%s",
-544:                         desired, enable_ui, in_vac, list(res.keys()) if isinstance(res, dict) else 'n/a'
-545:                     )
-546:                 except Exception as e:
-547:                     app.logger.error(f"MAKE_WATCHER: toggle_all_scenarios failed: {e}")
-548:                 last_applied = desired
-549:         except Exception as e:
-550:             try:
-551:                 app.logger.error(f"MAKE_WATCHER: loop error: {e}")
-552:             except Exception:
-553:                 pass
-554:         time.sleep(interval)
-555: 
-556: 
-557: def _start_daemon_thread(target, name: str) -> threading.Thread | None:
-558:     try:
-559:         thread = threading.Thread(target=target, daemon=True, name=name)
-560:         thread.start()
-561:         app.logger.info(f"THREAD: {name} started successfully")
-562:         return thread
-563:     except Exception as e:
-564:         app.logger.error(f"THREAD: Failed to start {name}: {e}", exc_info=True)
-565:         return None
-566: 
-567: 
-568: try:
-569:     # Check legacy disable flag (priority override)
-570:     disable_bg = os.environ.get("DISABLE_BACKGROUND_TASKS", "").strip().lower() in ["1", "true", "yes"]
-571:     enable_bg = getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and not disable_bg
-572:     
-573:     # Log effective config before starting background tasks
-574:     try:
-575:         app.logger.info(
-576:             f"CFG BG: enable_polling(UI)={_polling_service.get_enable_polling(True)}; ENABLE_BACKGROUND_TASKS(env)={getattr(settings, 'ENABLE_BACKGROUND_TASKS', False)}; DISABLE_BACKGROUND_TASKS={disable_bg}"
-577:         )
-578:     except Exception:
-579:         pass
-580:     # Start background poller only if both the environment flag and the persisted
-581:     # UI-controlled switch are enabled. This avoids unexpected background work
-582:     # when the operator intentionally disabled polling from the dashboard.
-583:     if enable_bg and _polling_service.get_enable_polling(True):
-584:         lock_path = getattr(settings, "BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock")
-585:         try:
-586:             if acquire_singleton_lock(lock_path):
-587:                 app.logger.info(
-588:                     f"BG_POLLER: Singleton lock acquired on {lock_path}. Starting background thread."
-589:                 )
-590:                 _bg_email_poller_thread = _start_daemon_thread(background_email_poller, "EmailPoller")
-591:             else:
-592:                 app.logger.info(
-593:                     f"BG_POLLER: Singleton lock NOT acquired on {lock_path}. Background thread will not start."
-594:                 )
-595:         except Exception as e:
-596:             app.logger.error(
-597:                 f"BG_POLLER: Failed to start background thread: {e}", exc_info=True
-598:             )
-599:     else:
-600:         # Clarify which condition prevented starting the poller
-601:         if disable_bg:
-602:             app.logger.info(
-603:                 "BG_POLLER: DISABLE_BACKGROUND_TASKS is set. Background poller not started."
-604:             )
-605:         elif not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
-606:             app.logger.info(
-607:                 "BG_POLLER: ENABLE_BACKGROUND_TASKS is false. Background poller not started."
-608:             )
-609:         elif not _polling_service.get_enable_polling(True):
-610:             app.logger.info(
-611:                 "BG_POLLER: UI 'enable_polling' flag is false. Background poller not started."
-612:             )
-613: except Exception:
-614:     # Defensive: never block app startup because of background thread wiring
-615:     pass
-616: 
-617: try:
-618:     if enable_bg and bool(settings.MAKECOM_API_KEY):
-619:         _make_watcher_thread = _start_daemon_thread(make_scenarios_vacation_watcher, "MakeVacationWatcher")
-620:         if _make_watcher_thread:
-621:             app.logger.info("MAKE_WATCHER: vacation-aware ON/OFF watcher active")
-622:     else:
-623:         if disable_bg:
-624:             app.logger.info("MAKE_WATCHER: not started because DISABLE_BACKGROUND_TASKS is set")
-625:         elif not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
-626:             app.logger.info("MAKE_WATCHER: not started because ENABLE_BACKGROUND_TASKS is false")
-627:         elif not bool(settings.MAKECOM_API_KEY):
-628:             app.logger.info("MAKE_WATCHER: not started because MAKECOM_API_KEY is not configured (avoiding 401 noise)")
-629: except Exception as e:
-630:     app.logger.error(f"MAKE_WATCHER: failed to start thread: {e}")
-631: 
-632: 
-633: 
-634: WEBHOOK_LOGS_FILE = Path(__file__).resolve().parent / "debug" / "webhook_logs.json"
-635: WEBHOOK_LOGS_REDIS_KEY = "r:ss:webhook_logs:v1"  # Redis list, each item is JSON string
-636: 
-637: # --- Processing Preferences (Filters, Reliability, Rate limiting) ---
-638: PROCESSING_PREFS_FILE = Path(__file__).resolve().parent / "debug" / "processing_prefs.json"
-639: PROCESSING_PREFS_REDIS_KEY = "r:ss:processing_prefs:v1"
-640: 
-641: 
-642: try:
-643:     PROCESSING_PREFS  # noqa: F401
-644: except NameError:
-645:     PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS.copy()
-646: 
-647: 
-648: def _load_processing_prefs() -> dict:
-649:     """Charge les préférences via app_config_store (Redis-first, fallback fichier)."""
-650:     try:
-651:         data = _config_get("processing_prefs", file_fallback=PROCESSING_PREFS_FILE) or {}
-652:     except Exception:
-653:         data = {}
-654: 
-655:     if isinstance(data, dict):
-656:         return {**_DEFAULT_PROCESSING_PREFS, **data}
-657:     return _DEFAULT_PROCESSING_PREFS.copy()
-658: 
-659: 
-660: def _save_processing_prefs(prefs: dict) -> bool:
-661:     """Sauvegarde via app_config_store (Redis-first, fallback fichier)."""
-662:     try:
-663:         return bool(_config_set("processing_prefs", prefs, file_fallback=PROCESSING_PREFS_FILE))
-664:     except Exception:
-665:         return False
-666: 
-667: PROCESSING_PREFS = _load_processing_prefs()
-668: 
-669: def _log_webhook_config_startup():
-670:     try:
-671:         # Préférer le service si disponible, sinon fallback sur chargement direct
-672:         config = None
-673:         if _webhook_service is not None:
-674:             try:
-675:                 config = _webhook_service.get_all_config()
-676:             except Exception:
-677:                 pass
-678:         
-679:         if config is None:
-680:             from routes.api_webhooks import _load_webhook_config
-681:             config = _load_webhook_config()
-682:         
-683:         if not config:
-684:             app.logger.info("CFG WEBHOOK_CONFIG: Aucune configuration webhook trouvée (fichier vide ou inexistant)")
-685:             return
-686:             
-687:         # Liste des clés à logger avec des valeurs par défaut si absentes
-688:         keys_to_log = [
-689:             'webhook_ssl_verify',
-690:             'webhook_sending_enabled',
-691:             'webhook_time_start',
-692:             'webhook_time_end',
-693:             'global_time_start',
-694:             'global_time_end'
-695:         ]
-696:         
-697:         # Log chaque valeur individuellement pour une meilleure lisibilité
-698:         for key in keys_to_log:
-699:             value = config.get(key, 'non défini')
-700:             app.logger.info("CFG WEBHOOK_CONFIG: %s=%s", key, value)
-701:             
-702:     except Exception as e:
-703:         app.logger.warning("CFG WEBHOOK_CONFIG: Erreur lors de la lecture de la configuration: %s", str(e))
-704: 
-705: _log_webhook_config_startup()
-706: 
-707: try:
-708:     app.logger.info(
-709:         "CFG CUSTOM_WEBHOOK: WEBHOOK_URL configured=%s value=%s",
-710:         bool(WEBHOOK_URL),
-711:         (WEBHOOK_URL[:80] if WEBHOOK_URL else ""),
-712:     )
-713:     app.logger.info(
-714:         "CFG PROCESSING_PREFS: mirror_media_to_custom=%s webhook_timeout_sec=%s",
-715:         bool(PROCESSING_PREFS.get("mirror_media_to_custom")),
-716:         PROCESSING_PREFS.get("webhook_timeout_sec"),
-717:     )
-718: except Exception:
-719:     pass
-720: 
-721: WEBHOOK_SEND_EVENTS = deque()
-722: 
-723: def _rate_limit_allow_send() -> bool:
-724:     try:
-725:         limit = int(PROCESSING_PREFS.get("rate_limit_per_hour") or 0)
-726:     except Exception:
-727:         limit = 0
-728:     return _rate_prune_and_allow(WEBHOOK_SEND_EVENTS, limit)
-729: 
-730: 
-731: def _record_send_event():
-732:     _rate_record_event(WEBHOOK_SEND_EVENTS)
-733: 
-734: 
-735: def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
-736:     """Valide via module preferences en partant des valeurs courantes comme base."""
-737:     base = dict(PROCESSING_PREFS)
-738:     ok, msg, out = _processing_prefs.validate_processing_prefs(payload, base)
-739:     return ok, msg, out
-740: 
-741: 
-742: def _append_webhook_log(log_entry: dict):
-743:     """Ajoute une entrée de log webhook (Redis si dispo, sinon fichier JSON).
-744:     Délègue à app_logging.webhook_logger pour centraliser la logique. Conserve au plus 500 entrées."""
-745:     try:
-746:         rc = globals().get("redis_client")
-747:     except Exception:
-748:         rc = None
-749:     _append_webhook_log_helper(
-750:         log_entry,
-751:         redis_client=rc,
-752:         logger=app.logger,
-753:         file_path=WEBHOOK_LOGS_FILE,
-754:         redis_list_key=WEBHOOK_LOGS_REDIS_KEY,
-755:         max_entries=500,
-756:     )
-````
-
 ## File: email_processing/orchestrator.py
 ````python
    1: """
@@ -14273,6 +13513,766 @@ requirements.txt
 1498:             "subject": (subject[:100] if subject else None),
 1499:         })
 1500:         return False
+````
+
+## File: app_render.py
+````python
+  1: redis_client = None
+  2: 
+  3: from background.lock import acquire_singleton_lock
+  4: from flask import Flask, jsonify, request
+  5: from flask_login import login_required
+  6: from flask_cors import CORS
+  7: import os
+  8: import threading
+  9: import time
+ 10: from pathlib import Path
+ 11: import json
+ 12: import logging
+ 13: from datetime import datetime, timedelta, timezone
+ 14: import urllib3
+ 15: import signal
+ 16: from collections import deque
+ 17: from utils.time_helpers import parse_time_hhmm as _parse_time_hhmm
+ 18: from utils.validators import normalize_make_webhook_url as _normalize_make_webhook_url
+ 19: 
+ 20: from config import settings
+ 21: from config import polling_config
+ 22: from config.polling_config import PollingConfigService
+ 23: from config import webhook_time_window
+ 24: from config.app_config_store import get_config_json as _config_get
+ 25: from config.app_config_store import set_config_json as _config_set
+ 26: 
+ 27: from services import (
+ 28:     ConfigService,
+ 29:     RuntimeFlagsService,
+ 30:     WebhookConfigService,
+ 31:     AuthService,
+ 32:     DeduplicationService,
+ 33: )
+ 34: 
+ 35: from auth import user as auth_user
+ 36: from auth import helpers as auth_helpers
+ 37: from auth.helpers import testapi_authorized as _testapi_authorized
+ 38: 
+ 39: from email_processing import imap_client as email_imap_client
+ 40: from email_processing import pattern_matching as email_pattern_matching
+ 41: from email_processing import webhook_sender as email_webhook_sender
+ 42: from email_processing import orchestrator as email_orchestrator
+ 43: from email_processing import link_extraction as email_link_extraction
+ 44: from email_processing import payloads as email_payloads
+ 45: from app_logging.webhook_logger import (
+ 46:     append_webhook_log as _append_webhook_log_helper,
+ 47:     fetch_webhook_logs as _fetch_webhook_logs_helper,
+ 48: )
+ 49: from utils.rate_limit import (
+ 50:     prune_and_allow_send as _rate_prune_and_allow,
+ 51:     record_send_event as _rate_record_event,
+ 52: )
+ 53: from preferences import processing_prefs as _processing_prefs
+ 54: from deduplication import redis_client as _dedup
+ 55: from deduplication.subject_group import generate_subject_group_id as _gen_subject_group_id
+ 56: from routes import (
+ 57:     health_bp,
+ 58:     api_webhooks_bp,
+ 59:     api_polling_bp,
+ 60:     api_processing_bp,
+ 61:     api_processing_legacy_bp,
+ 62:     api_test_bp,
+ 63:     dashboard_bp,
+ 64:     api_logs_bp,
+ 65:     api_admin_bp,
+ 66:     api_utility_bp,
+ 67:     api_config_bp,
+ 68:     api_make_bp,
+ 69:     api_auth_bp,
+ 70: )
+ 71: from routes.api_processing import DEFAULT_PROCESSING_PREFS as _DEFAULT_PROCESSING_PREFS
+ 72: DEFAULT_PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS
+ 73: from background.polling_thread import background_email_poller_loop
+ 74: 
+ 75: 
+ 76: def append_webhook_log(webhook_id: str, webhook_url: str, webhook_status_code: int, webhook_response: str):
+ 77:     """Append a webhook log entry to the webhook log file."""
+ 78:     return _append_webhook_log_helper(webhook_id, webhook_url, webhook_status_code, webhook_response)
+ 79: 
+ 80: try:
+ 81:     from zoneinfo import ZoneInfo
+ 82: except ImportError:
+ 83:     ZoneInfo = None
+ 84: 
+ 85: try:
+ 86:     import redis
+ 87: 
+ 88:     REDIS_AVAILABLE = True
+ 89: except ImportError:
+ 90:     REDIS_AVAILABLE = False
+ 91: 
+ 92: 
+ 93: app = Flask(__name__, template_folder='.', static_folder='static')
+ 94: app.secret_key = settings.FLASK_SECRET_KEY
+ 95: 
+ 96: _config_service = ConfigService()
+ 97: 
+ 98: _runtime_flags_service = RuntimeFlagsService.get_instance(...)
+ 99: 
+100: _webhook_service = WebhookConfigService.get_instance(...)
+101: 
+102: _auth_service = AuthService(_config_service)
+103: 
+104: 
+105: app.register_blueprint(health_bp)
+106: app.register_blueprint(api_webhooks_bp)
+107: app.register_blueprint(api_polling_bp)
+108: app.register_blueprint(api_processing_bp)
+109: app.register_blueprint(api_processing_legacy_bp)
+110: app.register_blueprint(api_test_bp)
+111: app.register_blueprint(dashboard_bp)
+112: app.register_blueprint(api_logs_bp)
+113: app.register_blueprint(api_admin_bp)
+114: app.register_blueprint(api_utility_bp)
+115: app.register_blueprint(api_config_bp)
+116: app.register_blueprint(api_make_bp)
+117: app.register_blueprint(api_auth_bp)
+118: 
+119: _cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+120: if _cors_origins:
+121:     CORS(
+122:         app,
+123:         resources={
+124:             r"/api/test/*": {
+125:                 "origins": _cors_origins,
+126:                 "supports_credentials": False,
+127:                 "methods": ["GET", "POST", "OPTIONS"],
+128:                 "allow_headers": ["Content-Type", "X-API-Key"],
+129:                 "max_age": 600,
+130:             }
+131:         },
+132:     )
+133: 
+134: login_manager = _auth_service.init_flask_login(app, login_view='dashboard.login')
+135: 
+136: auth_user.init_login_manager(app, login_view='dashboard.login')
+137: 
+138: WEBHOOK_URL = settings.WEBHOOK_URL
+139: MAKECOM_API_KEY = settings.MAKECOM_API_KEY
+140: WEBHOOK_SSL_VERIFY = settings.WEBHOOK_SSL_VERIFY
+141: 
+142: EMAIL_ADDRESS = settings.EMAIL_ADDRESS
+143: EMAIL_PASSWORD = settings.EMAIL_PASSWORD
+144: IMAP_SERVER = settings.IMAP_SERVER
+145: IMAP_PORT = settings.IMAP_PORT
+146: IMAP_USE_SSL = settings.IMAP_USE_SSL
+147: 
+148: EXPECTED_API_TOKEN = settings.EXPECTED_API_TOKEN
+149: 
+150: ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
+151: SENDER_LIST_FOR_POLLING = settings.SENDER_LIST_FOR_POLLING
+152: 
+153: # Runtime flags and files
+154: DISABLE_EMAIL_ID_DEDUP = settings.DISABLE_EMAIL_ID_DEDUP
+155: ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS
+156: POLLING_CONFIG_FILE = settings.POLLING_CONFIG_FILE
+157: TRIGGER_SIGNAL_FILE = settings.TRIGGER_SIGNAL_FILE
+158: RUNTIME_FLAGS_FILE = settings.RUNTIME_FLAGS_FILE
+159: 
+160: # Configuration du logging
+161: log_level_str = os.environ.get('FLASK_LOG_LEVEL', 'INFO').upper()
+162: log_level = getattr(logging, log_level_str, logging.INFO)
+163: logging.basicConfig(level=log_level,
+164:                     format='%(asctime)s - %(levelname)s - %(name)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s')
+165: if not REDIS_AVAILABLE:
+166:     logging.warning(
+167:         "CFG REDIS (module level): 'redis' Python library not installed. Redis-based features will be disabled or use fallbacks.")
+168: 
+169: 
+170: # Diagnostics (process start + heartbeat)
+171: try:
+172:     from datetime import datetime, timezone as _tz
+173:     PROCESS_START_TIME = datetime.now(_tz.utc)
+174: except Exception:
+175:     PROCESS_START_TIME = None
+176: 
+177: def _heartbeat_loop():
+178:     interval = 60
+179:     while True:
+180:         try:
+181:             bg = globals().get("_bg_email_poller_thread")
+182:             mk = globals().get("_make_watcher_thread")
+183:             bg_alive = bool(bg and bg.is_alive())
+184:             mk_alive = bool(mk and mk.is_alive())
+185:             app.logger.info("HEARTBEAT: alive (bg_poller=%s, make_watcher=%s)", bg_alive, mk_alive)
+186:         except Exception:
+187:             # Ignored intentionally: heartbeat logging must never crash the loop
+188:             pass
+189:         time.sleep(interval)
+190: 
+191: try:
+192:     disable_bg_hb = os.environ.get("DISABLE_BACKGROUND_TASKS", "").strip().lower() in ["1", "true", "yes"]
+193:     if getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and not disable_bg_hb:
+194:         _heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
+195:         _heartbeat_thread.start()
+196: except Exception:
+197:     pass
+198: 
+199: # Process signal handlers (observability)
+200: def _handle_sigterm(signum, frame):  # pragma: no cover - environment dependent
+201:     try:
+202:         app.logger.info("PROCESS: SIGTERM received; shutting down gracefully (platform restart/deploy).")
+203:     except Exception:
+204:         pass
+205: 
+206: try:
+207:     signal.signal(signal.SIGTERM, _handle_sigterm)
+208: except Exception:
+209:     # Some environments may not allow setting signal handlers (e.g., Windows)
+210:     pass
+211: 
+212: 
+213: # Configuration (log centralisé)
+214: settings.log_configuration(app.logger)
+215: if not WEBHOOK_SSL_VERIFY:
+216:     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+217:     app.logger.warning("CFG WEBHOOK: SSL verification DISABLED for webhook calls (development/legacy). Use valid certificates in production.")
+218:     
+219: TZ_FOR_POLLING = polling_config.initialize_polling_timezone(app.logger)
+220: 
+221: # Polling Config Service (accès centralisé à la configuration)
+222: _polling_service = PollingConfigService(settings)
+223: 
+224: # =============================================================================
+225: # SERVICES INITIALIZATION
+226: # =============================================================================
+227: 
+228: # 5. Runtime Flags Service (Singleton)
+229: try:
+230:     _runtime_flags_service = RuntimeFlagsService.get_instance(
+231:         file_path=settings.RUNTIME_FLAGS_FILE,
+232:         defaults={
+233:             "disable_email_id_dedup": bool(settings.DISABLE_EMAIL_ID_DEDUP),
+234:             "allow_custom_webhook_without_links": bool(settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
+235:         }
+236:     )
+237:     app.logger.info(f"SVC: RuntimeFlagsService initialized (cache_ttl={_runtime_flags_service.get_cache_ttl()}s)")
+238: except Exception as e:
+239:     app.logger.error(f"SVC: Failed to initialize RuntimeFlagsService: {e}")
+240:     _runtime_flags_service = None
+241: 
+242: # 6. Webhook Config Service (Singleton)
+243: try:
+244:     from config import app_config_store
+245:     _webhook_service = WebhookConfigService.get_instance(
+246:         file_path=Path(__file__).parent / "debug" / "webhook_config.json",
+247:         external_store=app_config_store
+248:     )
+249:     app.logger.info(f"SVC: WebhookConfigService initialized (has_url={_webhook_service.has_webhook_url()})")
+250: except Exception as e:
+251:     app.logger.error(f"SVC: Failed to initialize WebhookConfigService: {e}")
+252:     _webhook_service = None
+253: 
+254: 
+255: if not EXPECTED_API_TOKEN:
+256:     app.logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
+257: else:
+258:     app.logger.info(f"CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: '{EXPECTED_API_TOKEN[:5]}...')")
+259: 
+260: # --- Configuration des Webhooks de Présence ---
+261: # Présence: déjà fournie par settings (alias ci-dessus)
+262: 
+263: # --- Email server config validation flag (maintenant via ConfigService) ---
+264: email_config_valid = _config_service.is_email_config_valid()
+265: 
+266: # --- Webhook time window initialization (env -> then optional UI override from disk) ---
+267: try:
+268:     webhook_time_window.initialize_webhook_time_window(
+269:         start_str=(
+270:             os.environ.get("WEBHOOKS_TIME_START")
+271:             or os.environ.get("WEBHOOK_TIME_START")
+272:             or ""
+273:         ),
+274:         end_str=(
+275:             os.environ.get("WEBHOOKS_TIME_END")
+276:             or os.environ.get("WEBHOOK_TIME_END")
+277:             or ""
+278:         ),
+279:     )
+280:     webhook_time_window.reload_time_window_from_disk()
+281: except Exception:
+282:     pass
+283: 
+284: # --- Polling config overrides (optional UI overrides from external store with file fallback) ---
+285: try:
+286:     _poll_cfg_path = settings.POLLING_CONFIG_FILE
+287:     app.logger.info(
+288:         f"CFG POLL(file): path={_poll_cfg_path}; exists={_poll_cfg_path.exists()}"
+289:     )
+290:     _pc = {}
+291:     try:
+292:         _pc = _config_get("polling_config", file_fallback=_poll_cfg_path) or {}
+293:     except Exception:
+294:         _pc = {}
+295:     app.logger.info(
+296:         "CFG POLL(loaded): keys=%s; snippet={active_days=%s,start=%s,end=%s,enable_polling=%s}",
+297:         list(_pc.keys()),
+298:         _pc.get("active_days"),
+299:         _pc.get("active_start_hour"),
+300:         _pc.get("active_end_hour"),
+301:         _pc.get("enable_polling"),
+302:     )
+303:     try:
+304:         app.logger.info(
+305:             "CFG POLL(effective): days=%s; start=%s; end=%s; senders=%s; dedup_monthly_scope=%s; enable_polling=%s; vacation_start=%s; vacation_end=%s",
+306:             _polling_service.get_active_days(),
+307:             _polling_service.get_active_start_hour(),
+308:             _polling_service.get_active_end_hour(),
+309:             len(_polling_service.get_sender_list() or []),
+310:             _polling_service.is_subject_group_dedup_enabled(),
+311:             _polling_service.get_enable_polling(True),
+312:             (_pc.get("vacation_start") if isinstance(_pc, dict) else None),
+313:             (_pc.get("vacation_end") if isinstance(_pc, dict) else None),
+314:         )
+315:     except Exception:
+316:         pass
+317: except Exception:
+318:     pass
+319: 
+320: # --- Dedup constants mapping (from central settings) ---
+321: PROCESSED_EMAIL_IDS_REDIS_KEY = settings.PROCESSED_EMAIL_IDS_REDIS_KEY
+322: PROCESSED_SUBJECT_GROUPS_REDIS_KEY = settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY
+323: SUBJECT_GROUP_REDIS_PREFIX = settings.SUBJECT_GROUP_REDIS_PREFIX
+324: SUBJECT_GROUP_TTL_SECONDS = settings.SUBJECT_GROUP_TTL_SECONDS
+325: 
+326: # Memory fallback set for subject groups when Redis is not available
+327: SUBJECT_GROUPS_MEMORY = set()
+328: 
+329: # 7. Deduplication Service (avec Redis ou fallback mémoire)
+330: try:
+331:     _dedup_service = DeduplicationService(
+332:         redis_client=redis_client,  # None = fallback mémoire automatique
+333:         logger=app.logger,
+334:         config_service=_config_service,
+335:         polling_config_service=_polling_service,
+336:     )
+337:     app.logger.info(f"SVC: DeduplicationService initialized {_dedup_service}")
+338: except Exception as e:
+339:     app.logger.error(f"SVC: Failed to initialize DeduplicationService: {e}")
+340:     _dedup_service = None
+341: 
+342: # --- Fonctions Utilitaires IMAP ---
+343: def create_imap_connection():
+344:     """Wrapper vers email_processing.imap_client.create_imap_connection."""
+345:     return email_imap_client.create_imap_connection(app.logger)
+346: 
+347: 
+348: def close_imap_connection(mail):
+349:     """Wrapper vers email_processing.imap_client.close_imap_connection."""
+350:     return email_imap_client.close_imap_connection(app.logger, mail)
+351: 
+352: 
+353: def generate_email_id(msg_data):
+354:     """Wrapper vers email_processing.imap_client.generate_email_id."""
+355:     return email_imap_client.generate_email_id(msg_data)
+356: 
+357: 
+358: def extract_sender_email(from_header):
+359:     """Wrapper vers email_processing.imap_client.extract_sender_email."""
+360:     return email_imap_client.extract_sender_email(from_header)
+361: 
+362: 
+363: def decode_email_header(header_value):
+364:     """Wrapper vers email_processing.imap_client.decode_email_header_value."""
+365:     return email_imap_client.decode_email_header_value(header_value)
+366: 
+367: 
+368: def mark_email_as_read_imap(mail, email_num):
+369:     """Wrapper vers email_processing.imap_client.mark_email_as_read_imap."""
+370:     return email_imap_client.mark_email_as_read_imap(app.logger, mail, email_num)
+371: 
+372: 
+373: def check_media_solution_pattern(subject, email_content):
+374:     """Compatibility wrapper delegating to email_processing.pattern_matching.
+375: 
+376:     Maintains backward compatibility while centralizing pattern detection.
+377:     """
+378:     try:
+379:         return email_pattern_matching.check_media_solution_pattern(
+380:             subject=subject,
+381:             email_content=email_content,
+382:             tz_for_polling=TZ_FOR_POLLING,
+383:             logger=app.logger,
+384:         )
+385:     except Exception as e:
+386:         try:
+387:             app.logger.error(f"MEDIA_PATTERN_WRAPPER: Exception: {e}")
+388:         except Exception:
+389:             pass
+390:         return {"matches": False, "delivery_time": None}
+391: 
+392: 
+393: def send_makecom_webhook(subject, delivery_time, sender_email, email_id, override_webhook_url: str | None = None, extra_payload: dict | None = None):
+394:     """Délègue l'envoi du webhook Make.com au module email_processing.webhook_sender.
+395: 
+396:     Maintient la compatibilité tout en centralisant la logique d'envoi.
+397:     """
+398:     return email_webhook_sender.send_makecom_webhook(
+399:         subject=subject,
+400:         delivery_time=delivery_time,
+401:         sender_email=sender_email,
+402:         email_id=email_id,
+403:         override_webhook_url=override_webhook_url,
+404:         extra_payload=extra_payload,
+405:         logger=app.logger,
+406:         log_hook=_append_webhook_log,
+407:     )
+408: 
+409: 
+410: # --- Fonctions de Déduplication avec Redis ---
+411: def is_email_id_processed_redis(email_id):
+412:     """Back-compat wrapper: delegate to dedup module; returns False on errors or no Redis."""
+413:     rc = globals().get("redis_client")
+414:     return _dedup.is_email_id_processed(
+415:         rc,
+416:         email_id=email_id,
+417:         logger=app.logger,
+418:         processed_ids_key=PROCESSED_EMAIL_IDS_REDIS_KEY,
+419:     )
+420: 
+421: 
+422: def mark_email_id_as_processed_redis(email_id):
+423:     """Back-compat wrapper: delegate to dedup module; returns False without Redis."""
+424:     rc = globals().get("redis_client")
+425:     return _dedup.mark_email_id_processed(
+426:         rc,
+427:         email_id=email_id,
+428:         logger=app.logger,
+429:         processed_ids_key=PROCESSED_EMAIL_IDS_REDIS_KEY,
+430:     )
+431: 
+432: 
+433: 
+434: def generate_subject_group_id(subject: str) -> str:
+435:     """Wrapper vers deduplication.subject_group.generate_subject_group_id."""
+436:     return _gen_subject_group_id(subject)
+437: 
+438: 
+439: def is_subject_group_processed(group_id: str) -> bool:
+440:     """Check subject-group dedup via Redis or memory using the centralized helper."""
+441:     rc = globals().get("redis_client")
+442:     return _dedup.is_subject_group_processed(
+443:         rc,
+444:         group_id=group_id,
+445:         logger=app.logger,
+446:         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
+447:         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
+448:         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
+449:         enable_monthly_scope=_polling_service.is_subject_group_dedup_enabled(),
+450:         tz=TZ_FOR_POLLING,
+451:         memory_set=SUBJECT_GROUPS_MEMORY,
+452:     )
+453: 
+454: 
+455: def mark_subject_group_processed(group_id: str) -> bool:
+456:     """Mark subject-group as processed using centralized helper (Redis or memory)."""
+457:     rc = globals().get("redis_client")
+458:     return _dedup.mark_subject_group_processed(
+459:         rc,
+460:         group_id=group_id,
+461:         logger=app.logger,
+462:         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
+463:         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
+464:         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
+465:         enable_monthly_scope=_polling_service.is_subject_group_dedup_enabled(),
+466:         tz=TZ_FOR_POLLING,
+467:         memory_set=SUBJECT_GROUPS_MEMORY,
+468:     )
+469: 
+470: 
+471:  
+472:  
+473: def check_new_emails_and_trigger_webhook():
+474:     """Delegate to orchestrator entry-point."""
+475:     global SENDER_LIST_FOR_POLLING, ENABLE_SUBJECT_GROUP_DEDUP
+476:     try:
+477:         SENDER_LIST_FOR_POLLING = _polling_service.get_sender_list() or []
+478:     except Exception:
+479:         pass
+480:     try:
+481:         ENABLE_SUBJECT_GROUP_DEDUP = _polling_service.is_subject_group_dedup_enabled()
+482:     except Exception:
+483:         pass
+484:     return email_orchestrator.check_new_emails_and_trigger_webhook()
+485: 
+486: def background_email_poller() -> None:
+487:     """Delegate polling loop to background.polling_thread with injected deps."""
+488:     def _is_ready_to_poll() -> bool:
+489:         return all([email_config_valid, _polling_service.get_sender_list(), WEBHOOK_URL])
+490: 
+491:     def _run_cycle() -> int:
+492:         return check_new_emails_and_trigger_webhook()
+493: 
+494:     def _is_in_vacation(now_dt: datetime) -> bool:
+495:         try:
+496:             return _polling_service.is_in_vacation(now_dt)
+497:         except Exception:
+498:             return False
+499: 
+500:     background_email_poller_loop(
+501:         logger=app.logger,
+502:         tz_for_polling=_polling_service.get_tz(),
+503:         get_active_days=_polling_service.get_active_days,
+504:         get_active_start_hour=_polling_service.get_active_start_hour,
+505:         get_active_end_hour=_polling_service.get_active_end_hour,
+506:         inactive_sleep_seconds=_polling_service.get_inactive_check_interval_s(),
+507:         active_sleep_seconds=_polling_service.get_email_poll_interval_s(),
+508:         is_in_vacation=_is_in_vacation,
+509:         is_ready_to_poll=_is_ready_to_poll,
+510:         run_poll_cycle=_run_cycle,
+511:         max_consecutive_errors=5,
+512:     )
+513: 
+514: 
+515: def make_scenarios_vacation_watcher() -> None:
+516:     """Background watcher that enforces Make scenarios ON/OFF according to
+517:     - UI global toggle enable_polling (persisted via /api/update_polling_config)
+518:     - Vacation window in polling_config (POLLING_VACATION_START/END)
+519: 
+520:     Logic:
+521:     - If enable_polling is False => ensure scenarios are OFF
+522:     - If enable_polling is True and in vacation => ensure scenarios are OFF
+523:     - If enable_polling is True and not in vacation => ensure scenarios are ON
+524: 
+525:     To minimize API calls, apply only on state changes.
+526:     """
+527:     last_applied = None  # None|True|False meaning desired state last set
+528:     interval = max(60, _polling_service.get_inactive_check_interval_s())
+529:     while True:
+530:         try:
+531:             enable_ui = _polling_service.get_enable_polling(True)
+532:             in_vac = False
+533:             try:
+534:                 in_vac = _polling_service.is_in_vacation(None)
+535:             except Exception:
+536:                 in_vac = False
+537:             desired = bool(enable_ui and not in_vac)
+538:             if last_applied is None or desired != last_applied:
+539:                 try:
+540:                     from routes.api_make import toggle_all_scenarios  # local import to avoid cycles
+541:                     res = toggle_all_scenarios(desired, logger=app.logger)
+542:                     app.logger.info(
+543:                         "MAKE_WATCHER: applied desired=%s (enable_ui=%s, in_vacation=%s) results_keys=%s",
+544:                         desired, enable_ui, in_vac, list(res.keys()) if isinstance(res, dict) else 'n/a'
+545:                     )
+546:                 except Exception as e:
+547:                     app.logger.error(f"MAKE_WATCHER: toggle_all_scenarios failed: {e}")
+548:                 last_applied = desired
+549:         except Exception as e:
+550:             try:
+551:                 app.logger.error(f"MAKE_WATCHER: loop error: {e}")
+552:             except Exception:
+553:                 pass
+554:         time.sleep(interval)
+555: 
+556: 
+557: def _start_daemon_thread(target, name: str) -> threading.Thread | None:
+558:     try:
+559:         thread = threading.Thread(target=target, daemon=True, name=name)
+560:         thread.start()
+561:         app.logger.info(f"THREAD: {name} started successfully")
+562:         return thread
+563:     except Exception as e:
+564:         app.logger.error(f"THREAD: Failed to start {name}: {e}", exc_info=True)
+565:         return None
+566: 
+567: 
+568: try:
+569:     # Check legacy disable flag (priority override)
+570:     disable_bg = os.environ.get("DISABLE_BACKGROUND_TASKS", "").strip().lower() in ["1", "true", "yes"]
+571:     enable_bg = getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and not disable_bg
+572:     
+573:     # Log effective config before starting background tasks
+574:     try:
+575:         app.logger.info(
+576:             f"CFG BG: enable_polling(UI)={_polling_service.get_enable_polling(True)}; ENABLE_BACKGROUND_TASKS(env)={getattr(settings, 'ENABLE_BACKGROUND_TASKS', False)}; DISABLE_BACKGROUND_TASKS={disable_bg}"
+577:         )
+578:     except Exception:
+579:         pass
+580:     # Start background poller only if both the environment flag and the persisted
+581:     # UI-controlled switch are enabled. This avoids unexpected background work
+582:     # when the operator intentionally disabled polling from the dashboard.
+583:     if enable_bg and _polling_service.get_enable_polling(True):
+584:         lock_path = getattr(settings, "BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock")
+585:         try:
+586:             if acquire_singleton_lock(lock_path):
+587:                 app.logger.info(
+588:                     f"BG_POLLER: Singleton lock acquired on {lock_path}. Starting background thread."
+589:                 )
+590:                 _bg_email_poller_thread = _start_daemon_thread(background_email_poller, "EmailPoller")
+591:             else:
+592:                 app.logger.info(
+593:                     f"BG_POLLER: Singleton lock NOT acquired on {lock_path}. Background thread will not start."
+594:                 )
+595:         except Exception as e:
+596:             app.logger.error(
+597:                 f"BG_POLLER: Failed to start background thread: {e}", exc_info=True
+598:             )
+599:     else:
+600:         # Clarify which condition prevented starting the poller
+601:         if disable_bg:
+602:             app.logger.info(
+603:                 "BG_POLLER: DISABLE_BACKGROUND_TASKS is set. Background poller not started."
+604:             )
+605:         elif not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
+606:             app.logger.info(
+607:                 "BG_POLLER: ENABLE_BACKGROUND_TASKS is false. Background poller not started."
+608:             )
+609:         elif not _polling_service.get_enable_polling(True):
+610:             app.logger.info(
+611:                 "BG_POLLER: UI 'enable_polling' flag is false. Background poller not started."
+612:             )
+613: except Exception:
+614:     # Defensive: never block app startup because of background thread wiring
+615:     pass
+616: 
+617: try:
+618:     if enable_bg and bool(settings.MAKECOM_API_KEY):
+619:         _make_watcher_thread = _start_daemon_thread(make_scenarios_vacation_watcher, "MakeVacationWatcher")
+620:         if _make_watcher_thread:
+621:             app.logger.info("MAKE_WATCHER: vacation-aware ON/OFF watcher active")
+622:     else:
+623:         if disable_bg:
+624:             app.logger.info("MAKE_WATCHER: not started because DISABLE_BACKGROUND_TASKS is set")
+625:         elif not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
+626:             app.logger.info("MAKE_WATCHER: not started because ENABLE_BACKGROUND_TASKS is false")
+627:         elif not bool(settings.MAKECOM_API_KEY):
+628:             app.logger.info("MAKE_WATCHER: not started because MAKECOM_API_KEY is not configured (avoiding 401 noise)")
+629: except Exception as e:
+630:     app.logger.error(f"MAKE_WATCHER: failed to start thread: {e}")
+631: 
+632: 
+633: 
+634: WEBHOOK_LOGS_FILE = Path(__file__).resolve().parent / "debug" / "webhook_logs.json"
+635: WEBHOOK_LOGS_REDIS_KEY = "r:ss:webhook_logs:v1"  # Redis list, each item is JSON string
+636: 
+637: # --- Processing Preferences (Filters, Reliability, Rate limiting) ---
+638: PROCESSING_PREFS_FILE = Path(__file__).resolve().parent / "debug" / "processing_prefs.json"
+639: PROCESSING_PREFS_REDIS_KEY = "r:ss:processing_prefs:v1"
+640: 
+641: 
+642: try:
+643:     PROCESSING_PREFS  # noqa: F401
+644: except NameError:
+645:     PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS.copy()
+646: 
+647: 
+648: def _load_processing_prefs() -> dict:
+649:     """Charge les préférences via app_config_store (Redis-first, fallback fichier)."""
+650:     try:
+651:         data = _config_get("processing_prefs", file_fallback=PROCESSING_PREFS_FILE) or {}
+652:     except Exception:
+653:         data = {}
+654: 
+655:     if isinstance(data, dict):
+656:         return {**_DEFAULT_PROCESSING_PREFS, **data}
+657:     return _DEFAULT_PROCESSING_PREFS.copy()
+658: 
+659: 
+660: def _save_processing_prefs(prefs: dict) -> bool:
+661:     """Sauvegarde via app_config_store (Redis-first, fallback fichier)."""
+662:     try:
+663:         return bool(_config_set("processing_prefs", prefs, file_fallback=PROCESSING_PREFS_FILE))
+664:     except Exception:
+665:         return False
+666: 
+667: PROCESSING_PREFS = _load_processing_prefs()
+668: 
+669: def _log_webhook_config_startup():
+670:     try:
+671:         # Préférer le service si disponible, sinon fallback sur chargement direct
+672:         config = None
+673:         if _webhook_service is not None:
+674:             try:
+675:                 config = _webhook_service.get_all_config()
+676:             except Exception:
+677:                 pass
+678:         
+679:         if config is None:
+680:             from routes.api_webhooks import _load_webhook_config
+681:             config = _load_webhook_config()
+682:         
+683:         if not config:
+684:             app.logger.info("CFG WEBHOOK_CONFIG: Aucune configuration webhook trouvée (fichier vide ou inexistant)")
+685:             return
+686:             
+687:         # Liste des clés à logger avec des valeurs par défaut si absentes
+688:         keys_to_log = [
+689:             'webhook_ssl_verify',
+690:             'webhook_sending_enabled',
+691:             'webhook_time_start',
+692:             'webhook_time_end',
+693:             'global_time_start',
+694:             'global_time_end'
+695:         ]
+696:         
+697:         # Log chaque valeur individuellement pour une meilleure lisibilité
+698:         for key in keys_to_log:
+699:             value = config.get(key, 'non défini')
+700:             app.logger.info("CFG WEBHOOK_CONFIG: %s=%s", key, value)
+701:             
+702:     except Exception as e:
+703:         app.logger.warning("CFG WEBHOOK_CONFIG: Erreur lors de la lecture de la configuration: %s", str(e))
+704: 
+705: _log_webhook_config_startup()
+706: 
+707: try:
+708:     app.logger.info(
+709:         "CFG CUSTOM_WEBHOOK: WEBHOOK_URL configured=%s value=%s",
+710:         bool(WEBHOOK_URL),
+711:         (WEBHOOK_URL[:80] if WEBHOOK_URL else ""),
+712:     )
+713:     app.logger.info(
+714:         "CFG PROCESSING_PREFS: mirror_media_to_custom=%s webhook_timeout_sec=%s",
+715:         bool(PROCESSING_PREFS.get("mirror_media_to_custom")),
+716:         PROCESSING_PREFS.get("webhook_timeout_sec"),
+717:     )
+718: except Exception:
+719:     pass
+720: 
+721: WEBHOOK_SEND_EVENTS = deque()
+722: 
+723: def _rate_limit_allow_send() -> bool:
+724:     try:
+725:         limit = int(PROCESSING_PREFS.get("rate_limit_per_hour") or 0)
+726:     except Exception:
+727:         limit = 0
+728:     return _rate_prune_and_allow(WEBHOOK_SEND_EVENTS, limit)
+729: 
+730: 
+731: def _record_send_event():
+732:     _rate_record_event(WEBHOOK_SEND_EVENTS)
+733: 
+734: 
+735: def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
+736:     """Valide via module preferences en partant des valeurs courantes comme base."""
+737:     base = dict(PROCESSING_PREFS)
+738:     ok, msg, out = _processing_prefs.validate_processing_prefs(payload, base)
+739:     return ok, msg, out
+740: 
+741: 
+742: def _append_webhook_log(log_entry: dict):
+743:     """Ajoute une entrée de log webhook (Redis si dispo, sinon fichier JSON).
+744:     Délègue à app_logging.webhook_logger pour centraliser la logique. Conserve au plus 500 entrées."""
+745:     try:
+746:         rc = globals().get("redis_client")
+747:     except Exception:
+748:         rc = None
+749:     _append_webhook_log_helper(
+750:         log_entry,
+751:         redis_client=rc,
+752:         logger=app.logger,
+753:         file_path=WEBHOOK_LOGS_FILE,
+754:         redis_list_key=WEBHOOK_LOGS_REDIS_KEY,
+755:         max_entries=500,
+756:     )
 ````
 
 ## File: dashboard.html

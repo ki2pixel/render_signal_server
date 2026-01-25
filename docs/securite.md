@@ -1,9 +1,33 @@
 # Sécurité
 
+---
+
+## 📅 Dernière mise à jour / Engagements Lot 2
+
+**Date de refonte** : 2026-01-25 (protocol code-doc)
+
+### Terminologie unifiée
+- **`DASHBOARD_*`** : Variables d'environnement (anciennement `TRIGGER_PAGE_*`)
+- **`MagicLinkService`** : Service singleton pour authentification sans mot de passe
+- **`R2TransferService`** : Service singleton pour offload Cloudflare R2
+- **"Absence Globale"** : Fonctionnalité de blocage configurable par jour de semaine
+
+### Engagements Lot 2 (Résilience & Architecture)
+- ✅ **Verrou distribué Redis** : Implémenté avec clé `render_signal:poller_lock`, TTL 5 min
+- ✅ **Fallback R2 garanti** : Conservation URLs sources si Worker R2 indisponible
+- ✅ **Watchdog IMAP** : Timeout 30s pour éviter processus zombies
+- ✅ **Tests résilience** : `test_lock_redis.py`, `test_r2_resilience.py` avec marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`
+- ✅ **Store-as-Source-of-Truth** : Configuration dynamique depuis Redis/fichier, pas d'écriture runtime dans les globals
+
+### Métriques de documentation
+- **Volume** : 7 388 lignes de contenu réparties dans 25 fichiers actifs
+- **Densité** : Justifie le découpage modulaire pour maintenir la lisibilité
+- **Exclusions** : `archive/` et `audits/` maintenus séparément pour éviter le bruit
+
 ## Secrets et identifiants
 - Ne jamais utiliser les valeurs de référence présentes dans le code (`REF_*`) en production.
 - Fournir tous les secrets via variables d'environnement et gérer leur rotation.
-- `FLASK_SECRET_KEY` obligatoire et robuste (sessions/auth).
+- **Variables obligatoires** : 8 variables ENV requises avec enforcement au démarrage (`FLASK_SECRET_KEY`, `TRIGGER_PAGE_PASSWORD`, `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `IMAP_SERVER`, `PROCESS_API_TOKEN`, `WEBHOOK_URL`, `MAKECOM_API_KEY`).
 
 ## Authentification UI
 - `Flask-Login` protège `/` et les routes sensibles.
@@ -20,6 +44,12 @@
 ## Données utilisateur
 - Sanitize systématique des entrées si vous ajoutez de nouvelles routes.
 - Ne logguez pas les mots de passe ; masquez les secrets dans les logs.
+
+### Variables d'environnement obligatoires (enforcement au démarrage)
+- **Mécanisme** : `_get_required_env()` dans `config/settings.py` lève `ValueError` si une variable obligatoire est manquante
+- **Liste complète** : `FLASK_SECRET_KEY`, `TRIGGER_PAGE_PASSWORD`, `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `IMAP_SERVER`, `PROCESS_API_TOKEN`, `WEBHOOK_URL`, `MAKECOM_API_KEY`
+- **Message d'erreur** explicite au démarrage pour éviter les déploiements incomplets
+- **Tests dédiés** : `tests/test_settings_required_env.py` avec scénarios Given/When/Then
 
 ### Anonymisation des journaux (Lot 1)
 - Tous les points de log du poller IMAP et des webhooks passent par `utils.text_helpers.mask_sensitive_data()` :
@@ -40,6 +70,7 @@
 - **Domaines autorisés** : `dropbox.com`, `fromsmash.com`, `swisstransfer.com`, `wetransfer.com`
 - **Configuration** : `R2_ALLOWED_DOMAINS` (optionnel) pour surcharge personnalisée
 - **Logging** : Rejets journalisés avec `WARNING` pour auditabilité
+- **Fallback gracieux** : Conservation `raw_url` si R2 échoue, aucun blocage du flux principal
 
 ## Magic Links
 

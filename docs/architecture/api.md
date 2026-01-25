@@ -33,7 +33,7 @@ L'API est structurée en blueprints Flask pour une meilleure organisation et mai
 | `api_test` | `routes/api_test.py` | - | Endpoints de test (CORS) |
 | `api_utility` | `routes/api_utility.py` | - | Utilitaires (ping, trigger, statut) |
 | `api_admin` | `routes/api_admin.py` | `ConfigService`, `AuthService` | Administration |
-| `api_config` | `routes/api_config.py` | `RuntimeFlagsService`, `PollingConfigService` | Configuration |
+| `api_config` | `routes/api_config.py` | `RuntimeFlagsService`, `PollingConfigService` | Configuration (store-as-source-of-truth) |
 
 ## Routes Principales
 
@@ -47,11 +47,13 @@ L'API est structurée en blueprints Flask pour une meilleure organisation et mai
 - `GET /api/webhooks/time-window` - Récupérer la fenêtre horaire
 - `POST /api/webhooks/time-window` - Mettre à jour la fenêtre horaire
 
-### Configuration
-- `GET /api/get_runtime_flags` - Récupérer les flags de runtime
-- `POST /api/update_runtime_flags` - Mettre à jour les flags de runtime
-- `GET /api/get_polling_config` - Récupérer la configuration du polling
-- `POST /api/update_polling_config` - Mettre à jour la configuration du polling
+### Configuration (Store-as-Source-of-Truth)
+- `GET /api/get_runtime_flags` - Récupérer les flags de runtime (depuis Redis/fichier)
+- `POST /api/update_runtime_flags` - Mettre à jour les flags de runtime (persisté dans Redis/fichier)
+- `GET /api/get_polling_config` - Récupérer la configuration du polling (depuis Redis/fichier)
+- `POST /api/update_polling_config` - Mettre à jour la configuration du polling (persisté dans Redis/fichier)
+- `GET /api/processing_prefs` - Récupérer les préférences de traitement (store-as-source-of-truth)
+- `POST /api/processing_prefs` - Mettre à jour les préférences de traitement (persisté dans Redis/fichier)
 
 ### Administration
 - `POST /api/restart_server` - Redémarrer le serveur

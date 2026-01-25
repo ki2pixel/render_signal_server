@@ -1,5 +1,43 @@
 # Architecture
 
+---
+
+## 📅 Dernière mise à jour / Engagements Lot 2
+
+**Date de refonte** : 2026-01-25 (protocol code-doc)
+
+### Terminologie unifiée
+- **`DASHBOARD_*`** : Variables d'environnement (anciennement `TRIGGER_PAGE_*`)
+- **`MagicLinkService`** : Service singleton pour authentification sans mot de passe
+- **`R2TransferService`** : Service singleton pour offload Cloudflare R2
+- **"Absence Globale"** : Fonctionnalité de blocage configurable par jour de semaine
+
+### Engagements Lot 2 (Résilience & Architecture)
+- ✅ **Verrou distribué Redis** : Implémenté avec clé `render_signal:poller_lock`, TTL 5 min
+- ✅ **Fallback R2 garanti** : Conservation URLs sources si Worker R2 indisponible
+- ✅ **Watchdog IMAP** : Timeout 30s pour éviter processus zombies
+- ✅ **Tests résilience** : `test_lock_redis.py`, `test_r2_resilience.py` avec marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`
+- ✅ **Store-as-Source-of-Truth** : Configuration dynamique depuis Redis/fichier, pas d'écriture runtime dans les globals
+
+### Complexity Watchlist (radon 2026-01-25)
+
+| Domaine | Fonction critique | Grade | Actions recommandées |
+| --- | --- | --- | --- |
+| Orchestrateur IMAP | `email_processing/orchestrator.py::check_new_emails_and_trigger_webhook` | F | Poursuivre le découpage entamé (helpers `_fetch_and_parse_email`, `_load_webhook_global_time_window`) en extrayant les règles DESABO/Media Solution dans des services dédiés pour réduire la complexité cyclomatique. |
+| API Config Polling | `routes/api_config.py::update_polling_config` | F | S’appuyer davantage sur `PollingConfigService` pour validations bool/jours/heures et conversions `enable_polling`; viser un schéma partagé entre API et poller. |
+| Service Offload R2 | `services/r2_transfer_service.py::normalize_source_url` | E | Introduire une stratégie par fournisseur (Dropbox, FromSmash, SwissTransfer) afin de limiter les branches conditionnelles et isoler la normalisation. |
+| Webhook Config API | `routes/api_webhooks.py::update_webhook_config` | E | Décharger la validation Absence Globale/SSL dans `WebhookConfigService` (déjà singleton) pour uniformiser la logique. |
+| Preferences Service | `preferences/processing_prefs.py::validate_processing_prefs` | E | Formaliser le schéma via un validateur typé (pydantic/marshmallow) pour éliminer les blocs try/except imbriqués. |
+
+> Ces surveillances garantissent que les sections « Services dédiés » ci-dessous restent alignées avec l’état réel du code; toute réduction de complexité doit être documentée ici.
+
+### Métriques de documentation
+- **Volume** : 7 388 lignes de contenu réparties dans 25 fichiers actifs
+- **Densité** : Justifie le découpage modulaire pour maintenir la lisibilité
+- **Exclusions** : `archive/` et `audits/` maintenus séparément pour éviter le bruit
+
+---
+
 Cette application fournit une télécommande web sécurisée (Flask + Flask-Login) et un service de polling d'e-mails IMAP exécuté en tâche de fond.
 
 ## Vue d'ensemble

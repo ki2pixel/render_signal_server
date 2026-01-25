@@ -1,12 +1,66 @@
-# Stockage de la configuration
+## 📅 Dernière mise à jour / Engagements Lot 2
+
+**Date de refonte** : 2026-01-25 (protocol code-doc)
+
+### Terminologie unifiée
+- **`DASHBOARD_*`** : Variables d'environnement (anciennement `TRIGGER_PAGE_*`)
+- **`MagicLinkService`** : Service singleton pour authentification sans mot de passe
+- **`R2TransferService`** : Service singleton pour offload Cloudflare R2
+- **"Absence Globale"** : Fonctionnalité de blocage configurable par jour de semaine
+
+### Engagements Lot 2 (Résilience & Architecture)
+- ✅ **Verrou distribué Redis** : Implémenté avec clé `render_signal:poller_lock`, TTL 5 min
+- ✅ **Fallback R2 garanti** : Conservation URLs sources si Worker R2 indisponible
+- ✅ **Watchdog IMAP** : Timeout 30s pour éviter processus zombies
+- ✅ **Tests résilience** : `test_lock_redis.py`, `test_r2_resilience.py` avec marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`
+- ✅ **Store-as-Source-of-Truth** : Configuration dynamique depuis Redis/fichier, pas d'écriture runtime dans les globals
+
+### Métriques de documentation
+- **Volume** : 7 388 lignes de contenu réparties dans 25 fichiers actifs
+- **Densité** : Justifie le découpage modulaire pour maintenir la lisibilité
+- **Exclusions** : `archive/` et `audits/` maintenus séparément pour éviter le bruit
+
+## Stockage de la configuration
 
 ## Architecture de stockage
 
 L'application utilise une architecture de stockage hiérarchique pour la persistance des configurations et des artefacts critiques :
 
-1. **Backend JSON externe** (recommandé en production) – API PHP `config_api.php` utilisée par `WebhookConfigService`, `MagicLinkService`, etc. pour supporter les déploiements multi-workers (Render + serveur PHP).
-2. **Fichiers locaux** (fallback pour le développement et compatibilité).
-3. **MySQL** (déprécié, supprimé dans la version actuelle).
+1. **Redis Config Store** (prioritaire en production) – Backend Redis centralisé pour les déploiements multi-workers avec `app_config_store.py`.
+2. **Backend JSON externe** (fallback) – API PHP `config_api.php` utilisée par `WebhookConfigService`, `MagicLinkService`, etc.
+3. **Fichiers locaux** (fallback pour le développement et compatibilité).
+4. **MySQL** (déprécié, supprimé dans la version actuelle).
+
+## Redis Config Store
+
+### Configuration requise
+
+Pour activer le stockage Redis, définissez :
+
+- `REDIS_URL` : URL Redis (ex: `redis://:password@host:port/db`)
+
+### Clés de configuration gérées
+
+- `polling_config` : Configuration du polling IMAP (jours actifs, heures, timezone, senders)
+- `webhook_config` : Configuration des webhooks et fenêtres horaires
+- `processing_prefs` : Préférences de traitement (filtrage, déduplication)
+- `runtime_flags` : Paramètres de débogage et fonctionnalités expérimentales
+- `magic_link_tokens` : Tokens Magic Link permanents
+
+### Store-as-Source-of-Truth
+
+- **API et poller** : Tous lisent depuis Redis/fichier via `AppConfigStore` sans écrire dans les globals
+- **Dynamic reload** : Les changements de configuration sont effectifs immédiatement sans redémarrage
+- **Tests** : `tests/test_polling_dynamic_reload.py` valide le comportement store-as-source-of-truth
+
+### Migration
+
+```bash
+# Vérifier la migration vers Redis
+python migrate_configs_to_redis.py --verify
+# Exécuter la migration
+python migrate_configs_to_redis.py --only
+```
 
 ## Backend JSON externe
 
@@ -149,7 +203,7 @@ Le script retourne `0` si toutes les clés vérifiées sont présentes et valide
 
 ### Configurations supportées
 - `magic_link_tokens` : Tokens magic link permanents
-- `polling_config` : Configuration IMAP et fenêtres horaires
+- `polling_config` : Configuration IMAP et fenêtres horaires (détails ci-dessous)
 - `processing_prefs` : Préférences de traitement des emails
 - `webhook_config` : Configuration URLs webhooks et SSL
 
@@ -158,6 +212,21 @@ Le script retourne `0` si toutes les clés vérifiées sont présentes et valide
 - **Cache** : Client Redis avec décode_responses=True
 - **Fallback** : Basculement automatique avec logging WARNING
 - **Atomicité** : Opérations JSON avec sérialisation ensure_ascii=False
+
+#### Focus `polling_config`
+
+| Champ | Description | Consommateurs |
+| --- | --- | --- |
+| `active_days` | Jours actifs (0 = lundi). Validés/triés via l'API | `PollingConfigService.get_active_days()` |
+| `active_start_hour` / `active_end_hour` | Heures 0-23. Erreur 400 si hors plage | Background poller, orchestrateur |
+| `sender_of_interest_for_polling` | Liste d'emails normalisés (regex stricte) | Allowlist dans `check_new_emails_and_trigger_webhook()` |
+| `enable_subject_group_dedup` | Active la dédup mensuelle | `DeduplicationService` |
+| `vacation_start` / `vacation_end` | Dates ISO, optionnelles | Poller + UI vacances |
+| `enable_polling` | Toggle UI combiné à `ENABLE_BACKGROUND_TASKS` | Thread `background_email_poller()` |
+
+- **Hot reload** : `PollingConfigService` relit la clé avant chaque cycle, donc tout changement via `/api/update_polling_config` est appliqué sans redémarrage.
+- **Fallback fichier** : `debug/polling_config.json` (dev uniquement). En production, Redis est requis pour éviter les divergences multi-conteneurs.
+- **Diagnostics** : Les boutons dashboard « Migrer configs vers Redis » et « Vérifier les données en Redis » appellent `/api/migrate_configs_to_redis` et `/api/verify_config_store`, ce qui inclut `polling_config` dans les clés critiques à contrôler.
 
 ## Artefacts R2 Offload (deployment/)
 

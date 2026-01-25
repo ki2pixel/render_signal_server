@@ -4,96 +4,135 @@ description:
 globs: 
 ---
 
-# Coding Standards – render_signal_server (v2026-01)
-
-## 1. Principes Directeurs
-*   **Priorités** : Lisibilité > Concision. Sécurité par défaut. DRY.
-*   **Approche** : Commenter le *pourquoi*. Nommage explicite. Config via ENV.
-*   **Qualité** : Performance & Résilience "by design". Accessibilité (WCAG AA).
-
+---
+description: Core engineering standards and enforced conventions for render_signal_server
+globs:
+  - "**/*.py"
+  - "static/**/*.js"
+  - "dashboard.html"
+  - "docs/**/*.md"
+alwaysApply: true
 ---
 
-## 2. Stack & Formatage
-| Domaine | Techno | Standards | Outils |
-| :--- | :--- | :--- | :--- |
-| **Backend** | **Python** (Flask) | PEP 8, Black (88 chars) | `isort`, `flake8/ruff`, `pytest` |
-| **Frontend** | **JS (ES6+)** | Modules natifs, Classes | `Prettier`, `ESLint`, JSDoc |
-| **Legacy/Infra** | **PHP**, Redis, R2 | PSR-12, UTF-8 LF | Docker GHCR |
+# render_signal_server – Cursor Rules (v2026-01)
 
----
+These rules are the single source of truth for backend (Flask), frontend (modular ES6), and legacy PHP/R2 tooling. Apply them to every change unless an explicit exception is documented here.
 
-## 3. Architecture
+## Tech Stack
+- **Backend:** Python 3.11, Flask app in `app_render.py`, services under `services/`, routes under `routes/`.
+- **Background jobs:** IMAP poller (`background/polling_thread.py`) guarded by Redis lock + fcntl fallback.
+- **Frontend:** `dashboard.html` + ES6 modules under `static/` (`services/`, `components/`, `utils/`, `dashboard.js`).
+- **Storage:** Redis-first config store (`config/app_config_store.py`) with JSON fallback; Cloudflare R2 offload via `R2TransferService`.
+- **Legacy helpers:** Minimal PHP footprint (Render deployment helpers + webhook receiver) adhering to PSR-12.
+- **Tooling:** `black` (88 cols) + `isort` for Python, `Prettier` + `ESLint` for JS, `pytest` with custom markers, Docker + Render for deployment.
 
-### 3.1 Frontend (ES6 Modulaire)
-**Structure** : `static/{services, components, utils, dashboard.js}`.
-*   **Pattern** : 1 fichier = 1 responsabilité. Imports explicites.
-*   **UX 2026** : Bandeau Statut, Timeline Canvas (Sparkline), Auto-save (debounce), Panneaux pliables.
-*   **Performance** : Lazy loading (Onglets), Visibility API (Timer pause), Cleanup automatique.
-*   **Sécurité** : Pas d'`innerHTML`, Validation client, Redirection 401/403 via `ApiService`.
+## Code Style & Structure
+### Backend (Python)
+- **Clean Code:** Delete commented-out dead code immediately (no confirmation needed). Comments must state the *why* (intent/business context), never re-describe implementation details.
+- Services are **singletons with typed public methods** (see `PollingConfigService`, `WebhookConfigService`). Never mutate module-level globals at runtime; read via service getters each time.
+- Keep functions short (<40 logical lines) and typed. Use `TypedDict` / dataclasses for structured payloads (e.g., `email_processing/orchestrator.py`).
+- Input validation lives at route boundaries. Raise `ValueError`/`BadRequest` with explicit messages; let Flask error handlers serialize.
+- Logging goes through `app_logging/` helpers. Always scrub PII with `mask_sensitive_data`.
 
-### 3.2 Backend (Services & Singletons)
-*   **Config & Flags** : `ConfigService` (env), `RuntimeFlagsService` (cache 60s), `AppConfigStore` (Redis-first).
-*   **Métier** : `email_processing` (Orchestrator anti-OOM), `DeduplicationService` (Redis).
-*   **Infra Externe** : `R2TransferService` (Offload + Fallback), `WebhookConfigService` (SSL check).
-*   **Auth** : Flask-Login, Magic Links HMAC, Décorateurs `@login_required`.
+### Frontend (JS/HTML)
+- Use **modules + named exports** only. `dashboard.js` orchestrates modules; do not reintroduce global script tags.
+- DOM updates must avoid `innerHTML`. Build elements, set `textContent`, and attach listeners declaratively.
+- Respect WCAG AA: keyboard focus states, ARIA roles (`tablist`, `tabpanel`, `aria-expanded`).
+- Auto-save flows use debounced `ApiService` calls (2–3s) with optimistic UI + rollback on failure.
 
----
+### Legacy / Infra
+- PHP utilities stay PSR-12, UTF-8 LF, no short tags. File writes must be atomic (temp file + rename) guarded by `flock` or Python-side `RLock`.
+- Cloudflare Workers: keep headers explicit (`X-R2-FETCH-TOKEN`), enforce allowlists.
 
-## 4. Résilience & Performance (Critique)
+## Architecture Decisions to Enforce
+### Configuration & Secrets
+- Secrets (passwords, tokens) **must come from ENV**. `_get_required_env()` in `config/settings.py` already enforces the eight mandatory variables—do not bypass it.
+- Redis is the **source of truth** for `polling_config`, `webhook_config`, `processing_prefs`, and `magic_link_tokens`. Any API or background logic must read via `AppConfigStore` every time.
 
-### Backend
-*   **Anti-OOM** : Parsing HTML tronqué à 1MB (`MAX_HTML_BYTES`).
-*   **Verrou Distribué** : Redis `render_signal:poller_lock` (TTL 5min) + fallback fichier.
-*   **Timeouts I/O** : IMAP (30s), R2 (Adaptatif 15-120s).
-*   **Stratégie d'Erreur** : "Always Fallback". Catch large aux frontières → Log WARNING → Flux continu (ne jamais crasher le polling).
+### Background Poller
+- Acquire Redis lock key `render_signal:poller_lock` (TTL 300s) before starting the IMAP loop; fallback to file lock only when Redis unavailable.
+- Refresh dynamic config before each cycle by calling `PollingConfigService.get_*` methods. Never cache sender lists or dedup flags between cycles.
+- HTML payload parsing is capped at `MAX_HTML_BYTES = 1_000_000`. Truncate and log a single WARNING when exceeded to avoid OOM.
 
-### Frontend
-*   **Optimisation** : Bundle réduit, micro-interactions CSS (Ripple, Toast).
-*   **Accessibilité** : Navigation clavier, ARIA (tablist/panel), Responsive mobile-first.
+### Frontend Experience
+- Maintain the dashboard’s **Status Banner + Timeline Canvas + collapsible Webhook panels**. These are non-negotiable UX baselines.
+- All destructive or long-running UI actions require visible feedback: ripple on buttons, toast via `MessageHelper`, and disabled states while waiting for the API.
 
----
-
-## 5. Sécurité & Logs
-
-*   **Entrées** : Validation stricte (Back & Front). Pas de secrets en dur.
-*   **Logs** : Centralisés (`app_logging/`), Anonymisés (`mask_sensitive_data`).
-*   **Secrets** : Gestion via `ConfigService`. `FLASK_SECRET_KEY` robuste obligatoire.
-*   **Protection** : Webhooks HTTPS vérifié. Logs conditionnels (Localhost seulement pour logs verbeux).
-
----
-
-## 6. Environnement & Tests
-
-**Chemin Venv** : `/mnt/venv_ext4/venv_render_signal_server`
-
-### Commandes Clés
-```bash
-# Activation
-source /mnt/venv_ext4/venv_render_signal_server/bin/activate
-
-# Tests (Unitaires + Intégration + Couverture)
-pytest --cov=.
-
-# Tests Résilience (Redis, R2, OOM)
-pytest -m "redis or r2 or resilience" --cov=.
-
-# Vérification Store Redis
-python -m scripts.check_config_store
+## Patterns & Examples
+### API Routes (Flask)
+```python
+@api_config_bp.route("/api/processing_prefs", methods=["POST"])
+@login_required
+def update_processing_prefs() -> Response:
+    payload = ProcessingPrefsSchema().load(request.json or {})
+    app_config_store.set_config_json("processing_prefs", payload)
+    return jsonify({"status": "ok"})
 ```
+- **Pattern:** Load schema, validate, persist via store, return JSON. Never write to `settings` globals.
 
-### Stratégie de Test
-*   **Couverture** : Services, Helpers, API Routes.
-*   **Types** : Unitaires (majorité), E2E (flux critiques polling/webhooks).
-*   **Résilience** : Simulation timeout/down pour Redis et R2.
+### IMAP Poller Wrapper
+```python
+def check_new_emails_and_trigger_webhook():
+    sender_whitelist = polling_config_service.get_sender_whitelist()
+    dedup_enabled = polling_config_service.is_subject_group_dedup_enabled()
+    return orchestrator.process_inbox(sender_whitelist, dedup_enabled)
+```
+- Call getters each run. Do not share mutable state between cycles; rely on service caches with TTL or no cache at all.
 
----
+### Frontend Panel Save Flow
+```javascript
+import { ApiService } from "./services/ApiService.js";
+import { updatePanelStatus } from "./dashboard.js";
 
-## 7. Configuration & Déploiement
+async function saveWebhookPanel(panelId, collectData) {
+  updatePanelStatus(panelId, "saving");
+  const payload = collectData();
+  await ApiService.post("/api/webhooks/config", payload);
+  updatePanelStatus(panelId, "saved");
+}
+```
+- Each collapsible panel owns a `collect*Data()` helper. Status chips mirror `saving`, `saved`, `error` states with timestamps.
 
-### Variables ENV Obligatoires
-`FLASK_SECRET_KEY`, `TRIGGER_PAGE_PASSWORD`, `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `IMAP_SERVER`, `PROCESS_API_TOKEN`, `WEBHOOK_URL`, `MAKECOM_API_KEY`.
+### R2 Transfer Service Guard
+```python
+def upload_to_r2(source_url: str) -> R2UploadResult:
+    if not is_allowed_domain(source_url):
+        raise ValueError("Domain not in allowlist")
+    return r2_client.transfer(source_url, headers={"X-R2-FETCH-TOKEN": token})
+```
+- Always run allowlist validation + token injection before offloading. Fallback gracefully to original URL when transfer fails.
 
-### Git Workflow
-*   **Branches** : `feature/<slug>` ou `fix/<slug>`.
-*   **Commits** : Conventional (`feat:`, `fix:`, `refactor:`, `test:`).
-*   **CI/CD** : Tests bloquants, Mise à jour doc auto.
+## Testing & Tooling
+- Use `/mnt/venv_ext4/venv_render_signal_server` for parity with CI. Commands:
+  - `pytest --cov=.` (full suite)
+  - `pytest -m "redis or r2 or resilience" --cov=.` (resilience focus)
+  - `python -m scripts.check_config_store` (Redis JSON sanity)
+- Add tests alongside functionality: routes in `tests/routes/`, services in `tests/services/`, poller logic in dedicated integration modules.
+- Favor Given/When/Then naming and explicit fixtures (see `tests/test_polling_dynamic_reload.py`).
+
+## Deployment & Environment
+- Branch naming: `feature/<slug>` or `fix/<slug>`; commits follow Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`).
+- Docker image built via `.github/workflows/render-image.yml`, deployed to Render. Keep Dockerfile multistage and logs on stdout/stderr.
+- Required ENV list (must be set in Render dashboard and local `.env`): `FLASK_SECRET_KEY`, `TRIGGER_PAGE_PASSWORD`, `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `IMAP_SERVER`, `PROCESS_API_TOKEN`, `WEBHOOK_URL`, `MAKECOM_API_KEY`.
+
+## Anti-Patterns (Never Do)
+- Write secrets or config fallbacks directly in code.
+- Reintroduce `innerHTML` assignments or inline event handlers in the dashboard.
+- Bypass Redis store by editing `debug/*.json` directly during runtime.
+- Start multiple poller instances in the same deployment; always respect locks and `ENABLE_BACKGROUND_TASKS`.
+- Log raw email bodies or personally identifiable information.
+
+## Common Tasks Reference
+### Adding a New Service
+1. Create `services/<name>_service.py` with singleton pattern (`_instance`, `get_instance()` helper).
+2. Inject dependencies via constructor, not globals.
+3. Expose typed methods; cache with TTL only when necessary.
+4. Register usage where needed (routes, background jobs) without circular imports.
+
+### Extending Dashboard Panels
+1. Add markup inside `dashboard.html` within the appropriate `.section-panel`.
+2. Create or extend a collector function (`collect<Panel>Data`) and persistence helper.
+3. Use `ApiService` for network calls, `MessageHelper` for feedback, `TabManager` for accessibility wiring.
+4. Update CSS tokens (colors, transitions) to maintain the established visual language—no ad hoc styles.
+
+By following these Cursor-ready rules, any new engineer or AI assistant can contribute safely without regressing resilience, UX, or security guarantees.

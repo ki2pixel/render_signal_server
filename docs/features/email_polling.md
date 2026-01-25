@@ -1,3 +1,25 @@
+## 📅 Dernière mise à jour / Engagements Lot 2
+
+**Date de refonte** : 2026-01-25 (protocol code-doc)
+
+### Terminologie unifiée
+- **`DASHBOARD_*`** : Variables d'environnement (anciennement `TRIGGER_PAGE_*`)
+- **`MagicLinkService`** : Service singleton pour authentification sans mot de passe
+- **`R2TransferService`** : Service singleton pour offload Cloudflare R2
+- **"Absence Globale"** : Fonctionnalité de blocage configurable par jour de semaine
+
+### Engagements Lot 2 (Résilience & Architecture)
+- ✅ **Verrou distribué Redis** : Implémenté avec clé `render_signal:poller_lock`, TTL 5 min
+- ✅ **Fallback R2 garanti** : Conservation URLs sources si Worker R2 indisponible
+- ✅ **Watchdog IMAP** : Timeout 30s pour éviter processus zombies
+- ✅ **Tests résilience** : `test_lock_redis.py`, `test_r2_resilience.py` avec marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`
+- ✅ **Store-as-Source-of-Truth** : Configuration dynamique depuis Redis/fichier, pas d'écriture runtime dans les globals
+
+### Métriques de documentation
+- **Volume** : 7 388 lignes de contenu réparties dans 25 fichiers actifs
+- **Densité** : Justifie le découpage modulaire pour maintenir la lisibilité
+- **Exclusions** : `archive/` et `audits/` maintenus séparément pour éviter le bruit
+
 La logique de polling est orchestrée par `email_processing/orchestrator.py`.
 
 ### Structure de l’orchestrateur (mise à jour 2025-11-18)
@@ -12,23 +34,42 @@ La logique de polling est orchestrée par `email_processing/orchestrator.py`.
 
 Le polling des emails est géré par le thread `background_email_poller()` qui exécute en boucle les opérations de vérification et de traitement des emails.
 
+### Source de vérité Redis (store-as-source-of-truth)
+
+- **Service** : `PollingConfigService` lit les valeurs persistées via `config/app_config_store.get_config_json("polling_config")` et ne met jamais à jour les globals `config.settings` à chaud.
+- **Structure JSON** (clé `polling_config` dans Redis) :
+
+  | Champ | Type | Description |
+  | --- | --- | --- |
+  | `active_days` | `list[int]` | Jours actifs (0 = lundi). Validés/triés, fallback settings si vide |
+  | `active_start_hour` / `active_end_hour` | `int` | Fenêtre horaire 0-23 (validation stricte, erreur 400 côté API si hors plage) |
+  | `sender_of_interest_for_polling` | `list[str]` | Adresses email normalisées/uniques (regex stricte) |
+  | `enable_subject_group_dedup` | `bool` | Active la déduplication mensuelle côté orchestrateur |
+  | `vacation_start` / `vacation_end` | `YYYY-MM-DD or null` | Fenêtre vacances optionnelle, validée et convertie en ISO |
+  | `enable_polling` | `bool` | Toggle UI combiné avec `ENABLE_BACKGROUND_TASKS` pour lancer/arrêter le thread |
+
+- **Hot reload** : `check_new_emails_and_trigger_webhook()` appelle `PollingConfigService` avant chaque cycle pour récupérer les dernières valeurs (jours/heures/senders, flag `enable_subject_group_dedup`). Aucun redéploiement n'est nécessaire.
+- **Fallback dev** : en local, le fichier `debug/polling_config.json` peut servir de secours, mais la production doit rester Redis-first.
+- **Tests** : `tests/test_polling_dynamic_reload.py` valide le comportement store-as-source-of-truth avec scénarios Given/When/Then.
+
 ### Conditions de démarrage
 
 - `ENABLE_BACKGROUND_TASKS=true` (variable d'environnement)
-- `enable_polling=true` (préférence UI persistée via `/api/update_polling_config`)
+- `enable_polling=true` (persisté dans la clé Redis `polling_config`)
 
-Les deux conditions doivent être vraies pour démarrer le thread.
+Les deux conditions doivent être vraies pour démarrer le thread. Le flag UI peut être coupé depuis le dashboard sans redémarrage : la prochaine itération du poller détecte le changement via `PollingConfigService.get_enable_polling()`.
 
 ### Paramètres de Configuration
 
-- **Fuseau horaire** : `POLLING_TIMEZONE` (ZoneInfo si disponible, sinon UTC)
-- **Jours actifs** : `POLLING_ACTIVE_DAYS` (0=Lundi à 6=Dimanche)
-- **Heures actives** : 
-  - Début : `POLLING_ACTIVE_START_HOUR` (inclus)
-  - Fin : `POLLING_ACTIVE_END_HOUR` (exclus)
+- **Fuseau horaire** : `POLLING_TIMEZONE` (ZoneInfo si disponible, sinon UTC). Seule valeur encore lue dans `settings` (pas d'override UI).
+- **Jours actifs** : Persistés via UI (sinon fallback `settings.POLLING_ACTIVE_DAYS`). Les entrées invalides sont rejetées avec erreur 400.
+- **Heures actives** : Persistées via UI (`active_start_hour`, `active_end_hour`). Numériques 0-23 obligatoires.
+- **Liste d'expéditeurs** : Champ `sender_of_interest_for_polling` (liste ou CSV). Les valeurs sont nettoyées, mises en minuscules et dédupliquées.
+- **Dédup par groupe** : `enable_subject_group_dedup` contrôlé côté UI, utilisé par `DeduplicationService`.
+- **Vacances** : `vacation_start`/`vacation_end` (ISO) permettent de mettre en pause la fenêtre active pendant une période donnée.
 - **Intervalles** :
-  - Actif : `EMAIL_POLLING_INTERVAL_SECONDS` (entre les vérifications)
-  - Inactif : `POLLING_INACTIVE_CHECK_INTERVAL_SECONDS` (vérification périodique)
+  - Actif : `EMAIL_POLLING_INTERVAL_SECONDS` (config env)
+  - Inactif : `POLLING_INACTIVE_CHECK_INTERVAL_SECONDS` (config env)
 
 ### Comportement du Polling
 
@@ -36,6 +77,7 @@ Les deux conditions doivent être vraies pour démarrer le thread.
    - Exécution de `email_processing.orchestrator.check_new_emails_and_trigger_webhook()`
    - Vérification des nouveaux emails à intervalle régulier
    - Traitement des emails selon les règles configurées
+   - **Offload R2** : Si `R2_FETCH_ENABLED=true`, `R2TransferService` tente l'offload des liens détectés vers Cloudflare R2, avec fallback gracieux sur URLs sources
 
 2. **Hors des heures actives** :
    - Mise en veille prolongée pour économiser les ressources
@@ -56,6 +98,39 @@ Pour arrêter complètement le polling :
 Fenêtre « vacances » (optionnelle) :
 - Configurable via `/api/update_polling_config` avec `vacation_start`/`vacation_end` (ISO `YYYY-MM-DD`).
 - Pendant la période, le watcher Make reste OFF et le poller peut être considéré inactif selon votre stratégie d'exploitation.
+
+### Endpoints API (Dashboard ↔️ Backend)
+
+| Endpoint | Méthode | Description |
+| --- | --- | --- |
+| `/api/get_polling_config` | GET | Retourne la configuration fusionnée (persistée + defaults settings). Lecture live de `config.settings` pour les valeurs non surchargées. |
+| `/api/update_polling_config` | POST | Valide & persiste les champs listés ci-dessus dans Redis + fallback fichier (dev). Retour 400 si jours/heures/email/vacances invalides. |
+
+**Payload type** : `application/json`. Extrait minimal pour activer la pause vacances :
+
+```json
+{
+  "vacation_start": "2026-02-10",
+  "vacation_end": "2026-02-20",
+  "enable_polling": false
+}
+```
+
+**Validation server-side** :
+
+1. Jours → entiers 0-6 (list ou string CSV). Valeurs invalides rejetées avec `message` explicite.
+2. Heures → entiers 0-23. Hors plage => HTTP 400.
+3. Expéditeurs → regex email stricte + dédup.
+4. Vacances → dates ISO cohérentes (`start <= end`).
+5. `enable_polling` → booléen robuste (bool/int/str) normalisé.
+
+En cas d'échec de persistance (Redis indisponible + fallback absent), la route retourne 500.
+
+### Diagnostics & Tests
+
+- **Hot reload** : `tests/test_polling_dynamic_reload.py` couvre la prise en compte immédiate des changements Redis sans redémarrage.
+- **Routes** : `tests/test_routes_api_config_happy.py` et `test_routes_api_config_extra.py` vérifient les cas de validation/erreur.
+- **Store** : `tests/test_app_config_store.py` garantit le comportement `redis_first` / `php_first` (lecture/écriture, fallback fichier) utilisé par le polling.
 
 ## Connexion IMAP
 

@@ -7,16 +7,17 @@ La documentation est organisée pour répondre aux besoins des développeurs, op
 ## 📚 Plan de documentation
 
 ### Architecture et Conception
-- `architecture/overview.md` - Vue d'ensemble de l'architecture orientée services
-- `architecture/api.md` - Documentation complète de l'API REST
+- `architecture/overview.md` - Vue d'ensemble de l'architecture orientée services (Magic Links, R2, Lot 2)
+- `architecture/api.md` - Documentation complète de l'API REST (endpoints Magic Link, store-as-source-of-truth)
 - `features/frontend_dashboard_features.md` - Architecture modulaire ES6 et fonctionnalités UX avancées
 
 ### Traitement des e-mails & Webhooks
-- `features/email_polling.md` - Polling IMAP et orchestrateur de traitement
+- `features/email_polling.md` - Polling IMAP et orchestrateur de traitement (store-as-source-of-truth)
 - `features/webhooks.md` - Flux webhooks sortants, Absence Globale et fenêtres horaires
+- `features/magic_link_auth.md` - Authentification Magic Link sans mot de passe
 
 ### Résilience & Sécurité
-- `securite.md` - Durcissement sécurité (Lot 1) : Anonymisation logs, écriture atomique, validation R2
+- `securite.md` - Durcissement sécurité (Lot 1) : Anonymisation logs, écriture atomique, validation R2, variables ENV obligatoires
 - `features/resilience_lot2.md` - Résilience & Architecture (Lot 2) : Verrou Redis, Fallback R2, Watchdog IMAP
 
 ### Déploiement et Opérations
@@ -27,12 +28,13 @@ La documentation est organisée pour répondre aux besoins des développeurs, op
 - `operations/depannage.md` - Guide de dépannage (problèmes courants)
 
 ### Configuration & Stockage
-- `configuration/configuration.md` - Référence des paramètres de configuration et variables d'environnement
-- `configuration/storage.md` - Backend JSON externe, fallback fichiers, artefacts Gmail OAuth
+- `configuration/configuration.md` - Référence des paramètres de configuration et variables d'environnement (obligatoires)
+- `configuration/storage.md` - Backend JSON externe, Redis Config Store, fallback fichiers, artefacts Gmail OAuth
 - `configuration/installation.md` - Guide d'installation et configuration initiale
 
 ### Tests & Qualité
-- `quality/testing.md` - Stratégie de tests, exécution et couverture de code
+- `quality/testing.md` - Stratégie de tests, exécution et couverture de code (Lot 2, markers Redis/R2)
+- `quality/performance.md` - Métriques performance et surveillance
 
 ### Intégrations
 - `integrations/r2_offload.md` - Offload Cloudflare R2 pour économiser la bande passante
@@ -42,6 +44,39 @@ La documentation est organisée pour répondre aux besoins des développeurs, op
 ### Refactoring & Historique
 - `archive/refactoring/` - Historique détaillé des phases de refactoring (incluant roadmap & conformity report)
 - `archive/achievements/ACHIEVEMENT_100_PERCENT.md` - Badge "100% refactoring" (historique)
+
+---
+
+## 📊 Métriques de Documentation
+
+- **Volume** : 25 fichiers Markdown actifs, 7 388 lignes de contenu (densité >7k lignes justifiant le découpage modulaire)
+- **Structure** : 6 sous-domaines thématiques (architecture, configuration, features, operations, integrations, quality)
+- **Exclusions** : `archive/` et `audits/` exclus pour maintenir la documentation active à jour
+- **Mise à jour** : 2026-01-25 (refonte complète selon protocol code-doc)
+
+---
+
+## 📅 Dernière mise à jour / Engagements Lot 2
+
+**Date de refonte** : 2026-01-25 (protocol code-doc)
+
+### Terminologie unifiée
+- **`DASHBOARD_*`** : Variables d'environnement (anciennement `TRIGGER_PAGE_*`)
+- **`MagicLinkService`** : Service singleton pour authentification sans mot de passe
+- **`R2TransferService`** : Service singleton pour offload Cloudflare R2
+- **"Absence Globale"** : Fonctionnalité de blocage configurable par jour de semaine
+
+### Engagements Lot 2 (Résilience & Architecture)
+- ✅ **Verrou distribué Redis** : Implémenté avec clé `render_signal:poller_lock`, TTL 5 min
+- ✅ **Fallback R2 garanti** : Conservation URLs sources si Worker R2 indisponible
+- ✅ **Watchdog IMAP** : Timeout 30s pour éviter processus zombies
+- ✅ **Tests résilience** : `test_lock_redis.py`, `test_r2_resilience.py` avec marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`
+- ✅ **Store-as-Source-of-Truth** : Configuration dynamique depuis Redis/fichier, pas d'écriture runtime dans les globals
+
+### Métriques de documentation
+- **Volume** : 7 388 lignes de contenu réparties dans 25 fichiers actifs
+- **Densité** : Justifie le découpage modulaire pour maintenir la lisibilité
+- **Exclusions** : `archive/` et `audits/` maintenus séparément pour éviter le bruit
 
 ## 🚀 Aperçu rapide
 
@@ -80,16 +115,18 @@ La documentation est organisée pour répondre aux besoins des développeurs, op
 - **Cloudflare R2** : Offload automatique des fichiers volumineux via `R2TransferService`
 
 ### 🧪 Qualité et Tests
-- **Tests unitaires** : 386/399 tests passants (96.7%) - Post-Lot 2
+- **Tests unitaires** : 418/431 tests passants (97%) - Post-Lot 2
 - **Couverture de code** : 70.12% (objectif : 80%+) - Post-Lot 2
-- **Intégration continue** : Pipelines automatisés
-- **Nouveaux tests** : Redis lock avec format Given/When/Then
+- **Intégration continue** : Pipelines automatisés (GitHub Actions)
+- **Nouveaux tests** : Redis lock, R2 resilience, Given/When/Then avec marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`/`@pytest.mark.resilience`
 
 ### 🔒 Sécurité
 - **Authentification sécurisée** : Sessions Flask-Login et Magic Links signés HMAC SHA-256
 - **Validation des entrées** : Contrôles stricts et sanitization
-- **Journalisation des actions sensibles** : Logs structurés et traçabilité
-- **Gestion sécurisée des secrets** : Variables d'environnement uniquement
+- **Journalisation des actions sensibles** : Logs structurés et traçabilité, anonymisation PII via `mask_sensitive_data()`
+- **Gestion sécurisée des secrets** : Variables d'environnement obligatoires (8 variables), enforcement au démarrage
+- **Écriture atomique configuration** : Services avec `RLock` + `os.replace()` pour prévenir la corruption
+- **Validation domaines R2** : Allowlist stricte anti-SSRF, fallback gracieux
 
 ### 🚀 Nouvelles fonctionnalités (2026)
 
@@ -117,7 +154,8 @@ La documentation est organisée pour répondre aux besoins des développeurs, op
 - **Verrou distribué Redis** : Clé `render_signal:poller_lock`, TTL 5 min, fallback fcntl
 - **Fallback R2 garanti** : Conservation URLs sources, flux continu même si R2 échoue
 - **Watchdog IMAP** : Timeout 30s paramétrable, prévention connexions zombies
-- **Tests Redis** : Format Given/When/Then avec marqueur `@pytest.mark.redis`
+- **Tests Résilience** : Format Given/When/Then avec marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`/`@pytest.mark.resilience`
+- **Store-as-Source-of-Truth** : Configuration dynamique depuis Redis/fichier, pas d'écriture runtime dans les globals
 
 ## 📅 Historique des Évolutions
 

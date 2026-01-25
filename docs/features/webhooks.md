@@ -1,5 +1,31 @@
 # Webhooks
 
+---
+
+## 📅 Dernière mise à jour / Engagements Lot 2
+
+**Date de refonte** : 2026-01-25 (protocol code-doc)
+
+### Terminologie unifiée
+- **`DASHBOARD_*`** : Variables d'environnement (anciennement `TRIGGER_PAGE_*`)
+- **`MagicLinkService`** : Service singleton pour authentification sans mot de passe
+- **`R2TransferService`** : Service singleton pour offload Cloudflare R2
+- **"Absence Globale"** : Fonctionnalité de blocage configurable par jour de semaine
+
+### Engagements Lot 2 (Résilience & Architecture)
+- ✅ **Verrou distribué Redis** : Implémenté avec clé `render_signal:poller_lock`, TTL 5 min
+- ✅ **Fallback R2 garanti** : Conservation URLs sources si Worker R2 indisponible
+- ✅ **Watchdog IMAP** : Timeout 30s pour éviter processus zombies
+- ✅ **Tests résilience** : `test_lock_redis.py`, `test_r2_resilience.py` avec marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`
+- ✅ **Store-as-Source-of-Truth** : Configuration dynamique depuis Redis/fichier, pas d'écriture runtime dans les globals
+
+### Métriques de documentation
+- **Volume** : 7 388 lignes de contenu réparties dans 25 fichiers actifs
+- **Densité** : Justifie le découpage modulaire pour maintenir la lisibilité
+- **Exclusions** : `archive/` et `audits/` maintenus séparément pour éviter le bruit
+
+---
+
 ## Architecture du Flux de Webhooks
 
 ### Flux Unifié
@@ -11,6 +37,7 @@ Cette application utilise un flux de webhooks unifié avec les caractéristiques
 3. **Suppression des contrôles Make.com** : Les contrôles automatisés des scénarios Make ont été retirés en raison de problèmes d'authentification (erreurs 403)
 4. **Gestion manuelle requise** : Les scénarios Make doivent être contrôlés manuellement depuis l'interface Make.com
 5. **Miroir des médias** : Option pour envoyer automatiquement les liens de médias (SwissTransfer, Dropbox, FromSmash) vers le webhook configuré
+6. **Offload R2 intégré** : Si activé, `R2TransferService` tente l'offload des liens détectés vers Cloudflare R2 avant envoi, avec fallback gracieux sur URLs sources
 
 ### Configuration Requise
 
@@ -25,8 +52,9 @@ Cette application utilise un flux de webhooks unifié avec les caractéristiques
   - Validation stricte des URLs: HTTPS obligatoire
   - Normalisation des URLs Make.com (formats `token@domain` → URL canonique)
   - Cache mémoire TTL 60s avec invalidation automatique à la mise à jour
-  - Intégration possible avec un store externe (fallback fichier `debug/webhook_config.json`)
+  - Intégration avec Redis Config Store (store-as-source-of-truth) et fallback fichier `debug/webhook_config.json`
   - Masquage de l'URL côté API lecture (suffixe `***`) pour éviter l'exposition complète dans l'UI
+  - Écriture atomique avec `RLock` + `os.replace()` pour prévenir la corruption (Lot 1)
 
 ### Absence Globale (Stop Emails)
 

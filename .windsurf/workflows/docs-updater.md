@@ -2,112 +2,80 @@
 description: Analyse la Memory Bank, inspecte le code source impacté, et met à jour TOUTE la documentation associée.
 ---
 
-## Rappel outils obligatoires (section 2.1 Basic Tools)
-- **`read_file`**: Always read related files before making changes. For large files, be mindful to read only the necessary range.
-- **`edit` / `multi_edit`**: Primary means for code changes.  
-  - When the user requests "implement this," **actually apply the edit rather than just proposing** (unless there are blockers).
-  - Keep each edit to a semantically coherent unit of change.
-- **`grep_search` / `code_search`**:
-  - Use `grep_search` for locating strings and symbols.
-  - Use `code_search` for exploring implementation meaning and patterns.
+---
+description: Docs Updater (Standard Tools: Cloc/Radon + Quality Context)
+---
 
-actions:
-  # ÉTAPE 1 : Extraire le résumé des changements récents depuis la Memory Bank.
-  - tool: memory_bank_reader
-    description: "Lire les fichiers de la `memory-bank` pour extraire un résumé des changements les plus récents."
-    input:
-      context_files:
-        - "progress.md"
-        - "decisionLog.md"
-        - "productContext.md"
-        - "systemPatterns.md"
-    output: RECENT_CHANGES_SUMMARY
+# Workflow: Docs Updater — Standardized & Metric-Driven
 
-  # ÉTAPE 2 : Lister les fichiers de documentation pour connaître la structure actuelle.
-  - tool: file_lister
-    description: "Lister tous les fichiers et sous-dossiers du répertoire /docs pour refléter l’arborescence thématique."
-    input: "./docs"
-    output: DOCS_FILE_STRUCTURE
+> Ce workflow harmonise la documentation en utilisant l'analyse statique standard (`cloc`, `radon`, `tree`) pour la précision technique et les modèles de référence pour la qualité éditoriale.
 
-  # Directive outils : après cette étape, exécuter systématiquement `code_search` pour localiser les portions de code à analyser,
-  # enchaîner avec `read_file` pour lire les extraits visés (plage limitée si >1000 lignes), utiliser `grep_search` pour cibler
-  # des symboles précis, puis appliquer les corrections via `edit`/`multi_edit` par unités cohérentes.
+## 🚨 Protocoles Critiques
+1.  **Outils autorisés** : L'usage de `run_command` est **strictement limité** aux commandes d'audit : `tree`, `cloc`, `radon`, `ls`.
+2.  **Contexte** : Charger la Memory Bank (`productContext.md`, `systemPatterns.md`, `activeContext.md`, `progress.md`) via `read_file` avant toute action.
+3.  **Source de Vérité** : Le Code (analysé par outils) > La Documentation existante > La Mémoire.
 
-  # ÉTAPE 3 (HYPOTHÈSE) : L'IA identifie les fichiers de code source pertinents à inspecter.
-  - tool: ai_impact_assessor
-    description: "À partir du résumé des changements, déduire une liste de fichiers de code source à inspecter pour vérification."
-    prompt: |
-      En tant qu'architecte logiciel, analyse le résumé des changements récents ci-dessous.
-      Ton unique objectif est de déduire et de lister les fichiers de code source (ex: .py, .js) qui ont probablement été modifiés pour implémenter ces changements.
-      Ne donne aucune explication. Réponds uniquement avec une liste de chemins de fichiers au format JSON.
+## Étape 1 — Audit Structurel et Métrique
+Lancer les commandes suivantes configurées pour ignorer les rapports de couverture (`htmlcov`) et les fichiers de déploiement/debug.
 
-      Exemple de réponse :
-      ["app_render.py", "static/remote/api.js", "login.html"]
+1.  **Cartographie (Filtre Bruit)** :
+    - `run_command "tree -L 2 -I '__pycache__|venv|node_modules|.git|htmlcov|debug|deployment|memory-bank'"`
+    - *But* : Visualiser l'architecture modulaire (`email_processing`, `services`, `routes`, `background`).
+2.  **Volumétrie (Code Source)** :
+    - `run_command "cloc . --exclude-dir=tests,docs,venv,node_modules,htmlcov,debug,deployment,memory-bank --exclude-ext=json,txt,log --md"`
+    - *But* : Quantifier le code Python réel (Core vs Tests) sans être pollué par les logs ou les assets HTML.
+3.  **Complexité Cyclomatique (Python Core)** :
+    - `run_command "radon cc . -a -nc --exclude='tests/*,venv/*,htmlcov/*,docs/*,deployment/*,setup.py'"`
+    - *But* : Repérer les points chauds.
+    - **Cibles probables** : `email_processing/orchestrator.py` et `app_render.py` sont souvent des zones denses à surveiller (Score C/D).
 
-      ---
-      **RÉSUMÉ DES CHANGEMENTS RÉCENTS :**
-      ```
-      {{ RECENT_CHANGES_SUMMARY }}
-      ```
-    output: IMPACTED_FILES_LIST
+## Étape 2 — Diagnostic Triangulé
+Comparer les sources pour détecter les incohérences :
 
-  # ÉTAPE 4 (COLLECTE) : Lire le contenu des fichiers de code source identifiés.
-  - tool: file_reader
-    description: "Lire et concaténer le contenu des fichiers de code source spécifiés."
-    input:
-      files: "{{ IMPACTED_FILES_LIST }}"
-    output: IMPACTED_FILES_CONTENT
+| Source | Rôle | Outil |
+| :--- | :--- | :--- |
+| **Intention** | Le "Pourquoi" | `read_file` (Memory Bank) |
+| **Réalité** | Le "Quoi" & "Comment" | `radon` (complexité), `cloc` (volume), `code_search` |
+| **Existant** | L'état actuel | `find_by_name` (sur `docs/`), `read_file` |
 
-  # ÉTAPE 5 (SYNTHÈSE) : L'IA croise toutes les informations pour générer les suggestions finales.
-  - tool: ai_doc_analyzer_final
-    description: "Analyser le résumé des changements, le contenu du code source et la structure des documents pour proposer des mises à jour complètes."
-    prompt: |
-      En tant qu'architecte technique méticuleux, ta mission finale est de garantir la parfaite cohérence entre les évolutions du projet et sa documentation.
+**Action** : Identifier les divergences. Ex: "Le module `deduplication` contient une logique Redis complexe (Lock) non documentée dans `docs/features`."
 
-      Tu disposes de trois sources d'information cruciales :
-      1.  **LE POURQUOI (Résumé des changements)** : Le contexte de haut niveau expliquant les modifications récentes.
-      2.  **LE QUOI (Contenu du code source)** : Le code des fichiers qui ont été identifiés comme impactés.
-      3.  **L'EXISTANT (Structure de la documentation)** : La liste des fichiers de documentation actuels.
+## Étape 3 — Sélection du Standard de Rédaction
+Choisir le modèle approprié selon le dossier ciblé :
 
-      Ton processus de raisonnement doit être le suivant :
-      1.  **Analyse le contenu du code source (`IMPACTED_FILES_CONTENT`)** pour identifier les changements concrets : fonctions ajoutées/modifiées, paramètres changés, logique métier altérée.
-      2.  **Mets en relation ces changements concrets avec le résumé de haut niveau (`RECENT_CHANGES_SUMMARY`)**. Cela te permet de comprendre l'intention derrière chaque modification de code.
-      3.  **Compare ces informations avec la structure de la documentation (`DOCS_FILE_STRUCTURE`)**. Identifie précisément les documents dans `/docs` qui sont maintenant obsolètes ou incomplets.
-      4.  **Vérifie les docstrings** dans le code fourni. Sont-elles toujours alignées avec la signature et le comportement des fonctions ?
-      5.  **Rédige des suggestions précises et actionnables**. Pour chaque incohérence, propose une mise à jour claire. Fais référence aux fonctions ou aux fichiers spécifiques si nécessaire.
+- **Processing Logic** (`email_processing/`, `background/`) :
+  - **Diagramme de Séquence** : Indispensable pour l'orchestrateur (IMAP -> Extraction -> Webhook).
+  - **États** : Décrire les statuts de traitement.
+- **API & Routes** (`routes/`) :
+  - Mapping URL -> Service.
+  - Sécurité (Auth tokens, Rate limits).
+- **Services & Utils** (`services/`, `utils/`) :
+  - Interface publique des classes.
+  - Gestion des exceptions (R2, Redis).
+- **Configuration** (`config/`) :
+  - Variables d'environnement requises (`settings.py`).
+  - Flags d'exécution (`runtime_flags.py`).
 
-      Présente tes conclusions finales sous forme de liste à puces.
+## Étape 4 — Proposition de Mise à Jour
+Générer un plan de modification avant d'appliquer :
 
-      ---
-      **1. RÉSUMÉ DES CHANGEMENTS (LE POURQUOI) :**
-      ```
-      {{ RECENT_CHANGES_SUMMARY }}
-      ```
+```markdown
+## 📝 Plan de Mise à Jour Documentation
+### Audit Métrique
+- **Cible** : `email_processing/link_extraction.py`
+- **Métriques** : Complexité (B), Dépendance forte aux Regex.
 
-      **2. CONTENU DU CODE SOURCE IMPACTÉ (LE QUOI) :**
-      ```
-      {{ IMPACTED_FILES_CONTENT }}
-      ```
+### Modifications Proposées
+#### 📄 docs/features/email-processing.md
+- **Type** : [Logic/Algo]
+- **Manque** : Les patterns Regex exacts ne sont pas listés.
+- **Correction** :
+  ```markdown
+  [Ajout de la table de correspondance Regex -> Service]
+  ```
+```
 
-      **3. STRUCTURE DE LA DOCUMENTATION (L'EXISTANT) :**
-      ```
-      {{ DOCS_FILE_STRUCTURE }}
-      ```
-    output: COMPREHENSIVE_DOCS_SUGGESTIONS
-
-  # ÉTAPE 6 : Afficher le résultat final.
-  - tool: github_commenter
-    description: "Présenter les suggestions de mise à jour de la documentation."
-    prompt: |
-      ## 📚 Assistant de Documentation (Analyse Complète) 📚
-
-      Après avoir analysé les dernières décisions de la Memory Bank et inspecté le code source concerné, voici mes suggestions pour garder toute la documentation synchronisée :
-
-      {{ COMPREHENSIVE_DOCS_SUGGESTIONS }}
-
-      ---
-      *Ces suggestions sont basées à la fois sur le contexte du projet et sur le contenu réel du code. Veuillez les examiner pour assurer la cohérence globale.*
-      *Mentionner explicitement les sous-dossiers architecture/, operations/, features/, configuration/, quality/, integrations/, archive/ si certaines mises à jour s’y appliquent.*
-
-notes:
-  - "Toujours inclure dans la réponse finale le diff complet ou la version intégrale corrigée de chaque fichier modifié afin que l’utilisateur puisse appliquer les changements manuellement."
+## Étape 5 — Application et Finalisation
+1.  **Exécution** : Après validation, utiliser `apply_patch` ou `multi_edit`.
+2.  **Mise à jour Memory Bank** :
+    - Si une logique critique est découverte, l'ajouter dans `systemPatterns.md`.

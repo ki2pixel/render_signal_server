@@ -1,0 +1,35 @@
+docs
+├── architecture
+│   ├── api.md
+│   └── overview.md
+├── configuration
+│   ├── configuration.md
+│   ├── installation.md
+│   └── storage.md
+├── features
+│   ├── email_polling.md
+│   ├── frontend_dashboard_audit.md
+│   ├── frontend_dashboard_features.md
+│   ├── magic_link_auth.md
+│   ├── resilience_lot2.md
+│   ├── ui.md
+│   └── webhooks.md
+├── integrations
+│   ├── gmail-oauth-setup.md
+│   ├── r2_dropbox_limitations.md
+│   └── r2_offload.md
+├── operations
+│   ├── checklist_production.md
+│   ├── depannage.md
+│   ├── deploiement.md
+│   ├── multi-container-deployment.md
+│   ├── operational-guide.md
+│   └── repomix.md
+├── quality
+│   ├── performance.md
+│   └── testing.md
+├── README.md
+├── securite.md
+└── _tmp_tree.txt
+
+6 directories, 26 files

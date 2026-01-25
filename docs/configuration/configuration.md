@@ -18,7 +18,48 @@ Notes:
 - L'endpoint interne `POST /api/deploy_application` choisit automatiquement le meilleur chemin: Deploy Hook → API Render → commande fallback.
 - Les logs masquent la clé du Deploy Hook et tracent l'identité de l'utilisateur authentifié ayant déclenché le déploiement.
 
+---
+
+## 📅 Dernière mise à jour / Engagements Lot 2
+
+**Date de refonte** : 2026-01-25 (protocol code-doc)
+
+### Terminologie unifiée
+- **`DASHBOARD_*`** : Variables d'environnement (anciennement `TRIGGER_PAGE_*`)
+- **`MagicLinkService`** : Service singleton pour authentification sans mot de passe
+- **`R2TransferService`** : Service singleton pour offload Cloudflare R2
+- **"Absence Globale"** : Fonctionnalité de blocage configurable par jour de semaine
+
+### Engagements Lot 2 (Résilience & Architecture)
+- ✅ **Verrou distribué Redis** : Implémenté avec clé `render_signal:poller_lock`, TTL 5 min
+- ✅ **Fallback R2 garanti** : Conservation URLs sources si Worker R2 indisponible
+- ✅ **Watchdog IMAP** : Timeout 30s pour éviter processus zombies
+- ✅ **Tests résilience** : `test_lock_redis.py`, `test_r2_resilience.py` avec marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`
+- ✅ **Store-as-Source-of-Truth** : Configuration dynamique depuis Redis/fichier, pas d'écriture runtime dans les globals
+
+### Métriques de documentation
+- **Volume** : 7 388 lignes de contenu réparties dans 25 fichiers actifs
+- **Densité** : Justifie le découpage modulaire pour maintenir la lisibilité
+- **Exclusions** : `archive/` et `audits/` maintenus séparément pour éviter le bruit
+
 ## Variables d'environnement - Référence complète
+
+### Variables obligatoires (enforcement au démarrage)
+
+Les 8 variables suivantes sont requises avec `ValueError` au démarrage si manquantes :
+
+| Variable | Description |
+| --- | --- |
+| `FLASK_SECRET_KEY` | Clé secrète HMAC pour sessions et magic links |
+| `TRIGGER_PAGE_PASSWORD` | Mot de passe dashboard (anciennement `DASHBOARD_PASSWORD`) |
+| `EMAIL_ADDRESS` | Adresse email pour le polling IMAP |
+| `EMAIL_PASSWORD` | Mot de passe email IMAP |
+| `IMAP_SERVER` | Serveur IMAP (ex: `imap.gmail.com`) |
+| `PROCESS_API_TOKEN` | Token pour API de traitement |
+| `WEBHOOK_URL` | URL webhook sortant |
+| `MAKECOM_API_KEY` | Clé API Make.com |
+
+**Mécanisme** : `_get_required_env()` trace la clé absente dans les logs puis lève `ValueError`. Les tests `tests/test_settings_required_env.py` couvrent les scénarios succès/échec.
 
 ### Variables de résilience (Lots 2/3)
 
@@ -38,6 +79,8 @@ Notes:
 | `EXTERNAL_CONFIG_BASE_URL` | URL de l'API PHP `config_api.php` (optionnel) | Non défini |
 | `CONFIG_API_TOKEN` | Jeton HMAC pour appeler `config_api.php` (optionnel) | Non défini |
 | `CONFIG_API_STORAGE_DIR` | Répertoire de stockage côté PHP (optionnel) | Non défini |
+
+**Note** : `FLASK_SECRET_KEY` est partagé entre sessions Flask et signature magic links.
 
 ### Variables Cloudflare R2 (Offload fichiers)
 
@@ -312,6 +355,13 @@ Exemple de réponse :
   "active_days": [1, 2, 3, 4, 5]
 }
 ```
+
+### Store-as-Source-of-Truth (Polling Config)
+
+- `routes/api_config.py::update_polling_config` persiste exclusivement via `AppConfigStore` (Redis prioritaire, JSON fallback) et ne modifie plus les globals en mémoire.
+- `config/polling_config.py::PollingConfigService` relit le store à chaque appel (jours actifs, heures, senders, vacances, flags) et expose des getters typés.
+- `background/polling_thread.py` appelle ces getters à chaque cycle pour appliquer immédiatement les changements UI/API sans redémarrage.
+- Tests de référence : `tests/test_polling_dynamic_reload.py` (recharge dynamique) et `tests/test_routes_api_config_happy.py` (validation API + persistence).
 
 ## Log niveau
 - `FLASK_LOG_LEVEL` – `DEBUG|INFO|WARNING|ERROR` (défaut: `INFO`).

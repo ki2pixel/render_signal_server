@@ -1,4 +1,26 @@
-# 🧪 Guide de Tests - Render Signal Server
+## 📅 Dernière mise à jour / Engagements Lot 2
+
+**Date de refonte** : 2026-01-25 (protocol code-doc)
+
+### Terminologie unifiée
+- **`DASHBOARD_*`** : Variables d'environnement (anciennement `TRIGGER_PAGE_*`)
+- **`MagicLinkService`** : Service singleton pour authentification sans mot de passe
+- **`R2TransferService`** : Service singleton pour offload Cloudflare R2
+- **"Absence Globale"** : Fonctionnalité de blocage configurable par jour de semaine
+
+### Engagements Lot 2 (Résilience & Architecture)
+- ✅ **Verrou distribué Redis** : Implémenté avec clé `render_signal:poller_lock`, TTL 5 min
+- ✅ **Fallback R2 garanti** : Conservation URLs sources si Worker R2 indisponible
+- ✅ **Watchdog IMAP** : Timeout 30s pour éviter processus zombies
+- ✅ **Tests résilience** : `test_lock_redis.py`, `test_r2_resilience.py` avec marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`
+- ✅ **Store-as-Source-of-Truth** : Configuration dynamique depuis Redis/fichier, pas d'écriture runtime dans les globals
+
+### Métriques de documentation
+- **Volume** : 7 388 lignes de contenu réparties dans 25 fichiers actifs
+- **Densité** : Justifie le découpage modulaire pour maintenir la lisibilité
+- **Exclusions** : `archive/` et `audits/` maintenus séparément pour éviter le bruit
+
+## 🧪 Guide de Tests - Render Signal Server
 
 Ce document décrit la stratégie de tests complète pour le projet, couvrant les tests unitaires, d'intégration et end-to-end, ainsi que les bonnes pratiques et les métriques de qualité.
 
@@ -58,9 +80,9 @@ render_signal_server-main/
 ### 📊 Métriques Clés
 
 - **Couverture de code** : 70.12% (objectif : 80%+) - Post-Lot 2/3
-- **Tests passants** : 389/402 (96.8%) - Post-Lot 3
+- **Tests passants** : 418/431 (97%) - Post-Lot 2
 - **Temps d'exécution** : ~65s (avec tests Redis et R2 résilience)
-- **Dernière exécution** : 2026-01-14 11:55:00 (Lot 3)
+- **Dernière exécution** : 2026-01-22 01:00:00 (post-refactor settings)
 
 #### Évolution Lot 2 - Résilience
 - **Nouveaux tests** : `test_lock_redis.py` avec format Given/When/Then
@@ -73,6 +95,12 @@ render_signal_server-main/
 - **Performance** : Ajout tests anti-OOM HTML (>1MB tronqué + WARNING)
 - **Couverture** : Maintenue à 70.12% (+3 tests, même couverture)
 - **Scénarios testés** : Worker R2 down, timeout IMAP, HTML volumineux
+
+#### Évolution Store-as-Source-of-Truth (2026-01-22)
+- **Nouveaux tests** : `test_polling_dynamic_reload.py` avec 5 scénarios E2E
+- **Hot reload** : Validation que les changements Redis sont pris en compte sans redémarrage
+- **Marqueurs** : `@pytest.mark.resilience` pour tests store-as-source-of-truth
+- **Scénarios testés** : store vide → settings, store préféré, parsing vacation, normalisation senders, parsing booléens
 
 ### Tests Configuration Obligatoire
 
