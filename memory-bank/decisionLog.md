@@ -7,6 +7,13 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 
 ## Décisions 2026
 
+[2026-01-25 20:33:00] - **Implémentation Moteur de Routage Dynamique**
+- **Décision** : Construire un moteur de routage dynamique complet avec service singleton Redis-first, API REST, intégration orchestrator, UI dashboard et tests exhaustifs.
+- **Raisonnement** : Permettre aux utilisateurs de créer des règles conditionnelles (sender/subject/body + opérateurs) pour router les e-mails vers des webhooks personnalisés et contrôler la poursuite du traitement (`stop_processing`).
+- **Implémentation** : `RoutingRulesService` avec validation/normalisation; `/api/routing_rules` GET/POST sécurisé; intégration dans `orchestrator.py` avant envoi webhook par défaut; panneau UI avec builder drag-drop et autosave; 12 tests couvrant service/API/orchestrator.
+- **Alternatives considérées** : Stockage fichier uniquement (rejeté pour multi-workers); règles codées en dur (rejeté pour flexibilité); sans UI (rejeté pour expérience utilisateur).
+- **Impact** : Fonctionnalité de routage avancée disponible en production; architecture maintenable et testée; UI moderne avec accessibilité.
+
 [2026-01-22 01:00:00] - **Sécurisation des Configuration : Enforcement Variables d'Environnement**
 - **Décision** : Supprimer tous les mots de passe et secrets hardcodés dans `config/settings.py` et exiger des variables d'environnement obligatoires avec erreur explicite au démarrage.
 - **Raisonnement** : Éliminer les risques de sécurité liés aux secrets en clair dans le code source ; garantir que les déploiements ne puissent pas démarrer sans configuration explicite.

@@ -20,6 +20,35 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-01-25 21:00:00] - Documentation Moteur de Routage Dynamique (Workflow docs-updater) Terminée
+- **Objectif** : Exécuter le workflow `/docs-updater` pour analyser la Memory Bank, inspecter le code source impacté et synchroniser toute la documentation avec les évolutions récentes du projet.
+- **Actions réalisées** :
+  1. **Audit structurel** : Exécution des commandes `tree`, `cloc` et `radon` pour collecter les métriques requises par le workflow (388k lignes Python, complexité moyenne D).
+  2. **Diagnostic triangulé** : Identification des divergences code/docs - le moteur de routage dynamique implémenté (RoutingRulesService, API, UI) était absent de la documentation officielle.
+  3. **Mise à jour architecture** : Ajout de `RoutingRulesService` dans le tableau des services de `docs/architecture/overview.md` avec description complète (Redis-first, validation, intégration).
+  4. **Documentation frontend** : Ajout d'une nouvelle section "Panneau Routage Dynamique" dans `docs/features/frontend_dashboard_features.md` décrivant le builder visuel, l'auto-sauvegarde et l'impact UX.
+  5. **Guide complet** : Création de `docs/features/routing_rules_engine.md` avec architecture détaillée, exemples d'usage, tests et roadmap future.
+  6. **Memory Bank synchronisée** : Mise à jour de `activeContext.md` pour documenter la complétion de cette tâche de documentation.
+- **Résultat** : Documentation entièrement synchronisée avec l'état actuel du code, cohérence maintenue entre évolutions récentes (routing rules) et documentation, référence unique pour les développeurs et ops.
+- **Fichiers modifiés** : `docs/architecture/overview.md`, `docs/features/frontend_dashboard_features.md`, `docs/features/routing_rules_engine.md`, `memory-bank/activeContext.md`.
+- **Statut** : Workflow docs-updater terminé avec succès, documentation à jour et complète.
+
+[2026-01-25 20:33:00] - Moteur de Routage Dynamique (Dynamic Routing Rules Engine) Terminé
+- **Objectif** : Implémenter un moteur de routage dynamique pour les e-mails avec service backend, API, intégration orchestrator, UI dashboard et tests complets.
+- **Actions réalisées** :
+  1. **Backend Service** : Création de `RoutingRulesService` (singleton, Redis-first, validation, normalisation) avec schéma de règles (conditions: sender/subject/body, opérateurs: contains/equals/regex; actions: webhook_url, stop_processing).
+  2. **API REST** : Implémentation `/api/routing_rules` (GET/POST) dans `routes/api_routing_rules.py` avec validation stricte, erreurs explicites et sécurité `@login_required`.
+  3. **Intégration Orchestrator** : Ajout de `_find_matching_routing_rule()` et `_match_routing_condition()` dans `email_processing/orchestrator.py`; évaluation avant envoi webhook par défaut, respect du flag `stop_processing`, fallback vers settings si store vide.
+  4. **Frontend Dashboard** : Panneau "Routage Dynamique" intégré dans la section Webhooks de `dashboard.html`; module ES6 `static/services/RoutingRulesService.js` (builder de règles, drag-drop reorder, autosave debounce 2-3s, accessibilité ARIA).
+  5. **Tests Complets** : 
+     - Service : 3 tests (succès, validation, rechargement) dans `tests/test_routing_rules_service.py`
+     - API : 3 tests (GET succès, POST succès, POST validation error) dans `tests/routes/test_api_routing_rules.py`
+     - Orchestrator : 6 tests (helpers + 2 E2E) dans `tests/email_processing/test_routing_rules_orchestrator.py`
+  6. **Correction Tests** : Résolution des problèmes de dépendances manquantes (`fakeredis`, `pattern_matching`, `link_extraction`, `imap_client`) et adaptation des assertions.
+- **Résultat** : Moteur de routage dynamique entièrement fonctionnel; les utilisateurs peuvent créer des règles conditionnelles pour router les e-mails vers des webhooks personnalisés et contrôler la poursuite du traitement; tous les tests passent.
+- **Fichiers modifiés** : `services/routing_rules_service.py`, `routes/api_routing_rules.py`, `email_processing/orchestrator.py`, `dashboard.html`, `static/services/RoutingRulesService.js`, `static/dashboard.js`, `tests/test_routing_rules_service.py`, `tests/routes/test_api_routing_rules.py`, `tests/email_processing/test_routing_rules_orchestrator.py`.
+- **Statut** : Terminé avec succès, moteur de routage prêt pour production.
+
 [2026-01-22 01:00:00] - Refactor Settings Passwords Terminé
 - **Objectif** : Supprimer les mots de passe en clair dans `config/settings.py` et exiger des variables d'environnement obligatoires avec erreur explicite au démarrage.
 - **Actions réalisées** :

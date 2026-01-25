@@ -12,7 +12,7 @@ Actuellement, si un webhook échoue après les retries (définis dans `processin
     *   **Action :** Un bouton **"Rejouer"** à côté de chaque entrée qui tente de renvoyer le payload stocké vers le webhook sans relire l'email IMAP.
 *   **Impact :** Résilience maximale. Permet de gérer les pannes de Make.com sans perte de données.
 
-### 2. Moteur de Règles de Routage Dynamique (Routing Rules Engine)
+### 2. Moteur de Règles de Routage Dynamique (Routing Rules Engine) ✅ **TERMINÉ**
 Actuellement, la logique de routage est "hardcodée" dans `orchestrator.py` (détection DESABO vs RECADRAGE vs CUSTOM).
 
 *   **La fonctionnalité :** Configurer le routage via l'UI au lieu du code Python.
@@ -24,6 +24,13 @@ Actuellement, la logique de routage est "hardcodée" dans `orchestrator.py` (dé
         *   Opérateur (Contient / Regex / Est égal à)
         *   Action (URL Webhook spécifique / Priorité Haute)
 *   **Impact :** Permet d'ajouter de nouveaux flux (ex: "Factures", "Support") sans redéployer le serveur.
+*   **Statut** : **Implémenté et terminé (2026-01-25)**
+    *   Service `RoutingRulesService` (singleton, Redis-first) avec validation et normalisation
+    *   API REST `/api/routing_rules` (GET/POST) sécurisée
+    *   Intégration dans l'orchestrateur avec évaluation avant envoi webhook par défaut
+    *   UI Dashboard avec builder de règles, drag-drop reorder, autosave debounce
+    *   Tests exhaustifs : 12 tests couvrant service, API et orchestrator
+    *   Fichiers : `services/routing_rules_service.py`, `routes/api_routing_rules.py`, `email_processing/orchestrator.py`, `dashboard.html`, `static/services/RoutingRulesService.js`
 
 ### 3. "Sandbox" / Simulateur de Traitement
 Pour tester une regex ou un comportement, il faut actuellement s'envoyer un email.
@@ -71,5 +78,9 @@ Si je devais prioriser par valeur ajoutée par rapport à votre code actuel :
 1.  **Le Simulateur (Sandbox)** : Facile à implémenter (nouvelle route API utilisant les fonctions existantes dans `email_processing`) et très utile pour le debug.
 2.  **La DLQ (Replay)** : Crucial pour la fiabilité en production. Nécessite un peu de stockage (Redis List).
 3.  **L'Explorateur de Cache** : Simple interface sur `deduplication_service.py`.
+
+### Fonctionnalités terminées
+
+- ✅ **Moteur de Règles de Routage Dynamique** : Terminé (2026-01-25) - Voir section 2 pour les détails d'implémentation
 
 Ces ajouts transformeraient l'outil en une véritable console d'administration backend.

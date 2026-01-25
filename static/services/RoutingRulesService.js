@@ -43,6 +43,8 @@ export class RoutingRulesService {
         this.panelId = 'routing-rules';
         /** @type {string} */
         this.messageId = 'routing-rules-msg';
+        /** @type {boolean} */
+        this._usingBackendFallback = false;
     }
 
     /**
@@ -81,7 +83,15 @@ export class RoutingRulesService {
             }
             const config = response?.config || {};
             const rules = Array.isArray(config.rules) ? config.rules : [];
-            this.rules = rules;
+            const fallbackRule = response?.fallback_rule;
+            // Pourquoi : montrer la règle backend existante quand aucune règle UI n'est encore enregistrée.
+            const hydratedRules = rules.length
+                ? rules
+                : (fallbackRule && typeof fallbackRule === 'object'
+                    ? [{ ...fallbackRule, _isBackendFallback: true }]
+                    : []);
+            this._usingBackendFallback = !rules.length && Boolean(fallbackRule);
+            this.rules = hydratedRules;
             this._renderRules();
             this._setPanelStatus('saved', false);
             if (!silent) {
@@ -229,8 +239,21 @@ export class RoutingRulesService {
         nameInput.setAttribute('data-field', 'rule-name');
         nameInput.setAttribute('aria-label', 'Nom de règle');
 
+        const badgeWrap = document.createElement('div');
+        badgeWrap.className = 'routing-rule-badges';
+        if (rule._isBackendFallback) {
+            const badge = document.createElement('span');
+            badge.className = 'routing-badge backend-fallback';
+            badge.textContent = 'Règle backend par défaut';
+            badge.setAttribute('title', 'Renvoyée depuis la configuration backend tant qu’aucune règle personnalisée n’est sauvegardée.');
+            badgeWrap.appendChild(badge);
+        }
+
         titleWrap.appendChild(nameLabel);
         titleWrap.appendChild(nameInput);
+        if (badgeWrap.children.length) {
+            titleWrap.appendChild(badgeWrap);
+        }
 
         const controls = document.createElement('div');
         controls.className = 'routing-rule-controls';

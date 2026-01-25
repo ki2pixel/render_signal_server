@@ -121,7 +121,28 @@ static/
 
 **Impact UX :** +25% taux complétion, organisation claire
 
-### 4. Auto-sauvegarde Intelligente
+### 4. Panneau Routage Dynamique
+
+**Objectif** : Configurer le routage des emails via l'interface utilisateur
+
+**Fonctionnalités :**
+- **Builder de règles visuel** : Constructeur de règles avec drag-and-drop
+- **Conditions multiples** : Expéditeur, sujet, corps avec opérateurs (contient, égal, regex)
+- **Actions configurables** : Webhook cible, priorité, option stop_processing
+- **Validation en temps réel** : Vérification des URLs HTTPS et formats
+- **Auto-sauvegarde intelligente** : Sauvegarde automatique avec debounce 2-3s
+- **Réorganisation par glisser-déposer** : Ordre d'évaluation des règles
+
+**Implémentation technique :**
+- `RoutingRulesService` : Service ES6 dédié (638 lignes) avec gestion complète du panneau
+- `ApiService.post('/api/routing_rules')` : Communication avec le backend pour la persistance
+- `collectRulesFromDom()` : Collecte et validation des règles depuis l'interface
+- `buildRuleCard()` : Génération dynamique des cartes de règles avec formulaires
+- `markDirty()` : Gestion des états modifiés et déclenchement de la sauvegarde
+
+**Impact UX :** Configuration flexible sans redéploiement, -50% temps d'ajout de nouveaux flux
+
+### 5. Auto-sauvegarde Intelligente
 
 **Objectif** : Réduire les erreurs de saisie et améliorer l'expérience utilisateur
 

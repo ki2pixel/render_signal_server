@@ -69,6 +69,7 @@ Cette application fournit une télécommande web sécurisée (Flask + Flask-Logi
 | `WebhookConfigService` (Singleton) | `services/webhook_config_service.py` | Gère la config webhook (validation HTTPS forcée, normalisation Make.com, cache + store externe `app_config_store`, RLock + écritures atomiques + fsync) @app_render.py#299-310 |
 | `DeduplicationService` | `services/deduplication_service.py` | Orchestration du dedup email/subject (Redis + fallback mémoire) injectée dans le poller @app_render.py#425-437 |
 | `PollingConfigService` | `config/polling_config.py` | Exposé comme service léger pour lire jours/heures actifs, timezone et flag UI `enable_polling` @config/polling_config.py#202-295 |
+| `RoutingRulesService` (Singleton) | `services/routing_rules_service.py` | Moteur de routage dynamique (Redis-first, validation/normalisation, cache TTL) avec API `/api/routing_rules` et intégration orchestrateur @services/routing_rules_service.py#66-143 |
 | `R2TransferService` (Singleton) | `services/r2_transfer_service.py` | Offload Cloudflare R2 (normalisation Dropbox, fetch distant signé `X-R2-FETCH-TOKEN`, persistance des paires `source_url`/`r2_url` + `original_filename`) @email_processing/orchestrator.py#645-711 |
 | `MagicLinkService` (Singleton) | `services/magic_link_service.py` | Génération/validation de magic links signés HMAC, TTL configurable, stockage JSON verrouillé, expose l’endpoint `/api/auth/magic-link` @routes/api_auth.py |
 

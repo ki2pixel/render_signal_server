@@ -132,3 +132,13 @@ Le projet a récemment subi un important refactoring pour améliorer sa maintena
 - **Fichiers impactés** : `services/webhook_config_service.py`, `routes/api_webhooks.py`, `email_processing/orchestrator.py`, `static/dashboard.js`, `dashboard.html`, `docs/webhooks.md`, `tests/test_absence_pause.py`
 - **Tests** : 12/12 tests passent (100%), couverture maintenue
 - **Statut** : Refactoring terminé, déployé en production
+
+## Mise à jour (2026-01-25) — Moteur de Routage Dynamique
+- Implémentation complète d'un moteur de routage dynamique pour les e-mails entrants.
+- Service `RoutingRulesService` (singleton, Redis-first) avec validation et normalisation des règles.
+- API REST `/api/routing_rules` (GET/POST) sécurisée avec validation stricte.
+- Intégration dans l'orchestrateur : évaluation des règles avant envoi webhook par défaut, support du flag `stop_processing`.
+- Interface utilisateur dans le dashboard : builder de règles avec drag-drop, autosave debounce, accessibilité ARIA.
+- Tests exhaustifs : 12 tests couvrant service (3), API (3) et orchestrator (6).
+- Fichiers impactés : `services/routing_rules_service.py`, `routes/api_routing_rules.py`, `email_processing/orchestrator.py`, `dashboard.html`, `static/services/RoutingRulesService.js`, `static/dashboard.js`, tests associés.
+- Statut : Terminé avec succès, prêt pour production.
