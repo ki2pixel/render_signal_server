@@ -29,6 +29,7 @@ from services.auth_service import AuthService
 from services.deduplication_service import DeduplicationService
 from services.magic_link_service import MagicLinkService
 from services.r2_transfer_service import R2TransferService
+from services.routing_rules_service import RoutingRulesService
 
 __all__ = [
     "ConfigService",
@@ -38,4 +39,5 @@ __all__ = [
     "DeduplicationService",
     "MagicLinkService",
     "R2TransferService",
+    "RoutingRulesService",
 ]

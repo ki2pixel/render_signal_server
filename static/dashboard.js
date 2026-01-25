@@ -3,10 +3,12 @@ import { WebhookService } from './services/WebhookService.js';
 import { LogService } from './services/LogService.js';
 import { MessageHelper } from './utils/MessageHelper.js';
 import { TabManager } from './components/TabManager.js';
+import { RoutingRulesService } from './services/RoutingRulesService.js';
 
 window.DASHBOARD_BUILD = 'modular-2026-01-19a';
 
 let tabManager = null;
+let routingRulesService = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
     try {
@@ -24,6 +26,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         await loadInitialData();
         
+        if (routingRulesService) {
+            await routingRulesService.init();
+        }
+
         LogService.startLogPolling();
         
     } catch (e) {
@@ -130,6 +136,7 @@ async function handleConfigVerification() {
 }
 
 async function initializeServices() {
+    routingRulesService = new RoutingRulesService();
 }
 
 function bindEvents() {

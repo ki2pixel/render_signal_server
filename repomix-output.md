@@ -10992,378 +10992,6 @@ requirements.txt
 474:         return f"<WebhookConfigService(file={self._file_path.name}, has_url={has_url})>"
 ````
 
-## File: routes/api_config.py
-````python
-  1: from __future__ import annotations
-  2: 
-  3: import json
-  4: import re
-  5: from datetime import datetime
-  6: from typing import Tuple
-  7: 
-  8: from flask import Blueprint, jsonify, request
-  9: from flask_login import login_required
- 10: 
- 11: from config import webhook_time_window, polling_config, settings
- 12: from config import app_config_store as _store
- 13: from config.settings import (
- 14:     RUNTIME_FLAGS_FILE,
- 15:     DISABLE_EMAIL_ID_DEDUP as DEFAULT_DISABLE_EMAIL_ID_DEDUP,
- 16:     ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS as DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS,
- 17:     POLLING_TIMEZONE_STR,
- 18:     EMAIL_POLLING_INTERVAL_SECONDS,
- 19:     POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
- 20:     POLLING_CONFIG_FILE,
- 21: )
- 22: from services import RuntimeFlagsService
- 23: 
- 24: bp = Blueprint("api_config", __name__, url_prefix="/api")
- 25: 
- 26: # Récupérer l'instance RuntimeFlagsService (Singleton)
- 27: # L'instance est déjà initialisée dans app_render.py
- 28: try:
- 29:     _runtime_flags_service = RuntimeFlagsService.get_instance()
- 30: except ValueError:
- 31:     # Fallback: initialiser si pas encore fait (cas tests)
- 32:     _runtime_flags_service = RuntimeFlagsService.get_instance(
- 33:         file_path=RUNTIME_FLAGS_FILE,
- 34:         defaults={
- 35:             "disable_email_id_dedup": bool(DEFAULT_DISABLE_EMAIL_ID_DEDUP),
- 36:             "allow_custom_webhook_without_links": bool(DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
- 37:         }
- 38:     )
- 39: 
- 40: 
- 41: # Wrappers legacy supprimés - Appels directs aux services
- 42: 
- 43: 
- 44: # ---- Time window (session-protected) ----
- 45: 
- 46: @bp.route("/get_webhook_time_window", methods=["GET"])
- 47: @login_required
- 48: def get_webhook_time_window():
- 49:     try:
- 50:         # Best-effort: pull latest values from external store to reflect remote edits
- 51:         try:
- 52:             cfg = _store.get_config_json("webhook_config") or {}
- 53:             gs = (cfg.get("global_time_start") or "").strip()
- 54:             ge = (cfg.get("global_time_end") or "").strip()
- 55:             # Only sync when BOTH values are provided (non-empty). Do NOT clear on double-empty here.
- 56:             if (gs != "" and ge != ""):
- 57:                 webhook_time_window.update_time_window(gs, ge)
- 58:         except Exception:
- 59:             pass
- 60:         info = webhook_time_window.get_time_window_info()
- 61:         return (
- 62:             jsonify(
- 63:                 {
- 64:                     "success": True,
- 65:                     "webhooks_time_start": info.get("start") or None,
- 66:                     "webhooks_time_end": info.get("end") or None,
- 67:                     "timezone": POLLING_TIMEZONE_STR,
- 68:                 }
- 69:             ),
- 70:             200,
- 71:         )
- 72:     except Exception:
- 73:         return jsonify({"success": False, "message": "Erreur lors de la récupération de la fenêtre horaire."}), 500
- 74: 
- 75: 
- 76: @bp.route("/set_webhook_time_window", methods=["POST"])
- 77: @login_required
- 78: def set_webhook_time_window():
- 79:     try:
- 80:         payload = request.get_json(silent=True) or {}
- 81:         start = payload.get("start", "")
- 82:         end = payload.get("end", "")
- 83:         ok, msg = webhook_time_window.update_time_window(start, end)
- 84:         status = 200 if ok else 400
- 85:         info = webhook_time_window.get_time_window_info()
- 86:         # Best-effort: mirror the global time window to external config store under
- 87:         # webhook_config as global_time_start/global_time_end so that
- 88:         # https://webhook.kidpixel.fr/data/app_config/webhook_config.json reflects it too.
- 89:         try:
- 90:             cfg = _store.get_config_json("webhook_config") or {}
- 91:             cfg["global_time_start"] = (info.get("start") or "") or None
- 92:             cfg["global_time_end"] = (info.get("end") or "") or None
- 93:             # Do not fail the request if external store is unavailable
- 94:             _store.set_config_json("webhook_config", cfg)
- 95:         except Exception:
- 96:             pass
- 97:         return (
- 98:             jsonify(
- 99:                 {
-100:                     "success": ok,
-101:                     "message": msg,
-102:                     "webhooks_time_start": info.get("start") or None,
-103:                     "webhooks_time_end": info.get("end") or None,
-104:                 }
-105:             ),
-106:             status,
-107:         )
-108:     except Exception:
-109:         return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}), 500
-110: 
-111: 
-112: # ---- Runtime flags (session-protected) ----
-113: 
-114: @bp.route("/get_runtime_flags", methods=["GET"])
-115: @login_required
-116: def get_runtime_flags():
-117:     """Récupère les flags runtime.
-118:     
-119:     Appel direct à RuntimeFlagsService (cache intelligent 60s).
-120:     """
-121:     try:
-122:         # Appel direct au service (cache si valide, sinon reload)
-123:         data = _runtime_flags_service.get_all_flags()
-124:         return jsonify({"success": True, "flags": data}), 200
-125:     except Exception:
-126:         return jsonify({"success": False, "message": "Erreur interne"}), 500
-127: 
-128: 
-129: @bp.route("/update_runtime_flags", methods=["POST"])
-130: @login_required
-131: def update_runtime_flags():
-132:     """Met à jour les flags runtime.
-133:     
-134:     Appel direct à RuntimeFlagsService.update_flags() - Atomic update + invalidation cache.
-135:     """
-136:     try:
-137:         payload = request.get_json(silent=True) or {}
-138:         
-139:         # Préparer les mises à jour (validation)
-140:         updates = {}
-141:         if "disable_email_id_dedup" in payload:
-142:             updates["disable_email_id_dedup"] = bool(payload.get("disable_email_id_dedup"))
-143:         if "allow_custom_webhook_without_links" in payload:
-144:             updates["allow_custom_webhook_without_links"] = bool(payload.get("allow_custom_webhook_without_links"))
-145:         
-146:         # Appel direct au service (mise à jour atomique + persiste + invalide cache)
-147:         if not _runtime_flags_service.update_flags(updates):
-148:             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
-149:         
-150:         # Récupérer les flags à jour
-151:         data = _runtime_flags_service.get_all_flags()
-152:         return jsonify({
-153:             "success": True,
-154:             "flags": data,
-155:             "message": "Modifications enregistrées. Un redémarrage peut être nécessaire."
-156:         }), 200
-157:     except Exception:
-158:         return jsonify({"success": False, "message": "Erreur interne"}), 500
-159: 
-160: 
-161: # ---- Polling configuration (session-protected) ----
-162: 
-163: @bp.route("/get_polling_config", methods=["GET"])
-164: @login_required
-165: def get_polling_config():
-166:     try:
-167:         # Read live settings at call time to honor pytest patch.object overrides
-168:         from importlib import import_module as _import_module
-169:         live_settings = _import_module('config.settings')
-170:         # Prefer values from external store/file if available to reflect persisted UI choices
-171:         persisted = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
-172:         default_active_days = getattr(live_settings, 'POLLING_ACTIVE_DAYS', settings.POLLING_ACTIVE_DAYS)
-173:         default_start_hour = getattr(live_settings, 'POLLING_ACTIVE_START_HOUR', settings.POLLING_ACTIVE_START_HOUR)
-174:         default_end_hour = getattr(live_settings, 'POLLING_ACTIVE_END_HOUR', settings.POLLING_ACTIVE_END_HOUR)
-175:         default_enable_subject_dedup = getattr(
-176:             live_settings,
-177:             'ENABLE_SUBJECT_GROUP_DEDUP',
-178:             settings.ENABLE_SUBJECT_GROUP_DEDUP,
-179:         )
-180:         cfg = {
-181:             "active_days": persisted.get("active_days", default_active_days),
-182:             "active_start_hour": persisted.get("active_start_hour", default_start_hour),
-183:             "active_end_hour": persisted.get("active_end_hour", default_end_hour),
-184:             "enable_subject_group_dedup": persisted.get(
-185:                 "enable_subject_group_dedup",
-186:                 default_enable_subject_dedup,
-187:             ),
-188:             "timezone": getattr(live_settings, 'POLLING_TIMEZONE_STR', POLLING_TIMEZONE_STR),
-189:             # Still expose persisted sender list if present, else settings default
-190:             "sender_of_interest_for_polling": persisted.get("sender_of_interest_for_polling", getattr(live_settings, 'SENDER_LIST_FOR_POLLING', settings.SENDER_LIST_FOR_POLLING)),
-191:             "vacation_start": persisted.get("vacation_start", polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None),
-192:             "vacation_end": persisted.get("vacation_end", polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None),
-193:             # Global enable toggle: prefer persisted, fallback helper
-194:             "enable_polling": persisted.get("enable_polling", True),
-195:         }
-196:         return jsonify({"success": True, "config": cfg}), 200
-197:     except Exception:
-198:         return jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration polling."}), 500
-199: 
-200: 
-201: @bp.route("/update_polling_config", methods=["POST"])
-202: @login_required
-203: def update_polling_config():
-204:     try:
-205:         payload = request.get_json(silent=True) or {}
-206:         # Charger l'existant depuis le store (fallback fichier)
-207:         existing: dict = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
-208: 
-209:         # Normalisation des champs
-210:         new_days = None
-211:         if 'active_days' in payload:
-212:             days_val = payload['active_days']
-213:             parsed_days: list[int] = []
-214:             if isinstance(days_val, str):
-215:                 parts = [p.strip() for p in days_val.split(',') if p.strip()]
-216:                 for p in parts:
-217:                     if p.isdigit():
-218:                         d = int(p)
-219:                         if 0 <= d <= 6:
-220:                             parsed_days.append(d)
-221:             elif isinstance(days_val, list):
-222:                 for p in days_val:
-223:                     try:
-224:                         d = int(p)
-225:                         if 0 <= d <= 6:
-226:                             parsed_days.append(d)
-227:                     except Exception:
-228:                         continue
-229:             if parsed_days:
-230:                 new_days = sorted(set(parsed_days))
-231:             else:
-232:                 new_days = [0, 1, 2, 3, 4]
-233: 
-234:         new_start = None
-235:         if 'active_start_hour' in payload:
-236:             try:
-237:                 v = int(payload['active_start_hour'])
-238:                 if 0 <= v <= 23:
-239:                     new_start = v
-240:                 else:
-241:                     return jsonify({"success": False, "message": "active_start_hour doit être entre 0 et 23."}), 400
-242:             except Exception:
-243:                 return jsonify({"success": False, "message": "active_start_hour invalide (entier attendu)."}), 400
-244: 
-245:         new_end = None
-246:         if 'active_end_hour' in payload:
-247:             try:
-248:                 v = int(payload['active_end_hour'])
-249:                 if 0 <= v <= 23:
-250:                     new_end = v
-251:                 else:
-252:                     return jsonify({"success": False, "message": "active_end_hour doit être entre 0 et 23."}), 400
-253:             except Exception:
-254:                 return jsonify({"success": False, "message": "active_end_hour invalide (entier attendu)."}), 400
-255: 
-256:         new_dedup = None
-257:         if 'enable_subject_group_dedup' in payload:
-258:             new_dedup = bool(payload['enable_subject_group_dedup'])
-259: 
-260:         new_senders = None
-261:         if 'sender_of_interest_for_polling' in payload:
-262:             candidates = payload['sender_of_interest_for_polling']
-263:             normalized: list[str] = []
-264:             if isinstance(candidates, str):
-265:                 parts = [p.strip() for p in candidates.split(',') if p.strip()]
-266:             elif isinstance(candidates, list):
-267:                 parts = [str(p).strip() for p in candidates if str(p).strip()]
-268:             else:
-269:                 parts = []
-270:             email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-271:             for p in parts:
-272:                 low = p.lower()
-273:                 if email_re.match(low):
-274:                     normalized.append(low)
-275:             seen = set()
-276:             unique_norm = []
-277:             for s in normalized:
-278:                 if s not in seen:
-279:                     seen.add(s)
-280:                     unique_norm.append(s)
-281:             new_senders = unique_norm
-282: 
-283:         # Vacation dates (ISO YYYY-MM-DD)
-284:         new_vac_start = None
-285:         if 'vacation_start' in payload:
-286:             vs = payload['vacation_start']
-287:             if vs in (None, ""):
-288:                 new_vac_start = None
-289:             else:
-290:                 try:
-291:                     new_vac_start = datetime.fromisoformat(str(vs)).date()
-292:                 except Exception:
-293:                     return jsonify({"success": False, "message": "vacation_start invalide (format YYYY-MM-DD)."}), 400
-294: 
-295:         new_vac_end = None
-296:         if 'vacation_end' in payload:
-297:             ve = payload['vacation_end']
-298:             if ve in (None, ""):
-299:                 new_vac_end = None
-300:             else:
-301:                 try:
-302:                     new_vac_end = datetime.fromisoformat(str(ve)).date()
-303:                 except Exception:
-304:                     return jsonify({"success": False, "message": "vacation_end invalide (format YYYY-MM-DD)."}), 400
-305: 
-306:         if new_vac_start is not None and new_vac_end is not None and new_vac_start > new_vac_end:
-307:             return jsonify({"success": False, "message": "vacation_start doit être <= vacation_end."}), 400
-308: 
-309:         # Global enable (boolean)
-310:         new_enable_polling = None
-311:         if 'enable_polling' in payload:
-312:             try:
-313:                 val = payload.get('enable_polling')
-314:                 if isinstance(val, bool):
-315:                     new_enable_polling = val
-316:                 elif isinstance(val, (int, float)):
-317:                     new_enable_polling = bool(val)
-318:                 elif isinstance(val, str):
-319:                     s = val.strip().lower()
-320:                     if s in {"1", "true", "yes", "y", "on"}:
-321:                         new_enable_polling = True
-322:                     elif s in {"0", "false", "no", "n", "off"}:
-323:                         new_enable_polling = False
-324:             except Exception:
-325:                 new_enable_polling = None
-326: 
-327:         # Persistance via store (avec fallback fichier)
-328:         merged = dict(existing)
-329:         if new_days is not None:
-330:             merged['active_days'] = new_days
-331:         if new_start is not None:
-332:             merged['active_start_hour'] = new_start
-333:         if new_end is not None:
-334:             merged['active_end_hour'] = new_end
-335:         if new_dedup is not None:
-336:             merged['enable_subject_group_dedup'] = new_dedup
-337:         if new_senders is not None:
-338:             merged['sender_of_interest_for_polling'] = new_senders
-339:         if 'vacation_start' in payload:
-340:             merged['vacation_start'] = new_vac_start.isoformat() if new_vac_start else None
-341:         if 'vacation_end' in payload:
-342:             merged['vacation_end'] = new_vac_end.isoformat() if new_vac_end else None
-343:         if new_enable_polling is not None:
-344:             merged['enable_polling'] = new_enable_polling
-345: 
-346:         try:
-347:             ok = _store.set_config_json("polling_config", merged, file_fallback=POLLING_CONFIG_FILE)
-348:             if not ok:
-349:                 return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
-350:         except Exception:
-351:             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
-352: 
-353:         return jsonify({
-354:             "success": True,
-355:             "config": {
-356:                 "active_days": merged.get('active_days', settings.POLLING_ACTIVE_DAYS),
-357:                 "active_start_hour": merged.get('active_start_hour', settings.POLLING_ACTIVE_START_HOUR),
-358:                 "active_end_hour": merged.get('active_end_hour', settings.POLLING_ACTIVE_END_HOUR),
-359:                 "enable_subject_group_dedup": merged.get('enable_subject_group_dedup', settings.ENABLE_SUBJECT_GROUP_DEDUP),
-360:                 "sender_of_interest_for_polling": merged.get('sender_of_interest_for_polling', settings.SENDER_LIST_FOR_POLLING),
-361:                 "vacation_start": merged.get('vacation_start'),
-362:                 "vacation_end": merged.get('vacation_end'),
-363:                 "enable_polling": merged.get('enable_polling', polling_config.get_enable_polling(True)),
-364:             },
-365:             "message": "Configuration polling mise à jour. Un redémarrage peut être nécessaire pour prise en compte complète."
-366:         }), 200
-367:     except Exception:
-368:         return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour du polling."}), 500
-````
-
 ## File: routes/api_admin.py
 ````python
   1: from __future__ import annotations
@@ -11755,6 +11383,378 @@ requirements.txt
 387:         return jsonify({"status": "success", "message": "Vérification en arrière-plan lancée."}), 202
 388:     except Exception as e:
 389:         return jsonify({"status": "error", "message": str(e)}), 500
+````
+
+## File: routes/api_config.py
+````python
+  1: from __future__ import annotations
+  2: 
+  3: import json
+  4: import re
+  5: from datetime import datetime
+  6: from typing import Tuple
+  7: 
+  8: from flask import Blueprint, jsonify, request
+  9: from flask_login import login_required
+ 10: 
+ 11: from config import webhook_time_window, polling_config, settings
+ 12: from config import app_config_store as _store
+ 13: from config.settings import (
+ 14:     RUNTIME_FLAGS_FILE,
+ 15:     DISABLE_EMAIL_ID_DEDUP as DEFAULT_DISABLE_EMAIL_ID_DEDUP,
+ 16:     ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS as DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS,
+ 17:     POLLING_TIMEZONE_STR,
+ 18:     EMAIL_POLLING_INTERVAL_SECONDS,
+ 19:     POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
+ 20:     POLLING_CONFIG_FILE,
+ 21: )
+ 22: from services import RuntimeFlagsService
+ 23: 
+ 24: bp = Blueprint("api_config", __name__, url_prefix="/api")
+ 25: 
+ 26: # Récupérer l'instance RuntimeFlagsService (Singleton)
+ 27: # L'instance est déjà initialisée dans app_render.py
+ 28: try:
+ 29:     _runtime_flags_service = RuntimeFlagsService.get_instance()
+ 30: except ValueError:
+ 31:     # Fallback: initialiser si pas encore fait (cas tests)
+ 32:     _runtime_flags_service = RuntimeFlagsService.get_instance(
+ 33:         file_path=RUNTIME_FLAGS_FILE,
+ 34:         defaults={
+ 35:             "disable_email_id_dedup": bool(DEFAULT_DISABLE_EMAIL_ID_DEDUP),
+ 36:             "allow_custom_webhook_without_links": bool(DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
+ 37:         }
+ 38:     )
+ 39: 
+ 40: 
+ 41: # Wrappers legacy supprimés - Appels directs aux services
+ 42: 
+ 43: 
+ 44: # ---- Time window (session-protected) ----
+ 45: 
+ 46: @bp.route("/get_webhook_time_window", methods=["GET"])
+ 47: @login_required
+ 48: def get_webhook_time_window():
+ 49:     try:
+ 50:         # Best-effort: pull latest values from external store to reflect remote edits
+ 51:         try:
+ 52:             cfg = _store.get_config_json("webhook_config") or {}
+ 53:             gs = (cfg.get("global_time_start") or "").strip()
+ 54:             ge = (cfg.get("global_time_end") or "").strip()
+ 55:             # Only sync when BOTH values are provided (non-empty). Do NOT clear on double-empty here.
+ 56:             if (gs != "" and ge != ""):
+ 57:                 webhook_time_window.update_time_window(gs, ge)
+ 58:         except Exception:
+ 59:             pass
+ 60:         info = webhook_time_window.get_time_window_info()
+ 61:         return (
+ 62:             jsonify(
+ 63:                 {
+ 64:                     "success": True,
+ 65:                     "webhooks_time_start": info.get("start") or None,
+ 66:                     "webhooks_time_end": info.get("end") or None,
+ 67:                     "timezone": POLLING_TIMEZONE_STR,
+ 68:                 }
+ 69:             ),
+ 70:             200,
+ 71:         )
+ 72:     except Exception:
+ 73:         return jsonify({"success": False, "message": "Erreur lors de la récupération de la fenêtre horaire."}), 500
+ 74: 
+ 75: 
+ 76: @bp.route("/set_webhook_time_window", methods=["POST"])
+ 77: @login_required
+ 78: def set_webhook_time_window():
+ 79:     try:
+ 80:         payload = request.get_json(silent=True) or {}
+ 81:         start = payload.get("start", "")
+ 82:         end = payload.get("end", "")
+ 83:         ok, msg = webhook_time_window.update_time_window(start, end)
+ 84:         status = 200 if ok else 400
+ 85:         info = webhook_time_window.get_time_window_info()
+ 86:         # Best-effort: mirror the global time window to external config store under
+ 87:         # webhook_config as global_time_start/global_time_end so that
+ 88:         # https://webhook.kidpixel.fr/data/app_config/webhook_config.json reflects it too.
+ 89:         try:
+ 90:             cfg = _store.get_config_json("webhook_config") or {}
+ 91:             cfg["global_time_start"] = (info.get("start") or "") or None
+ 92:             cfg["global_time_end"] = (info.get("end") or "") or None
+ 93:             # Do not fail the request if external store is unavailable
+ 94:             _store.set_config_json("webhook_config", cfg)
+ 95:         except Exception:
+ 96:             pass
+ 97:         return (
+ 98:             jsonify(
+ 99:                 {
+100:                     "success": ok,
+101:                     "message": msg,
+102:                     "webhooks_time_start": info.get("start") or None,
+103:                     "webhooks_time_end": info.get("end") or None,
+104:                 }
+105:             ),
+106:             status,
+107:         )
+108:     except Exception:
+109:         return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}), 500
+110: 
+111: 
+112: # ---- Runtime flags (session-protected) ----
+113: 
+114: @bp.route("/get_runtime_flags", methods=["GET"])
+115: @login_required
+116: def get_runtime_flags():
+117:     """Récupère les flags runtime.
+118:     
+119:     Appel direct à RuntimeFlagsService (cache intelligent 60s).
+120:     """
+121:     try:
+122:         # Appel direct au service (cache si valide, sinon reload)
+123:         data = _runtime_flags_service.get_all_flags()
+124:         return jsonify({"success": True, "flags": data}), 200
+125:     except Exception:
+126:         return jsonify({"success": False, "message": "Erreur interne"}), 500
+127: 
+128: 
+129: @bp.route("/update_runtime_flags", methods=["POST"])
+130: @login_required
+131: def update_runtime_flags():
+132:     """Met à jour les flags runtime.
+133:     
+134:     Appel direct à RuntimeFlagsService.update_flags() - Atomic update + invalidation cache.
+135:     """
+136:     try:
+137:         payload = request.get_json(silent=True) or {}
+138:         
+139:         # Préparer les mises à jour (validation)
+140:         updates = {}
+141:         if "disable_email_id_dedup" in payload:
+142:             updates["disable_email_id_dedup"] = bool(payload.get("disable_email_id_dedup"))
+143:         if "allow_custom_webhook_without_links" in payload:
+144:             updates["allow_custom_webhook_without_links"] = bool(payload.get("allow_custom_webhook_without_links"))
+145:         
+146:         # Appel direct au service (mise à jour atomique + persiste + invalide cache)
+147:         if not _runtime_flags_service.update_flags(updates):
+148:             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
+149:         
+150:         # Récupérer les flags à jour
+151:         data = _runtime_flags_service.get_all_flags()
+152:         return jsonify({
+153:             "success": True,
+154:             "flags": data,
+155:             "message": "Modifications enregistrées. Un redémarrage peut être nécessaire."
+156:         }), 200
+157:     except Exception:
+158:         return jsonify({"success": False, "message": "Erreur interne"}), 500
+159: 
+160: 
+161: # ---- Polling configuration (session-protected) ----
+162: 
+163: @bp.route("/get_polling_config", methods=["GET"])
+164: @login_required
+165: def get_polling_config():
+166:     try:
+167:         # Read live settings at call time to honor pytest patch.object overrides
+168:         from importlib import import_module as _import_module
+169:         live_settings = _import_module('config.settings')
+170:         # Prefer values from external store/file if available to reflect persisted UI choices
+171:         persisted = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
+172:         default_active_days = getattr(live_settings, 'POLLING_ACTIVE_DAYS', settings.POLLING_ACTIVE_DAYS)
+173:         default_start_hour = getattr(live_settings, 'POLLING_ACTIVE_START_HOUR', settings.POLLING_ACTIVE_START_HOUR)
+174:         default_end_hour = getattr(live_settings, 'POLLING_ACTIVE_END_HOUR', settings.POLLING_ACTIVE_END_HOUR)
+175:         default_enable_subject_dedup = getattr(
+176:             live_settings,
+177:             'ENABLE_SUBJECT_GROUP_DEDUP',
+178:             settings.ENABLE_SUBJECT_GROUP_DEDUP,
+179:         )
+180:         cfg = {
+181:             "active_days": persisted.get("active_days", default_active_days),
+182:             "active_start_hour": persisted.get("active_start_hour", default_start_hour),
+183:             "active_end_hour": persisted.get("active_end_hour", default_end_hour),
+184:             "enable_subject_group_dedup": persisted.get(
+185:                 "enable_subject_group_dedup",
+186:                 default_enable_subject_dedup,
+187:             ),
+188:             "timezone": getattr(live_settings, 'POLLING_TIMEZONE_STR', POLLING_TIMEZONE_STR),
+189:             # Still expose persisted sender list if present, else settings default
+190:             "sender_of_interest_for_polling": persisted.get("sender_of_interest_for_polling", getattr(live_settings, 'SENDER_LIST_FOR_POLLING', settings.SENDER_LIST_FOR_POLLING)),
+191:             "vacation_start": persisted.get("vacation_start", polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None),
+192:             "vacation_end": persisted.get("vacation_end", polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None),
+193:             # Global enable toggle: prefer persisted, fallback helper
+194:             "enable_polling": persisted.get("enable_polling", True),
+195:         }
+196:         return jsonify({"success": True, "config": cfg}), 200
+197:     except Exception:
+198:         return jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration polling."}), 500
+199: 
+200: 
+201: @bp.route("/update_polling_config", methods=["POST"])
+202: @login_required
+203: def update_polling_config():
+204:     try:
+205:         payload = request.get_json(silent=True) or {}
+206:         # Charger l'existant depuis le store (fallback fichier)
+207:         existing: dict = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
+208: 
+209:         # Normalisation des champs
+210:         new_days = None
+211:         if 'active_days' in payload:
+212:             days_val = payload['active_days']
+213:             parsed_days: list[int] = []
+214:             if isinstance(days_val, str):
+215:                 parts = [p.strip() for p in days_val.split(',') if p.strip()]
+216:                 for p in parts:
+217:                     if p.isdigit():
+218:                         d = int(p)
+219:                         if 0 <= d <= 6:
+220:                             parsed_days.append(d)
+221:             elif isinstance(days_val, list):
+222:                 for p in days_val:
+223:                     try:
+224:                         d = int(p)
+225:                         if 0 <= d <= 6:
+226:                             parsed_days.append(d)
+227:                     except Exception:
+228:                         continue
+229:             if parsed_days:
+230:                 new_days = sorted(set(parsed_days))
+231:             else:
+232:                 new_days = [0, 1, 2, 3, 4]
+233: 
+234:         new_start = None
+235:         if 'active_start_hour' in payload:
+236:             try:
+237:                 v = int(payload['active_start_hour'])
+238:                 if 0 <= v <= 23:
+239:                     new_start = v
+240:                 else:
+241:                     return jsonify({"success": False, "message": "active_start_hour doit être entre 0 et 23."}), 400
+242:             except Exception:
+243:                 return jsonify({"success": False, "message": "active_start_hour invalide (entier attendu)."}), 400
+244: 
+245:         new_end = None
+246:         if 'active_end_hour' in payload:
+247:             try:
+248:                 v = int(payload['active_end_hour'])
+249:                 if 0 <= v <= 23:
+250:                     new_end = v
+251:                 else:
+252:                     return jsonify({"success": False, "message": "active_end_hour doit être entre 0 et 23."}), 400
+253:             except Exception:
+254:                 return jsonify({"success": False, "message": "active_end_hour invalide (entier attendu)."}), 400
+255: 
+256:         new_dedup = None
+257:         if 'enable_subject_group_dedup' in payload:
+258:             new_dedup = bool(payload['enable_subject_group_dedup'])
+259: 
+260:         new_senders = None
+261:         if 'sender_of_interest_for_polling' in payload:
+262:             candidates = payload['sender_of_interest_for_polling']
+263:             normalized: list[str] = []
+264:             if isinstance(candidates, str):
+265:                 parts = [p.strip() for p in candidates.split(',') if p.strip()]
+266:             elif isinstance(candidates, list):
+267:                 parts = [str(p).strip() for p in candidates if str(p).strip()]
+268:             else:
+269:                 parts = []
+270:             email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+271:             for p in parts:
+272:                 low = p.lower()
+273:                 if email_re.match(low):
+274:                     normalized.append(low)
+275:             seen = set()
+276:             unique_norm = []
+277:             for s in normalized:
+278:                 if s not in seen:
+279:                     seen.add(s)
+280:                     unique_norm.append(s)
+281:             new_senders = unique_norm
+282: 
+283:         # Vacation dates (ISO YYYY-MM-DD)
+284:         new_vac_start = None
+285:         if 'vacation_start' in payload:
+286:             vs = payload['vacation_start']
+287:             if vs in (None, ""):
+288:                 new_vac_start = None
+289:             else:
+290:                 try:
+291:                     new_vac_start = datetime.fromisoformat(str(vs)).date()
+292:                 except Exception:
+293:                     return jsonify({"success": False, "message": "vacation_start invalide (format YYYY-MM-DD)."}), 400
+294: 
+295:         new_vac_end = None
+296:         if 'vacation_end' in payload:
+297:             ve = payload['vacation_end']
+298:             if ve in (None, ""):
+299:                 new_vac_end = None
+300:             else:
+301:                 try:
+302:                     new_vac_end = datetime.fromisoformat(str(ve)).date()
+303:                 except Exception:
+304:                     return jsonify({"success": False, "message": "vacation_end invalide (format YYYY-MM-DD)."}), 400
+305: 
+306:         if new_vac_start is not None and new_vac_end is not None and new_vac_start > new_vac_end:
+307:             return jsonify({"success": False, "message": "vacation_start doit être <= vacation_end."}), 400
+308: 
+309:         # Global enable (boolean)
+310:         new_enable_polling = None
+311:         if 'enable_polling' in payload:
+312:             try:
+313:                 val = payload.get('enable_polling')
+314:                 if isinstance(val, bool):
+315:                     new_enable_polling = val
+316:                 elif isinstance(val, (int, float)):
+317:                     new_enable_polling = bool(val)
+318:                 elif isinstance(val, str):
+319:                     s = val.strip().lower()
+320:                     if s in {"1", "true", "yes", "y", "on"}:
+321:                         new_enable_polling = True
+322:                     elif s in {"0", "false", "no", "n", "off"}:
+323:                         new_enable_polling = False
+324:             except Exception:
+325:                 new_enable_polling = None
+326: 
+327:         # Persistance via store (avec fallback fichier)
+328:         merged = dict(existing)
+329:         if new_days is not None:
+330:             merged['active_days'] = new_days
+331:         if new_start is not None:
+332:             merged['active_start_hour'] = new_start
+333:         if new_end is not None:
+334:             merged['active_end_hour'] = new_end
+335:         if new_dedup is not None:
+336:             merged['enable_subject_group_dedup'] = new_dedup
+337:         if new_senders is not None:
+338:             merged['sender_of_interest_for_polling'] = new_senders
+339:         if 'vacation_start' in payload:
+340:             merged['vacation_start'] = new_vac_start.isoformat() if new_vac_start else None
+341:         if 'vacation_end' in payload:
+342:             merged['vacation_end'] = new_vac_end.isoformat() if new_vac_end else None
+343:         if new_enable_polling is not None:
+344:             merged['enable_polling'] = new_enable_polling
+345: 
+346:         try:
+347:             ok = _store.set_config_json("polling_config", merged, file_fallback=POLLING_CONFIG_FILE)
+348:             if not ok:
+349:                 return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
+350:         except Exception:
+351:             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
+352: 
+353:         return jsonify({
+354:             "success": True,
+355:             "config": {
+356:                 "active_days": merged.get('active_days', settings.POLLING_ACTIVE_DAYS),
+357:                 "active_start_hour": merged.get('active_start_hour', settings.POLLING_ACTIVE_START_HOUR),
+358:                 "active_end_hour": merged.get('active_end_hour', settings.POLLING_ACTIVE_END_HOUR),
+359:                 "enable_subject_group_dedup": merged.get('enable_subject_group_dedup', settings.ENABLE_SUBJECT_GROUP_DEDUP),
+360:                 "sender_of_interest_for_polling": merged.get('sender_of_interest_for_polling', settings.SENDER_LIST_FOR_POLLING),
+361:                 "vacation_start": merged.get('vacation_start'),
+362:                 "vacation_end": merged.get('vacation_end'),
+363:                 "enable_polling": merged.get('enable_polling', polling_config.get_enable_polling(True)),
+364:             },
+365:             "message": "Configuration polling mise à jour. Un redémarrage peut être nécessaire pour prise en compte complète."
+366:         }), 200
+367:     except Exception:
+368:         return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour du polling."}), 500
 ````
 
 ## File: routes/api_webhooks.py

@@ -1067,6 +1067,129 @@
         border-color: rgba(67, 97, 238, 0.3);
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
       }
+
+      .routing-rules-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 10px;
+      }
+
+      .routing-rule-card {
+        background: rgba(8, 12, 28, 0.7);
+        border: 1px solid var(--cork-border-color);
+        border-radius: 8px;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .routing-rule-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .routing-rule-title {
+        flex: 1;
+        min-width: 220px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .routing-rule-controls {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .routing-icon-btn {
+        background: rgba(67, 97, 238, 0.12);
+        border: 1px solid rgba(67, 97, 238, 0.4);
+        color: var(--cork-text-primary);
+        border-radius: 6px;
+        padding: 6px 8px;
+        cursor: pointer;
+        transition: transform 0.15s ease, border-color 0.15s ease;
+      }
+
+      .routing-icon-btn:hover {
+        border-color: var(--cork-primary-accent);
+        transform: translateY(-1px);
+      }
+
+      .routing-section-title {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--cork-text-secondary);
+        margin-top: 6px;
+      }
+
+      .routing-conditions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .routing-condition-row {
+        display: grid;
+        grid-template-columns: minmax(120px, 160px) minmax(120px, 160px) 1fr auto auto;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .routing-actions {
+        display: grid;
+        gap: 10px;
+      }
+
+      .routing-inline {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .routing-input,
+      .routing-select {
+        width: 100%;
+        padding: 9px 10px;
+        border-radius: 4px;
+        border: 1px solid var(--cork-border-color);
+        background: rgba(0, 0, 0, 0.2);
+        color: var(--cork-text-primary);
+        font-size: 0.9em;
+        box-sizing: border-box;
+      }
+
+      .routing-checkbox {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85em;
+        color: var(--cork-text-secondary);
+      }
+
+      .routing-invalid {
+        border-color: var(--cork-danger) !important;
+        box-shadow: 0 0 0 2px rgba(231, 81, 90, 0.2);
+      }
+
+      .routing-empty {
+        padding: 12px;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--cork-text-secondary);
+      }
+
+      .routing-add-btn {
+        margin-top: 4px;
+        align-self: flex-start;
+      }
       
       .panel-header {
         display: flex;
@@ -1192,6 +1315,14 @@
         .panel-save-btn {
           width: 100%;
         }
+
+        .routing-condition-row {
+          grid-template-columns: 1fr;
+        }
+
+        .routing-rule-controls {
+          justify-content: flex-start;
+        }
       }
       
       /* Indicateurs de sections modifiées */
@@ -1282,6 +1413,7 @@
             <div class="status-value" id="activeWebhooks">—</div>
           </div>
         </div>
+
       </div>
       
       <!-- Navigation principale -->
@@ -1430,6 +1562,35 @@
               <span class="panel-indicator" id="time-window-indicator">Dernière sauvegarde: —</span>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Panneau 4: Routage Dynamique -->
+      <div class="collapsible-panel" data-panel="routing-rules">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>🧭</span>
+            <span>Routage Dynamique</span>
+          </div>
+          <div class="panel-toggle">
+            <span class="panel-status" id="routing-rules-status">Sauvegarde requise</span>
+            <span class="toggle-icon">▼</span>
+          </div>
+        </div>
+        <div class="panel-content">
+          <div class="small-text" style="margin-bottom: 10px;">
+            Définissez des règles conditionnelles pour router les emails vers des webhooks dédiés.
+            Les règles sont évaluées dans l'ordre affiché.
+          </div>
+          <div class="inline-group" style="margin-bottom: 12px;">
+            <button id="addRoutingRuleBtn" type="button" class="btn btn-primary btn-small">➕ Ajouter une règle</button>
+            <button id="reloadRoutingRulesBtn" type="button" class="btn btn-secondary btn-small">🔄 Recharger</button>
+          </div>
+          <div id="routingRulesList" class="routing-rules-list"></div>
+          <div class="panel-actions">
+            <span class="panel-indicator" id="routing-rules-indicator">Dernière sauvegarde: —</span>
+          </div>
+          <div id="routing-rules-msg" class="status-msg"></div>
         </div>
       </div>
 

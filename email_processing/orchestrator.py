@@ -8,6 +8,7 @@ Provides a stable interface for email processing with detector-specific routing.
 from __future__ import annotations
 
 from typing import Optional, Any, Dict
+import re
 from typing_extensions import TypedDict
 from datetime import datetime, timezone
 import os
@@ -15,6 +16,7 @@ import json
 from pathlib import Path
 from utils.time_helpers import parse_time_hhmm, is_within_time_window_local
 from utils.text_helpers import mask_sensitive_data, strip_leading_reply_prefixes
+from config import settings
 
 
 # =============================================================================
@@ -105,6 +107,140 @@ def _get_webhook_config_dict() -> dict:
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
+
+
+def _get_routing_rules_payload() -> dict:
+    """Charge les règles de routage dynamiques depuis le store Redis-first."""
+    try:
+        from services import RoutingRulesService
+
+        service = None
+        try:
+            service = RoutingRulesService.get_instance()
+        except ValueError:
+            try:
+                from config import app_config_store as _store
+                from pathlib import Path as _Path
+
+                cfg_path = _Path(__file__).resolve().parents[1] / "debug" / "routing_rules.json"
+                service = RoutingRulesService.get_instance(
+                    file_path=cfg_path,
+                    external_store=_store,
+                )
+            except Exception:
+                service = None
+
+        if service is not None:
+            try:
+                service.reload()
+            except Exception:
+                pass
+            payload = service.get_payload()
+            if isinstance(payload, dict):
+                return payload
+    except Exception:
+        pass
+
+    try:
+        from config import app_config_store as _store
+        from pathlib import Path as _Path
+
+        cfg_path = _Path(__file__).resolve().parents[1] / "debug" / "routing_rules.json"
+        data = _store.get_config_json("routing_rules", file_fallback=cfg_path) or {}
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _normalize_match_value(value: str, *, case_sensitive: bool) -> str:
+    if case_sensitive:
+        return value
+    return value.lower()
+
+
+def _match_routing_condition(condition: dict, *, sender: str, subject: str, body: str) -> bool:
+    try:
+        field = str(condition.get("field") or "").strip().lower()
+        operator = str(condition.get("operator") or "").strip().lower()
+        value = str(condition.get("value") or "").strip()
+        case_sensitive = bool(condition.get("case_sensitive", False))
+        if not field or not operator or not value:
+            return False
+
+        target_map = {
+            "sender": sender or "",
+            "subject": subject or "",
+            "body": body or "",
+        }
+        target = target_map.get(field, "")
+        target_norm = _normalize_match_value(str(target), case_sensitive=case_sensitive)
+        value_norm = _normalize_match_value(value, case_sensitive=case_sensitive)
+
+        if operator == "contains":
+            return value_norm in target_norm
+        if operator == "equals":
+            return value_norm == target_norm
+        if operator == "regex":
+            flags = 0 if case_sensitive else re.IGNORECASE
+            try:
+                return re.search(value, str(target), flags=flags) is not None
+            except re.error:
+                return False
+        return False
+    except Exception:
+        return False
+
+
+def _find_matching_routing_rule(
+    rules: list,
+    *,
+    sender: str,
+    subject: str,
+    body: str,
+    email_id: str,
+    logger,
+):
+    if not isinstance(rules, list) or not rules:
+        return None
+
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        conditions = rule.get("conditions")
+        if not isinstance(conditions, list) or not conditions:
+            continue
+        try:
+            if all(
+                _match_routing_condition(
+                    cond,
+                    sender=sender,
+                    subject=subject,
+                    body=body,
+                )
+                for cond in conditions
+            ):
+                try:
+                    logger.info(
+                        "ROUTING_RULES: Matched rule %s (%s) for email %s (sender=%s, subject=%s)",
+                        rule.get("id", "unknown"),
+                        rule.get("name", "rule"),
+                        email_id,
+                        mask_sensitive_data(sender or "", "email"),
+                        mask_sensitive_data(subject or "", "subject"),
+                    )
+                except Exception:
+                    pass
+                return rule
+        except Exception as exc:
+            try:
+                logger.debug(
+                    "ROUTING_RULES: Evaluation error for rule %s: %s",
+                    rule.get("id", "unknown"),
+                    exc,
+                )
+            except Exception:
+                pass
+    return None
 
 def _is_webhook_sending_enabled() -> bool:
     """Check if webhook sending is globally enabled.
@@ -483,10 +619,15 @@ def check_new_emails_and_trigger_webhook() -> int:
                     pass
 
                 try:
-                    sender_list = getattr(ar, 'SENDER_LIST_FOR_POLLING', []) or []
-                    allowed = [str(s).lower() for s in sender_list]
+                    sender_list = getattr(ar, 'SENDER_LIST_FOR_POLLING', None)
                 except Exception:
-                    allowed = []
+                    sender_list = None
+                if not sender_list:
+                    try:
+                        sender_list = getattr(settings, 'SENDER_LIST_FOR_POLLING', [])
+                    except Exception:
+                        sender_list = []
+                allowed = [str(s).lower() for s in (sender_list or [])]
                 if os.environ.get('ORCH_TEST_RERAISE') == '1':
                     try:
                         allowed_masked = [mask_sensitive_data(s or "", "email") for s in allowed][:3]
@@ -970,32 +1111,109 @@ def check_new_emails_and_trigger_webhook() -> int:
                 except Exception:
                     pass
 
+                routing_webhook_url = None
+                routing_stop_processing = False
+                routing_priority = None
+                try:
+                    routing_payload = _get_routing_rules_payload()
+                    routing_rules = routing_payload.get("rules") if isinstance(routing_payload, dict) else []
+                    matched_rule = _find_matching_routing_rule(
+                        routing_rules,
+                        sender=sender_addr,
+                        subject=subject or "",
+                        body=combined_text_for_detection or "",
+                        email_id=email_id,
+                        logger=logger,
+                    )
+                    if isinstance(matched_rule, dict):
+                        actions = matched_rule.get("actions")
+                        if isinstance(actions, dict):
+                            candidate_url = actions.get("webhook_url")
+                            if isinstance(candidate_url, str) and candidate_url.strip():
+                                routing_webhook_url = candidate_url.strip()
+                                routing_stop_processing = bool(actions.get("stop_processing", False))
+                                priority_value = actions.get("priority")
+                                if isinstance(priority_value, str) and priority_value.strip():
+                                    routing_priority = priority_value.strip().lower()
+                            else:
+                                try:
+                                    logger.warning(
+                                        "ROUTING_RULES: Rule %s missing webhook_url; skipping",
+                                        matched_rule.get("id", "unknown"),
+                                    )
+                                except Exception:
+                                    pass
+                        if routing_webhook_url:
+                            payload_for_webhook["routing_rule"] = {
+                                "id": matched_rule.get("id"),
+                                "name": matched_rule.get("name"),
+                                "priority": routing_priority or "normal",
+                            }
+                except Exception as routing_exc:
+                    try:
+                        logger.debug("ROUTING_RULES: Evaluation error: %s", routing_exc)
+                    except Exception:
+                        pass
+
                 # Execute custom webhook flow (handles retries, logging, read marking on success)
-                cont = send_custom_webhook_flow(
-                    email_id=email_id,
-                    subject=subject or '',
-                    payload_for_webhook=payload_for_webhook,
-                    delivery_links=delivery_links or [],
-                    webhook_url=ar.WEBHOOK_URL,
-                    webhook_ssl_verify=True,
-                    allow_without_links=bool(getattr(ar, 'ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS', False)),
-                    processing_prefs=getattr(ar, 'PROCESSING_PREFS', {}),
-                    # Use runtime helpers from app_render so tests can monkeypatch them
-                    rate_limit_allow_send=getattr(ar, '_rate_limit_allow_send'),
-                    record_send_event=getattr(ar, '_record_send_event'),
-                    append_webhook_log=getattr(ar, '_append_webhook_log'),
-                    mark_email_id_as_processed_redis=ar.mark_email_id_as_processed_redis,
-                    mark_email_as_read_imap=ar.mark_email_as_read_imap,
-                    mail=mail,
-                    email_num=num,
-                    urlparse=None,
-                    requests=__import__('requests'),
-                    time=__import__('time'),
-                    logger=logger,
-                )
-                # Best-effort: if the flow returned False, an attempt was made (success or handled error)
-                if cont is False:
-                    triggered_count += 1
+                if routing_webhook_url:
+                    cont = send_custom_webhook_flow(
+                        email_id=email_id,
+                        subject=subject or '',
+                        payload_for_webhook=payload_for_webhook,
+                        delivery_links=delivery_links or [],
+                        webhook_url=routing_webhook_url,
+                        webhook_ssl_verify=True,
+                        allow_without_links=bool(getattr(ar, 'ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS', False)),
+                        processing_prefs=getattr(ar, 'PROCESSING_PREFS', {}),
+                        # Use runtime helpers from app_render so tests can monkeypatch them
+                        rate_limit_allow_send=getattr(ar, '_rate_limit_allow_send'),
+                        record_send_event=getattr(ar, '_record_send_event'),
+                        append_webhook_log=getattr(ar, '_append_webhook_log'),
+                        mark_email_id_as_processed_redis=ar.mark_email_id_as_processed_redis,
+                        mark_email_as_read_imap=ar.mark_email_as_read_imap,
+                        mail=mail,
+                        email_num=num,
+                        urlparse=None,
+                        requests=__import__('requests'),
+                        time=__import__('time'),
+                        logger=logger,
+                    )
+                    # Best-effort: if the flow returned False, an attempt was made (success or handled error)
+                    if cont is False:
+                        triggered_count += 1
+                    if routing_stop_processing:
+                        continue
+
+                should_send_default = True
+                if routing_webhook_url and routing_webhook_url == ar.WEBHOOK_URL:
+                    should_send_default = False
+                if should_send_default:
+                    cont = send_custom_webhook_flow(
+                        email_id=email_id,
+                        subject=subject or '',
+                        payload_for_webhook=payload_for_webhook,
+                        delivery_links=delivery_links or [],
+                        webhook_url=ar.WEBHOOK_URL,
+                        webhook_ssl_verify=True,
+                        allow_without_links=bool(getattr(ar, 'ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS', False)),
+                        processing_prefs=getattr(ar, 'PROCESSING_PREFS', {}),
+                        # Use runtime helpers from app_render so tests can monkeypatch them
+                        rate_limit_allow_send=getattr(ar, '_rate_limit_allow_send'),
+                        record_send_event=getattr(ar, '_record_send_event'),
+                        append_webhook_log=getattr(ar, '_append_webhook_log'),
+                        mark_email_id_as_processed_redis=ar.mark_email_id_as_processed_redis,
+                        mark_email_as_read_imap=ar.mark_email_as_read_imap,
+                        mail=mail,
+                        email_num=num,
+                        urlparse=None,
+                        requests=__import__('requests'),
+                        time=__import__('time'),
+                        logger=logger,
+                    )
+                    # Best-effort: if the flow returned False, an attempt was made (success or handled error)
+                    if cont is False:
+                        triggered_count += 1
 
             except Exception as e_one:
                 # In tests, allow re-raising to surface the exact failure location
