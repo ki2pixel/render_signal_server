@@ -84,18 +84,28 @@ export class RoutingRulesService {
             const config = response?.config || {};
             const rules = Array.isArray(config.rules) ? config.rules : [];
             const fallbackRule = response?.fallback_rule;
-            const fallbackRules = Array.isArray(response?.fallback_rules)
+            let fallbackRules = Array.isArray(response?.fallback_rules)
                 ? response.fallback_rules
                 : [];
-            // Pourquoi : montrer la règle backend existante quand aucune règle UI n'est encore enregistrée.
-            const hydratedRules = rules.length
-                ? rules
+
+            const legacyDefaultRule =
+                rules.length === 1 && this._isLegacyBackendDefaultRule(rules[0])
+                    ? rules[0]
+                    : null;
+            const effectiveRules = legacyDefaultRule ? [] : rules;
+            if (!fallbackRules.length && legacyDefaultRule) {
+                fallbackRules = this._buildFallbackRulesFromLegacyDefault(legacyDefaultRule);
+            }
+
+            const hydratedRules = effectiveRules.length
+                ? effectiveRules
                 : (fallbackRules.length
                     ? fallbackRules.map((rule) => ({ ...rule, _isBackendFallback: true }))
                     : (fallbackRule && typeof fallbackRule === 'object'
                         ? [{ ...fallbackRule, _isBackendFallback: true }]
                         : []));
-            this._usingBackendFallback = !rules.length && (fallbackRules.length || Boolean(fallbackRule));
+            this._usingBackendFallback =
+                !effectiveRules.length && (fallbackRules.length || Boolean(fallbackRule));
             this.rules = hydratedRules;
             this._renderRules();
             this._setPanelStatus('saved', false);
@@ -108,6 +118,107 @@ export class RoutingRulesService {
                 MessageHelper.showError(this.messageId, 'Erreur réseau lors du chargement.');
             }
         }
+    }
+
+    _isLegacyBackendDefaultRule(rule) {
+        if (!rule || typeof rule !== 'object') return false;
+        const ruleId = String(rule.id || '').trim().toLowerCase();
+        const ruleName = String(rule.name || '').trim().toLowerCase();
+
+        if (ruleId === 'backend-default') return true;
+        if (!ruleName.includes('webhook')) return false;
+        if (!(ruleName.includes('défaut') || ruleName.includes('defaut'))) return false;
+        return ruleName.includes('backend');
+    }
+
+    _buildFallbackRulesFromLegacyDefault(legacyRule) {
+        const actions = legacyRule?.actions || {};
+        const webhookUrl =
+            typeof actions.webhook_url === 'string' ? actions.webhook_url.trim() : '';
+
+        return [
+            {
+                id: 'backend-recadrage',
+                name: 'Confirmation Mission Recadrage (backend)',
+                conditions: [
+                    {
+                        field: 'subject',
+                        operator: 'regex',
+                        value: 'm[ée]dia solution.*missions recadrage.*\\blot\\b',
+                        case_sensitive: false
+                    },
+                    {
+                        field: 'body',
+                        operator: 'regex',
+                        value: '(dropbox\\.com/scl/fo|fromsmash\\.com/|swisstransfer\\.com/d/)',
+                        case_sensitive: false
+                    }
+                ],
+                actions: {
+                    webhook_url: webhookUrl,
+                    priority: 'normal',
+                    stop_processing: false
+                }
+            },
+            {
+                id: 'backend-desabo-subject',
+                name: 'Confirmation Disponibilité Mission Recadrage (backend - sujet)',
+                conditions: [
+                    {
+                        field: 'subject',
+                        operator: 'regex',
+                        value: 'd[ée]sabonn',
+                        case_sensitive: false
+                    },
+                    {
+                        field: 'body',
+                        operator: 'contains',
+                        value: 'journee',
+                        case_sensitive: false
+                    },
+                    {
+                        field: 'body',
+                        operator: 'contains',
+                        value: 'tarifs habituels',
+                        case_sensitive: false
+                    }
+                ],
+                actions: {
+                    webhook_url: webhookUrl,
+                    priority: 'normal',
+                    stop_processing: false
+                }
+            },
+            {
+                id: 'backend-desabo-body',
+                name: 'Confirmation Disponibilité Mission Recadrage (backend - corps)',
+                conditions: [
+                    {
+                        field: 'body',
+                        operator: 'regex',
+                        value: '(d[ée]sabonn|dropbox\\.com/request/)',
+                        case_sensitive: false
+                    },
+                    {
+                        field: 'body',
+                        operator: 'contains',
+                        value: 'journee',
+                        case_sensitive: false
+                    },
+                    {
+                        field: 'body',
+                        operator: 'contains',
+                        value: 'tarifs habituels',
+                        case_sensitive: false
+                    }
+                ],
+                actions: {
+                    webhook_url: webhookUrl,
+                    priority: 'normal',
+                    stop_processing: false
+                }
+            }
+        ];
     }
 
     _bindEvents() {

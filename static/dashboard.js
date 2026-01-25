@@ -3,7 +3,7 @@ import { WebhookService } from './services/WebhookService.js';
 import { LogService } from './services/LogService.js';
 import { MessageHelper } from './utils/MessageHelper.js';
 import { TabManager } from './components/TabManager.js';
-import { RoutingRulesService } from './services/RoutingRulesService.js';
+import { RoutingRulesService } from './services/RoutingRulesService.js?v=20260125-routing-fallback';
 
 window.DASHBOARD_BUILD = 'modular-2026-01-19a';
 

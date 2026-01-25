@@ -196,7 +196,6 @@ def _build_backend_fallback_rules() -> list[dict] | None:
 
 
 def _is_falsey_flag(value: object) -> bool:
-    # Pourquoi : tolérer les payloads legacy où case_sensitive est sérialisé en string.
     if value is None:
         return True
     if isinstance(value, bool):
@@ -213,18 +212,27 @@ def _is_legacy_backend_default_rule(rule: dict) -> bool:
         return False
     rule_id = str(rule.get("id") or "").strip()
     rule_name = str(rule.get("name") or "").strip()
-    if rule_id != "backend-default" and rule_name != "Webhook par défaut (backend)":
+    is_id_match = rule_id == "backend-default"
+    normalized_name = rule_name.strip().lower()
+    is_name_match = normalized_name == "webhook par défaut (backend)" or normalized_name == "webhook par defaut (backend)"
+    if not is_id_match and not is_name_match:
         return False
+    if is_id_match:
+        return True
+    if is_name_match:
+        return True
     conditions = rule.get("conditions")
     if not isinstance(conditions, list) or len(conditions) != 1:
         return False
     condition = conditions[0]
     if not isinstance(condition, dict):
         return False
+    wildcard_values = {".*", "^.*$", "(?s).*"}
+    value = str(condition.get("value") or "").strip()
     return (
         str(condition.get("field") or "").strip().lower() == "subject"
         and str(condition.get("operator") or "").strip().lower() == "regex"
-        and str(condition.get("value") or "").strip() == ".*"
+        and value in wildcard_values
         and _is_falsey_flag(condition.get("case_sensitive"))
     )
 
