@@ -57,6 +57,12 @@ static/
 - Formatage des messages d'erreur et de succès
 - Validation des formats de temps et des entrées utilisateur
 
+#### RoutingRulesService
+- Builder visuel de règles de routage avec drag-and-drop
+- Auto-sauvegarde intelligente (debounce 2-3s)
+- Validation temps réel des URLs et formats regex
+- Gestion complète du panneau "Routage Dynamique"
+
 ## Fonctionnalités UX Avancées
 
 ### 1. Bandeau Statut Global

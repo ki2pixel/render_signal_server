@@ -5,14 +5,21 @@ Ce document enregistre les décisions techniques et architecturales importantes 
 Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 - [decisionLog_2025Q4.md](archive/decisionLog_2025Q4.md) - Archives Q4 2025 (décembre 2025 et antérieur)
 
+## Décisions 2026
+
+[2026-01-26 20:10:00] - **Correction Bug UI Routage Dynamique (Add Rule + Auto-save)**
+- **Décision** : Implémenter un garde-fou dans l'auto-save pour éviter les erreurs de validation sur les règles incomplètes et améliorer l'UX lors de l'ajout d'une nouvelle règle.
+- **Raisonnement** : Le clic sur "Ajouter une règle" déclenchait immédiatement une auto-sauvegarde qui échouait sur les champs vides (webhook_url manquant), provoquant un statut "Erreur" et masquant la nouvelle carte. Un garde auto-save et une meilleure gestion du focus sont nécessaires.
+- **Implémentation** : Modification `_handleAddRule()` pour supprimer l'état vide, scroller/focus sur le nom, et appeler `_markDirty({ scheduleSave: false })`; ajout de `_canAutoSave()` pour n'autoriser la sauvegarde que si toutes les règles sont complètes.
+- **Alternatives considérées** : Désactiver complètement l'auto-save (rejeté pour perte de fonctionnalité); ajouter des placeholders par défaut (rejeté pour complexité et risque d'erreurs).
+- **Impact** : Le bouton "Ajouter une règle" fonctionne correctement, l'UI est réactive, et l'auto-save ne déclenche pas d'erreur sur les brouillons incomplets, tout en préservant le comportement normal pour les règles complètes.
+
 [2026-01-26 01:04:00] - **Correction UI Routing Rules (Fallback Client-side + Cache-bust)**
 - **Décision** : Implémenter une solution frontend robuste pour afficher les 3 règles fallback attendues même lorsque le backend ne les fournit pas, et forcer un cache-bust sur les modules ES6.
 - **Raisonnement** : Le `webhook_config` étant vide dans Redis, `_build_backend_fallback_rules()` retournait None, donc l'UI ne recevait pas les règles attendues. Une solution client-side garantit l'UX indépendamment de l'état du backend.
 - **Implémentation** : Détection client-side de la règle legacy "Webhook par défaut (backend)" dans `RoutingRulesService.js`, génération automatique des 3 règles fallback avec réutilisation du `webhook_url` existant, et cache-bust via query param sur l'import ES6.
 - **Alternatives considérées** : Tentative de réparer le backend uniquement (rejetée car dépendante de l'état de Redis); forcer un rechargement manuel (insuffisant pour les utilisateurs).
 - **Impact** : UI affiche systématiquement les 3 règles attendues; résilience accrue contre les configurations incomplètes; cache-bust garantit que les modifications sont visibles immédiatement.
-
-## Décisions 2026
 
 [2026-01-25 22:30:00] - **Finalisation Tests Moteur de Routage Dynamique**
 - **Décision** : Simplifier le test échouant `test_get_polling_config_defaults_to_settings_when_store_empty` pour utiliser les valeurs par défaut existantes au lieu de patcher des valeurs différentes.

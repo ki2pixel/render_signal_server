@@ -1103,6 +1103,25 @@
         flex-direction: column;
         gap: 12px;
         margin-top: 10px;
+        max-height: 400px;
+        overflow-y: auto;
+        padding-right: 8px;
+      }
+      
+      /* Scrollbar styling for webkit */
+      .routing-rules-list::-webkit-scrollbar {
+        width: 8px;
+      }
+      .routing-rules-list::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 4px;
+      }
+      .routing-rules-list::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 4px;
+      }
+      .routing-rules-list::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.3);
       }
 
       .routing-rule-card {
@@ -1344,6 +1363,10 @@
         
         .panel-save-btn {
           width: 100%;
+        }
+        
+        .routing-rules-list {
+          max-height: 300px;
         }
 
         .routing-condition-row {

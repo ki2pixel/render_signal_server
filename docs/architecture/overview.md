@@ -23,7 +23,7 @@
 
 | Domaine | Fonction critique | Grade | Actions recommandées |
 | --- | --- | --- | --- |
-| Orchestrateur IMAP | `email_processing/orchestrator.py::check_new_emails_and_trigger_webhook` | F | Poursuivre le découpage entamé (helpers `_fetch_and_parse_email`, `_load_webhook_global_time_window`) en extrayant les règles DESABO/Media Solution dans des services dédiés pour réduire la complexité cyclomatique. |
+| Orchestrateur IMAP | `email_processing/orchestrator.py::check_new_emails_and_trigger_webhook` | F | **Action requise** : Extraire les handlers DESABO/Media Solution dans des services dédiés pour réduire la complexité cyclomatique de 15→10. |
 | API Config Polling | `routes/api_config.py::update_polling_config` | F | S’appuyer davantage sur `PollingConfigService` pour validations bool/jours/heures et conversions `enable_polling`; viser un schéma partagé entre API et poller. |
 | Service Offload R2 | `services/r2_transfer_service.py::normalize_source_url` | E | Introduire une stratégie par fournisseur (Dropbox, FromSmash, SwissTransfer) afin de limiter les branches conditionnelles et isoler la normalisation. |
 | Webhook Config API | `routes/api_webhooks.py::update_webhook_config` | E | Décharger la validation Absence Globale/SSL dans `WebhookConfigService` (déjà singleton) pour uniformiser la logique. |

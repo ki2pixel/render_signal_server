@@ -20,6 +20,17 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-01-26 20:10:00] - Correction Bug UI Routage Dynamique (Add Rule + Auto-save) Terminée
+- **Objectif** : Résoudre le bug où le clic sur "➕ Ajouter une règle" dans le panneau "Routage Dynamique" provoquait un statut "Erreur" sans afficher de nouvelle carte de règle.
+- **Actions réalisées** :
+  1. **Diagnostic** : Identification que `_handleAddRule()` déclenchait `_markDirty()` → `_scheduleSave()` → `saveRules()` → validation échouant sur une règle vide (webhook_url manquant) → statut "Erreur".
+  2. **Correction frontend** : Modification `_handleAddRule()` pour supprimer l'état vide, scroller/focus sur le nouveau champ nom, et appeler `_markDirty({ scheduleSave: false })`.
+  3. **Garde auto-save** : Ajout de `_canAutoSave()` pour n'autoriser la sauvegarde que si toutes les règles sont complètes (nom, webhook, au moins une condition avec valeur).
+  4. **UX améliorée** : La nouvelle carte apparaît immédiatement, le statut reste "Sauvegarde requise" sans erreur, et l'auto-save se déclenche uniquement lorsque les champs requis sont remplis.
+- **Résultat** : Le bouton "Ajouter une règle" fonctionne correctement, l'UI est réactive et l'auto-save ne déclenche pas d'erreur sur les brouillons incomplets.
+- **Fichiers modifiés** : `static/services/RoutingRulesService.js`.
+- **Statut** : Terminé avec succès, bug corrigé, UX conforme aux standards du projet.
+
 [2026-01-26 18:00:00] - Visualisation Routage Dynamique via Vérification Redis Terminée
 - **Objectif** : Permettre la visualisation des données de "Routage Dynamique" dans le dashboard en utilisant le bouton "🔍 Vérifier les données en Redis", avec option d'afficher le JSON complet pour le debug.
 - **Actions réalisées** :

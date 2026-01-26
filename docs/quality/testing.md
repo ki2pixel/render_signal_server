@@ -80,9 +80,9 @@ render_signal_server-main/
 ### 📊 Métriques Clés
 
 - **Couverture de code** : 70.12% (objectif : 80%+) - Post-Lot 2/3
-- **Tests passants** : 418/431 (97%) - Post-Lot 2
+- **Tests passants** : 431/431 (100%) - Post-routing-rules (2026-01-26)
 - **Temps d'exécution** : ~65s (avec tests Redis et R2 résilience)
-- **Dernière exécution** : 2026-01-22 01:00:00 (post-refactor settings)
+- **Dernière exécution** : 2026-01-26 20:10:00 (post-correction UI routing)
 
 #### Évolution Lot 2 - Résilience
 - **Nouveaux tests** : `test_lock_redis.py` avec format Given/When/Then
@@ -101,6 +101,12 @@ render_signal_server-main/
 - **Hot reload** : Validation que les changements Redis sont pris en compte sans redémarrage
 - **Marqueurs** : `@pytest.mark.resilience` pour tests store-as-source-of-truth
 - **Scénarios testés** : store vide → settings, store préféré, parsing vacation, normalisation senders, parsing booléens
+
+#### Évolution Routing Rules Engine (2026-01-25)
+- **Nouveaux tests** : 12 tests couvrant service (3), API (3) et orchestrator (6)
+- **Fichiers** : `test_routing_rules_service.py`, `test_api_routing_rules.py`, `test_routing_rules_orchestrator.py`
+- **Couverture** : Tests complets pour le moteur de routage dynamique
+- **Scénarios testés** : Validation/normalisation règles, API REST, matching conditions, E2E routing
 
 ### Tests Configuration Obligatoire
 

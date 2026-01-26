@@ -146,6 +146,27 @@ En cas d'échec de persistance (Redis indisponible + fallback absent), la route 
 - Logs détaillés: Préfixe `DEDUP_EMAIL` pour tracer la déduplication, avec indication de bypass si `DISABLE_EMAIL_ID_DEDUP=true`.
 - Endpoint de débogage: `/api/test/clear_email_dedup` (X-API-Key) permet l'effacement manuel d'un email ID du set Redis pour re-traitement.
 
+### Patterns de Déduplication Redis
+
+**Service dédié** : `DeduplicationService` (`services/deduplication_service.py`)
+- **Pattern** : Singleton avec injection dans le poller via `app_render.py`
+- **Clé Redis** : `processed_email_ids_set_v1` pour les IDs d'emails uniques
+- **TTL** : 7 jours par défaut (configurable via `EMAIL_DEDUP_TTL_DAYS`)
+- **Fallback** : Set en mémoire si Redis indisponible (non persistant inter-processus)
+- **Groupes de sujets** : Clé `subject_groups_set_v1` pour la déduplication mensuelle
+
+**Intégration orchestrateur** :
+- `check_new_emails_and_trigger_webhook()` injecte `DeduplicationService`
+- `is_email_processed()` vérifie l'ID unique dans Redis/set mémoire
+- `is_subject_group_processed()` gère la déduplication par groupe de sujets
+- Logs `DEDUP_EMAIL:*` et `DEDUP_GROUP:*` pour la traçabilité
+
+**Avantages** :
+- **Multi-conteneurs** : Redis centralisé évite les doublons entre instances
+- **Performance** : O(1) pour les vérifications de déduplication
+- **Résilience** : Fallback mémoire garanti si Redis indisponible
+- **Observabilité** : Logs détaillés et endpoint de débogage pour maintenance
+
 ## Journalisation et Traçabilité
 
 ### Niveaux de Log
