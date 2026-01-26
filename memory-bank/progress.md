@@ -20,6 +20,18 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-01-26 18:00:00] - Visualisation Routage Dynamique via Vérification Redis Terminée
+- **Objectif** : Permettre la visualisation des données de "Routage Dynamique" dans le dashboard en utilisant le bouton "🔍 Vérifier les données en Redis", avec option d'afficher le JSON complet pour le debug.
+- **Actions réalisées** :
+  1. **Extension backend inspection** : Ajout de la clé `routing_rules` dans `scripts/check_config_store.py` (KEY_CHOICES) et validation autorisant un payload vide pour éviter les faux positifs.
+  2. **UI dédiée dans Routage Dynamique** : Ajout de conteneurs `routingRulesRedisInspectMsg` et `routingRulesRedisInspectLog` dans `dashboard.html` pour afficher le statut et le JSON de la configuration `routing_rules`.
+  3. **Wiring frontend** : Extension de `handleConfigVerification()` dans `static/dashboard.js` pour extraire l'entrée `routing_rules` de la réponse API, afficher un message contextualisé (OK/INVALID/absent) et, si la checkbox "Inclure le JSON complet" est cochée, le payload complet via `textContent` (pas de innerHTML).
+  4. **Tests mis à jour** : Ajout de `routing_rules` dans les tests existants et création d'un test `test_run_allows_empty_routing_rules` pour valider qu'un payload vide est accepté.
+  5. **Validation** : Exécution de `./run_tests.sh -u` → 237 passed, 7 skipped, 202 deselected.
+- **Résultat** : Le bouton de vérification Redis affiche maintenant l'état de la configuration `routing_rules` directement dans la section "Routage Dynamique", avec résumé et JSON complet optionnel, tout en respectant les patterns UX existants (MessageHelper, états de chargement, accessibilité).
+- **Fichiers modifiés** : `scripts/check_config_store.py`, `dashboard.html`, `static/dashboard.js`, `tests/test_scripts_check_config_store.py`.
+- **Statut** : Terminé avec succès, visualisation du Routage Dynamique opérationnelle.
+
 [2026-01-26 01:04:00] - Correction UI Routing Rules (Cache-bust + Fallback Client-side) Terminée
 - **Objectif** : Résoudre le problème où l'UI affichait une seule règle legacy "Webhook par défaut (backend)" au lieu des 3 règles fallback attendues ("Confirmation Mission Recadrage", "Confirmation Disponibilité Mission Recadrage (sujet)", "Confirmation Disponibilité Mission Recadrage (corps)").
 - **Actions réalisées** :

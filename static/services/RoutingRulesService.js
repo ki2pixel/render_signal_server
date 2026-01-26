@@ -267,11 +267,20 @@ export class RoutingRulesService {
 
     _handleAddRule() {
         if (!this.container) return;
+        const emptyState = this.container.querySelector('.routing-empty');
+        if (emptyState) {
+            emptyState.remove();
+        }
         const newRule = this._createEmptyRule();
         this.rules.push(newRule);
         const card = this._buildRuleCard(newRule, this.rules.length - 1);
         this.container.appendChild(card);
-        this._markDirty();
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        const nameInput = card.querySelector('[data-field="rule-name"]');
+        if (nameInput instanceof HTMLElement) {
+            nameInput.focus();
+        }
+        this._markDirty({ scheduleSave: false });
     }
 
     _addConditionRow(ruleCard) {
@@ -586,20 +595,53 @@ export class RoutingRulesService {
         return `rule-${Date.now()}-${index}`;
     }
 
-    _markDirty() {
+    _markDirty({ scheduleSave = true } = {}) {
         this._setPanelStatus('dirty');
         this._setPanelClass('modified');
-        this._scheduleSave();
+        if (scheduleSave) {
+            this._scheduleSave();
+        }
     }
 
     _scheduleSave() {
         if (this._saveTimer) {
             window.clearTimeout(this._saveTimer);
         }
+        if (!this._canAutoSave()) {
+            return;
+        }
         this._setPanelStatus('saving');
         this._saveTimer = window.setTimeout(() => {
             this.saveRules();
         }, this._saveDelayMs);
+    }
+
+    _canAutoSave() {
+        if (!this.container) return false;
+        const cards = Array.from(this.container.querySelectorAll('.routing-rule-card'));
+        if (!cards.length) return false;
+
+        return cards.every((card) => {
+            const nameInput = card.querySelector('[data-field="rule-name"]');
+            const webhookInput = card.querySelector('[data-field="webhook-url"]');
+            const nameValue = (nameInput?.value || '').trim();
+            const webhookValue = (webhookInput?.value || '').trim();
+
+            if (!nameValue) return false;
+            if (!this._validateWebhookUrl(webhookValue).ok) return false;
+
+            const conditionRows = Array.from(card.querySelectorAll('.routing-condition-row'));
+            if (!conditionRows.length) return false;
+            return conditionRows.every((row) => {
+                const fieldSelect = row.querySelector('[data-field="condition-field"]');
+                const operatorSelect = row.querySelector('[data-field="condition-operator"]');
+                const valueInput = row.querySelector('[data-field="condition-value"]');
+                const fieldValue = String(fieldSelect?.value || '').trim();
+                const operatorValue = String(operatorSelect?.value || '').trim();
+                const valueValue = String(valueInput?.value || '').trim();
+                return Boolean(fieldValue && operatorValue && valueValue);
+            });
+        });
     }
 
     async saveRules() {

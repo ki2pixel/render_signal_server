@@ -257,14 +257,16 @@ Fournir des outils UI pour vérifier et migrer les configurations stockées dans
 #### Migration vers Redis
 - **Fonction** : `handleConfigMigration()` dans `dashboard.js`
 - **Endpoint** : `/api/migrate_configs_to_redis`
-- **Action** : Migre les 4 configurations critiques (processing_prefs, polling_config, webhook_config, magic_link_tokens) depuis les fichiers locaux vers Redis
+- **Action** : Migre les 5 configurations critiques (`processing_prefs`, `polling_config`, `webhook_config`, `magic_link_tokens`, `routing_rules`) depuis les fichiers locaux vers Redis
 - **Output** : Résumé des clés migrées + logs détaillés dans `migrateConfigsLog`
 
 #### Vérification Config Store
 - **Fonction** : `handleConfigVerification()` dans `dashboard.js`
 - **Endpoint** : `/api/verify_config_store`
 - **Options** : Toggle "Inclure le JSON complet" pour afficher le payload brut
-- **Output** : Statut OK/INVALID par clé + résumé + payload optionnel dans `verifyConfigStoreLog`
+- **Outputs** :
+  - Statut OK/INVALID par clé + résumé + payload optionnel dans `verifyConfigStoreLog`
+  - Résumé dédié au panneau « Routage Dynamique » (éléments `routingRulesRedisInspectMsg` et `routingRulesRedisInspectLog`) afin d'informer directement les utilisateurs de l'état de `routing_rules`
 
 ### Implémentation Technique
 
@@ -306,9 +308,10 @@ CONFIG_STORE_MODE=redis_first  # ou php_first pour fallback
 
 #### Avant déploiement
 1. Cliquer sur "Vérifier les données en Redis"
-2. Vérifier que toutes les clés affichent "OK"
-3. En cas d'INVALID, consulter le payload JSON pour diagnostic
-4. Utiliser "Migrer vers Redis" si nécessaire
+2. Vérifier que toutes les clés (`processing_prefs`, `polling_config`, `webhook_config`, `magic_link_tokens`, `routing_rules`) affichent "OK"
+3. Consulter le message spécifique au panneau Routage si `routing_rules` est vide ou invalide
+4. En cas d'INVALID, activer l'option JSON complet pour le diagnostic et comparer avec les dumps `debug/*.json`
+5. Utiliser "Migrer vers Redis" si nécessaire
 
 #### Diagnostic
 - Activer "Inclure le JSON complet" pour voir les données brutes
