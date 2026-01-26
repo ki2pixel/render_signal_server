@@ -312,6 +312,36 @@
         box-shadow: 0 5px 15px rgba(26, 188, 156, 0.4);
       }
 
+      .btn-secondary {
+        background: linear-gradient(to right, rgba(13, 25, 48, 0.95) 0%, rgba(28, 41, 72, 0.95) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .btn-secondary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 5px 15px rgba(14, 23, 38, 0.35);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      .btn-warning {
+        background: linear-gradient(to right, var(--cork-warning) 0%, #f4b86d 100%);
+        color: #1e1e2f;
+      }
+
+      .btn-warning:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 5px 15px rgba(226, 160, 63, 0.45);
+      }
+
+      .btn-info {
+        background: linear-gradient(to right, var(--cork-info) 0%, #5ac2ff 100%);
+      }
+
+      .btn-info:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 5px 15px rgba(33, 150, 243, 0.4);
+      }
+
       .btn:disabled {
         background: #555e72;
         color: var(--cork-text-secondary);
@@ -1563,8 +1593,6 @@
             </div>
           </div>
         </div>
-      </div>
-
       <!-- Panneau 4: Routage Dynamique -->
       <div class="collapsible-panel" data-panel="routing-rules">
         <div class="panel-header">
@@ -1592,6 +1620,7 @@
           </div>
           <div id="routing-rules-msg" class="status-msg"></div>
         </div>
+      </div>
       </div>
 
       <!-- Section: Préférences Email (expéditeurs, dédup) -->

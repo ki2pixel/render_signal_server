@@ -5,6 +5,13 @@ Ce document enregistre les décisions techniques et architecturales importantes 
 Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 - [decisionLog_2025Q4.md](archive/decisionLog_2025Q4.md) - Archives Q4 2025 (décembre 2025 et antérieur)
 
+[2026-01-26 01:04:00] - **Correction UI Routing Rules (Fallback Client-side + Cache-bust)**
+- **Décision** : Implémenter une solution frontend robuste pour afficher les 3 règles fallback attendues même lorsque le backend ne les fournit pas, et forcer un cache-bust sur les modules ES6.
+- **Raisonnement** : Le `webhook_config` étant vide dans Redis, `_build_backend_fallback_rules()` retournait None, donc l'UI ne recevait pas les règles attendues. Une solution client-side garantit l'UX indépendamment de l'état du backend.
+- **Implémentation** : Détection client-side de la règle legacy "Webhook par défaut (backend)" dans `RoutingRulesService.js`, génération automatique des 3 règles fallback avec réutilisation du `webhook_url` existant, et cache-bust via query param sur l'import ES6.
+- **Alternatives considérées** : Tentative de réparer le backend uniquement (rejetée car dépendante de l'état de Redis); forcer un rechargement manuel (insuffisant pour les utilisateurs).
+- **Impact** : UI affiche systématiquement les 3 règles attendues; résilience accrue contre les configurations incomplètes; cache-bust garantit que les modifications sont visibles immédiatement.
+
 ## Décisions 2026
 
 [2026-01-25 22:30:00] - **Finalisation Tests Moteur de Routage Dynamique**
