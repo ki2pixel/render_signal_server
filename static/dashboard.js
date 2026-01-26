@@ -86,6 +86,8 @@ async function handleConfigVerification() {
     const button = document.getElementById('verifyConfigStoreBtn');
     const messageId = 'verifyConfigStoreMsg';
     const logEl = document.getElementById('verifyConfigStoreLog');
+    const routingRulesMsgEl = document.getElementById('routingRulesRedisInspectMsg');
+    const routingRulesLogEl = document.getElementById('routingRulesRedisInspectLog');
     const rawToggle = document.getElementById('verifyConfigStoreRawToggle');
     const includeRaw = Boolean(rawToggle?.checked);
 
@@ -99,6 +101,14 @@ async function handleConfigVerification() {
     if (logEl) {
         logEl.style.display = 'none';
         logEl.textContent = '';
+    }
+    if (routingRulesMsgEl) {
+        routingRulesMsgEl.textContent = '';
+        routingRulesMsgEl.className = 'status-msg';
+    }
+    if (routingRulesLogEl) {
+        routingRulesLogEl.style.display = 'none';
+        routingRulesLogEl.textContent = '';
     }
 
     try {
@@ -127,9 +137,53 @@ async function handleConfigVerification() {
             logEl.textContent = lines.length ? lines.join('\n\n') : 'Aucun résultat renvoyé.';
             logEl.style.display = 'block';
         }
+
+        const routingEntry = (response?.results || []).find(
+            (entry) => entry && entry.key === 'routing_rules'
+        );
+
+        if (routingRulesMsgEl) {
+            if (!routingEntry) {
+                MessageHelper.showInfo(
+                    'routingRulesRedisInspectMsg',
+                    'Routage Dynamique: aucune entrée trouvée dans la vérification (clé routing_rules absente).'
+                );
+            } else if (routingEntry.valid) {
+                MessageHelper.showSuccess(
+                    'routingRulesRedisInspectMsg',
+                    'Routage Dynamique: configuration persistée OK.'
+                );
+            } else {
+                MessageHelper.showError(
+                    'routingRulesRedisInspectMsg',
+                    `Routage Dynamique: INVALID (${routingEntry.message || 'inconnu'}).`
+                );
+            }
+        }
+
+        if (routingRulesLogEl) {
+            if (!routingEntry) {
+                routingRulesLogEl.textContent = '';
+                routingRulesLogEl.style.display = 'none';
+            } else {
+                const routingSummary = routingEntry.summary || '';
+                const routingPayload =
+                    includeRaw && routingEntry.payload
+                        ? JSON.stringify(routingEntry.payload, null, 2)
+                        : null;
+
+                const blocks = [routingSummary, routingPayload].filter(Boolean);
+                routingRulesLogEl.textContent = blocks.length ? blocks.join('\n\n') : '<vide>';
+                routingRulesLogEl.style.display = 'block';
+            }
+        }
     } catch (error) {
         console.error('Erreur vérification config store:', error);
         MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
+
+        if (routingRulesMsgEl) {
+            MessageHelper.showError('routingRulesRedisInspectMsg', 'Erreur de communication avec le serveur.');
+        }
     } finally {
         MessageHelper.setButtonLoading(button, false);
     }

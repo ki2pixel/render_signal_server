@@ -40,7 +40,27 @@ def test_run_returns_zero_when_all_keys_valid(monkeypatch, mock_redis):
         json.dumps({"_updated_at": "2026-01-19T00:00:00Z", "webhook_url": "https://x"}),
     )
 
+    mock_redis.set(
+        "testprefix:routing_rules",
+        json.dumps({"_updated_at": "2026-01-19T00:00:00Z", "rules": []}),
+    )
+
     exit_code = check_config_store._run(check_config_store.KEY_CHOICES, raw=False)
+
+    assert exit_code == 0
+
+
+@pytest.mark.unit
+def test_run_allows_empty_routing_rules(monkeypatch, mock_redis):
+    _setup_env(monkeypatch)
+    monkeypatch.setattr(app_config_store, "_REDIS_CLIENT", mock_redis)
+
+    mock_redis.set(
+        "testprefix:routing_rules",
+        json.dumps({}),
+    )
+
+    exit_code = check_config_store._run(("routing_rules",), raw=False)
 
     assert exit_code == 0
 

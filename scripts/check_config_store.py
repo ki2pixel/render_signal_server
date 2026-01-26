@@ -17,6 +17,7 @@ KEY_CHOICES: Tuple[str, ...] = (
     "magic_link_tokens",
     "polling_config",
     "processing_prefs",
+    "routing_rules",
     "webhook_config",
 )
 
@@ -24,6 +25,8 @@ KEY_CHOICES: Tuple[str, ...] = (
 def _validate_payload(key: str, payload: Dict[str, Any]) -> Tuple[bool, str]:
     if not isinstance(payload, dict):
         return False, "payload is not a dict"
+    if key == "routing_rules" and not payload:
+        return True, "empty (allowed)"
     if not payload:
         return False, "payload is empty"
     if key != "magic_link_tokens" and "_updated_at" not in payload:
