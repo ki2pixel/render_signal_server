@@ -235,6 +235,37 @@ class MagicLinkService:
 
         return True, username
 
+    def revoke_all_tokens(self) -> None:
+        """Supprime l'intégralité des tokens stockés (fichier + store externe)."""
+        with self._file_lock:
+            state = self._load_state()
+            if not state:
+                return
+            state.clear()
+            self._save_state(state)
+        try:
+            self._logger.info("MAGIC_LINK: all tokens revoked")
+        except Exception:
+            pass
+
+    def revoke_token(self, token_id: str) -> bool:
+        """Supprime un token spécifique si présent."""
+        if not token_id:
+            return False
+        removed = False
+        with self._file_lock:
+            state = self._load_state()
+            if token_id in state:
+                del state[token_id]
+                self._save_state(state)
+                removed = True
+        if removed:
+            try:
+                self._logger.info("MAGIC_LINK: token %s revoked", token_id)
+            except Exception:
+                pass
+        return removed
+
     # --------------------------------------------------------------------- #
     # Helpers
     # --------------------------------------------------------------------- #

@@ -26,6 +26,7 @@ La documentation est organisée pour répondre aux besoins des développeurs, op
 - `operations/multi-container-deployment.md` - Guide déploiement multi-conteneurs avec Redis (Lot 2)
 - `operations/checklist_production.md` - Check-list de mise en production
 - `operations/depannage.md` - Guide de dépannage (problèmes courants)
+- `operations/skills.md` - Référence des skills Windsurf avec helpers et workflows
 
 ### Configuration & Stockage
 - `configuration/configuration.md` - Référence des paramètres de configuration et variables d'environnement (obligatoires)

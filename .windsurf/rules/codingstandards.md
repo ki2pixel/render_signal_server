@@ -112,9 +112,9 @@ def upload_to_r2(source_url: str) -> R2UploadResult:
 
 ### Skill Invocation Policy (Workspace vs Global)
 - **Priority order:** always invoke workspace-scoped skills under `.windsurf/skills/` before falling back to the global catalog in `/home/kidpixel/.codeium/skills`. The local skills encapsulate project-specific scripts, environments, and templates that enforce these coding standards.
-  - `check-config` must be used for any inspection of Redis/fallback JSON config stores because it activates the shared virtualenv and runs `python -m scripts.check_config_store` with the approved flags.
-  - `run-tests` is the canonical entry point for the full/marker-specific pytest suite; it wires `run_tests.sh` and the `/mnt/venv_ext4/venv_render_signal_server` environment automatically.
-  - `scaffold-js-module` and `scaffold-service` are mandatory for creating new frontend modules or backend services so the generated files follow the ES6/Singleton templates and associated docstring, typing, and error-handling rules.
+  - `redis-config-guardian` remplace/complète le skill `check-config` pour tout audit de `processing_prefs`, `polling_config`, `webhook_config`, `magic_link_tokens`. Il orchestre le script CLI + l’API dashboard.
+  - `routing-rules-orchestrator`, `webhook-dashboard-ux-maintainer`, `background-poller-resilience-lab`, `r2-transfer-service-playbook`, `magic-link-auth-companion`, `docs-sync-automaton`, `testing-matrix-navigator` doivent être utilisés dès qu’une tâche touche leur domaine respectif avant de recourir à des ressources globales.
+  - Le skill `run-tests` reste la porte d’entrée canonique pour `pytest`; `scaffold-js-module` et `scaffold-service` demeurent obligatoires pour les nouveaux modules/services.
 - **Global skills usage:** reach for `/home/kidpixel/.codeium/skills/*` only when a needed capability (e.g., PDF tooling, algorithmic art, Postgres expertise) is absent from the workspace set. Document why the global skill was preferred if the task overlaps existing local skills.
 - **Exclusions & workflows:** do not call global scaffolding/testing skills when local equivalents exist, and when executing the `/enhance` workflow or any prompt-engineering task, ensure the resulting plan still honors this priority and explicitly names the skill to be invoked.
 
