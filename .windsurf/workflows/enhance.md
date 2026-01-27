@@ -1,5 +1,5 @@
 ---
-description: Améliorer un Prompt avec le Contexte du Projet (V3)
+description: Améliorer un Prompt avec le Contexte du Projet, Techniques Avancées et Skills Spécialisés
 ---
 
 ---

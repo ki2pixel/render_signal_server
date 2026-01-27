@@ -1,6 +1,7 @@
 # Contexte Actif
 
 ## Tâches Terminées
+- **[2026-01-26 21:27:00]** - Correction Bug Scroll UI Routage Dynamique : Résolution du bug visuel où la section "Routage Dynamique" était coupée quand plus de 2 règles étaient présentes. Ajout d'un scroll interne élégant (max-height: 400px, overflow-y: auto) avec scrollbar stylisée thème cork et adaptation mobile (300px). Tests backend validés (15/15).
 - **[2026-01-26 20:10:00]** - Correction Bug UI Routage Dynamique (Add Rule + Auto-save) : Résolution du bug où le clic sur "➕ Ajouter une règle" provoquait un statut "Erreur" sans afficher de nouvelle carte. Correction frontend avec garde auto-save pour éviter les validations sur brouillons incomplets, UX améliorée (scroll/focus) et statut cohérent.
 - **[2026-01-26 18:00:00]** - Visualisation Routage Dynamique via Vérification Redis : Implémentation complète de la visualisation des données `routing_rules` dans le dashboard via le bouton "🔍 Vérifier les données en Redis", avec support du JSON complet optionnel et tests validés (237 passed).
 - **[2026-01-26 01:04:00]** - Correction UI Routing Rules (Cache-bust + Fallback Client-side) : Problème résolu où l'UI affichait une seule règle legacy "Webhook par défaut (backend)" au lieu des 3 règles attendues. Correction implémentée côté frontend avec détection client-side de la règle legacy et génération automatique des 3 règles fallback si l'API ne les fournit pas. Cache-bust forcé sur l'import ES6 pour invalider le cache navigateur. Tests backend validés.

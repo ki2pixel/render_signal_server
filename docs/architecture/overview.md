@@ -19,15 +19,16 @@
 - ✅ **Tests résilience** : `test_lock_redis.py`, `test_r2_resilience.py` avec marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`
 - ✅ **Store-as-Source-of-Truth** : Configuration dynamique depuis Redis/fichier, pas d'écriture runtime dans les globals
 
-### Complexity Watchlist (radon 2026-01-25)
+### Complexity Watchlist (radon 2026-01-26)
 
-| Domaine | Fonction critique | Grade | Actions recommandées |
+| Domaine | Fonction critique | Grade | Actions réalisées |
 | --- | --- | --- | --- |
-| Orchestrateur IMAP | `email_processing/orchestrator.py::check_new_emails_and_trigger_webhook` | F | **Action requise** : Extraire les handlers DESABO/Media Solution dans des services dédiés pour réduire la complexité cyclomatique de 15→10. |
-| API Config Polling | `routes/api_config.py::update_polling_config` | F | S’appuyer davantage sur `PollingConfigService` pour validations bool/jours/heures et conversions `enable_polling`; viser un schéma partagé entre API et poller. |
-| Service Offload R2 | `services/r2_transfer_service.py::normalize_source_url` | E | Introduire une stratégie par fournisseur (Dropbox, FromSmash, SwissTransfer) afin de limiter les branches conditionnelles et isoler la normalisation. |
-| Webhook Config API | `routes/api_webhooks.py::update_webhook_config` | E | Décharger la validation Absence Globale/SSL dans `WebhookConfigService` (déjà singleton) pour uniformiser la logique. |
-| Preferences Service | `preferences/processing_prefs.py::validate_processing_prefs` | E | Formaliser le schéma via un validateur typé (pydantic/marshmallow) pour éliminer les blocs try/except imbriqués. |
+| Orchestrateur IMAP | `email_processing/orchestrator.py::check_new_emails_and_trigger_webhook` | F | ✅ **Extraction routing rules** : `_find_matching_routing_rule()` et `_match_routing_condition()` extraits, complexité réduite à 12 |
+| API Config Polling | `routes/api_config.py::update_polling_config` | F | ✅ **Délégation service** : Validation via `PollingConfigService`, complexité maintenue à D |
+| Service Offload R2 | `services/r2_transfer_service.py::normalize_source_url` | E | ⚠️ **Action requise** : Introduire une stratégie par fournisseur pour réduire les branches conditionnelles |
+| Webhook Config API | `routes/api_webhooks.py::update_webhook_config` | E | ✅ **Délegation service** : Validation via `WebhookConfigService`, complexité réduite à C |
+| Preferences Service | `preferences/processing_prefs.py::validate_processing_prefs` | E | ⚠️ **Action requise** : Formaliser le schéma via un validateur typé (pydantic/marshmallow) |
+| Routing Rules Service | `services/routing_rules_service.py::_normalize_rules` | D | ✅ **Service stable** : Validation et normalisation centralisées |
 
 > Ces surveillances garantissent que les sections « Services dédiés » ci-dessous restent alignées avec l’état réel du code; toute réduction de complexité doit être documentée ici.
 

@@ -7,6 +7,13 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 
 ## Décisions 2026
 
+[2026-01-26 21:27:00] - **Correction Bug Scroll UI Routage Dynamique**
+- **Décision** : Implémenter un scroll interne sur `.routing-rules-list` avec hauteur maximale et scrollbar stylisée pour résoudre le débordement visuel quand >2 règles sont présentes.
+- **Raisonnement** : Le `.panel-content` avait une hauteur fixe de 1000px mais `.routing-rules-list` n'avait aucune contrainte, provoquant le débordement du contenu quand plusieurs règles étaient ajoutées. Un scroll interne préserve le header fixe tout en permettant l'accès à toutes les règles.
+- **Implémentation** : Ajout de `max-height: 400px` et `overflow-y: auto` sur `.routing-rules-list`; scrollbar stylisée avec thème cork (webkit); adaptation mobile avec `max-height: 300px` sur <768px; `padding-right: 8px` pour éviter le chevauchement.
+- **Alternatives considérées** : Augmenter la hauteur du `.panel-content` (rejeté pour impact sur autres panneaux); utiliser `overflow-y: scroll` sur tout le panneau (rejeté pour cacher les contrôles); pagination (rejeté pour complexité inutile).
+- **Impact** : La section Routage Dynamique est maintenant parfaitement navigable quel que soit le nombre de règles, avec une scrollbar élégante et responsive qui respecte le design système existant.
+
 [2026-01-26 20:10:00] - **Correction Bug UI Routage Dynamique (Add Rule + Auto-save)**
 - **Décision** : Implémenter un garde-fou dans l'auto-save pour éviter les erreurs de validation sur les règles incomplètes et améliorer l'UX lors de l'ajout d'une nouvelle règle.
 - **Raisonnement** : Le clic sur "Ajouter une règle" déclenchait immédiatement une auto-sauvegarde qui échouait sur les champs vides (webhook_url manquant), provoquant un statut "Erreur" et masquant la nouvelle carte. Un garde auto-save et une meilleure gestion du focus sont nécessaires.

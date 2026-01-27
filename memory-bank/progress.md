@@ -20,6 +20,18 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-01-26 21:27:00] - Correction Bug Scroll UI Routage Dynamique Terminée
+- **Objectif** : Résoudre le bug visuel où la section "Routage Dynamique" était coupée quand plus de 2 règles étaient présentes, en ajoutant un scroll interne au conteneur des cartes.
+- **Actions réalisées** :
+  1. **Diagnostic UI** : Identification que `.routing-rules-list` n'avait pas de contrainte de hauteur, provoquant le débordement du `.panel-content` (max-height: 1000px).
+  2. **Correction CSS** : Ajout de `max-height: 400px` et `overflow-y: auto` sur `.routing-rules-list` avec `padding-right: 8px` pour la scrollbar.
+  3. **Scrollbar stylisée** : Implémentation complète du thème cork (webkit) avec hover states et design cohérent.
+  4. **Responsive design** : Adaptation mobile avec `max-height: 300px` sur écrans <768px.
+  5. **Validation** : Tests backend validés (15/15 routing rules passent), création de `test_scroll_routing_rules.html` pour test manuel, serveur de test fonctionnel.
+- **Résultat** : La section Routage Dynamique dispose maintenant d'un scroll interne élégant et fonctionnel, le header reste fixe et toutes les règles restent accessibles sans déborder le layout global.
+- **Fichiers modifiés** : `dashboard.html` (styles CSS lignes 1101-1125, 1368-1370), `test_scroll_routing_rules.html` (créé).
+- **Statut** : Terminé avec succès, bug visuel corrigé, UX conforme aux standards du projet.
+
 [2026-01-26 20:10:00] - Correction Bug UI Routage Dynamique (Add Rule + Auto-save) Terminée
 - **Objectif** : Résoudre le bug où le clic sur "➕ Ajouter une règle" dans le panneau "Routage Dynamique" provoquait un statut "Erreur" sans afficher de nouvelle carte de règle.
 - **Actions réalisées** :

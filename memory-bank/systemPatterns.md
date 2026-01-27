@@ -137,3 +137,12 @@ Ce document recense les patrons de conception et les standards récurrents dans 
 - Constantes nommées (IMAP_*, DETECTOR_*, ROUTE_*) pour éviter les magic strings et les typos.
 - Découpage fetch/parse vs. logique de routing pour réduire la complexité cyclomatique.
 - Logs défensifs: messages concis, pas de contenu sensible, format %s, early-returns.
+
+## Moteur de Routage Dynamique (2026-01-25)
+
+- **Service Redis-first** : `RoutingRulesService` (singleton, cache TTL 30s) avec validation stricte et normalisation des URLs webhook.
+- **Pattern d'évaluation séquentielle** : Les règles sont évaluées dans l'ordre, la première correspondance est utilisée, support du flag `stop_processing`.
+- **Fallback backend** : Génération automatique de règles "backend-*" reproduisant les comportements historiques (DESABO/Media Solution) lors de la première utilisation.
+- **Validation temps réel** : Vérification des URLs HTTPS (obligatoires) ou tokens Make.com, protection contre les injections regex.
+- **Architecture modulaire frontend** : Service ES6 `RoutingRulesService.js` avec builder visuel, drag-drop, auto-sauvegarde debounce 2-3s.
+- **Tests complets** : 12 tests couvrant service (3), API (3), et orchestrator (6) avec marqueurs `@pytest.mark.routing`.

@@ -35,6 +35,8 @@ export class RoutingRulesService {
         this.addButton = null;
         /** @type {HTMLButtonElement | null} */
         this.reloadButton = null;
+        /** @type {HTMLButtonElement | null} */
+        this.lockToggle = null;
         /** @type {number | null} */
         this._saveTimer = null;
         /** @type {number} */
@@ -45,6 +47,8 @@ export class RoutingRulesService {
         this.messageId = 'routing-rules-msg';
         /** @type {boolean} */
         this._usingBackendFallback = false;
+        /** @type {boolean} */
+        this._locked = true;
     }
 
     /**
@@ -57,11 +61,14 @@ export class RoutingRulesService {
         this.panel = document.querySelector('.collapsible-panel[data-panel="routing-rules"]');
         this.addButton = document.getElementById('addRoutingRuleBtn');
         this.reloadButton = document.getElementById('reloadRoutingRulesBtn');
+        this.lockToggle = document.getElementById('routingRulesLockToggle');
 
         if (!this.container) {
             return;
         }
 
+        this._bindLockToggle();
+        this._setLockState(true, { announce: false });
         this._bindEvents();
         await this.loadRules(true);
         this.initialized = true;
@@ -109,6 +116,7 @@ export class RoutingRulesService {
             this.rules = hydratedRules;
             this._renderRules();
             this._setPanelStatus('saved', false);
+            this._setLockState(true, { announce: false });
             if (!silent) {
                 MessageHelper.showSuccess(this.messageId, 'Règles chargées.');
             }
@@ -221,6 +229,16 @@ export class RoutingRulesService {
         ];
     }
 
+    _bindLockToggle() {
+        if (!this.lockToggle) {
+            return;
+        }
+        this.lockToggle.addEventListener('click', () => {
+            const nextLockedState = !this._locked;
+            this._setLockState(nextLockedState, { announce: true });
+        });
+    }
+
     _bindEvents() {
         if (this.addButton) {
             this.addButton.addEventListener('click', () => this._handleAddRule());
@@ -230,10 +248,19 @@ export class RoutingRulesService {
         }
         if (!this.container) return;
 
-        this.container.addEventListener('input', () => this._markDirty());
-        this.container.addEventListener('change', () => this._markDirty());
+        this.container.addEventListener('input', () => {
+            if (this._locked) return;
+            this._markDirty();
+        });
+        this.container.addEventListener('change', () => {
+            if (this._locked) return;
+            this._markDirty();
+        });
 
         this.container.addEventListener('click', (event) => {
+            if (this._locked) {
+                return;
+            }
             const target = event.target;
             if (!(target instanceof HTMLElement)) return;
             const actionButton = target.closest('[data-action]');
@@ -265,7 +292,49 @@ export class RoutingRulesService {
         });
     }
 
+    _setLockState(locked, { announce = false } = {}) {
+        this._locked = locked;
+        if (this.lockToggle) {
+            this.lockToggle.classList.toggle('locked', locked);
+            this.lockToggle.classList.toggle('unlocked', !locked);
+            this.lockToggle.setAttribute('aria-pressed', String(!locked));
+            this.lockToggle.setAttribute(
+                'aria-label',
+                locked ? "Déverrouiller l'édition des règles de routage" : 'Verrouiller l\'édition des règles de routage'
+            );
+            this.lockToggle.textContent = locked ? '🔒 Verrouillé' : '🔓 Édition activée';
+        }
+        if (this.container) {
+            this.container.classList.toggle('locked', locked);
+        }
+        if (this.addButton) {
+            this.addButton.disabled = locked;
+        }
+        if (announce) {
+            const message = locked
+                ? 'Section Routage Dynamique verrouillée.'
+                : 'Section Routage Dynamique déverrouillée, modifications autorisées.';
+            MessageHelper.showInfo(this.messageId, message);
+        }
+    }
+
+    _assertEditable(showMessage = true) {
+        if (!this._locked) {
+            return true;
+        }
+        if (showMessage) {
+            MessageHelper.showInfo(
+                this.messageId,
+                'Déverrouillez la section Routage Dynamique pour modifier les règles.'
+            );
+        }
+        return false;
+    }
+
     _handleAddRule() {
+        if (!this._assertEditable()) {
+            return;
+        }
         if (!this.container) return;
         const emptyState = this.container.querySelector('.routing-empty');
         if (emptyState) {
@@ -284,6 +353,9 @@ export class RoutingRulesService {
     }
 
     _addConditionRow(ruleCard) {
+        if (!this._assertEditable()) {
+            return;
+        }
         const conditionsContainer = ruleCard.querySelector('.routing-conditions');
         if (!conditionsContainer) return;
         const row = this._buildConditionRow({});
@@ -292,6 +364,9 @@ export class RoutingRulesService {
     }
 
     _removeCondition(button) {
+        if (!this._assertEditable()) {
+            return;
+        }
         const row = button.closest('.routing-condition-row');
         if (!row || !this.container) return;
         const container = row.parentElement;
@@ -304,11 +379,17 @@ export class RoutingRulesService {
     }
 
     _removeRule(ruleCard) {
+        if (!this._assertEditable()) {
+            return;
+        }
         ruleCard.remove();
         this._markDirty();
     }
 
     _moveRule(ruleCard, direction) {
+        if (!this._assertEditable()) {
+            return;
+        }
         if (!this.container) return;
         const siblings = Array.from(this.container.querySelectorAll('.routing-rule-card'));
         const index = siblings.indexOf(ruleCard);
@@ -596,6 +677,9 @@ export class RoutingRulesService {
     }
 
     _markDirty({ scheduleSave = true } = {}) {
+        if (!this._assertEditable(false)) {
+            return;
+        }
         this._setPanelStatus('dirty');
         this._setPanelClass('modified');
         if (scheduleSave) {
@@ -665,6 +749,7 @@ export class RoutingRulesService {
             this._setPanelStatus('saved');
             this._setPanelClass('saved');
             this._updatePanelIndicator();
+            this._setLockState(true, { announce: true });
             MessageHelper.showSuccess(this.messageId, 'Règles enregistrées.');
         } catch (error) {
             console.error('RoutingRules save error:', error);

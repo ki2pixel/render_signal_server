@@ -16,6 +16,7 @@ L'application utilise une architecture orientée services avec les composants pr
 | `PollingConfigService` | `config/polling_config.py` | Configuration du polling IMAP |
 | `MagicLinkService` | `services/magic_link_service.py` | Génération/validation magic links HMAC (singleton) |
 | `R2TransferService` | `services/r2_transfer_service.py` | Offload Cloudflare R2 (fetch distant + persistance des paires source/R2) |
+| `RoutingRulesService` | `services/routing_rules_service.py` | Moteur de routage dynamique (Redis-first, validation, cache TTL) |
 
 ## Organisation des routes
 
@@ -34,6 +35,7 @@ L'API est structurée en blueprints Flask pour une meilleure organisation et mai
 | `api_utility` | `routes/api_utility.py` | - | Utilitaires (ping, trigger, statut) |
 | `api_admin` | `routes/api_admin.py` | `ConfigService`, `AuthService` | Administration |
 | `api_config` | `routes/api_config.py` | `RuntimeFlagsService`, `PollingConfigService` | Configuration (store-as-source-of-truth) |
+| `api_routing_rules` | `routes/api_routing_rules.py` | `RoutingRulesService` | Moteur de routage dynamique (GET/POST `/api/routing_rules`) |
 
 ## Routes Principales
 
@@ -54,6 +56,10 @@ L'API est structurée en blueprints Flask pour une meilleure organisation et mai
 - `POST /api/update_polling_config` - Mettre à jour la configuration du polling (persisté dans Redis/fichier)
 - `GET /api/processing_prefs` - Récupérer les préférences de traitement (store-as-source-of-truth)
 - `POST /api/processing_prefs` - Mettre à jour les préférences de traitement (persisté dans Redis/fichier)
+
+### Routage Dynamique
+- `GET /api/routing_rules` - Récupérer les règles de routage (Redis-first avec fallback fichier)
+- `POST /api/routing_rules` - Mettre à jour les règles de routage (validation stricte + persistance)
 
 ### Administration
 - `POST /api/restart_server` - Redémarrer le serveur

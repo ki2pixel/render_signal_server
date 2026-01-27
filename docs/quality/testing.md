@@ -655,6 +655,112 @@ def test_complete_r2_offload_flow(
     assert link['original_filename'] == 'file.zip'
 ```
 
+### 🧪 Tests Spécifiques Routage Dynamique
+
+#### Tests Unitaires Routing (`@pytest.mark.routing_unit`)
+
+Tests isolés du service `RoutingRulesService` :
+
+```python
+@pytest.mark.routing_unit
+@pytest.mark.unit
+def test_routing_rules_service_validation():
+    """Test la validation des règles de routage."""
+    service = RoutingRulesService()
+    
+    # Règle valide
+    valid_rule = {
+        "name": "Test Rule",
+        "conditions": [{"field": "sender", "operator": "contains", "value": "@test.com"}],
+        "actions": {"webhook_url": "https://hook.make.com/test"}
+    }
+    assert service._validate_rule(valid_rule) is True
+    
+    # Règle invalide (webhook manquant)
+    invalid_rule = {
+        "name": "Invalid Rule",
+        "conditions": [{"field": "sender", "operator": "contains", "value": "@test.com"}],
+        "actions": {}
+    }
+    assert service._validate_rule(invalid_rule) is False
+```
+
+#### Tests API Routing (`@pytest.mark.routing_api`)
+
+Tests des endpoints `/api/routing_rules` :
+
+```python
+@pytest.mark.routing_api
+@pytest.mark.integration
+def test_get_routing_rules_api(authenticated_client):
+    """Test GET /api/routing_rules retourne les règles backend par défaut."""
+    response = authenticated_client.get('/api/routing_rules')
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert 'rules' in data
+    assert 'fallback_rules' in data
+    assert len(data['fallback_rules']) == 3  # Règles backend par défaut
+
+@pytest.mark.routing_api
+@pytest.mark.integration
+def test_post_routing_rules_api(authenticated_client):
+    """Test POST /api/routing_rules avec validation."""
+    rules_payload = {
+        "rules": [
+            {
+                "name": "Test Rule",
+                "conditions": [{"field": "sender", "operator": "contains", "value": "@test.com"}],
+                "actions": {"webhook_url": "https://hook.make.com/test"}
+            }
+        ]
+    }
+    
+    response = authenticated_client.post('/api/routing_rules', json=rules_payload)
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert data['status'] == 'success'
+```
+
+#### Tests Orchestrateur Routing (`@pytest.mark.routing_orchestrator`)
+
+Tests d'intégration avec l'orchestrateur :
+
+```python
+@pytest.mark.routing_orchestrator
+@pytest.mark.integration
+def test_orchestrator_routing_rule_matching():
+    """Test le matching des règles dans l'orchestrateur."""
+    from email_processing.orchestrator import _find_matching_routing_rule, _match_routing_condition
+    
+    # Email test
+    parsed_email = {
+        'sender': 'test@example.com',
+        'subject': 'Test Subject',
+        'body': 'Test body content'
+    }
+    
+    # Règle test
+    rule = {
+        'conditions': [
+            {'field': 'sender', 'operator': 'contains', 'value': '@example.com'}
+        ],
+        'actions': {'webhook_url': 'https://hook.make.com/matched'}
+    }
+    
+    # Test matching
+    assert _match_routing_condition(parsed_email, rule['conditions'][0]) is True
+    matched_rule = _find_matching_routing_rule([rule], parsed_email)
+    assert matched_rule == rule
+```
+
+**Couverture Actuelle :**
+- **Service** : `tests/test_routing_rules_service.py` (3 tests)
+- **API** : `tests/routes/test_api_routing_rules.py` (3 tests)  
+- **Orchestrateur** : `tests/email_processing/test_routing_rules_orchestrator.py` (6 tests)
+- **Total** : 12 tests avec marqueur `@pytest.mark.routing`
+
 ### 🏷️ Marqueurs de Test
 
 Le projet utilise des marqueurs pour catégoriser et contrôler l'exécution des tests.
@@ -706,6 +812,12 @@ Le projet utilise des marqueurs pour catégoriser et contrôler l'exécution des
   ```bash
   # Exécuter les tests de performance
   pytest -m "performance"
+  ```
+
+- `@pytest.mark.routing` : Tests du moteur de routage dynamique
+  ```bash
+  # Exécuter les tests de routage dynamique
+  pytest -m "routing"
   ```
 
 ### 🧠 Tests Paramétrés

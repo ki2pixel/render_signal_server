@@ -1269,6 +1269,40 @@
         align-items: center;
         gap: 8px;
       }
+
+      .panel-lock-toggle {
+        border: 1px solid rgba(255,255,255,0.15);
+        background: rgba(6, 8, 24, 0.6);
+        color: var(--cork-text-primary);
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 0.75em;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .panel-lock-toggle:hover,
+      .panel-lock-toggle:focus-visible {
+        border-color: var(--cork-primary-accent);
+        box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.25);
+        outline: none;
+      }
+
+      .panel-lock-toggle.locked {
+        background: rgba(231, 81, 90, 0.15);
+        color: var(--cork-danger);
+        border-color: rgba(231, 81, 90, 0.4);
+      }
+
+      .panel-lock-toggle.unlocked {
+        background: rgba(26, 188, 156, 0.15);
+        color: var(--cork-success);
+        border-color: rgba(26, 188, 156, 0.4);
+      }
       
       .toggle-icon {
         width: 20px;
@@ -1316,6 +1350,29 @@
         margin-top: 12px;
         padding-top: 12px;
         border-top: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .routing-rules-list.locked {
+        position: relative;
+        filter: grayscale(0.35);
+        pointer-events: none;
+        opacity: 0.65;
+      }
+
+      .routing-rules-list.locked::after {
+        content: '🔒 Section verrouillée';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(6, 8, 24, 0.85);
+        padding: 10px 16px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        font-size: 0.8em;
+        color: var(--cork-text-primary);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+        pointer-events: none;
       }
       
       .panel-save-btn {
@@ -1624,6 +1681,14 @@
             <span>Routage Dynamique</span>
           </div>
           <div class="panel-toggle">
+            <button
+              id="routingRulesLockToggle"
+              type="button"
+              class="panel-lock-toggle locked"
+              aria-pressed="true"
+              aria-label="Déverrouiller l'édition des règles de routage">
+              🔒 Verrouillé
+            </button>
             <span class="panel-status" id="routing-rules-status">Sauvegarde requise</span>
             <span class="toggle-icon">▼</span>
           </div>
@@ -1632,6 +1697,10 @@
           <div class="small-text" style="margin-bottom: 10px;">
             Définissez des règles conditionnelles pour router les emails vers des webhooks dédiés.
             Les règles sont évaluées dans l'ordre affiché.
+          </div>
+          <div class="small-text" style="margin-bottom: 12px; color: var(--cork-text-secondary);">
+            Cette section est verrouillée par défaut pour éviter les modifications accidentelles.
+            Cliquez sur le cadenas pour déverrouiller l'édition.
           </div>
           <div class="inline-group" style="margin-bottom: 12px;">
             <button id="addRoutingRuleBtn" type="button" class="btn btn-primary btn-small">➕ Ajouter une règle</button>
