@@ -7,6 +7,20 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 
 ## Décisions 2026
 
+[2026-01-28 21:58:00] - **Implémentation Persistance Redis Logs Webhooks**
+- **Décision** : Initialiser un client Redis au démarrage via `redis.Redis.from_url()` et brancher l'API logs pour utiliser la liste Redis `r:ss:webhook_logs:v1` comme source de vérité, avec fallback transparent vers fichier JSON.
+- **Raisonnement** : Les logs webhook étaient stockés dans `debug/webhook_logs.json` (éphémère sur Render) et perdus au redéploiement. Redis est déjà utilisé pour d'autres configurations et offre la persistance nécessaire.
+- **Implémentation** : Ajout de `_init_redis_client()` dans `app_render.py`; modification de `routes/api_logs.py` pour passer `redis_client` à `_fetch_webhook_logs`; création de tests backend complets (`test_webhook_logs_redis_persistence.py`).
+- **Alternatives considérées** : Stockage uniquement fichier (rejeté pour éphémère); base de données externe (rejeté pour complexité inutile); suppression des logs (rejeté pour perte de fonctionnalité).
+- **Impact** : Les logs survivent aux redeploys Render; fallback transparent si Redis indisponible; tests couvrant tous les cas (Redis, fallback, filtrage, limitation); architecture maintenue avec patterns existants.
+
+[2026-01-27 01:33:00] - **Implémentation Mécanisme de Verrouillage Routage Dynamique**
+- **Décision** : Ajouter un cadenas de verrouillage interactif dans la section "Routage Dynamique" pour prévenir les modifications accidentelles des règles critiques de webhook.
+- **Raisonnement** : La section "Routage Dynamique" conditionne les règles d'envoi de webhook et est particulièrement sensible aux modifications involontaires. Un mécanisme de verrouillage par défaut avec auto-verrouillage après sauvegarde garantit la sécurité tout en offrant une UX ergonomique.
+- **Implémentation** : Bouton cadenas (🔒/🔓) dans l'en-tête du panneau; état `_isLocked = true` par défaut dans `RoutingRulesService.js`; désactivation complète des champs/boutons quand verrouillé; auto-verrouillage après chaque sauvegarde réussie; styles CSS cohérents avec thème cork.
+- **Alternatives considérées** : Confirmation modale avant modification (rejetée pour UX intrusive); champ "mode édition" séparé (rejeté pour complexité inutile); verrouillage temporaire uniquement (rejeté pour sécurité insuffisante).
+- **Impact** : Protection efficace contre les modifications accidentelles; sécurité renforcée par défaut; expérience utilisateur préservée avec feedback visuel clair; mécanisme testé et opérationnel.
+
 [2026-01-26 21:27:00] - **Correction Bug Scroll UI Routage Dynamique**
 - **Décision** : Implémenter un scroll interne sur `.routing-rules-list` avec hauteur maximale et scrollbar stylisée pour résoudre le débordement visuel quand >2 règles sont présentes.
 - **Raisonnement** : Le `.panel-content` avait une hauteur fixe de 1000px mais `.routing-rules-list` n'avait aucune contrainte, provoquant le débordement du contenu quand plusieurs règles étaient ajoutées. Un scroll interne préserve le header fixe tout en permettant l'accès à toutes les règles.

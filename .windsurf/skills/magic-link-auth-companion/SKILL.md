@@ -12,7 +12,8 @@ description: Manage MagicLinkService changes across backend, storage (Redis/exte
 - Stockage Redis ou backend externe (`config_api.php`)
 
 ## Pré-requis
-- ENV obligatoires : `FLASK_SECRET_KEY`, `MAGIC_LINK_TOKENS_FILE`, `EXTERNAL_CONFIG_BASE_URL`, `CONFIG_API_TOKEN`.
+- ENV obligatoires (mode Redis-first) : `FLASK_SECRET_KEY`, `MAGIC_LINK_TOKENS_FILE`.
+- ENV optionnelles (mode backend externe) : `EXTERNAL_CONFIG_BASE_URL`, `CONFIG_API_TOKEN`.
 - Virtualenv `/mnt/venv_ext4/venv_render_signal_server` pour les scripts.
 - Accès Redis ou backend externe fonctionnel.
 

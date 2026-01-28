@@ -10,7 +10,7 @@ Utilise ce skill lorsqu'une tâche touche :
 - `services/r2_transfer_service.py`
 - `email_processing/orchestrator.py` (section delivery_links / r2_url)
 - `deployment/cloudflare-worker/*`
-- `deployment/src/JsonLogger.php`, `WebhookHandler.php`, pages de test R2
+- `deployment/public_html/config_api.php`, `deployment/public_html/test-direct.php`, pages de test R2
 
 ## Pré-requis
 - ENV obligatoires : `R2_BASE_URL`, `R2_FETCH_TOKEN`, `ALLOWED_R2_DOMAINS`.
@@ -30,7 +30,7 @@ Utilise ce skill lorsqu'une tâche touche :
    - Mettre à jour `httpMetadata.contentDisposition` pour préserver le nom de fichier.
    - Exécuter `wrangler deploy --dry-run` (documenter la sortie).
 4. **PHP Logger / Diagnostics**
-   - Assurer que `JsonLogger` continue d'écrire les paires `source_url`/`r2_url`.
+   - Assurer que `config_api.php` continue d'écrire les paires `source_url`/`r2_url`.
    - Tester `deployment/public_html/test-direct.php` pour valider le flux complet.
 5. **Tests & validation**
    - Lancer le helper `./.windsurf/skills/r2-transfer-service-playbook/test_r2_worker.sh`.

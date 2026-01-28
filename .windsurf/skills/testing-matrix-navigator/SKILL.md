@@ -15,19 +15,19 @@ Utilise cette compétence pour planifier et exécuter les tests pertinents aprè
 ## Matrice de décision
 | Contexte | Commande helper | Description |
 | --- | --- | --- |
-| Modifications backend générales | `./run_test_matrix.sh unit` | Tests unitaires sans dépendances externes |
-| Config/Redis | `./run_test_matrix.sh redis` | Tests Redis + couverture store |
-| R2 / Webhooks | `./run_test_matrix.sh r2` | Tests R2 + couverture service |
-| Poller / Résilience | `./run_test_matrix.sh resilience` | Tests Redis + résilience |
-| Polling dynamique | `./run_test_matrix.sh polling` | Tests rechargement config |
-| Full suite | `./run_test_matrix.sh full` | Tous les tests avec couverture |
+| Modifications backend générales | `./run_tests.sh -u` | Tests unitaires sans dépendances externes |
+| Config/Redis | `./run_tests.sh -i -c` | Tests d'intégration + couverture store |
+| R2 / Webhooks | `./run_tests.sh -i -c` | Tests d'intégration + couverture service |
+| Poller / Résilience | `./run_tests.sh -i -c` | Tests d'intégration + couverture |
+| Tests ciblés routing rules | `./run_tests.sh -n -c` | Nouveaux tests avec couverture |
+| Full suite | `./run_tests.sh -a -c` | Tous les tests avec couverture |
 
 ## Workflow
 1. **Préparer l'environnement**
    - Activer `/mnt/venv_ext4/venv_render_signal_server`.
    - Exporter les variables requises via `.env`.
 2. **Sélectionner la suite**
-   - Utiliser le helper `run_test_matrix.sh` avec l'argument approprié.
+   - Utiliser `./run_tests.sh` avec les options appropriées.
    - Pour un diff large, exécuter `pytest --maxfail=1 --disable-warnings` d'abord, puis `pytest --cov=.`.
 3. **Commandes avancées**
    - Tests ciblés : `pytest tests/routes/test_api_routing_rules.py`
@@ -40,7 +40,7 @@ Utilise cette compétence pour planifier et exécuter les tests pertinents aprè
    - Pour la CI, viser couverture ≥70% (88 cols, black/isort conformes).
 
 ## Ressources
-- `run_test_matrix.sh` : script principal qui active le venv et exécute la suite demandée (unit, redis, r2, resilience, polling, full).
+- `run_tests.sh` : script principal à la racine qui active le venv et exécute les suites demandées (unit, integration, e2e, fast, coverage).
 
 ## Conseils
 - Grouper les tests par dossier modifié pour diagnostiquer plus vite.

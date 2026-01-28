@@ -31,7 +31,7 @@ Utilise ce skill pour toute évolution de l'interface dashboard (bandeau statut,
    - Le script exécute automatiquement les tests API pertinents.
 7. **Documentation**
    - Mettre à jour `docs/features/frontend_dashboard_features.md` si l'UX évolue.
-   - Consigner les nouvelles patterns dans la Memory Bank.
+   - Documenter les patterns récents (verrouillage routing rules, timeline canvas, bandeau statut) dans la Memory Bank.
 
 ## Ressources
 - `test_dashboard_ux.sh` : checklist manuelle + exécution des tests backend associés.

@@ -91,6 +91,22 @@ except ImportError:
     REDIS_AVAILABLE = False
 
 
+def _init_redis_client(logger: logging.Logger | None = None):
+    if not REDIS_AVAILABLE:
+        return None
+    redis_url = os.environ.get("REDIS_URL", "").strip()
+    if not redis_url:
+        return None
+    try:
+        import redis
+
+        return redis.Redis.from_url(redis_url, decode_responses=True)
+    except Exception as e:
+        if logger:
+            logger.warning("CFG REDIS: failed to initialize redis client: %s", e)
+        return None
+
+
 app = Flask(__name__, template_folder='.', static_folder='static')
 app.secret_key = settings.FLASK_SECRET_KEY
 
@@ -167,6 +183,8 @@ logging.basicConfig(level=log_level,
 if not REDIS_AVAILABLE:
     logging.warning(
         "CFG REDIS (module level): 'redis' Python library not installed. Redis-based features will be disabled or use fallbacks.")
+
+redis_client = _init_redis_client(app.logger)
 
 
 # Diagnostics (process start + heartbeat)

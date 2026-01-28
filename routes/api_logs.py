@@ -31,7 +31,7 @@ def get_webhook_logs():
 
         # Use centralized helper (resilient to missing files)
         result = _fetch_webhook_logs(
-            redis_client=None,
+            redis_client=getattr(_ar, "redis_client", None),
             logger=getattr(_ar, "app").logger if hasattr(_ar, "app") else None,
             file_path=getattr(_ar, "WEBHOOK_LOGS_FILE"),
             redis_list_key=getattr(_ar, "WEBHOOK_LOGS_REDIS_KEY"),

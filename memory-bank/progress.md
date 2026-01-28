@@ -20,6 +20,30 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-01-28 21:58:00] - Implémentation Persistance Redis Logs Webhooks Terminée
+- **Objectif** : Corriger le problème où les logs de webhooks dans "📜 Historique des Webhooks (7 derniers jours)" étaient stockés dans debug/webhook_logs.json (éphémère sur Render) et perdus au redéploiement.
+- **Actions réalisées** :
+  1. **Initialisation Redis au démarrage** : Ajout de `_init_redis_client()` dans app_render.py utilisant `redis.Redis.from_url()` si REDIS_URL est présent, avec logging d'erreur en cas d'échec.
+  2. **Branchement API logs** : Modification de routes/api_logs.py pour passer le client Redis réel (`getattr(_ar, "redis_client", None)`) à `_fetch_webhook_logs` au lieu de None.
+  3. **Tests backend complets** : Création de tests/test_webhook_logs_redis_persistence.py avec 8 tests couvrant : stockage Redis, fallback fichier, filtrage par jours, limitation/reverse order, et test d'intégration Redis réel.
+- **Résultat** : Les logs sont maintenant persistés dans la liste Redis `r:ss:webhook_logs:v1`, survivent aux redeploys Render, avec fallback transparent vers fichier JSON si Redis indisponible.
+- **Fichiers modifiés** : app_render.py (init Redis), routes/api_logs.py (branchement client), tests/test_webhook_logs_redis_persistence.py (tests complets).
+- **Tests** : 7/7 tests unitaires passent, 1 test d'intégration Redis réel sauté (REDIS_URL non configuré en CI).
+- **Statut** : Terminé avec succès, persistance des logs garantie même après redéploiement.
+
+[2026-01-27 01:33:00] - Implémentation Mécanisme de Verrouillage Routage Dynamique Terminée
+- **Objectif** : Ajouter un cadenas de verrouillage dans la section "Routage Dynamique" pour prévenir les modifications accidentelles des règles de webhook.
+- **Actions réalisées** :
+  1. **UI du cadenas** : Ajout d'un bouton cadenas (🔒/🔓) dans l'en-tête du panneau Routage Dynamique avec styles CSS cohérents (hover, focus, transitions).
+  2. **Logique de verrouillage** : Implémentation dans RoutingRulesService.js avec état `_isLocked` par défaut à `true` (sécurité maximale).
+  3. **Contrôle des champs** : Désactivation complète de tous les champs de saisie, boutons d'édition et actions quand verrouillé (opacity 0.6, pointer-events none).
+  4. **Auto-verrouillage** : Verrouillage automatique après chaque sauvegarde réussie pour garantir la sécurité post-modification.
+  5. **Feedback visuel** : Icônes distinctes (🔒 verrouillé, 🔓 déverrouillé), tooltips dynamiques, états visuels clairs.
+- **Résultat** : La section Routage Dynamique est maintenant protégée contre les modifications accidentelles par défaut. L'utilisateur doit cliquer consciemment sur le cadenas pour déverrouiller l'édition, et le panneau se reverrouille automatiquement après sauvegarde.
+- **Fichiers modifiés** : `dashboard.html` (HTML + CSS cadenas), `static/services/RoutingRulesService.js` (logique complète du verrou).
+- **Serveur de test** : Démarré sur http://127.0.0.1:8081/dashboard.html pour validation manuelle.
+- **Statut** : Terminé avec succès, mécanisme de verrouillage opérationnel et sécurisé.
+
 [2026-01-26 21:27:00] - Correction Bug Scroll UI Routage Dynamique Terminée
 - **Objectif** : Résoudre le bug visuel où la section "Routage Dynamique" était coupée quand plus de 2 règles étaient présentes, en ajoutant un scroll interne au conteneur des cartes.
 - **Actions réalisées** :
