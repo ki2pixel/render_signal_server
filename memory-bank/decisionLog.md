@@ -7,6 +7,13 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 
 ## Décisions 2026
 
+[2026-01-29 13:10:00] - **Activation par défaut du calcul de métriques locales**
+- **Décision** : Activer par défaut le toggle "Activer le calcul de métriques locales" dans la section "📊 Monitoring & Métriques (24h)" pour améliorer l'expérience utilisateur en fournissant les métriques automatiquement sans action manuelle.
+- **Raisonnement** : Les utilisateurs ne bénéficiaient pas des métriques par défaut car le toggle était désactivé, nécessitant une action manuelle pour voir les données. L'activation par défaut offre une valeur immédiate tout en préservant la possibilité de désactiver.
+- **Implémentation** : Ajout de l'attribut `checked` sur l'input HTML; mise à jour de `loadLocalPreferences()` pour activer par défaut si aucune préférence; ajout de l'event listener avec persistance; port des fonctions de métriques depuis `dashboard_legacy.js`; déclenchement automatique après chargement initial.
+- **Alternatives considérées** : Garder le toggle désactivé par défaut (rejeté pour UX inférieure); forcer l'affichage sans toggle (rejeté pour perte de contrôle utilisateur); utiliser une cookie au lieu de localStorage (rejeté pour incohérence avec le reste).
+- **Impact** : Les métriques s'affichent automatiquement au premier chargement du dashboard, améliorant l'expérience utilisateur tout en préservant le contrôle et la persistance du choix.
+
 [2026-01-29 12:55:00] - **Correction Bug Affichage Logs Webhooks Dashboard**
 - **Décision** : Corriger les incohérences entre HTML/JavaScript et backend/frontend qui empêchaient l'affichage des logs de webhooks dans le dashboard.
 - **Raisonnement** : La section "📜 Historique des Webhooks (7 derniers jours)" affichait "Chargement des logs..." indéfiniment à cause de deux problèmes : (1) HTML utilisait `id="logsContainer"` mais JavaScript cherchait `id="webhookLogs"`; (2) backend envoyait `target_url` et `error` mais frontend attendait `webhook_url` et `error_message`.

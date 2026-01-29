@@ -299,6 +299,23 @@ function bindEvents() {
         });
     });
     
+    // Populate dropdowns with options
+    const timeDropdowns = ['webhooksTimeStart', 'webhooksTimeEnd', 'globalWebhookTimeStart', 'globalWebhookTimeEnd'];
+    timeDropdowns.forEach(id => {
+        const select = document.getElementById(id);
+        if (select) {
+            select.innerHTML = generateTimeOptions(30);
+        }
+    });
+    
+    const hourDropdowns = ['pollingStartHour', 'pollingEndHour'];
+    hourDropdowns.forEach(id => {
+        const select = document.getElementById(id);
+        if (select) {
+            select.innerHTML = generateHourOptions();
+        }
+    });
+    
     const restartBtn = document.getElementById('restartServerBtn');
     if (restartBtn) {
         restartBtn.addEventListener('click', handleDeployApplication);
@@ -543,13 +560,47 @@ async function togglePolling() {
     }
 }
 
+// Time window helpers
+function generateTimeOptions(stepMinutes = 30) {
+    const options = ['<option value="">Sélectionner...</option>'];
+    for (let hour = 0; hour < 24; hour++) {
+        for (let minute = 0; minute < 60; minute += stepMinutes) {
+            const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+            options.push(`<option value="${timeStr}">${timeStr}</option>`);
+        }
+    }
+    return options.join('');
+}
+
+function generateHourOptions() {
+    const options = ['<option value="">Sélectionner...</option>'];
+    for (let hour = 0; hour < 24; hour++) {
+        const label = `${hour.toString().padStart(2, '0')}h`;
+        options.push(`<option value="${hour}">${label}</option>`);
+    }
+    return options.join('');
+}
+
+function setSelectedOption(selectElement, value) {
+    if (!selectElement) return;
+    // Try to find exact match first
+    for (let i = 0; i < selectElement.options.length; i++) {
+        if (selectElement.options[i].value === value || selectElement.options[i].value === value.toString()) {
+            selectElement.selectedIndex = i;
+            return;
+        }
+    }
+    // If no match, select first (empty) option
+    selectElement.selectedIndex = 0;
+}
+
 // Time window
 async function loadTimeWindow() {
     const applyWindowValues = (startValue = '', endValue = '') => {
         const startInput = document.getElementById('webhooksTimeStart');
         const endInput = document.getElementById('webhooksTimeEnd');
-        if (startInput) startInput.value = startValue || '';
-        if (endInput) endInput.value = endValue || '';
+        if (startInput) setSelectedOption(startInput, startValue || '');
+        if (endInput) setSelectedOption(endInput, endValue || '');
         renderTimeWindowDisplay(startValue || '', endValue || '');
     };
     
@@ -584,25 +635,23 @@ async function saveTimeWindow() {
     const start = startInput.value.trim();
     const end = endInput.value.trim();
     
-    // Validation des formats
-    if (start && !MessageHelper.isValidTimeFormat(start)) {
-        MessageHelper.showError('timeWindowMsg', 'Format d\'heure invalide (ex: 09:30 ou 9h30).');
+    // For dropdowns, validation is simpler - format is guaranteed HH:MM
+    if (start && !/^\d{2}:\d{2}$/.test(start)) {
+        MessageHelper.showError('timeWindowMsg', 'Veuillez sélectionner une heure valide.');
         return false;
     }
     
-    if (end && !MessageHelper.isValidTimeFormat(end)) {
-        MessageHelper.showError('timeWindowMsg', 'Format d\'heure invalide (ex: 17:30 ou 17h30).');
+    if (end && !/^\d{2}:\d{2}$/.test(end)) {
+        MessageHelper.showError('timeWindowMsg', 'Veuillez sélectionner une heure valide.');
         return false;
     }
     
-    // Normalisation des formats
-    const normalizedStart = start ? MessageHelper.normalizeTimeFormat(start) : '';
-    const normalizedEnd = end ? MessageHelper.normalizeTimeFormat(end) : '';
+    // No normalization needed for dropdowns - format is already HH:MM
     
     try {
         const data = await ApiService.post('/api/set_webhook_time_window', { 
-            start: normalizedStart, 
-            end: normalizedEnd 
+            start: start, 
+            end: end 
         });
         
         if (data.success) {
@@ -612,13 +661,13 @@ async function saveTimeWindow() {
             
             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
-                startInput.value = data.webhooks_time_start || '';
+                setSelectedOption(startInput, data.webhooks_time_start || '');
             }
             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
-                endInput.value = data.webhooks_time_end || '';
+                setSelectedOption(endInput, data.webhooks_time_end || '');
             }
             
-            renderTimeWindowDisplay(data.webhooks_time_start || normalizedStart, data.webhooks_time_end || normalizedEnd);
+            renderTimeWindowDisplay(data.webhooks_time_start || start, data.webhooks_time_end || end);
             
             // S'assurer que la source persistée est rechargée
             await loadTimeWindow();
@@ -674,8 +723,8 @@ async function loadPollingConfig() {
                 
                 const sh = document.getElementById('pollingStartHour');
                 const eh = document.getElementById('pollingEndHour');
-                if (sh && Number.isInteger(cfg.active_start_hour)) sh.value = String(cfg.active_start_hour);
-                if (eh && Number.isInteger(cfg.active_end_hour)) eh.value = String(cfg.active_end_hour);
+                if (sh && Number.isInteger(cfg.active_start_hour)) setSelectedOption(sh, String(cfg.active_start_hour));
+                if (eh && Number.isInteger(cfg.active_end_hour)) setSelectedOption(eh, String(cfg.active_end_hour));
             } catch (e) {
                 console.warn('loadPollingConfig: applying days/hours failed', e);
             }
@@ -1273,8 +1322,8 @@ async function loadGlobalWebhookTimeWindow() {
     const applyGlobalWindowValues = (startValue = '', endValue = '') => {
         const startInput = document.getElementById('globalWebhookTimeStart');
         const endInput = document.getElementById('globalWebhookTimeEnd');
-        if (startInput) startInput.value = startValue || '';
-        if (endInput) endInput.value = endValue || '';
+        if (startInput) setSelectedOption(startInput, startValue || '');
+        if (endInput) setSelectedOption(endInput, endValue || '');
     };
     
     try {
@@ -1297,25 +1346,23 @@ async function saveGlobalWebhookTimeWindow() {
     const start = startInput.value.trim();
     const end = endInput.value.trim();
     
-    // Validation des formats
-    if (start && !MessageHelper.isValidTimeFormat(start)) {
-        MessageHelper.showError('globalWebhookTimeMsg', 'Format d\'heure invalide (ex: 09:00 ou 9h00).');
+    // Validation des formats - dropdowns guarantee HH:MM format
+    if (start && !/^\d{2}:\d{2}$/.test(start)) {
+        MessageHelper.showError('globalWebhookTimeMsg', 'Veuillez sélectionner une heure valide.');
         return false;
     }
     
-    if (end && !MessageHelper.isValidTimeFormat(end)) {
-        MessageHelper.showError('globalWebhookTimeMsg', 'Format d\'heure invalide (ex: 19:00 ou 19h00).');
+    if (end && !/^\d{2}:\d{2}$/.test(end)) {
+        MessageHelper.showError('globalWebhookTimeMsg', 'Veuillez sélectionner une heure valide.');
         return false;
     }
     
-    // Normalisation des formats
-    const normalizedStart = start ? MessageHelper.normalizeTimeFormat(start) : '';
-    const normalizedEnd = end ? MessageHelper.normalizeTimeFormat(end) : '';
+    // No normalization needed for dropdowns - format is already HH:MM
     
     try {
         const data = await ApiService.post('/api/webhooks/time-window', { 
-            start: normalizedStart, 
-            end: normalizedEnd 
+            start: start, 
+            end: end 
         });
         
         if (data.success) {
@@ -1325,10 +1372,10 @@ async function saveGlobalWebhookTimeWindow() {
             
             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
-                startInput.value = data.webhooks_time_start || '';
+                setSelectedOption(startInput, data.webhooks_time_start || '');
             }
             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
-                endInput.value = data.webhooks_time_end || '';
+                setSelectedOption(endInput, data.webhooks_time_end || '');
             }
             await loadGlobalWebhookTimeWindow();
             return true;

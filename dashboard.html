@@ -1633,11 +1633,15 @@
               <h4 style="margin: 0 0 10px 0; color: var(--cork-text-primary);">Fenêtre Horaire Globale</h4>
               <div class="form-group">
                 <label for="webhooksTimeStart">Heure de début</label>
-                <input id="webhooksTimeStart" type="text" placeholder="ex: 11:30">
+                <select id="webhooksTimeStart" style="width: 100%; max-width: 120px;">
+                  <option value="">Sélectionner...</option>
+                </select>
               </div>
               <div class="form-group">
                 <label for="webhooksTimeEnd">Heure de fin</label>
-                <input id="webhooksTimeEnd" type="text" placeholder="ex: 17:30">
+                <select id="webhooksTimeEnd" style="width: 100%; max-width: 120px;">
+                  <option value="">Sélectionner...</option>
+                </select>
               </div>
               <div id="timeWindowMsg" class="status-msg"></div>
               <div id="timeWindowDisplay" class="small-text"></div>
@@ -1651,11 +1655,15 @@
               <h4 style="margin: 0 0 10px 0; color: var(--cork-text-primary);">Fenêtre Horaire Webhooks</h4>
               <div class="form-group" style="margin-bottom: 10px;">
                 <label for="globalWebhookTimeStart">Heure de début</label>
-                <input id="globalWebhookTimeStart" type="text" placeholder="ex: 09:00" style="width: 100%; max-width: 100px;">
+                <select id="globalWebhookTimeStart" style="width: 100%; max-width: 100px;">
+                  <option value="">Sélectionner...</option>
+                </select>
               </div>
               <div class="form-group" style="margin-bottom: 10px;">
                 <label for="globalWebhookTimeEnd">Heure de fin</label>
-                <input id="globalWebhookTimeEnd" type="text" placeholder="ex: 19:00" style="width: 100%; max-width: 100px;">
+                <select id="globalWebhookTimeEnd" style="width: 100%; max-width: 100px;">
+                  <option value="">Sélectionner...</option>
+                </select>
               </div>
               <div id="globalWebhookTimeMsg" class="status-msg" style="margin-top: 8px;"></div>
               <div class="small-text">Définissez quand les webhooks peuvent être envoyés (laissez vide pour désactiver).</div>
@@ -1725,11 +1733,15 @@
           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
             <div class="form-group">
               <label for="pollingStartHour">POLLING_ACTIVE_START_HOUR (0-23)</label>
-              <input id="pollingStartHour" type="number" min="0" max="23" placeholder="ex: 9">
+              <select id="pollingStartHour" style="width: 100%; max-width: 100px;">
+                <option value="">Sélectionner...</option>
+              </select>
             </div>
             <div class="form-group">
               <label for="pollingEndHour">POLLING_ACTIVE_END_HOUR (0-23)</label>
-              <input id="pollingEndHour" type="number" min="0" max="23" placeholder="ex: 23">
+              <select id="pollingEndHour" style="width: 100%; max-width: 100px;">
+                <option value="">Sélectionner...</option>
+              </select>
             </div>
           </div>
           <div class="form-group" style="margin-top: 10px;">

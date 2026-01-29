@@ -20,6 +20,20 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-01-29 13:10:00] - Activation par défaut du calcul de métriques locales Terminée
+- **Objectif** : Activer par défaut le toggle "Activer le calcul de métriques locales" dans la section "📊 Monitoring & Métriques (24h)" du dashboard pour que les métriques se calculent automatiquement au premier chargement.
+- **Actions réalisées** :
+  1. **HTML default state** : Ajout de l'attribut `checked` sur l'input `#enableMetricsToggle` dans `dashboard.html` (ligne 1839).
+  2. **Frontend logic** : Mise à jour de `loadLocalPreferences()` pour activer le toggle par défaut quand aucune préférence n'existe dans localStorage.
+  3. **Persistence** : Modification de `saveLocalPreferences()` pour toujours sauvegarder l'état du toggle.
+  4. **Event listener** : Ajout d'un event listener pour le toggle dans `bindEvents()` avec sauvegarde automatique et calcul/effacement des métriques.
+  5. **Initial trigger** : Ajout du déclenchement automatique du calcul des métriques après le chargement initial des données si le toggle est coché.
+  6. **Metrics functions** : Port des fonctions de métriques depuis `dashboard_legacy.js` vers `dashboard.js` (`computeAndRenderMetrics`, `clearMetrics`, `setMetric`, `renderMiniChart`).
+- **Résultat** : Le toggle "Activer le calcul de métriques locales" est maintenant activé par défaut, les métriques se calculent automatiquement au premier chargement du dashboard, et l'utilisateur peut toujours désactiver manuellement avec persistance du choix.
+- **Fichiers modifiés** : `dashboard.html` (attribut checked), `static/dashboard.js` (logique complète des métriques).
+- **Tests** : Serveur de test démarré sur http://localhost:8081 pour validation manuelle.
+- **Statut** : Terminé avec succès, métriques activées par défaut, UX améliorée.
+
 [2026-01-29 12:55:00] - Correction Bug Affichage Logs Webhooks Dashboard Terminée
 - **Objectif** : Résoudre le bug où la section "📜 Historique des Webhooks (7 derniers jours)" affichait "Chargement des logs..." sans jamais afficher les logs réels.
 - **Actions réalisées** :
