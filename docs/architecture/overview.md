@@ -19,7 +19,7 @@
 - ✅ **Tests résilience** : `test_lock_redis.py`, `test_r2_resilience.py` avec marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`
 - ✅ **Store-as-Source-of-Truth** : Configuration dynamique depuis Redis/fichier, pas d'écriture runtime dans les globals
 
-### Complexity Watchlist (radon 2026-01-26)
+### Complexity Watchlist (radon 2026-01-29)
 
 | Domaine | Fonction critique | Grade | Actions réalisées |
 | --- | --- | --- | --- |
@@ -29,11 +29,15 @@
 | Webhook Config API | `routes/api_webhooks.py::update_webhook_config` | E | ✅ **Délegation service** : Validation via `WebhookConfigService`, complexité réduite à C |
 | Preferences Service | `preferences/processing_prefs.py::validate_processing_prefs` | E | ⚠️ **Action requise** : Formaliser le schéma via un validateur typé (pydantic/marshmallow) |
 | Routing Rules Service | `services/routing_rules_service.py::_normalize_rules` | D | ✅ **Service stable** : Validation et normalisation centralisées |
+| Pattern Matching DESABO | `email_processing/pattern_matching.py::check_media_solution_pattern` | E | ⚠️ **Nouveau point chaud** : Complexité élevée due aux multiples branches de détection |
+| Magic Link Service | `services/magic_link_service.py::consume_token` | C | ✅ **Service stabilisé** : Logique de consommation et validation bien structurée |
 
 > Ces surveillances garantissent que les sections « Services dédiés » ci-dessous restent alignées avec l’état réel du code; toute réduction de complexité doit être documentée ici.
 
 ### Métriques de documentation
 - **Volume** : 7 388 lignes de contenu réparties dans 25 fichiers actifs
+- **Code source** : 388k lignes Python (1668 fichiers) + 61k lignes JavaScript (302 fichiers)
+- **Complexité moyenne** : D (24.9) avec 44 blocs analysés par radon
 - **Densité** : Justifie le découpage modulaire pour maintenir la lisibilité
 - **Exclusions** : `archive/` et `audits/` maintenus séparément pour éviter le bruit
 

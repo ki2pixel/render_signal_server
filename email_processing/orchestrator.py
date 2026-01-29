@@ -1591,8 +1591,8 @@ def send_custom_webhook_flow(
                 "email_id": email_id,
                 "status": "skipped",
                 "status_code": 204,
-                "error": "No delivery links detected; skipping per config",
-                "target_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
+                "error_message": "No delivery links detected; skipping per config",
+                "webhook_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
                 "subject": (subject[:100] if subject else None),
             })
             return True
@@ -1609,8 +1609,8 @@ def send_custom_webhook_flow(
                 "email_id": email_id,
                 "status": "error",
                 "status_code": 429,
-                "error": "Rate limit exceeded",
-                "target_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
+                "error_message": "Rate limit exceeded",
+                "webhook_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
                 "subject": (subject[:100] if subject else None),
             })
             return True
@@ -1674,7 +1674,7 @@ def send_custom_webhook_flow(
                 "email_id": email_id,
                 "status": "success",
                 "status_code": webhook_response.status_code,
-                "target_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
+                "webhook_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
                 "subject": (subject[:100] if subject else None),
             })
             if mark_email_id_as_processed_redis(email_id):
@@ -1693,8 +1693,8 @@ def send_custom_webhook_flow(
                 "email_id": email_id,
                 "status": "error",
                 "status_code": webhook_response.status_code,
-                "error": (response_data.get('message', 'Unknown error'))[:200],
-                "target_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
+                "error_message": (response_data.get('message', 'Unknown error'))[:200],
+                "webhook_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
                 "subject": (subject[:100] if subject else None),
             })
             return False
@@ -1711,8 +1711,8 @@ def send_custom_webhook_flow(
             "email_id": email_id,
             "status": "error",
             "status_code": webhook_response.status_code,
-            "error": webhook_response.text[:200] if webhook_response.text else "Unknown error",
-            "target_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
+            "error_message": webhook_response.text[:200] if webhook_response.text else "Unknown error",
+            "webhook_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
             "subject": (subject[:100] if subject else None),
         })
         return False

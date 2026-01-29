@@ -368,6 +368,88 @@ L'ensemble des fonctionnalités de résilience a été validé :
 - **Couverture** : ~70% avec tests unitaires et d'intégration
 - **Scénarios testés** : Redis down, Worker R2 down, IMAP timeout, HTML volumineux
 
+## Patterns de Détection et Fournisseurs Supportés
+
+### Fournisseurs de Liens Supportés
+
+**Pattern Regex Unifié** (`URL_PROVIDERS_PATTERN`) :
+```regex
+https?://(?:www\.)?(?:dropbox\.com|fromsmash\.com|swisstransfer\.com)[^\s<>\"]*
+```
+
+**Formats spécifiques par fournisseur** :
+
+#### Dropbox
+- **Pattern** : `https://www.dropbox.com/scl/fo/[...]`
+- **Variantes** : URLs de dossiers partagés avec paramètres `dl=0` ou `dl=1`
+- **Exclusion** : Assets de preview (avatar/logo) automatiquement filtrés
+
+#### FromSmash  
+- **Pattern** : `https://fromsmash.com/[token]`
+- **Format** : Token alphanumérique simple après le domaine
+- **Exemple** : `https://fromsmash.com/OPhYnnPgFM-ct`
+
+#### SwissTransfer
+- **Pattern** : `https://www.swisstransfer.com/d/[uuid]`
+- **Format** : UUID v4 standard après `/d/`
+- **Exemple** : `https://www.swisstransfer.com/d/6bacf66b-9a4d-4df4-af3f-ccb96a444c12`
+
+### Patterns DESABO (Désabonnement)
+
+**Mots-clés requis** (présents dans le corps normalisé) :
+```python
+DESABO_REQUIRED_KEYWORDS = ["journee", "tarifs habituels", "desabonn"]
+```
+
+**Mots-clés interdits** (invalident la détection) :
+```python
+DESABO_FORBIDDEN_KEYWORDS = [
+    "annulation", "facturation", "facture", 
+    "moment", "reference client", "total ht"
+]
+```
+
+### Patterns Média Solution - Extraction des Fenêtres de Livraison
+
+#### Sujet Requis
+```regex
+Média Solution - Missions Recadrage - Lot
+```
+
+#### Patterns d'Extraction des Heures
+
+**Pattern A (heure seule)** :
+```regex
+à faire pour (\d{1,2})h(\d{0,2})?
+```
+- `11h51` → `11h51`
+- `9h` → `09h00` 
+- `9h5` → `09h05`
+
+**Pattern B (date + heure)** :
+```regex
+à faire pour le (\d{1,2})/(\d{1,2})/(\d{4}) à (\d{1,2})h(\d{0,2})?
+à faire pour le (\d{1,2})/(\d{1,2})/(\d{4}) à (\d{1,2}):(\d{2})
+```
+- `le 03/09/2025 à 9h` → `le 03/09/2025 à 09h00`
+- `le 3/9/2025 à 9:05` → `le 03/09/2025 à 09h05`
+
+**Cas URGENCE** :
+```regex
+URGENCE
+```
+- Ignore toute heure dans le corps
+- Retourne heure locale + 1h (ex: `13h35`)
+
+#### Processus de Normalisation
+
+1. **Texte** : Suppression accents + minuscule pour comparaison robuste
+2. **Heures** : Zéro-padding automatique (`9h` → `09h00`)
+3. **Dates** : Format `dd/mm/YYYY` avec zéro-padding
+4. **Priorité** : URGENCE > Pattern B > Pattern A
+
+---
+
 ## Extraction et normalisation
 
 ### Limitation HTML anti-OOM (Lot 3)

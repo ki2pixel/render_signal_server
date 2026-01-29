@@ -306,6 +306,96 @@ Using file-based lock (unsafe for multi-container deployments)
 
 ---
 
+## Gestion de la Complexité Cyclomatique (2026-01-29)
+
+### Analyse radon
+
+**Métriques actuelles**
+- **Complexité moyenne** : D (24.9) sur 44 blocs analysés
+- **Volume code** : 388k lignes Python, 61k lignes JavaScript
+- **Points chauds** : 8 fonctions en grade E/F nécessitant une attention
+
+### Stratégies de Réduction
+
+#### 1. Extraction des Helpers
+```python
+# Avant : fonction monolithique
+def check_new_emails_and_trigger_webhook():
+    # 150+ lignes de logique complexe
+    pass
+
+# Après : helpers extraits
+def _find_matching_routing_rule():  # Complexité C
+def _match_routing_condition():    # Complexité B  
+def _fetch_and_parse_email():      # Complexité C
+```
+
+#### 2. Délégation aux Services
+```python
+# Avant : validation inline
+def update_webhook_config():
+    # 20+ lignes de validation
+    if not url.startswith('https://'):
+        raise ValueError('HTTPS required')
+    # ...
+
+# Après : délégation service
+def update_webhook_config():
+    return webhook_config_service.update_config(payload)  # Complexité C
+```
+
+#### 3. Pattern Strategy pour Fournisseurs
+```python
+# Stratégie par fournisseur pour R2TransferService
+class ProviderStrategy:
+    def normalize_url(self, url: str) -> str: pass
+    
+class DropboxStrategy(ProviderStrategy):
+    def normalize_url(self, url: str) -> str:
+        # Logique spécifique Dropbox
+        
+class FromSmashStrategy(ProviderStrategy):
+    def normalize_url(self, url: str) -> str:
+        # Logique spécifique FromSmash
+```
+
+### Surveillance Continue
+
+#### Outils Automatisés
+```bash
+# Scan complexité quotidien
+radon cc . -a -nc --exclude='tests/*' > complexity_report.txt
+
+# Alertes si complexité > D
+radon cc . -a --min C
+```
+
+#### Intégration CI/CD
+```yaml
+# .github/workflows/complexity-check.yml
+- name: Check complexity
+  run: |
+    radon cc . -a --min C
+    # Fail si nouvelles fonctions grade E/F
+```
+
+### Actions Prioritaires
+
+#### Immédiat (Grade E/F)
+1. **R2TransferService.normalize_source_url** : Implémenter pattern Strategy
+2. **validate_processing_prefs** : Schéma pydantic/marshmallow
+3. **check_media_solution_pattern** : Extraction des helpers de détection
+
+#### Moyen terme (Grade D)
+1. **RoutingRulesService._normalize_rules** : Optimiser les boucles
+2. **RuntimeFlagsService** : Simplifier la gestion cache
+
+#### Surveillance (Grade C)
+1. **MagicLinkService.consume_token** : Maintenir la complexité actuelle
+2. **WebhookConfigService.update_config** : Monitoring régressions
+
+---
+
 ## Optimisations Futures
 
 ### Frontend Roadmap
