@@ -1,0 +1,229 @@
+/* static/css/base.css - Reset, layout global, typographie, responsive */
+
+/* Reset & Base */
+body {
+  font-family: 'Nunito', sans-serif;
+  margin: 0;
+  background-color: var(--cork-dark-bg);
+  color: var(--cork-text-primary);
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+/* Layout Container */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Header */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  padding: 20px;
+  background-color: var(--cork-card-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--cork-border-color);
+}
+
+/* Typography */
+h1 {
+  color: var(--cork-text-primary);
+  font-size: 1.8em;
+  font-weight: 600;
+  margin: 0;
+}
+
+h1 .emoji {
+  font-size: 1.2em;
+  margin-right: 10px;
+}
+
+/* Navigation Tabs */
+.nav-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 16px 0;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  background: var(--cork-dark-bg);
+  padding: 8px 0;
+}
+
+/* Tab Panels */
+.section-panel {
+  display: none;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity var(--transition-slow) ease, transform var(--transition-slow) ease;
+}
+
+.section-panel.active {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Grid System */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+/* Utility Classes */
+.inline-group {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.small-text {
+  font-size: 0.85em;
+  color: var(--cork-text-secondary);
+  margin-top: 5px;
+}
+
+.btn-small {
+  padding: 4px 8px;
+  font-size: 0.8em;
+  min-width: auto;
+}
+
+/* Loading States */
+.loading {
+  position: relative;
+  pointer-events: none;
+}
+
+.loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border: 2px solid var(--cork-primary-accent);
+  border-top: 2px solid transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Skeleton Loading */
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-sm);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-sm);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Accessibility - Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  body {
+    padding: 10px;
+  }
+  
+  .container {
+    max-width: 100%;
+  }
+  
+  .header {
+    flex-direction: column;
+    gap: 15px;
+    text-align: center;
+  }
+  
+  h1 {
+    font-size: 1.5em;
+  }
+  
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+  
+  .nav-tabs {
+    justify-content: center;
+  }
+  
+  .nav-tabs .tab-btn {
+    font-size: 0.85em;
+    padding: 6px 10px;
+  }
+  
+  .btn-small {
+    padding: 3px 6px;
+    font-size: 0.75em;
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: 15px;
+  }
+  
+  .nav-tabs .tab-btn {
+    font-size: 0.8em;
+    padding: 5px 8px;
+  }
+  
+  .grid {
+    gap: 12px;
+  }
+  
+  .inline-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .btn {
+    width: 100%;
+    margin-bottom: 10px;
+  }
+}

@@ -1,0 +1,58 @@
+/* static/css/variables.css - Couleurs et variables CSS (:root) */
+
+:root {
+  /* Cork Theme - Colors */
+  --cork-dark-bg: #060818;
+  --cork-card-bg: #0e1726;
+  --cork-text-primary: #e0e6ed;
+  --cork-text-secondary: #888ea8;
+  --cork-primary-accent: #4361ee;
+  --cork-secondary-accent: #1abc9c;
+  --cork-success: #1abc9c;
+  --cork-warning: #e2a03f;
+  --cork-danger: #e7515a;
+  --cork-info: #2196f3;
+  --cork-border-color: #191e3a;
+
+  /* Animation Durations */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.2s ease;
+  --transition-slow: 0.3s ease;
+  --transition-ripple: 0.6s ease;
+
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 6px;
+  --spacing-md: 8px;
+  --spacing-lg: 10px;
+  --spacing-xl: 12px;
+  --spacing-2xl: 16px;
+  --spacing-3xl: 20px;
+  --spacing-4xl: 30px;
+
+  /* Border Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 999px;
+
+  /* Shadows */
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-button: 0 5px 15px rgba(67, 97, 238, 0.4);
+  --shadow-button-success: 0 5px 15px rgba(26, 188, 156, 0.4);
+  --shadow-button-warning: 0 5px 15px rgba(226, 160, 63, 0.45);
+  --shadow-button-info: 0 5px 15px rgba(33, 150, 243, 0.4);
+  --shadow-button-secondary: 0 5px 15px rgba(14, 23, 38, 0.35);
+
+  /* Focus Ring */
+  --focus-ring: 0 0 0 3px rgba(67, 97, 238, 0.1);
+  --focus-ring-danger: 0 0 0 2px rgba(231, 81, 90, 0.2);
+
+  /* Z-Index */
+  --z-dropdown: 10;
+  --z-sticky: 5;
+  --z-toast: 1000;
+  --z-timeline: 2;
+}

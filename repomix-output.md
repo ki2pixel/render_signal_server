@@ -1536,6 +1536,299 @@ requirements.txt
 43:     return f"subject_hash_{subject_hash}"
 ````
 
+## File: email_processing/pattern_matching.py
+````python
+  1: """
+  2: email_processing.pattern_matching
+  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  4: 
+  5: Détection de patterns dans les emails pour trigger des webhooks spécifiques.
+  6: Gère les patterns Média Solution et DESABO.
+  7: """
+  8: from __future__ import annotations
+  9: 
+ 10: import re
+ 11: import unicodedata
+ 12: from datetime import datetime, timedelta
+ 13: from typing import Any, Dict
+ 14: 
+ 15: from utils.text_helpers import normalize_no_accents_lower_trim
+ 16: 
+ 17: 
+ 18: # =============================================================================
+ 19: # CONSTANTES - PATTERNS URL PROVIDERS
+ 20: # =============================================================================
+ 21: 
+ 22: # Compiled regex pattern pour détecter les URLs de fournisseurs supportés:
+ 23: # - Dropbox folder links
+ 24: # - FromSmash share links
+ 25: # - SwissTransfer download links
+ 26: URL_PROVIDERS_PATTERN = re.compile(
+ 27:     r'(https?://(?:www\.)?(?:dropbox\.com|fromsmash\.com|swisstransfer\.com)[^\s<>\"]*)',
+ 28:     re.IGNORECASE,
+ 29: )
+ 30: 
+ 31: # =============================================================================
+ 32: # CONSTANTES - DESABO PATTERN
+ 33: # =============================================================================
+ 34: 
+ 35: # Mots-clés requis pour la détection DESABO (présents dans le corps normalisé)
+ 36: DESABO_REQUIRED_KEYWORDS = ["journee", "tarifs habituels", "desabonn"]
+ 37: 
+ 38: # Mots-clés interdits qui invalident la détection DESABO
+ 39: DESABO_FORBIDDEN_KEYWORDS = [
+ 40:     "annulation",
+ 41:     "facturation",
+ 42:     "facture",
+ 43:     "moment",
+ 44:     "reference client",
+ 45:     "total ht",
+ 46: ]
+ 47: 
+ 48: 
+ 49: # =============================================================================
+ 50: # PATTERN MÉDIA SOLUTION
+ 51: # =============================================================================
+ 52: 
+ 53: def check_media_solution_pattern(subject, email_content, tz_for_polling, logger) -> Dict[str, Any]:
+ 54:     """
+ 55:     Vérifie si l'email correspond au pattern Média Solution spécifique et extrait la fenêtre de livraison.
+ 56: 
+ 57:     Conditions minimales:
+ 58:     1. Contenu contient: "https://www.dropbox.com/scl/fo"
+ 59:     2. Sujet contient: "Média Solution - Missions Recadrage - Lot"
+ 60: 
+ 61:     Détails d'extraction pour delivery_time:
+ 62:     - Pattern A (heure seule): "à faire pour" suivi d'une heure (variantes supportées):
+ 63:       * 11h51, 9h, 09h, 9:00, 09:5, 9h5 -> normalisé en "HHhMM"
+ 64:     - Pattern B (date + heure): "à faire pour le D/M/YYYY à HhMM?" ou "à faire pour le D/M/YYYY à H:MM"
+ 65:       * exemples: "le 03/09/2025 à 09h00", "le 3/9/2025 à 9h", "le 3/9/2025 à 9:05"
+ 66:       * normalisé en "le dd/mm/YYYY à HHhMM"
+ 67:     - Cas URGENCE: si le sujet contient "URGENCE", on ignore tout horaire présent dans le corps
+ 68:       et on met l'heure locale actuelle + 1h au format "HHhMM" (ex: "13h35").
+ 69: 
+ 70:     Args:
+ 71:         subject: Sujet de l'email
+ 72:         email_content: Contenu/corps de l'email
+ 73:         tz_for_polling: Timezone pour le calcul des heures (depuis config.polling_config)
+ 74:         logger: Logger Flask (app.logger)
+ 75: 
+ 76:     Returns:
+ 77:         dict avec 'matches' (bool) et 'delivery_time' (str ou None)
+ 78:     """
+ 79:     result = {'matches': False, 'delivery_time': None}
+ 80: 
+ 81:     if not subject or not email_content:
+ 82:         return result
+ 83: 
+ 84:     # Helpers de normalisation de texte (sans accents, en minuscule) pour des regex robustes
+ 85:     def normalize_text(s: str) -> str:
+ 86:         if not s:
+ 87:             return ""
+ 88:         # Supprime les accents et met en minuscule pour une comparaison robuste
+ 89:         nfkd = unicodedata.normalize('NFD', s)
+ 90:         no_accents = ''.join(ch for ch in nfkd if not unicodedata.combining(ch))
+ 91:         return no_accents.lower()
+ 92: 
+ 93:     norm_subject = normalize_text(subject)
+ 94: 
+ 95:     # Conditions principales
+ 96:     # 1) Présence d'au moins un lien de fournisseur supporté (Dropbox, FromSmash, SwissTransfer)
+ 97:     body_text = email_content or ""
+ 98:     condition1 = bool(URL_PROVIDERS_PATTERN.search(body_text)) or (
+ 99:         ("dropbox.com/scl/fo" in body_text)
+100:         or ("fromsmash.com/" in body_text.lower())
+101:         or ("swisstransfer.com/d/" in body_text.lower())
+102:     )
+103:     # 2) Sujet conforme
+104:     #    Tolérant: on accepte la chaîne exacte (avec accents) OU la présence des mots-clés dans le sujet normalisé
+105:     keywords_ok = all(token in norm_subject for token in [
+106:         "media solution", "missions recadrage", "lot"
+107:     ])
+108:     condition2 = ("Média Solution - Missions Recadrage - Lot" in (subject or "")) or keywords_ok
+109: 
+110:     # Si conditions principales non remplies, on sort
+111:     if not (condition1 and condition2):
+112:         logger.debug(
+113:             f"PATTERN_CHECK: Delivery URL present (dropbox/fromsmash/swisstransfer): {condition1}, Subject pattern: {condition2}"
+114:         )
+115:         return result
+116: 
+117:     # --- Helpers de normalisation ---
+118:     def normalize_hhmm(hh_str: str, mm_str: str | None) -> str:
+119:         """Normalise heures/minutes en "HHhMM". Minutes par défaut à 00."""
+120:         try:
+121:             hh = int(hh_str)
+122:         except Exception:
+123:             hh = 0
+124:         if not mm_str:
+125:             mm = 0
+126:         else:
+127:             try:
+128:                 mm = int(mm_str)
+129:             except Exception:
+130:                 mm = 0
+131:         return f"{hh:02d}h{mm:02d}"
+132: 
+133:     def normalize_date(d_str: str, m_str: str, y_str: str) -> str:
+134:         """Normalise D/M/YYYY en dd/mm/YYYY (zero-pad jour/mois)."""
+135:         try:
+136:             d = int(d_str)
+137:             m = int(m_str)
+138:             y = int(y_str)
+139:         except Exception:
+140:             return f"{d_str}/{m_str}/{y_str}"
+141:         return f"{d:02d}/{m:02d}/{y:04d}"
+142: 
+143:     # --- Extraction de delivery_time ---
+144:     delivery_time_str = None
+145: 
+146:     # 1) URGENCE: si le sujet contient "URGENCE", on ignore tout horaire présent dans le corps
+147:     if re.search(r"\burgence\b", norm_subject or ""):
+148:         try:
+149:             now_local = datetime.now(tz_for_polling)
+150:             one_hour_later = now_local + timedelta(hours=1)
+151:             delivery_time_str = f"{one_hour_later.hour:02d}h{one_hour_later.minute:02d}"
+152:             logger.info(f"PATTERN_MATCH: URGENCE detected, overriding delivery_time with now+1h: {delivery_time_str}")
+153:         except Exception as e_time:
+154:             logger.error(f"PATTERN_CHECK: Failed to compute URGENCE override time: {e_time}")
+155:     else:
+156:         # 2) Pattern B: Date + Heure (variantes)
+157:         #    Variante "h" -> minutes optionnelles
+158:         pattern_date_time_h = r"(?:à|a)\s+faire\s+pour\s+le\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+(?:à|a)\s+(?:(?:à|a)\s+)?(\d{1,2})h(\d{0,2})"
+159:         m_dth = re.search(pattern_date_time_h, email_content or "", re.IGNORECASE)
+160:         if m_dth:
+161:             d, m, y, hh, mm = m_dth.group(1), m_dth.group(2), m_dth.group(3), m_dth.group(4), m_dth.group(5)
+162:             date_norm = normalize_date(d, m, y)
+163:             time_norm = normalize_hhmm(hh, mm if mm else None)
+164:             delivery_time_str = f"le {date_norm} à {time_norm}"
+165:             logger.info(f"PATTERN_MATCH: Found date+time (h) delivery window: {delivery_time_str}")
+166:         else:
+167:             #    Variante ":" -> minutes obligatoires
+168:             pattern_date_time_colon = r"(?:à|a)\s+faire\s+pour\s+le\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+(?:à|a)\s+(?:(?:à|a)\s+)?(\d{1,2}):(\d{2})"
+169:             m_dtc = re.search(pattern_date_time_colon, email_content or "", re.IGNORECASE)
+170:             if m_dtc:
+171:                 d, m, y, hh, mm = m_dtc.group(1), m_dtc.group(2), m_dtc.group(3), m_dtc.group(4), m_dtc.group(5)
+172:                 date_norm = normalize_date(d, m, y)
+173:                 time_norm = normalize_hhmm(hh, mm)
+174:                 delivery_time_str = f"le {date_norm} à {time_norm}"
+175:                 logger.info(f"PATTERN_MATCH: Found date+time (colon) delivery window: {delivery_time_str}")
+176: 
+177:         # 3) Pattern A: Heure seule (variantes)
+178:         if not delivery_time_str:
+179:             # Variante "h" (minutes optionnelles), avec éventuel "à" superflu
+180:             pattern_time_h = r"(?:à|a)\s+faire\s+pour\s+(?:(?:à|a)\s+)?(\d{1,2})h(\d{0,2})"
+181:             m_th = re.search(pattern_time_h, email_content or "", re.IGNORECASE)
+182:             if m_th:
+183:                 hh, mm = m_th.group(1), m_th.group(2)
+184:                 delivery_time_str = normalize_hhmm(hh, mm if mm else None)
+185:                 logger.info(f"PATTERN_MATCH: Found time-only (h) delivery window: {delivery_time_str}")
+186:             else:
+187:                 # Variante ":" (minutes obligatoires)
+188:                 pattern_time_colon = r"(?:à|a)\s+faire\s+pour\s+(?:(?:à|a)\s+)?(\d{1,2}):(\d{2})"
+189:                 m_tc = re.search(pattern_time_colon, email_content or "", re.IGNORECASE)
+190:                 if m_tc:
+191:                     hh, mm = m_tc.group(1), m_tc.group(2)
+192:                     delivery_time_str = normalize_hhmm(hh, mm)
+193:                     logger.info(f"PATTERN_MATCH: Found time-only (colon) delivery window: {delivery_time_str}")
+194: 
+195:         # 4) Fallback permissif: si toujours rien trouvé, tenter une heure isolée (sécurité: restreint aux formats attendus)
+196:         if not delivery_time_str:
+197:             m_fallback_h = re.search(r"\b(\d{1,2})h(\d{0,2})\b", email_content or "", re.IGNORECASE)
+198:             if m_fallback_h:
+199:                 hh, mm = m_fallback_h.group(1), m_fallback_h.group(2)
+200:                 delivery_time_str = normalize_hhmm(hh, mm if mm else None)
+201:                 logger.info(f"PATTERN_MATCH: Fallback time (h) detected: {delivery_time_str}")
+202:             else:
+203:                 m_fallback_colon = re.search(r"\b(\d{1,2}):(\d{2})\b", email_content or "")
+204:                 if m_fallback_colon:
+205:                     hh, mm = m_fallback_colon.group(1), m_fallback_colon.group(2)
+206:                     delivery_time_str = normalize_hhmm(hh, mm)
+207:                     logger.info(f"PATTERN_MATCH: Fallback time (colon) detected: {delivery_time_str}")
+208: 
+209:     if delivery_time_str:
+210:         result['delivery_time'] = delivery_time_str
+211:         result['matches'] = True
+212:         logger.info(
+213:             f"PATTERN_MATCH: Email matches Média Solution pattern. Delivery time: {result['delivery_time']}"
+214:         )
+215:     else:
+216:         logger.debug("PATTERN_CHECK: Base conditions met but no delivery_time pattern matched")
+217: 
+218:     return result
+219: 
+220: 
+221: def check_desabo_conditions(subject: str, email_content: str, logger) -> Dict[str, Any]:
+222:     """Vérifie les conditions du pattern DESABO.
+223: 
+224:     Ce helper externalise la logique de détection « Se désabonner / journée / tarifs habituels »
+225:     actuellement intégrée dans `check_new_emails_and_trigger_webhook()` de `app_render.py`.
+226: 
+227:     Critères:
+228:     - required_terms tous présents dans le corps normalisé sans accents
+229:     - forbidden_terms absents
+230:     - présence d'une URL Dropbox de type "/request/"
+231: 
+232:     Args:
+233:         subject: Sujet de l'email (non utilisé pour la détection de base, conservé pour évolutions)
+234:         email_content: Contenu de l'email (texte combiné recommandé: plain + HTML brut)
+235:         logger: Logger pour traces de debug
+236: 
+237:     Returns:
+238:         dict: { 'matches': bool, 'has_dropbox_request': bool, 'is_urgent': bool }
+239:     """
+240:     result = {"matches": False, "has_dropbox_request": False, "is_urgent": False}
+241: 
+242:     try:
+243:         norm_body = normalize_no_accents_lower_trim(email_content or "")
+244:         norm_subject = normalize_no_accents_lower_trim(subject or "")
+245: 
+246:         # 1) Détection du lien Dropbox Request dans le contenu d'entrée (DOIT être calculé en premier)
+247:         has_dropbox_request = "https://www.dropbox.com/request/" in (email_content or "").lower()
+248:         result["has_dropbox_request"] = has_dropbox_request
+249: 
+250:         # 2) Règles de détection: mots-clés dans le corps + mention de désabonnement
+251:         has_journee = "journee" in norm_body
+252:         has_tarifs = "tarifs habituels" in norm_body
+253:         has_desabo = ("desabonn" in norm_body) or ("desabonn" in norm_subject)
+254:         
+255:         # 3) Détection URGENCE: mot-clé dans le sujet ou le corps normalisés
+256:         is_urgent = ("urgent" in norm_subject) or ("urgence" in norm_subject) or ("urgent" in norm_body) or ("urgence" in norm_body)
+257:         result["is_urgent"] = bool(is_urgent)
+258: 
+259:         # 4) Règle relaxée: allow match if (journee AND tarifs) AND (explicit desabo OR dropbox request link present)
+260:         has_required = (has_journee and has_tarifs) and (has_desabo or has_dropbox_request)
+261:         has_forbidden = any(term in norm_body for term in DESABO_FORBIDDEN_KEYWORDS)
+262: 
+263:         # Logs de diagnostic concis (ne doivent jamais lever)
+264:         try:
+265:             # Construction des listes de diagnostic avec les constantes du module
+266:             required_for_diagnostic = ["journee", "tarifs habituels"]
+267:             missing_required = [t for t in required_for_diagnostic if t not in norm_body]
+268:             present_forbidden = [t for t in DESABO_FORBIDDEN_KEYWORDS if t in norm_body]
+269:             logger.debug(
+270:                 "DESABO_HELPER_DEBUG: required_ok=%s, forbidden_present=%s, dropbox_request=%s, urgent=%s, missing_required=%s, present_forbidden=%s",
+271:                 has_required,
+272:                 has_forbidden,
+273:                 has_dropbox_request,
+274:                 is_urgent,
+275:                 missing_required,
+276:                 present_forbidden,
+277:             )
+278:         except Exception:
+279:             pass
+280: 
+281:         # Match if required conditions satisfied and no forbidden terms
+282:         result["matches"] = bool(has_required and (not has_forbidden))
+283:         return result
+284:     except Exception as e:
+285:         try:
+286:             logger.error("DESABO_HELPER: Exception during detection: %s", e)
+287:         except Exception:
+288:             pass
+289:         return result
+````
+
 ## File: routes/api_polling.py
 ````python
  1: from __future__ import annotations
@@ -4365,299 +4658,6 @@ requirements.txt
 155:         if logger:
 156:             logger.error("IMAP: Error marking email %s as read: %s", email_num, e)
 157:         return False
-````
-
-## File: email_processing/pattern_matching.py
-````python
-  1: """
-  2: email_processing.pattern_matching
-  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  4: 
-  5: Détection de patterns dans les emails pour trigger des webhooks spécifiques.
-  6: Gère les patterns Média Solution et DESABO.
-  7: """
-  8: from __future__ import annotations
-  9: 
- 10: import re
- 11: import unicodedata
- 12: from datetime import datetime, timedelta
- 13: from typing import Any, Dict
- 14: 
- 15: from utils.text_helpers import normalize_no_accents_lower_trim
- 16: 
- 17: 
- 18: # =============================================================================
- 19: # CONSTANTES - PATTERNS URL PROVIDERS
- 20: # =============================================================================
- 21: 
- 22: # Compiled regex pattern pour détecter les URLs de fournisseurs supportés:
- 23: # - Dropbox folder links
- 24: # - FromSmash share links
- 25: # - SwissTransfer download links
- 26: URL_PROVIDERS_PATTERN = re.compile(
- 27:     r'(https?://(?:www\.)?(?:dropbox\.com|fromsmash\.com|swisstransfer\.com)[^\s<>\"]*)',
- 28:     re.IGNORECASE,
- 29: )
- 30: 
- 31: # =============================================================================
- 32: # CONSTANTES - DESABO PATTERN
- 33: # =============================================================================
- 34: 
- 35: # Mots-clés requis pour la détection DESABO (présents dans le corps normalisé)
- 36: DESABO_REQUIRED_KEYWORDS = ["journee", "tarifs habituels", "desabonn"]
- 37: 
- 38: # Mots-clés interdits qui invalident la détection DESABO
- 39: DESABO_FORBIDDEN_KEYWORDS = [
- 40:     "annulation",
- 41:     "facturation",
- 42:     "facture",
- 43:     "moment",
- 44:     "reference client",
- 45:     "total ht",
- 46: ]
- 47: 
- 48: 
- 49: # =============================================================================
- 50: # PATTERN MÉDIA SOLUTION
- 51: # =============================================================================
- 52: 
- 53: def check_media_solution_pattern(subject, email_content, tz_for_polling, logger) -> Dict[str, Any]:
- 54:     """
- 55:     Vérifie si l'email correspond au pattern Média Solution spécifique et extrait la fenêtre de livraison.
- 56: 
- 57:     Conditions minimales:
- 58:     1. Contenu contient: "https://www.dropbox.com/scl/fo"
- 59:     2. Sujet contient: "Média Solution - Missions Recadrage - Lot"
- 60: 
- 61:     Détails d'extraction pour delivery_time:
- 62:     - Pattern A (heure seule): "à faire pour" suivi d'une heure (variantes supportées):
- 63:       * 11h51, 9h, 09h, 9:00, 09:5, 9h5 -> normalisé en "HHhMM"
- 64:     - Pattern B (date + heure): "à faire pour le D/M/YYYY à HhMM?" ou "à faire pour le D/M/YYYY à H:MM"
- 65:       * exemples: "le 03/09/2025 à 09h00", "le 3/9/2025 à 9h", "le 3/9/2025 à 9:05"
- 66:       * normalisé en "le dd/mm/YYYY à HHhMM"
- 67:     - Cas URGENCE: si le sujet contient "URGENCE", on ignore tout horaire présent dans le corps
- 68:       et on met l'heure locale actuelle + 1h au format "HHhMM" (ex: "13h35").
- 69: 
- 70:     Args:
- 71:         subject: Sujet de l'email
- 72:         email_content: Contenu/corps de l'email
- 73:         tz_for_polling: Timezone pour le calcul des heures (depuis config.polling_config)
- 74:         logger: Logger Flask (app.logger)
- 75: 
- 76:     Returns:
- 77:         dict avec 'matches' (bool) et 'delivery_time' (str ou None)
- 78:     """
- 79:     result = {'matches': False, 'delivery_time': None}
- 80: 
- 81:     if not subject or not email_content:
- 82:         return result
- 83: 
- 84:     # Helpers de normalisation de texte (sans accents, en minuscule) pour des regex robustes
- 85:     def normalize_text(s: str) -> str:
- 86:         if not s:
- 87:             return ""
- 88:         # Supprime les accents et met en minuscule pour une comparaison robuste
- 89:         nfkd = unicodedata.normalize('NFD', s)
- 90:         no_accents = ''.join(ch for ch in nfkd if not unicodedata.combining(ch))
- 91:         return no_accents.lower()
- 92: 
- 93:     norm_subject = normalize_text(subject)
- 94: 
- 95:     # Conditions principales
- 96:     # 1) Présence d'au moins un lien de fournisseur supporté (Dropbox, FromSmash, SwissTransfer)
- 97:     body_text = email_content or ""
- 98:     condition1 = bool(URL_PROVIDERS_PATTERN.search(body_text)) or (
- 99:         ("dropbox.com/scl/fo" in body_text)
-100:         or ("fromsmash.com/" in body_text.lower())
-101:         or ("swisstransfer.com/d/" in body_text.lower())
-102:     )
-103:     # 2) Sujet conforme
-104:     #    Tolérant: on accepte la chaîne exacte (avec accents) OU la présence des mots-clés dans le sujet normalisé
-105:     keywords_ok = all(token in norm_subject for token in [
-106:         "media solution", "missions recadrage", "lot"
-107:     ])
-108:     condition2 = ("Média Solution - Missions Recadrage - Lot" in (subject or "")) or keywords_ok
-109: 
-110:     # Si conditions principales non remplies, on sort
-111:     if not (condition1 and condition2):
-112:         logger.debug(
-113:             f"PATTERN_CHECK: Delivery URL present (dropbox/fromsmash/swisstransfer): {condition1}, Subject pattern: {condition2}"
-114:         )
-115:         return result
-116: 
-117:     # --- Helpers de normalisation ---
-118:     def normalize_hhmm(hh_str: str, mm_str: str | None) -> str:
-119:         """Normalise heures/minutes en "HHhMM". Minutes par défaut à 00."""
-120:         try:
-121:             hh = int(hh_str)
-122:         except Exception:
-123:             hh = 0
-124:         if not mm_str:
-125:             mm = 0
-126:         else:
-127:             try:
-128:                 mm = int(mm_str)
-129:             except Exception:
-130:                 mm = 0
-131:         return f"{hh:02d}h{mm:02d}"
-132: 
-133:     def normalize_date(d_str: str, m_str: str, y_str: str) -> str:
-134:         """Normalise D/M/YYYY en dd/mm/YYYY (zero-pad jour/mois)."""
-135:         try:
-136:             d = int(d_str)
-137:             m = int(m_str)
-138:             y = int(y_str)
-139:         except Exception:
-140:             return f"{d_str}/{m_str}/{y_str}"
-141:         return f"{d:02d}/{m:02d}/{y:04d}"
-142: 
-143:     # --- Extraction de delivery_time ---
-144:     delivery_time_str = None
-145: 
-146:     # 1) URGENCE: si le sujet contient "URGENCE", on ignore tout horaire présent dans le corps
-147:     if re.search(r"\burgence\b", norm_subject or ""):
-148:         try:
-149:             now_local = datetime.now(tz_for_polling)
-150:             one_hour_later = now_local + timedelta(hours=1)
-151:             delivery_time_str = f"{one_hour_later.hour:02d}h{one_hour_later.minute:02d}"
-152:             logger.info(f"PATTERN_MATCH: URGENCE detected, overriding delivery_time with now+1h: {delivery_time_str}")
-153:         except Exception as e_time:
-154:             logger.error(f"PATTERN_CHECK: Failed to compute URGENCE override time: {e_time}")
-155:     else:
-156:         # 2) Pattern B: Date + Heure (variantes)
-157:         #    Variante "h" -> minutes optionnelles
-158:         pattern_date_time_h = r"(?:à|a)\s+faire\s+pour\s+le\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+(?:à|a)\s+(?:(?:à|a)\s+)?(\d{1,2})h(\d{0,2})"
-159:         m_dth = re.search(pattern_date_time_h, email_content or "", re.IGNORECASE)
-160:         if m_dth:
-161:             d, m, y, hh, mm = m_dth.group(1), m_dth.group(2), m_dth.group(3), m_dth.group(4), m_dth.group(5)
-162:             date_norm = normalize_date(d, m, y)
-163:             time_norm = normalize_hhmm(hh, mm if mm else None)
-164:             delivery_time_str = f"le {date_norm} à {time_norm}"
-165:             logger.info(f"PATTERN_MATCH: Found date+time (h) delivery window: {delivery_time_str}")
-166:         else:
-167:             #    Variante ":" -> minutes obligatoires
-168:             pattern_date_time_colon = r"(?:à|a)\s+faire\s+pour\s+le\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+(?:à|a)\s+(?:(?:à|a)\s+)?(\d{1,2}):(\d{2})"
-169:             m_dtc = re.search(pattern_date_time_colon, email_content or "", re.IGNORECASE)
-170:             if m_dtc:
-171:                 d, m, y, hh, mm = m_dtc.group(1), m_dtc.group(2), m_dtc.group(3), m_dtc.group(4), m_dtc.group(5)
-172:                 date_norm = normalize_date(d, m, y)
-173:                 time_norm = normalize_hhmm(hh, mm)
-174:                 delivery_time_str = f"le {date_norm} à {time_norm}"
-175:                 logger.info(f"PATTERN_MATCH: Found date+time (colon) delivery window: {delivery_time_str}")
-176: 
-177:         # 3) Pattern A: Heure seule (variantes)
-178:         if not delivery_time_str:
-179:             # Variante "h" (minutes optionnelles), avec éventuel "à" superflu
-180:             pattern_time_h = r"(?:à|a)\s+faire\s+pour\s+(?:(?:à|a)\s+)?(\d{1,2})h(\d{0,2})"
-181:             m_th = re.search(pattern_time_h, email_content or "", re.IGNORECASE)
-182:             if m_th:
-183:                 hh, mm = m_th.group(1), m_th.group(2)
-184:                 delivery_time_str = normalize_hhmm(hh, mm if mm else None)
-185:                 logger.info(f"PATTERN_MATCH: Found time-only (h) delivery window: {delivery_time_str}")
-186:             else:
-187:                 # Variante ":" (minutes obligatoires)
-188:                 pattern_time_colon = r"(?:à|a)\s+faire\s+pour\s+(?:(?:à|a)\s+)?(\d{1,2}):(\d{2})"
-189:                 m_tc = re.search(pattern_time_colon, email_content or "", re.IGNORECASE)
-190:                 if m_tc:
-191:                     hh, mm = m_tc.group(1), m_tc.group(2)
-192:                     delivery_time_str = normalize_hhmm(hh, mm)
-193:                     logger.info(f"PATTERN_MATCH: Found time-only (colon) delivery window: {delivery_time_str}")
-194: 
-195:         # 4) Fallback permissif: si toujours rien trouvé, tenter une heure isolée (sécurité: restreint aux formats attendus)
-196:         if not delivery_time_str:
-197:             m_fallback_h = re.search(r"\b(\d{1,2})h(\d{0,2})\b", email_content or "", re.IGNORECASE)
-198:             if m_fallback_h:
-199:                 hh, mm = m_fallback_h.group(1), m_fallback_h.group(2)
-200:                 delivery_time_str = normalize_hhmm(hh, mm if mm else None)
-201:                 logger.info(f"PATTERN_MATCH: Fallback time (h) detected: {delivery_time_str}")
-202:             else:
-203:                 m_fallback_colon = re.search(r"\b(\d{1,2}):(\d{2})\b", email_content or "")
-204:                 if m_fallback_colon:
-205:                     hh, mm = m_fallback_colon.group(1), m_fallback_colon.group(2)
-206:                     delivery_time_str = normalize_hhmm(hh, mm)
-207:                     logger.info(f"PATTERN_MATCH: Fallback time (colon) detected: {delivery_time_str}")
-208: 
-209:     if delivery_time_str:
-210:         result['delivery_time'] = delivery_time_str
-211:         result['matches'] = True
-212:         logger.info(
-213:             f"PATTERN_MATCH: Email matches Média Solution pattern. Delivery time: {result['delivery_time']}"
-214:         )
-215:     else:
-216:         logger.debug("PATTERN_CHECK: Base conditions met but no delivery_time pattern matched")
-217: 
-218:     return result
-219: 
-220: 
-221: def check_desabo_conditions(subject: str, email_content: str, logger) -> Dict[str, Any]:
-222:     """Vérifie les conditions du pattern DESABO.
-223: 
-224:     Ce helper externalise la logique de détection « Se désabonner / journée / tarifs habituels »
-225:     actuellement intégrée dans `check_new_emails_and_trigger_webhook()` de `app_render.py`.
-226: 
-227:     Critères:
-228:     - required_terms tous présents dans le corps normalisé sans accents
-229:     - forbidden_terms absents
-230:     - présence d'une URL Dropbox de type "/request/"
-231: 
-232:     Args:
-233:         subject: Sujet de l'email (non utilisé pour la détection de base, conservé pour évolutions)
-234:         email_content: Contenu de l'email (texte combiné recommandé: plain + HTML brut)
-235:         logger: Logger pour traces de debug
-236: 
-237:     Returns:
-238:         dict: { 'matches': bool, 'has_dropbox_request': bool, 'is_urgent': bool }
-239:     """
-240:     result = {"matches": False, "has_dropbox_request": False, "is_urgent": False}
-241: 
-242:     try:
-243:         norm_body = normalize_no_accents_lower_trim(email_content or "")
-244:         norm_subject = normalize_no_accents_lower_trim(subject or "")
-245: 
-246:         # 1) Détection du lien Dropbox Request dans le contenu d'entrée (DOIT être calculé en premier)
-247:         has_dropbox_request = "https://www.dropbox.com/request/" in (email_content or "").lower()
-248:         result["has_dropbox_request"] = has_dropbox_request
-249: 
-250:         # 2) Règles de détection: mots-clés dans le corps + mention de désabonnement
-251:         has_journee = "journee" in norm_body
-252:         has_tarifs = "tarifs habituels" in norm_body
-253:         has_desabo = ("desabonn" in norm_body) or ("desabonn" in norm_subject)
-254:         
-255:         # 3) Détection URGENCE: mot-clé dans le sujet ou le corps normalisés
-256:         is_urgent = ("urgent" in norm_subject) or ("urgence" in norm_subject) or ("urgent" in norm_body) or ("urgence" in norm_body)
-257:         result["is_urgent"] = bool(is_urgent)
-258: 
-259:         # 4) Règle relaxée: allow match if (journee AND tarifs) AND (explicit desabo OR dropbox request link present)
-260:         has_required = (has_journee and has_tarifs) and (has_desabo or has_dropbox_request)
-261:         has_forbidden = any(term in norm_body for term in DESABO_FORBIDDEN_KEYWORDS)
-262: 
-263:         # Logs de diagnostic concis (ne doivent jamais lever)
-264:         try:
-265:             # Construction des listes de diagnostic avec les constantes du module
-266:             required_for_diagnostic = ["journee", "tarifs habituels"]
-267:             missing_required = [t for t in required_for_diagnostic if t not in norm_body]
-268:             present_forbidden = [t for t in DESABO_FORBIDDEN_KEYWORDS if t in norm_body]
-269:             logger.debug(
-270:                 "DESABO_HELPER_DEBUG: required_ok=%s, forbidden_present=%s, dropbox_request=%s, urgent=%s, missing_required=%s, present_forbidden=%s",
-271:                 has_required,
-272:                 has_forbidden,
-273:                 has_dropbox_request,
-274:                 is_urgent,
-275:                 missing_required,
-276:                 present_forbidden,
-277:             )
-278:         except Exception:
-279:             pass
-280: 
-281:         # Match if required conditions satisfied and no forbidden terms
-282:         result["matches"] = bool(has_required and (not has_forbidden))
-283:         return result
-284:     except Exception as e:
-285:         try:
-286:             logger.error("DESABO_HELPER: Exception during detection: %s", e)
-287:         except Exception:
-288:             pass
-289:         return result
 ````
 
 ## File: email_processing/payloads.py
@@ -8644,53 +8644,6 @@ requirements.txt
 49:     app_render:app
 ````
 
-## File: services/__init__.py
-````python
- 1: """
- 2: services
- 3: ~~~~~~~~
- 4: 
- 5: Module contenant les services applicatifs pour une architecture orientée services.
- 6: 
- 7: Les services encapsulent la logique métier et fournissent des interfaces cohérentes
- 8: pour accéder aux différentes fonctionnalités de l'application.
- 9: 
-10: Services disponibles:
-11: - ConfigService: Configuration applicative centralisée
-12: - RuntimeFlagsService: Gestion des flags runtime avec cache
-13: - WebhookConfigService: Configuration webhooks avec validation
-14: - AuthService: Authentification unifiée (dashboard + API)
-15: - DeduplicationService: Déduplication emails et subject groups
-16: - R2TransferService: Transfert de fichiers vers Cloudflare R2
-17: 
-18: Usage:
-19:     from services import ConfigService, AuthService
-20:     
-21:     config = ConfigService()
-22:     auth = AuthService(config)
-23: """
-24: 
-25: from services.config_service import ConfigService
-26: from services.runtime_flags_service import RuntimeFlagsService
-27: from services.webhook_config_service import WebhookConfigService
-28: from services.auth_service import AuthService
-29: from services.deduplication_service import DeduplicationService
-30: from services.magic_link_service import MagicLinkService
-31: from services.r2_transfer_service import R2TransferService
-32: from services.routing_rules_service import RoutingRulesService
-33: 
-34: __all__ = [
-35:     "ConfigService",
-36:     "RuntimeFlagsService",
-37:     "WebhookConfigService",
-38:     "AuthService",
-39:     "DeduplicationService",
-40:     "MagicLinkService",
-41:     "R2TransferService",
-42:     "RoutingRulesService",
-43: ]
-````
-
 ## File: routes/api_logs.py
 ````python
  1: from __future__ import annotations
@@ -8763,6 +8716,53 @@ requirements.txt
 68:             jsonify({"success": False, "message": "Erreur lors de la récupération des logs."}),
 69:             500,
 70:         )
+````
+
+## File: services/__init__.py
+````python
+ 1: """
+ 2: services
+ 3: ~~~~~~~~
+ 4: 
+ 5: Module contenant les services applicatifs pour une architecture orientée services.
+ 6: 
+ 7: Les services encapsulent la logique métier et fournissent des interfaces cohérentes
+ 8: pour accéder aux différentes fonctionnalités de l'application.
+ 9: 
+10: Services disponibles:
+11: - ConfigService: Configuration applicative centralisée
+12: - RuntimeFlagsService: Gestion des flags runtime avec cache
+13: - WebhookConfigService: Configuration webhooks avec validation
+14: - AuthService: Authentification unifiée (dashboard + API)
+15: - DeduplicationService: Déduplication emails et subject groups
+16: - R2TransferService: Transfert de fichiers vers Cloudflare R2
+17: 
+18: Usage:
+19:     from services import ConfigService, AuthService
+20:     
+21:     config = ConfigService()
+22:     auth = AuthService(config)
+23: """
+24: 
+25: from services.config_service import ConfigService
+26: from services.runtime_flags_service import RuntimeFlagsService
+27: from services.webhook_config_service import WebhookConfigService
+28: from services.auth_service import AuthService
+29: from services.deduplication_service import DeduplicationService
+30: from services.magic_link_service import MagicLinkService
+31: from services.r2_transfer_service import R2TransferService
+32: from services.routing_rules_service import RoutingRulesService
+33: 
+34: __all__ = [
+35:     "ConfigService",
+36:     "RuntimeFlagsService",
+37:     "WebhookConfigService",
+38:     "AuthService",
+39:     "DeduplicationService",
+40:     "MagicLinkService",
+41:     "R2TransferService",
+42:     "RoutingRulesService",
+43: ]
 ````
 
 ## File: services/r2_transfer_service.py
@@ -15156,8 +15156,8 @@ requirements.txt
 1591:                 "email_id": email_id,
 1592:                 "status": "skipped",
 1593:                 "status_code": 204,
-1594:                 "error": "No delivery links detected; skipping per config",
-1595:                 "target_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
+1594:                 "error_message": "No delivery links detected; skipping per config",
+1595:                 "webhook_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
 1596:                 "subject": (subject[:100] if subject else None),
 1597:             })
 1598:             return True
@@ -15174,8 +15174,8 @@ requirements.txt
 1609:                 "email_id": email_id,
 1610:                 "status": "error",
 1611:                 "status_code": 429,
-1612:                 "error": "Rate limit exceeded",
-1613:                 "target_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
+1612:                 "error_message": "Rate limit exceeded",
+1613:                 "webhook_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
 1614:                 "subject": (subject[:100] if subject else None),
 1615:             })
 1616:             return True
@@ -15239,7 +15239,7 @@ requirements.txt
 1674:                 "email_id": email_id,
 1675:                 "status": "success",
 1676:                 "status_code": webhook_response.status_code,
-1677:                 "target_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
+1677:                 "webhook_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
 1678:                 "subject": (subject[:100] if subject else None),
 1679:             })
 1680:             if mark_email_id_as_processed_redis(email_id):
@@ -15258,8 +15258,8 @@ requirements.txt
 1693:                 "email_id": email_id,
 1694:                 "status": "error",
 1695:                 "status_code": webhook_response.status_code,
-1696:                 "error": (response_data.get('message', 'Unknown error'))[:200],
-1697:                 "target_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
+1696:                 "error_message": (response_data.get('message', 'Unknown error'))[:200],
+1697:                 "webhook_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
 1698:                 "subject": (subject[:100] if subject else None),
 1699:             })
 1700:             return False
@@ -15276,8 +15276,8 @@ requirements.txt
 1711:             "email_id": email_id,
 1712:             "status": "error",
 1713:             "status_code": webhook_response.status_code,
-1714:             "error": webhook_response.text[:200] if webhook_response.text else "Unknown error",
-1715:             "target_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
+1714:             "error_message": webhook_response.text[:200] if webhook_response.text else "Unknown error",
+1715:             "webhook_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
 1716:             "subject": (subject[:100] if subject else None),
 1717:         })
 1718:         return False
@@ -16308,17 +16308,17 @@ requirements.txt
  241:         box-sizing: border-box;
  242:       }
  243: 
- 244:       .form-group input:focus {
- 245:         outline: none;
- 246:         border-color: var(--cork-primary-accent);
- 247:         background: rgba(67, 97, 238, 0.05);
- 248:         box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
- 249:         transform: translateY(-1px);
- 250:       }
- 251: 
- 252:       .form-group input:hover,
- 253:       .form-group select:focus,
- 254:       .form-group textarea:focus {
+ 244:       .form-group select {
+ 245:         appearance: none;
+ 246:         background-image: linear-gradient(45deg, transparent 50%, var(--cork-text-secondary) 50%),
+ 247:           linear-gradient(135deg, var(--cork-text-secondary) 50%, transparent 50%);
+ 248:         background-position: calc(100% - 18px) calc(50% - 3px), calc(100% - 12px) calc(50% - 3px);
+ 249:         background-size: 6px 6px, 6px 6px;
+ 250:         background-repeat: no-repeat;
+ 251:         padding-right: 32px;
+ 252:       }
+ 253: 
+ 254:       .form-group input:focus {
  255:         outline: none;
  256:         border-color: var(--cork-primary-accent);
  257:         background: rgba(67, 97, 238, 0.05);
@@ -16327,1735 +16327,1769 @@ requirements.txt
  260:       }
  261: 
  262:       .form-group input:hover,
- 263:       .form-group select:hover,
- 264:       .form-group textarea:hover {
- 265:         border-color: rgba(67, 97, 238, 0.3);
- 266:       }
- 267: 
- 268:       .toggle-switch input:focus-visible + .toggle-slider {
- 269:         box-shadow: 0 0 0 3px rgba(255,255,255,0.25);
+ 263:       .form-group select:focus,
+ 264:       .form-group textarea:focus {
+ 265:         outline: none;
+ 266:         border-color: var(--cork-primary-accent);
+ 267:         background: rgba(67, 97, 238, 0.05);
+ 268:         box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+ 269:         transform: translateY(-1px);
  270:       }
  271: 
- 272:       /* Badges d'alerte pour sections non sauvegardées */
- 273:       .pill { 
- 274:         font-size: 0.7rem; 
- 275:         text-transform: uppercase; 
- 276:         border-radius: 999px; 
- 277:         padding: 3px 8px; 
- 278:         margin-left: 8px;
- 279:       }
- 280: 
- 281:       .pill-manual { 
- 282:         background: rgba(226,160,63,0.15); 
- 283:         color: #e2a03f; 
- 284:       }
- 285: 
- 286:       .btn {
- 287:         padding: 10px 20px;
- 288:         font-weight: 600;
- 289:         cursor: pointer;
- 290:         color: white;
- 291:         border: none;
- 292:         border-radius: 6px;
- 293:         font-size: 0.95em;
- 294:         transition: all 0.2s ease;
- 295:       }
- 296: 
- 297:       .btn-primary {
- 298:         background: linear-gradient(to right, var(--cork-primary-accent) 0%, #5470f1 100%);
- 299:       }
- 300: 
- 301:       .btn-primary:hover {
- 302:         transform: translateY(-1px);
- 303:         box-shadow: 0 5px 15px rgba(67, 97, 238, 0.4);
- 304:       }
- 305: 
- 306:       .btn-success {
- 307:         background: linear-gradient(to right, var(--cork-success) 0%, #22c98f 100%);
- 308:       }
- 309: 
- 310:       .btn-success:hover {
- 311:         transform: translateY(-1px);
- 312:         box-shadow: 0 5px 15px rgba(26, 188, 156, 0.4);
- 313:       }
- 314: 
- 315:       .btn-secondary {
- 316:         background: linear-gradient(to right, rgba(13, 25, 48, 0.95) 0%, rgba(28, 41, 72, 0.95) 100%);
- 317:         border: 1px solid rgba(255, 255, 255, 0.08);
- 318:       }
- 319: 
- 320:       .btn-secondary:hover {
- 321:         transform: translateY(-1px);
- 322:         box-shadow: 0 5px 15px rgba(14, 23, 38, 0.35);
- 323:         border-color: rgba(255, 255, 255, 0.2);
- 324:       }
- 325: 
- 326:       .btn-warning {
- 327:         background: linear-gradient(to right, var(--cork-warning) 0%, #f4b86d 100%);
- 328:         color: #1e1e2f;
- 329:       }
- 330: 
- 331:       .btn-warning:hover {
- 332:         transform: translateY(-1px);
- 333:         box-shadow: 0 5px 15px rgba(226, 160, 63, 0.45);
- 334:       }
- 335: 
- 336:       .btn-info {
- 337:         background: linear-gradient(to right, var(--cork-info) 0%, #5ac2ff 100%);
- 338:       }
- 339: 
- 340:       .btn-info:hover {
- 341:         transform: translateY(-1px);
- 342:         box-shadow: 0 5px 15px rgba(33, 150, 243, 0.4);
- 343:       }
- 344: 
- 345:       .btn:disabled {
- 346:         background: #555e72;
- 347:         color: var(--cork-text-secondary);
- 348:         cursor: not-allowed;
- 349:         transform: none;
- 350:       }
- 351: 
- 352:       .status-msg {
- 353:         margin-top: 10px;
- 354:         padding: 10px;
- 355:         border-radius: 4px;
- 356:         font-size: 0.9em;
- 357:         display: none;
- 358:       }
- 359: 
- 360:       .status-msg.success {
- 361:         background: rgba(26, 188, 156, 0.2);
- 362:         color: var(--cork-success);
- 363:         border: 1px solid var(--cork-success);
- 364:         display: block;
+ 272:       .form-group input:hover,
+ 273:       .form-group select:hover,
+ 274:       .form-group textarea:hover {
+ 275:         border-color: rgba(67, 97, 238, 0.3);
+ 276:       }
+ 277: 
+ 278:       select option,
+ 279:       select optgroup {
+ 280:         background-color: var(--cork-card-bg);
+ 281:         color: var(--cork-text-primary);
+ 282:       }
+ 283: 
+ 284:       select option:checked,
+ 285:       select option:hover {
+ 286:         background-color: var(--cork-primary-accent);
+ 287:         color: #ffffff;
+ 288:       }
+ 289: 
+ 290:       .toggle-switch input:focus-visible + .toggle-slider {
+ 291:         box-shadow: 0 0 0 3px rgba(255,255,255,0.25);
+ 292:       }
+ 293: 
+ 294:       /* Badges d'alerte pour sections non sauvegardées */
+ 295:       .pill { 
+ 296:         font-size: 0.7rem; 
+ 297:         text-transform: uppercase; 
+ 298:         border-radius: 999px; 
+ 299:         padding: 3px 8px; 
+ 300:         margin-left: 8px;
+ 301:       }
+ 302: 
+ 303:       .pill-manual { 
+ 304:         background: rgba(226,160,63,0.15); 
+ 305:         color: #e2a03f; 
+ 306:       }
+ 307: 
+ 308:       .btn {
+ 309:         padding: 10px 20px;
+ 310:         font-weight: 600;
+ 311:         cursor: pointer;
+ 312:         color: white;
+ 313:         border: none;
+ 314:         border-radius: 6px;
+ 315:         font-size: 0.95em;
+ 316:         transition: all 0.2s ease;
+ 317:       }
+ 318: 
+ 319:       .btn-primary {
+ 320:         background: linear-gradient(to right, var(--cork-primary-accent) 0%, #5470f1 100%);
+ 321:       }
+ 322: 
+ 323:       .btn-primary:hover {
+ 324:         transform: translateY(-1px);
+ 325:         box-shadow: 0 5px 15px rgba(67, 97, 238, 0.4);
+ 326:       }
+ 327: 
+ 328:       .btn-success {
+ 329:         background: linear-gradient(to right, var(--cork-success) 0%, #22c98f 100%);
+ 330:       }
+ 331: 
+ 332:       .btn-success:hover {
+ 333:         transform: translateY(-1px);
+ 334:         box-shadow: 0 5px 15px rgba(26, 188, 156, 0.4);
+ 335:       }
+ 336: 
+ 337:       .btn-secondary {
+ 338:         background: linear-gradient(to right, rgba(13, 25, 48, 0.95) 0%, rgba(28, 41, 72, 0.95) 100%);
+ 339:         border: 1px solid rgba(255, 255, 255, 0.08);
+ 340:       }
+ 341: 
+ 342:       .btn-secondary:hover {
+ 343:         transform: translateY(-1px);
+ 344:         box-shadow: 0 5px 15px rgba(14, 23, 38, 0.35);
+ 345:         border-color: rgba(255, 255, 255, 0.2);
+ 346:       }
+ 347: 
+ 348:       .btn-warning {
+ 349:         background: linear-gradient(to right, var(--cork-warning) 0%, #f4b86d 100%);
+ 350:         color: #1e1e2f;
+ 351:       }
+ 352: 
+ 353:       .btn-warning:hover {
+ 354:         transform: translateY(-1px);
+ 355:         box-shadow: 0 5px 15px rgba(226, 160, 63, 0.45);
+ 356:       }
+ 357: 
+ 358:       .btn-info {
+ 359:         background: linear-gradient(to right, var(--cork-info) 0%, #5ac2ff 100%);
+ 360:       }
+ 361: 
+ 362:       .btn-info:hover {
+ 363:         transform: translateY(-1px);
+ 364:         box-shadow: 0 5px 15px rgba(33, 150, 243, 0.4);
  365:       }
  366: 
- 367:       .status-msg.error {
- 368:         background: rgba(231, 81, 90, 0.2);
- 369:         color: var(--cork-danger);
- 370:         border: 1px solid var(--cork-danger);
- 371:         display: block;
+ 367:       .btn:disabled {
+ 368:         background: #555e72;
+ 369:         color: var(--cork-text-secondary);
+ 370:         cursor: not-allowed;
+ 371:         transform: none;
  372:       }
  373: 
- 374:       .status-msg.info {
- 375:         background: rgba(33, 150, 243, 0.2);
- 376:         color: var(--cork-info);
- 377:         border: 1px solid var(--cork-info);
- 378:         display: block;
- 379:       }
- 380: 
- 381:       .toggle-switch {
- 382:         position: relative;
- 383:         display: inline-block;
- 384:         width: 50px;
- 385:         height: 24px;
- 386:       }
- 387: 
- 388:       .toggle-switch input {
- 389:         opacity: 0;
- 390:         width: 0;
- 391:         height: 0;
- 392:       }
- 393: 
- 394:       .toggle-slider {
- 395:         position: absolute;
- 396:         cursor: pointer;
- 397:         top: 0;
- 398:         left: 0;
- 399:         right: 0;
- 400:         bottom: 0;
- 401:         background-color: #555e72;
- 402:         transition: 0.3s;
- 403:         border-radius: 24px;
- 404:       }
- 405: 
- 406:       .toggle-slider:before {
- 407:         position: absolute;
- 408:         content: "";
- 409:         height: 18px;
- 410:         width: 18px;
- 411:         left: 3px;
- 412:         bottom: 3px;
- 413:         background-color: white;
- 414:         transition: 0.3s;
- 415:         border-radius: 50%;
- 416:       }
- 417: 
- 418:       input:checked+.toggle-slider {
- 419:         background-color: var(--cork-success);
- 420:       }
- 421: 
- 422:       input:checked+.toggle-slider:before {
- 423:         transform: translateX(26px);
- 424:       }
- 425: 
- 426:       .logs-container {
- 427:         background-color: var(--cork-card-bg);
- 428:         padding: 20px;
- 429:         border-radius: 8px;
- 430:         border: 1px solid var(--cork-border-color);
- 431:       }
- 432: 
- 433:       .log-entry {
- 434:         padding: 12px;
- 435:         margin-bottom: 8px;
- 436:         border-radius: 4px;
- 437:         background: rgba(0, 0, 0, 0.2);
- 438:         border-left: 3px solid var(--cork-text-secondary);
- 439:         font-size: 0.85em;
- 440:         line-height: 1.5;
- 441:       }
- 442: 
- 443:       .log-entry.success {
- 444:         border-left-color: var(--cork-success);
- 445:       }
- 446: 
- 447:       .log-entry.error {
- 448:         border-left-color: var(--cork-danger);
- 449:       }
- 450: 
- 451:       .log-entry-time {
- 452:         color: var(--cork-text-secondary);
- 453:         font-size: 0.85em;
- 454:       }
- 455: 
- 456:       .log-entry-type {
- 457:         display: inline-block;
- 458:         padding: 2px 8px;
- 459:         border-radius: 3px;
- 460:         font-size: 0.8em;
- 461:         font-weight: 600;
- 462:         margin-left: 8px;
+ 374:       .status-msg {
+ 375:         margin-top: 10px;
+ 376:         padding: 10px;
+ 377:         border-radius: 4px;
+ 378:         font-size: 0.9em;
+ 379:         display: none;
+ 380:       }
+ 381: 
+ 382:       .status-msg.success {
+ 383:         background: rgba(26, 188, 156, 0.2);
+ 384:         color: var(--cork-success);
+ 385:         border: 1px solid var(--cork-success);
+ 386:         display: block;
+ 387:       }
+ 388: 
+ 389:       .status-msg.error {
+ 390:         background: rgba(231, 81, 90, 0.2);
+ 391:         color: var(--cork-danger);
+ 392:         border: 1px solid var(--cork-danger);
+ 393:         display: block;
+ 394:       }
+ 395: 
+ 396:       .status-msg.info {
+ 397:         background: rgba(33, 150, 243, 0.2);
+ 398:         color: var(--cork-info);
+ 399:         border: 1px solid var(--cork-info);
+ 400:         display: block;
+ 401:       }
+ 402: 
+ 403:       .toggle-switch {
+ 404:         position: relative;
+ 405:         display: inline-block;
+ 406:         width: 50px;
+ 407:         height: 24px;
+ 408:       }
+ 409: 
+ 410:       .toggle-switch input {
+ 411:         opacity: 0;
+ 412:         width: 0;
+ 413:         height: 0;
+ 414:       }
+ 415: 
+ 416:       .toggle-slider {
+ 417:         position: absolute;
+ 418:         cursor: pointer;
+ 419:         top: 0;
+ 420:         left: 0;
+ 421:         right: 0;
+ 422:         bottom: 0;
+ 423:         background-color: #555e72;
+ 424:         transition: 0.3s;
+ 425:         border-radius: 24px;
+ 426:       }
+ 427: 
+ 428:       .toggle-slider:before {
+ 429:         position: absolute;
+ 430:         content: "";
+ 431:         height: 18px;
+ 432:         width: 18px;
+ 433:         left: 3px;
+ 434:         bottom: 3px;
+ 435:         background-color: white;
+ 436:         transition: 0.3s;
+ 437:         border-radius: 50%;
+ 438:       }
+ 439: 
+ 440:       input:checked+.toggle-slider {
+ 441:         background-color: var(--cork-success);
+ 442:       }
+ 443: 
+ 444:       input:checked+.toggle-slider:before {
+ 445:         transform: translateX(26px);
+ 446:       }
+ 447: 
+ 448:       .logs-container {
+ 449:         background-color: var(--cork-card-bg);
+ 450:         padding: 20px;
+ 451:         border-radius: 8px;
+ 452:         border: 1px solid var(--cork-border-color);
+ 453:       }
+ 454: 
+ 455:       .log-entry {
+ 456:         padding: 12px;
+ 457:         margin-bottom: 8px;
+ 458:         border-radius: 4px;
+ 459:         background: rgba(0, 0, 0, 0.2);
+ 460:         border-left: 3px solid var(--cork-text-secondary);
+ 461:         font-size: 0.85em;
+ 462:         line-height: 1.5;
  463:       }
  464: 
- 465:       .log-entry-type.custom {
- 466:         background: var(--cork-info);
- 467:         color: white;
- 468:       }
- 469: 
- 470:       /* Hiérarchie visuelle des cartes de configuration */
- 471:       .section-panel.config .card { 
- 472:         border-left: 4px solid var(--cork-primary-accent);
- 473:         background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(67, 97, 238, 0.05) 100%);
- 474:       }
- 475: 
- 476:       .section-panel.monitoring .card { 
- 477:         border-left: 4px solid var(--cork-info);
- 478:         background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(33, 150, 243, 0.03) 100%);
- 479:       }
- 480: 
- 481:       /* Style enrichi pour les entrées de logs */
- 482:       .log-entry {
- 483:         position: relative;
- 484:         padding: 16px;
- 485:         margin-bottom: 12px;
- 486:         border-radius: 6px;
- 487:         background: rgba(0, 0, 0, 0.3);
- 488:         border-left: 4px solid var(--cork-text-secondary);
- 489:         transition: all 0.2s ease;
+ 465:       .log-entry.success {
+ 466:         border-left-color: var(--cork-success);
+ 467:       }
+ 468: 
+ 469:       .log-entry.error {
+ 470:         border-left-color: var(--cork-danger);
+ 471:       }
+ 472: 
+ 473:       .log-entry-time {
+ 474:         color: var(--cork-text-secondary);
+ 475:         font-size: 0.85em;
+ 476:       }
+ 477: 
+ 478:       .log-entry-type {
+ 479:         display: inline-block;
+ 480:         padding: 2px 8px;
+ 481:         border-radius: 3px;
+ 482:         font-size: 0.8em;
+ 483:         font-weight: 600;
+ 484:         margin-left: 8px;
+ 485:       }
+ 486: 
+ 487:       .log-entry-type.custom {
+ 488:         background: var(--cork-info);
+ 489:         color: white;
  490:       }
  491: 
- 492:       .log-entry::before {
- 493:         content: attr(data-status-icon);
- 494:         display: inline-flex;
- 495:         width: 1.25rem;
- 496:         height: 1.25rem;
- 497:         align-items: center;
- 498:         justify-content: center;
- 499:         margin-right: 8px;
- 500:         border-radius: 999px;
- 501:         background: rgba(255,255,255,0.08);
- 502:         font-weight: bold;
- 503:       }
- 504: 
- 505:       .log-entry.success::before { 
- 506:         content: "✓";
- 507:         background: rgba(26,188,156,0.18); 
- 508:         color: #1abc9c; 
- 509:       }
- 510: 
- 511:       .log-entry.error::before { 
- 512:         content: "⚠";
- 513:         background: rgba(231,81,90,0.18); 
- 514:         color: #e7515a; 
- 515:       }
- 516: 
- 517:       .log-entry-time {
- 518:         font-size: 0.75em;
- 519:         color: var(--cork-text-secondary);
- 520:         font-weight: 600;
- 521:         text-transform: uppercase;
- 522:         letter-spacing: 0.5px;
- 523:       }
- 524: 
- 525:       .log-entry-status {
- 526:         display: inline-block;
- 527:         padding: 3px 8px;
- 528:         border-radius: 12px;
- 529:         font-size: 0.7em;
- 530:         font-weight: 700;
- 531:         margin-left: 8px;
- 532:       }
- 533: 
- 534:       .log-entry-type.makecom {
- 535:         background: var(--cork-warning);
- 536:         color: white;
+ 492:       /* Hiérarchie visuelle des cartes de configuration */
+ 493:       .section-panel.config .card { 
+ 494:         border-left: 4px solid var(--cork-primary-accent);
+ 495:         background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(67, 97, 238, 0.05) 100%);
+ 496:       }
+ 497: 
+ 498:       .section-panel.monitoring .card { 
+ 499:         border-left: 4px solid var(--cork-info);
+ 500:         background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(33, 150, 243, 0.03) 100%);
+ 501:       }
+ 502: 
+ 503:       /* Style enrichi pour les entrées de logs */
+ 504:       .log-entry {
+ 505:         position: relative;
+ 506:         padding: 16px;
+ 507:         margin-bottom: 12px;
+ 508:         border-radius: 6px;
+ 509:         background: rgba(0, 0, 0, 0.3);
+ 510:         border-left: 4px solid var(--cork-text-secondary);
+ 511:         transition: all 0.2s ease;
+ 512:       }
+ 513: 
+ 514:       .log-entry::before {
+ 515:         content: attr(data-status-icon);
+ 516:         display: inline-flex;
+ 517:         width: 1.25rem;
+ 518:         height: 1.25rem;
+ 519:         align-items: center;
+ 520:         justify-content: center;
+ 521:         margin-right: 8px;
+ 522:         border-radius: 999px;
+ 523:         background: rgba(255,255,255,0.08);
+ 524:         font-weight: bold;
+ 525:       }
+ 526: 
+ 527:       .log-entry.success::before { 
+ 528:         content: "✓";
+ 529:         background: rgba(26,188,156,0.18); 
+ 530:         color: #1abc9c; 
+ 531:       }
+ 532: 
+ 533:       .log-entry.error::before { 
+ 534:         content: "⚠";
+ 535:         background: rgba(231,81,90,0.18); 
+ 536:         color: #e7515a; 
  537:       }
  538: 
- 539:       .log-empty {
- 540:         text-align: center;
- 541:       }
- 542: 
- 543:       /* Micro-interactions pour les actions critiques */
- 544:       .btn-primary {
- 545:         background: linear-gradient(to right, var(--cork-primary-accent) 0%, #5470f1 100%);
- 546:         position: relative;
- 547:         overflow: hidden;
- 548:         transition: transform 0.2s ease, box-shadow 0.2s ease;
- 549:       }
- 550: 
- 551:       .btn-primary:hover {
- 552:         transform: translateY(-1px);
- 553:         box-shadow: 0 4px 12px rgba(67, 97, 238, 0.3);
+ 539:       .log-entry-time {
+ 540:         font-size: 0.75em;
+ 541:         color: var(--cork-text-secondary);
+ 542:         font-weight: 600;
+ 543:         text-transform: uppercase;
+ 544:         letter-spacing: 0.5px;
+ 545:       }
+ 546: 
+ 547:       .log-entry-status {
+ 548:         display: inline-block;
+ 549:         padding: 3px 8px;
+ 550:         border-radius: 12px;
+ 551:         font-size: 0.7em;
+ 552:         font-weight: 700;
+ 553:         margin-left: 8px;
  554:       }
  555: 
- 556:       .btn-primary:active {
- 557:         transform: translateY(0);
- 558:       }
- 559: 
- 560:       .btn-primary::before {
- 561:         content: '';
- 562:         position: absolute;
- 563:         top: 50%;
- 564:         left: 50%;
- 565:         width: 0;
- 566:         height: 0;
- 567:         border-radius: 50%;
- 568:         background: rgba(255, 255, 255, 0.3);
- 569:         transform: translate(-50%, -50%);
- 570:         transition: width 0.6s, height 0.6s;
- 571:         pointer-events: none;
- 572:       }
- 573: 
- 574:       .btn-primary:active::before {
- 575:         width: 300px;
- 576:         height: 300px;
- 577:       }
- 578: 
- 579:       /* Toast notification pour copie magic link */
- 580:       .copied-feedback {
- 581:         position: fixed;
- 582:         top: 20px;
- 583:         right: 20px;
- 584:         background: var(--cork-success);
- 585:         color: white;
- 586:         padding: 12px 20px;
- 587:         border-radius: 6px;
- 588:         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
- 589:         transform: translateX(400px);
- 590:         transition: transform 0.3s ease;
- 591:         z-index: 1000;
- 592:         font-weight: 500;
- 593:       }
- 594: 
- 595:       .copied-feedback.show {
- 596:         transform: translateX(0);
- 597:       }
- 598: 
- 599:       /* Micro-animations sur les cards */
- 600:       .card {
- 601:         transition: transform 0.2s ease, box-shadow 0.2s ease;
- 602:       }
- 603: 
- 604:       .card:hover {
- 605:         transform: translateY(-2px);
- 606:         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
- 607:       }
- 608: 
- 609:       /* Transitions cohérentes pour tous les éléments interactifs */
- 610:       .form-group input,
- 611:       .form-group select,
- 612:       .form-group textarea {
- 613:         transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
- 614:       }
- 615: 
- 616:       .toggle-switch input:focus-visible + .toggle-slider {
- 617:         transition: box-shadow 0.2s ease;
- 618:       }
- 619: 
- 620:       /* Optimisation mobile - Priorité 2 */
- 621:       @media (max-width: 480px) {
- 622:         .log-entry {
- 623:           padding: 12px;
- 624:           margin-bottom: 8px;
- 625:         }
- 626:         
- 627:         .log-entry-time {
- 628:           display: block;
- 629:           margin-bottom: 4px;
- 630:         }
- 631:         
- 632:         .log-entry-status {
- 633:           position: absolute;
- 634:           top: 12px;
- 635:           right: 12px;
- 636:         }
- 637:         
- 638:         #absencePauseDaysGroup,
- 639:         #pollingActiveDaysGroup {
- 640:           display: grid;
- 641:           grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
- 642:           gap: 8px;
- 643:         }
- 644:         
- 645:         #metricsSection .grid {
- 646:           grid-template-columns: 1fr;
+ 556:       .log-entry-type.makecom {
+ 557:         background: var(--cork-warning);
+ 558:         color: white;
+ 559:       }
+ 560: 
+ 561:       .log-empty {
+ 562:         text-align: center;
+ 563:       }
+ 564: 
+ 565:       /* Micro-interactions pour les actions critiques */
+ 566:       .btn-primary {
+ 567:         background: linear-gradient(to right, var(--cork-primary-accent) 0%, #5470f1 100%);
+ 568:         position: relative;
+ 569:         overflow: hidden;
+ 570:         transition: transform 0.2s ease, box-shadow 0.2s ease;
+ 571:       }
+ 572: 
+ 573:       .btn-primary:hover {
+ 574:         transform: translateY(-1px);
+ 575:         box-shadow: 0 4px 12px rgba(67, 97, 238, 0.3);
+ 576:       }
+ 577: 
+ 578:       .btn-primary:active {
+ 579:         transform: translateY(0);
+ 580:       }
+ 581: 
+ 582:       .btn-primary::before {
+ 583:         content: '';
+ 584:         position: absolute;
+ 585:         top: 50%;
+ 586:         left: 50%;
+ 587:         width: 0;
+ 588:         height: 0;
+ 589:         border-radius: 50%;
+ 590:         background: rgba(255, 255, 255, 0.3);
+ 591:         transform: translate(-50%, -50%);
+ 592:         transition: width 0.6s, height 0.6s;
+ 593:         pointer-events: none;
+ 594:       }
+ 595: 
+ 596:       .btn-primary:active::before {
+ 597:         width: 300px;
+ 598:         height: 300px;
+ 599:       }
+ 600: 
+ 601:       /* Toast notification pour copie magic link */
+ 602:       .copied-feedback {
+ 603:         position: fixed;
+ 604:         top: 20px;
+ 605:         right: 20px;
+ 606:         background: var(--cork-success);
+ 607:         color: white;
+ 608:         padding: 12px 20px;
+ 609:         border-radius: 6px;
+ 610:         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+ 611:         transform: translateX(400px);
+ 612:         transition: transform 0.3s ease;
+ 613:         z-index: 1000;
+ 614:         font-weight: 500;
+ 615:       }
+ 616: 
+ 617:       .copied-feedback.show {
+ 618:         transform: translateX(0);
+ 619:       }
+ 620: 
+ 621:       /* Micro-animations sur les cards */
+ 622:       .card {
+ 623:         transition: transform 0.2s ease, box-shadow 0.2s ease;
+ 624:       }
+ 625: 
+ 626:       .card:hover {
+ 627:         transform: translateY(-2px);
+ 628:         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+ 629:       }
+ 630: 
+ 631:       /* Transitions cohérentes pour tous les éléments interactifs */
+ 632:       .form-group input,
+ 633:       .form-group select,
+ 634:       .form-group textarea {
+ 635:         transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+ 636:       }
+ 637: 
+ 638:       .toggle-switch input:focus-visible + .toggle-slider {
+ 639:         transition: box-shadow 0.2s ease;
+ 640:       }
+ 641: 
+ 642:       /* Optimisation mobile - Priorité 2 */
+ 643:       @media (max-width: 480px) {
+ 644:         .log-entry {
+ 645:           padding: 12px;
+ 646:           margin-bottom: 8px;
  647:         }
  648:         
- 649:         .grid {
- 650:           grid-template-columns: 1fr;
- 651:           gap: 12px;
+ 649:         .log-entry-time {
+ 650:           display: block;
+ 651:           margin-bottom: 4px;
  652:         }
  653:         
- 654:         .card {
- 655:           padding: 16px;
- 656:         }
- 657: 
- 658:         .copied-feedback {
- 659:           right: 10px;
- 660:           top: 10px;
- 661:           left: 10px;
- 662:           transform: translateY(-100px);
- 663:         }
- 664: 
- 665:         .copied-feedback.show {
- 666:           transform: translateY(0);
- 667:         }
- 668:       }
- 669: 
- 670:       /* Respect pour prefers-reduced-motion */
- 671:       @media (prefers-reduced-motion: reduce) {
- 672:         .btn-primary,
- 673:         .btn-primary::before,
- 674:         .card,
- 675:         .form-group input,
- 676:         .form-group select,
- 677:         .form-group textarea,
- 678:         .copied-feedback {
- 679:           transition: none;
- 680:         }
- 681: 
- 682:         .btn-primary:hover,
- 683:         .card:hover {
- 684:           transform: none;
+ 654:         .log-entry-status {
+ 655:           position: absolute;
+ 656:           top: 12px;
+ 657:           right: 12px;
+ 658:         }
+ 659:         
+ 660:         #absencePauseDaysGroup,
+ 661:         #pollingActiveDaysGroup {
+ 662:           display: grid;
+ 663:           grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+ 664:           gap: 8px;
+ 665:         }
+ 666:         
+ 667:         #metricsSection .grid {
+ 668:           grid-template-columns: 1fr;
+ 669:         }
+ 670:         
+ 671:         .grid {
+ 672:           grid-template-columns: 1fr;
+ 673:           gap: 12px;
+ 674:         }
+ 675:         
+ 676:         .card {
+ 677:           padding: 16px;
+ 678:         }
+ 679: 
+ 680:         .copied-feedback {
+ 681:           right: 10px;
+ 682:           top: 10px;
+ 683:           left: 10px;
+ 684:           transform: translateY(-100px);
  685:         }
- 686:       }
- 687: 
- 688:       /* Layout utilitaire pour éléments en ligne */
- 689:       .inline-group {
- 690:         display: flex;
- 691:         gap: 10px;
- 692:         align-items: center;
- 693:       }
- 694: 
- 695:       /* Style pour les boutons d'emails */
- 696:       .email-remove-btn {
- 697:         background-color: var(--cork-card-bg);
- 698:         border: 1px solid var(--cork-border-color);
- 699:         color: var(--cork-text-primary);
- 700:         border-radius: 4px;
- 701:         cursor: pointer;
- 702:         padding: 2px 8px;
- 703:         margin-left: 5px;
- 704:       }
- 705: 
- 706:       .email-remove-btn:hover {
- 707:         background-color: var(--cork-danger);
- 708:         color: white;
- 709:       }
- 710: 
- 711:       #addSenderBtn {
- 712:         background-color: var(--cork-card-bg);
- 713:         color: var(--cork-text-primary);
- 714:         border: 1px solid var(--cork-border-color);
+ 686: 
+ 687:         .copied-feedback.show {
+ 688:           transform: translateY(0);
+ 689:         }
+ 690:       }
+ 691: 
+ 692:       /* Respect pour prefers-reduced-motion */
+ 693:       @media (prefers-reduced-motion: reduce) {
+ 694:         .btn-primary,
+ 695:         .btn-primary::before,
+ 696:         .card,
+ 697:         .form-group input,
+ 698:         .form-group select,
+ 699:         .form-group textarea,
+ 700:         .copied-feedback {
+ 701:           transition: none;
+ 702:         }
+ 703: 
+ 704:         .btn-primary:hover,
+ 705:         .card:hover {
+ 706:           transform: none;
+ 707:         }
+ 708:       }
+ 709: 
+ 710:       /* Layout utilitaire pour éléments en ligne */
+ 711:       .inline-group {
+ 712:         display: flex;
+ 713:         gap: 10px;
+ 714:         align-items: center;
  715:       }
  716: 
- 717:       #addSenderBtn:hover {
- 718:         background-color: var(--cork-primary-accent);
- 719:         color: white;
- 720:       }
- 721: 
- 722:       /* Performance optimizations */
- 723:       .section-panel {
- 724:         opacity: 0;
- 725:         transform: translateY(10px);
- 726:         transition: opacity 0.3s ease, transform 0.3s ease;
- 727:       }
- 728:       
- 729:       .section-panel.active {
- 730:         opacity: 1;
- 731:         transform: translateY(0);
- 732:       }
- 733:       
- 734:       /* Loading states */
- 735:       .loading {
- 736:         position: relative;
- 737:         pointer-events: none;
- 738:       }
- 739:       
- 740:       .loading::after {
- 741:         content: '';
- 742:         position: absolute;
- 743:         top: 50%;
- 744:         left: 50%;
- 745:         width: 20px;
- 746:         height: 20px;
- 747:         margin: -10px 0 0 -10px;
- 748:         border: 2px solid var(--cork-primary-accent);
- 749:         border-top: 2px solid transparent;
- 750:         border-radius: 50%;
- 751:         animation: spin 1s linear infinite;
- 752:       }
- 753:       
- 754:       @keyframes spin {
- 755:         0% { transform: rotate(0deg); }
- 756:         100% { transform: rotate(360deg); }
- 757:       }
- 758:       
- 759:       /* Skeleton loading */
- 760:       .skeleton {
- 761:         background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%);
- 762:         background-size: 200% 100%;
- 763:         animation: loading 1.5s infinite;
- 764:       }
- 765:       
- 766:       @keyframes loading {
- 767:         0% { background-position: 200% 0; }
- 768:         100% { background-position: -200% 0; }
- 769:       }
- 770: 
- 771:       .small-text {
- 772:         font-size: 0.85em;
- 773:         color: var(--cork-text-secondary);
- 774:         margin-top: 5px;
- 775:       }
- 776:       
- 777:       /* Bandeau Statut Global */
- 778:       .global-status-banner {
- 779:         background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(67, 97, 238, 0.08) 100%);
- 780:         border: 1px solid var(--cork-border-color);
- 781:         border-radius: 8px;
- 782:         padding: 16px 20px;
- 783:         margin-bottom: 20px;
- 784:         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
- 785:         transition: all 0.3s ease;
+ 717:       /* Style pour les boutons d'emails */
+ 718:       .email-remove-btn {
+ 719:         background-color: var(--cork-card-bg);
+ 720:         border: 1px solid var(--cork-border-color);
+ 721:         color: var(--cork-text-primary);
+ 722:         border-radius: 4px;
+ 723:         cursor: pointer;
+ 724:         padding: 2px 8px;
+ 725:         margin-left: 5px;
+ 726:       }
+ 727: 
+ 728:       .email-remove-btn:hover {
+ 729:         background-color: var(--cork-danger);
+ 730:         color: white;
+ 731:       }
+ 732: 
+ 733:       #addSenderBtn {
+ 734:         background-color: var(--cork-card-bg);
+ 735:         color: var(--cork-text-primary);
+ 736:         border: 1px solid var(--cork-border-color);
+ 737:       }
+ 738: 
+ 739:       #addSenderBtn:hover {
+ 740:         background-color: var(--cork-primary-accent);
+ 741:         color: white;
+ 742:       }
+ 743: 
+ 744:       /* Performance optimizations */
+ 745:       .section-panel {
+ 746:         opacity: 0;
+ 747:         transform: translateY(10px);
+ 748:         transition: opacity 0.3s ease, transform 0.3s ease;
+ 749:       }
+ 750:       
+ 751:       .section-panel.active {
+ 752:         opacity: 1;
+ 753:         transform: translateY(0);
+ 754:       }
+ 755:       
+ 756:       /* Loading states */
+ 757:       .loading {
+ 758:         position: relative;
+ 759:         pointer-events: none;
+ 760:       }
+ 761:       
+ 762:       .loading::after {
+ 763:         content: '';
+ 764:         position: absolute;
+ 765:         top: 50%;
+ 766:         left: 50%;
+ 767:         width: 20px;
+ 768:         height: 20px;
+ 769:         margin: -10px 0 0 -10px;
+ 770:         border: 2px solid var(--cork-primary-accent);
+ 771:         border-top: 2px solid transparent;
+ 772:         border-radius: 50%;
+ 773:         animation: spin 1s linear infinite;
+ 774:       }
+ 775:       
+ 776:       @keyframes spin {
+ 777:         0% { transform: rotate(0deg); }
+ 778:         100% { transform: rotate(360deg); }
+ 779:       }
+ 780:       
+ 781:       /* Skeleton loading */
+ 782:       .skeleton {
+ 783:         background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%);
+ 784:         background-size: 200% 100%;
+ 785:         animation: loading 1.5s infinite;
  786:       }
  787:       
- 788:       .global-status-banner:hover {
- 789:         transform: translateY(-1px);
- 790:         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+ 788:       @keyframes loading {
+ 789:         0% { background-position: 200% 0; }
+ 790:         100% { background-position: -200% 0; }
  791:       }
- 792:       
- 793:       .status-header {
- 794:         display: flex;
- 795:         justify-content: space-between;
- 796:         align-items: center;
- 797:         margin-bottom: 12px;
- 798:         padding-bottom: 8px;
- 799:         border-bottom: 1px solid var(--cork-border-color);
- 800:       }
- 801:       
- 802:       .status-title {
- 803:         display: flex;
- 804:         align-items: center;
- 805:         gap: 8px;
- 806:         font-weight: 600;
- 807:         font-size: 1.1em;
- 808:         color: var(--cork-text-primary);
- 809:       }
- 810:       
- 811:       .status-icon {
- 812:         font-size: 1.2em;
- 813:         animation: pulse 2s infinite;
- 814:       }
- 815:       
- 816:       .status-icon.warning {
- 817:         color: var(--cork-warning);
- 818:       }
- 819:       
- 820:       .status-icon.error {
- 821:         color: var(--cork-danger);
+ 792: 
+ 793:       .small-text {
+ 794:         font-size: 0.85em;
+ 795:         color: var(--cork-text-secondary);
+ 796:         margin-top: 5px;
+ 797:       }
+ 798:       
+ 799:       /* Bandeau Statut Global */
+ 800:       .global-status-banner {
+ 801:         background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(67, 97, 238, 0.08) 100%);
+ 802:         border: 1px solid var(--cork-border-color);
+ 803:         border-radius: 8px;
+ 804:         padding: 16px 20px;
+ 805:         margin-bottom: 20px;
+ 806:         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+ 807:         transition: all 0.3s ease;
+ 808:       }
+ 809:       
+ 810:       .global-status-banner:hover {
+ 811:         transform: translateY(-1px);
+ 812:         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+ 813:       }
+ 814:       
+ 815:       .status-header {
+ 816:         display: flex;
+ 817:         justify-content: space-between;
+ 818:         align-items: center;
+ 819:         margin-bottom: 12px;
+ 820:         padding-bottom: 8px;
+ 821:         border-bottom: 1px solid var(--cork-border-color);
  822:       }
  823:       
- 824:       .status-icon.success {
- 825:         color: var(--cork-success);
- 826:       }
- 827:       
- 828:       @keyframes pulse {
- 829:         0%, 100% { opacity: 1; }
- 830:         50% { opacity: 0.7; }
+ 824:       .status-title {
+ 825:         display: flex;
+ 826:         align-items: center;
+ 827:         gap: 8px;
+ 828:         font-weight: 600;
+ 829:         font-size: 1.1em;
+ 830:         color: var(--cork-text-primary);
  831:       }
  832:       
- 833:       .status-content {
- 834:         display: grid;
- 835:         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
- 836:         gap: 16px;
- 837:       }
- 838:       
- 839:       .status-item {
- 840:         text-align: center;
- 841:         padding: 8px;
- 842:         border-radius: 6px;
- 843:         background: rgba(0, 0, 0, 0.2);
- 844:         border: 1px solid rgba(255, 255, 255, 0.1);
- 845:         transition: all 0.2s ease;
- 846:       }
- 847:       
- 848:       .status-item:hover {
- 849:         background: rgba(0, 0, 0, 0.3);
- 850:         transform: translateY(-1px);
- 851:       }
- 852:       
- 853:       .status-label {
- 854:         font-size: 0.8em;
- 855:         color: var(--cork-text-secondary);
- 856:         text-transform: uppercase;
- 857:         letter-spacing: 0.5px;
- 858:         margin-bottom: 4px;
- 859:         font-weight: 600;
- 860:       }
- 861:       
- 862:       .status-value {
- 863:         font-size: 1.1em;
- 864:         font-weight: 700;
- 865:         color: var(--cork-text-primary);
- 866:       }
- 867:       
- 868:       .btn-small {
- 869:         padding: 4px 8px;
- 870:         font-size: 0.8em;
- 871:         min-width: auto;
- 872:       }
- 873:       
- 874:       @media (max-width: 768px) {
- 875:         .global-status-banner {
- 876:           padding: 12px 16px;
- 877:           margin-bottom: 15px;
- 878:         }
- 879:         
- 880:         .status-content {
- 881:           grid-template-columns: repeat(2, 1fr);
- 882:           gap: 12px;
- 883:         }
- 884:         
- 885:         .status-item {
- 886:           padding: 6px;
- 887:         }
- 888:         
- 889:         .status-title {
- 890:           font-size: 1em;
- 891:         }
- 892:       }
- 893:       
- 894:       @media (max-width: 480px) {
- 895:         .status-content {
- 896:           grid-template-columns: 1fr;
- 897:           gap: 8px;
- 898:         }
- 899:         
- 900:         .status-header {
- 901:           flex-direction: column;
- 902:           gap: 8px;
- 903:           text-align: center;
- 904:         }
- 905:       }
- 906:       
- 907:       /* Timeline Logs */
- 908:       .timeline-container {
- 909:         position: relative;
- 910:         padding: 20px 0;
- 911:       }
- 912:       
- 913:       .timeline-line {
- 914:         position: absolute;
- 915:         left: 20px;
- 916:         top: 0;
- 917:         bottom: 0;
- 918:         width: 2px;
- 919:         background: linear-gradient(to bottom, var(--cork-primary-accent), var(--cork-info));
- 920:         opacity: 0.3;
- 921:       }
- 922:       
- 923:       .timeline-item {
- 924:         position: relative;
- 925:         padding-left: 50px;
- 926:         margin-bottom: 20px;
- 927:         animation: slideInLeft 0.3s ease;
- 928:       }
- 929:       
- 930:       .timeline-marker {
- 931:         position: absolute;
- 932:         left: 12px;
- 933:         top: 8px;
- 934:         width: 16px;
- 935:         height: 16px;
- 936:         border-radius: 50%;
- 937:         background: var(--cork-card-bg);
- 938:         border: 2px solid var(--cork-primary-accent);
- 939:         z-index: 2;
- 940:         display: flex;
- 941:         align-items: center;
- 942:         justify-content: center;
- 943:         font-size: 10px;
- 944:         font-weight: bold;
- 945:       }
- 946:       
- 947:       .timeline-marker.success {
- 948:         border-color: var(--cork-success);
- 949:         color: var(--cork-success);
+ 833:       .status-icon {
+ 834:         font-size: 1.2em;
+ 835:         animation: pulse 2s infinite;
+ 836:       }
+ 837:       
+ 838:       .status-icon.warning {
+ 839:         color: var(--cork-warning);
+ 840:       }
+ 841:       
+ 842:       .status-icon.error {
+ 843:         color: var(--cork-danger);
+ 844:       }
+ 845:       
+ 846:       .status-icon.success {
+ 847:         color: var(--cork-success);
+ 848:       }
+ 849:       
+ 850:       @keyframes pulse {
+ 851:         0%, 100% { opacity: 1; }
+ 852:         50% { opacity: 0.7; }
+ 853:       }
+ 854:       
+ 855:       .status-content {
+ 856:         display: grid;
+ 857:         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+ 858:         gap: 16px;
+ 859:       }
+ 860:       
+ 861:       .status-item {
+ 862:         text-align: center;
+ 863:         padding: 8px;
+ 864:         border-radius: 6px;
+ 865:         background: rgba(0, 0, 0, 0.2);
+ 866:         border: 1px solid rgba(255, 255, 255, 0.1);
+ 867:         transition: all 0.2s ease;
+ 868:       }
+ 869:       
+ 870:       .status-item:hover {
+ 871:         background: rgba(0, 0, 0, 0.3);
+ 872:         transform: translateY(-1px);
+ 873:       }
+ 874:       
+ 875:       .status-label {
+ 876:         font-size: 0.8em;
+ 877:         color: var(--cork-text-secondary);
+ 878:         text-transform: uppercase;
+ 879:         letter-spacing: 0.5px;
+ 880:         margin-bottom: 4px;
+ 881:         font-weight: 600;
+ 882:       }
+ 883:       
+ 884:       .status-value {
+ 885:         font-size: 1.1em;
+ 886:         font-weight: 700;
+ 887:         color: var(--cork-text-primary);
+ 888:       }
+ 889:       
+ 890:       .btn-small {
+ 891:         padding: 4px 8px;
+ 892:         font-size: 0.8em;
+ 893:         min-width: auto;
+ 894:       }
+ 895:       
+ 896:       @media (max-width: 768px) {
+ 897:         .global-status-banner {
+ 898:           padding: 12px 16px;
+ 899:           margin-bottom: 15px;
+ 900:         }
+ 901:         
+ 902:         .status-content {
+ 903:           grid-template-columns: repeat(2, 1fr);
+ 904:           gap: 12px;
+ 905:         }
+ 906:         
+ 907:         .status-item {
+ 908:           padding: 6px;
+ 909:         }
+ 910:         
+ 911:         .status-title {
+ 912:           font-size: 1em;
+ 913:         }
+ 914:       }
+ 915:       
+ 916:       @media (max-width: 480px) {
+ 917:         .status-content {
+ 918:           grid-template-columns: 1fr;
+ 919:           gap: 8px;
+ 920:         }
+ 921:         
+ 922:         .status-header {
+ 923:           flex-direction: column;
+ 924:           gap: 8px;
+ 925:           text-align: center;
+ 926:         }
+ 927:       }
+ 928:       
+ 929:       /* Timeline Logs */
+ 930:       .timeline-container {
+ 931:         position: relative;
+ 932:         padding: 20px 0;
+ 933:       }
+ 934:       
+ 935:       .timeline-line {
+ 936:         position: absolute;
+ 937:         left: 20px;
+ 938:         top: 0;
+ 939:         bottom: 0;
+ 940:         width: 2px;
+ 941:         background: linear-gradient(to bottom, var(--cork-primary-accent), var(--cork-info));
+ 942:         opacity: 0.3;
+ 943:       }
+ 944:       
+ 945:       .timeline-item {
+ 946:         position: relative;
+ 947:         padding-left: 50px;
+ 948:         margin-bottom: 20px;
+ 949:         animation: slideInLeft 0.3s ease;
  950:       }
  951:       
- 952:       .timeline-marker.error {
- 953:         border-color: var(--cork-danger);
- 954:         color: var(--cork-danger);
- 955:       }
- 956:       
- 957:       .timeline-content {
- 958:         background: rgba(0, 0, 0, 0.2);
- 959:         border: 1px solid var(--cork-border-color);
- 960:         border-radius: 8px;
- 961:         padding: 12px 16px;
- 962:         transition: all 0.2s ease;
- 963:       }
- 964:       
- 965:       .timeline-content:hover {
- 966:         background: rgba(0, 0, 0, 0.3);
- 967:         transform: translateY(-1px);
- 968:         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
- 969:       }
- 970:       
- 971:       .timeline-header {
- 972:         display: flex;
- 973:         justify-content: space-between;
- 974:         align-items: center;
- 975:         margin-bottom: 8px;
- 976:       }
- 977:       
- 978:       .timeline-time {
- 979:         font-size: 0.8em;
- 980:         color: var(--cork-text-secondary);
- 981:         font-weight: 600;
- 982:       }
- 983:       
- 984:       .timeline-status {
- 985:         font-size: 0.7em;
- 986:         padding: 2px 8px;
- 987:         border-radius: 12px;
- 988:         font-weight: 700;
- 989:         text-transform: uppercase;
- 990:       }
- 991:       
- 992:       .timeline-status.success {
- 993:         background: rgba(26, 188, 156, 0.18);
- 994:         color: var(--cork-success);
- 995:       }
- 996:       
- 997:       .timeline-status.error {
- 998:         background: rgba(231, 81, 90, 0.18);
- 999:         color: var(--cork-danger);
-1000:       }
-1001:       
-1002:       .timeline-details {
-1003:         color: var(--cork-text-primary);
-1004:         line-height: 1.4;
-1005:       }
-1006:       
-1007:       .timeline-sparkline {
-1008:         height: 40px;
-1009:         background: rgba(255, 255, 255, 0.05);
-1010:         border: 1px solid var(--cork-border-color);
-1011:         border-radius: 4px;
-1012:         margin: 10px 0;
-1013:         position: relative;
-1014:         overflow: hidden;
-1015:       }
-1016:       
-1017:       .sparkline-canvas {
-1018:         width: 100%;
-1019:         height: 100%;
-1020:       }
-1021:       
-1022:       @keyframes slideInLeft {
-1023:         from {
-1024:           opacity: 0;
-1025:           transform: translateX(-20px);
-1026:         }
-1027:         to {
-1028:           opacity: 1;
-1029:           transform: translateX(0);
-1030:         }
-1031:       }
-1032:       
-1033:       @media (max-width: 768px) {
-1034:         .timeline-item {
-1035:           padding-left: 40px;
-1036:           margin-bottom: 15px;
-1037:         }
-1038:         
-1039:         .timeline-line {
-1040:           left: 15px;
-1041:         }
-1042:         
-1043:         .timeline-marker {
-1044:           left: 8px;
-1045:           width: 14px;
-1046:           height: 14px;
-1047:           font-size: 8px;
+ 952:       .timeline-marker {
+ 953:         position: absolute;
+ 954:         left: 12px;
+ 955:         top: 8px;
+ 956:         width: 16px;
+ 957:         height: 16px;
+ 958:         border-radius: 50%;
+ 959:         background: var(--cork-card-bg);
+ 960:         border: 2px solid var(--cork-primary-accent);
+ 961:         z-index: 2;
+ 962:         display: flex;
+ 963:         align-items: center;
+ 964:         justify-content: center;
+ 965:         font-size: 10px;
+ 966:         font-weight: bold;
+ 967:       }
+ 968:       
+ 969:       .timeline-marker.success {
+ 970:         border-color: var(--cork-success);
+ 971:         color: var(--cork-success);
+ 972:       }
+ 973:       
+ 974:       .timeline-marker.error {
+ 975:         border-color: var(--cork-danger);
+ 976:         color: var(--cork-danger);
+ 977:       }
+ 978:       
+ 979:       .timeline-content {
+ 980:         background: rgba(0, 0, 0, 0.2);
+ 981:         border: 1px solid var(--cork-border-color);
+ 982:         border-radius: 8px;
+ 983:         padding: 12px 16px;
+ 984:         transition: all 0.2s ease;
+ 985:       }
+ 986:       
+ 987:       .timeline-content:hover {
+ 988:         background: rgba(0, 0, 0, 0.3);
+ 989:         transform: translateY(-1px);
+ 990:         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+ 991:       }
+ 992:       
+ 993:       .timeline-header {
+ 994:         display: flex;
+ 995:         justify-content: space-between;
+ 996:         align-items: center;
+ 997:         margin-bottom: 8px;
+ 998:       }
+ 999:       
+1000:       .timeline-time {
+1001:         font-size: 0.8em;
+1002:         color: var(--cork-text-secondary);
+1003:         font-weight: 600;
+1004:       }
+1005:       
+1006:       .timeline-status {
+1007:         font-size: 0.7em;
+1008:         padding: 2px 8px;
+1009:         border-radius: 12px;
+1010:         font-weight: 700;
+1011:         text-transform: uppercase;
+1012:       }
+1013:       
+1014:       .timeline-status.success {
+1015:         background: rgba(26, 188, 156, 0.18);
+1016:         color: var(--cork-success);
+1017:       }
+1018:       
+1019:       .timeline-status.error {
+1020:         background: rgba(231, 81, 90, 0.18);
+1021:         color: var(--cork-danger);
+1022:       }
+1023:       
+1024:       .timeline-details {
+1025:         color: var(--cork-text-primary);
+1026:         line-height: 1.4;
+1027:       }
+1028:       
+1029:       .timeline-sparkline {
+1030:         height: 40px;
+1031:         background: rgba(255, 255, 255, 0.05);
+1032:         border: 1px solid var(--cork-border-color);
+1033:         border-radius: 4px;
+1034:         margin: 10px 0;
+1035:         position: relative;
+1036:         overflow: hidden;
+1037:       }
+1038:       
+1039:       .sparkline-canvas {
+1040:         width: 100%;
+1041:         height: 100%;
+1042:       }
+1043:       
+1044:       @keyframes slideInLeft {
+1045:         from {
+1046:           opacity: 0;
+1047:           transform: translateX(-20px);
 1048:         }
-1049:         
-1050:         .timeline-content {
-1051:           padding: 10px 12px;
+1049:         to {
+1050:           opacity: 1;
+1051:           transform: translateX(0);
 1052:         }
-1053:         
-1054:         .timeline-header {
-1055:           flex-direction: column;
-1056:           align-items: flex-start;
-1057:           gap: 4px;
-1058:         }
-1059:       }
-1060:       
-1061:       @media (max-width: 480px) {
-1062:         .timeline-container {
-1063:           padding: 15px 0;
-1064:         }
-1065:         
-1066:         .timeline-item {
-1067:           padding-left: 35px;
-1068:           margin-bottom: 12px;
-1069:         }
-1070:         
-1071:         .timeline-line {
-1072:           left: 12px;
-1073:         }
-1074:         
-1075:         .timeline-marker {
-1076:           left: 6px;
-1077:           width: 12px;
-1078:           height: 12px;
-1079:         }
-1080:         
-1081:         .timeline-content {
-1082:           padding: 8px 10px;
-1083:         }
-1084:       }
-1085:       
-1086:       /* Panneaux Pliables Webhooks */
-1087:       .collapsible-panel {
-1088:         background: rgba(0, 0, 0, 0.2);
-1089:         border: 1px solid var(--cork-border-color);
-1090:         border-radius: 8px;
-1091:         margin-bottom: 16px;
-1092:         overflow: hidden;
-1093:         transition: all 0.3s ease;
-1094:       }
-1095:       
-1096:       .collapsible-panel:hover {
-1097:         border-color: rgba(67, 97, 238, 0.3);
-1098:         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-1099:       }
-1100: 
-1101:       .routing-rules-list {
-1102:         display: flex;
-1103:         flex-direction: column;
-1104:         gap: 12px;
-1105:         margin-top: 10px;
-1106:         max-height: 400px;
-1107:         overflow-y: auto;
-1108:         padding-right: 8px;
-1109:       }
-1110:       
-1111:       /* Scrollbar styling for webkit */
-1112:       .routing-rules-list::-webkit-scrollbar {
-1113:         width: 8px;
-1114:       }
-1115:       .routing-rules-list::-webkit-scrollbar-track {
-1116:         background: rgba(255, 255, 255, 0.05);
-1117:         border-radius: 4px;
-1118:       }
-1119:       .routing-rules-list::-webkit-scrollbar-thumb {
-1120:         background: rgba(255, 255, 255, 0.2);
-1121:         border-radius: 4px;
-1122:       }
-1123:       .routing-rules-list::-webkit-scrollbar-thumb:hover {
-1124:         background: rgba(255, 255, 255, 0.3);
-1125:       }
-1126: 
-1127:       .routing-rule-card {
-1128:         background: rgba(8, 12, 28, 0.7);
-1129:         border: 1px solid var(--cork-border-color);
-1130:         border-radius: 8px;
-1131:         padding: 14px;
-1132:         display: flex;
-1133:         flex-direction: column;
-1134:         gap: 10px;
-1135:       }
-1136: 
-1137:       .routing-rule-header {
-1138:         display: flex;
-1139:         justify-content: space-between;
-1140:         gap: 12px;
-1141:         flex-wrap: wrap;
-1142:       }
-1143: 
-1144:       .routing-rule-title {
-1145:         flex: 1;
-1146:         min-width: 220px;
-1147:         display: flex;
-1148:         flex-direction: column;
-1149:         gap: 6px;
-1150:       }
-1151: 
-1152:       .routing-rule-controls {
-1153:         display: flex;
-1154:         align-items: center;
-1155:         gap: 6px;
-1156:       }
-1157: 
-1158:       .routing-icon-btn {
-1159:         background: rgba(67, 97, 238, 0.12);
-1160:         border: 1px solid rgba(67, 97, 238, 0.4);
-1161:         color: var(--cork-text-primary);
-1162:         border-radius: 6px;
-1163:         padding: 6px 8px;
-1164:         cursor: pointer;
-1165:         transition: transform 0.15s ease, border-color 0.15s ease;
-1166:       }
-1167: 
-1168:       .routing-icon-btn:hover {
-1169:         border-color: var(--cork-primary-accent);
-1170:         transform: translateY(-1px);
-1171:       }
-1172: 
-1173:       .routing-section-title {
-1174:         font-size: 0.8rem;
-1175:         text-transform: uppercase;
-1176:         letter-spacing: 0.08em;
-1177:         color: var(--cork-text-secondary);
-1178:         margin-top: 6px;
-1179:       }
-1180: 
-1181:       .routing-conditions {
-1182:         display: flex;
-1183:         flex-direction: column;
-1184:         gap: 8px;
-1185:       }
-1186: 
-1187:       .routing-condition-row {
-1188:         display: grid;
-1189:         grid-template-columns: minmax(120px, 160px) minmax(120px, 160px) 1fr auto auto;
-1190:         gap: 8px;
-1191:         align-items: center;
-1192:       }
-1193: 
-1194:       .routing-actions {
-1195:         display: grid;
-1196:         gap: 10px;
-1197:       }
-1198: 
-1199:       .routing-inline {
-1200:         display: flex;
-1201:         gap: 10px;
-1202:         align-items: center;
-1203:         flex-wrap: wrap;
-1204:       }
-1205: 
-1206:       .routing-input,
-1207:       .routing-select {
-1208:         width: 100%;
-1209:         padding: 9px 10px;
-1210:         border-radius: 4px;
-1211:         border: 1px solid var(--cork-border-color);
-1212:         background: rgba(0, 0, 0, 0.2);
-1213:         color: var(--cork-text-primary);
-1214:         font-size: 0.9em;
-1215:         box-sizing: border-box;
-1216:       }
-1217: 
-1218:       .routing-checkbox {
-1219:         display: inline-flex;
-1220:         align-items: center;
-1221:         gap: 6px;
-1222:         font-size: 0.85em;
-1223:         color: var(--cork-text-secondary);
-1224:       }
-1225: 
-1226:       .routing-invalid {
-1227:         border-color: var(--cork-danger) !important;
-1228:         box-shadow: 0 0 0 2px rgba(231, 81, 90, 0.2);
-1229:       }
-1230: 
-1231:       .routing-empty {
-1232:         padding: 12px;
-1233:         border-radius: 6px;
-1234:         background: rgba(255, 255, 255, 0.04);
-1235:         color: var(--cork-text-secondary);
-1236:       }
-1237: 
-1238:       .routing-add-btn {
-1239:         margin-top: 4px;
-1240:         align-self: flex-start;
-1241:       }
-1242:       
-1243:       .panel-header {
-1244:         display: flex;
-1245:         justify-content: space-between;
-1246:         align-items: center;
-1247:         padding: 12px 16px;
-1248:         background: rgba(67, 97, 238, 0.05);
-1249:         border-bottom: 1px solid var(--cork-border-color);
-1250:         cursor: pointer;
-1251:         user-select: none;
-1252:         transition: all 0.2s ease;
-1253:       }
-1254:       
-1255:       .panel-header:hover {
-1256:         background: rgba(67, 97, 238, 0.1);
-1257:       }
-1258:       
-1259:       .panel-title {
-1260:         display: flex;
-1261:         align-items: center;
-1262:         gap: 8px;
-1263:         font-weight: 600;
-1264:         color: var(--cork-text-primary);
-1265:       }
-1266:       
-1267:       .lock-btn {
-1268:         background: none;
-1269:         border: none;
-1270:         padding: 4px;
-1271:         margin-left: 8px;
+1053:       }
+1054:       
+1055:       @media (max-width: 768px) {
+1056:         .timeline-item {
+1057:           padding-left: 40px;
+1058:           margin-bottom: 15px;
+1059:         }
+1060:         
+1061:         .timeline-line {
+1062:           left: 15px;
+1063:         }
+1064:         
+1065:         .timeline-marker {
+1066:           left: 8px;
+1067:           width: 14px;
+1068:           height: 14px;
+1069:           font-size: 8px;
+1070:         }
+1071:         
+1072:         .timeline-content {
+1073:           padding: 10px 12px;
+1074:         }
+1075:         
+1076:         .timeline-header {
+1077:           flex-direction: column;
+1078:           align-items: flex-start;
+1079:           gap: 4px;
+1080:         }
+1081:       }
+1082:       
+1083:       @media (max-width: 480px) {
+1084:         .timeline-container {
+1085:           padding: 15px 0;
+1086:         }
+1087:         
+1088:         .timeline-item {
+1089:           padding-left: 35px;
+1090:           margin-bottom: 12px;
+1091:         }
+1092:         
+1093:         .timeline-line {
+1094:           left: 12px;
+1095:         }
+1096:         
+1097:         .timeline-marker {
+1098:           left: 6px;
+1099:           width: 12px;
+1100:           height: 12px;
+1101:         }
+1102:         
+1103:         .timeline-content {
+1104:           padding: 8px 10px;
+1105:         }
+1106:       }
+1107:       
+1108:       /* Panneaux Pliables Webhooks */
+1109:       .collapsible-panel {
+1110:         background: rgba(0, 0, 0, 0.2);
+1111:         border: 1px solid var(--cork-border-color);
+1112:         border-radius: 8px;
+1113:         margin-bottom: 16px;
+1114:         overflow: hidden;
+1115:         transition: all 0.3s ease;
+1116:       }
+1117:       
+1118:       .collapsible-panel:hover {
+1119:         border-color: rgba(67, 97, 238, 0.3);
+1120:         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+1121:       }
+1122: 
+1123:       .routing-rules-list {
+1124:         display: flex;
+1125:         flex-direction: column;
+1126:         gap: 12px;
+1127:         margin-top: 10px;
+1128:         max-height: 400px;
+1129:         overflow-y: auto;
+1130:         padding-right: 8px;
+1131:       }
+1132:       
+1133:       /* Scrollbar styling for webkit */
+1134:       .routing-rules-list::-webkit-scrollbar {
+1135:         width: 8px;
+1136:       }
+1137:       .routing-rules-list::-webkit-scrollbar-track {
+1138:         background: rgba(255, 255, 255, 0.05);
+1139:         border-radius: 4px;
+1140:       }
+1141:       .routing-rules-list::-webkit-scrollbar-thumb {
+1142:         background: rgba(255, 255, 255, 0.2);
+1143:         border-radius: 4px;
+1144:       }
+1145:       .routing-rules-list::-webkit-scrollbar-thumb:hover {
+1146:         background: rgba(255, 255, 255, 0.3);
+1147:       }
+1148: 
+1149:       .routing-rule-card {
+1150:         background: rgba(8, 12, 28, 0.7);
+1151:         border: 1px solid var(--cork-border-color);
+1152:         border-radius: 8px;
+1153:         padding: 14px;
+1154:         display: flex;
+1155:         flex-direction: column;
+1156:         gap: 10px;
+1157:       }
+1158: 
+1159:       .routing-rule-header {
+1160:         display: flex;
+1161:         justify-content: space-between;
+1162:         gap: 12px;
+1163:         flex-wrap: wrap;
+1164:       }
+1165: 
+1166:       .routing-rule-title {
+1167:         flex: 1;
+1168:         min-width: 220px;
+1169:         display: flex;
+1170:         flex-direction: column;
+1171:         gap: 6px;
+1172:       }
+1173: 
+1174:       .routing-rule-controls {
+1175:         display: flex;
+1176:         align-items: center;
+1177:         gap: 6px;
+1178:       }
+1179: 
+1180:       .routing-icon-btn {
+1181:         background: rgba(67, 97, 238, 0.12);
+1182:         border: 1px solid rgba(67, 97, 238, 0.4);
+1183:         color: var(--cork-text-primary);
+1184:         border-radius: 6px;
+1185:         padding: 6px 8px;
+1186:         cursor: pointer;
+1187:         transition: transform 0.15s ease, border-color 0.15s ease;
+1188:       }
+1189: 
+1190:       .routing-icon-btn:hover {
+1191:         border-color: var(--cork-primary-accent);
+1192:         transform: translateY(-1px);
+1193:       }
+1194: 
+1195:       .routing-section-title {
+1196:         font-size: 0.8rem;
+1197:         text-transform: uppercase;
+1198:         letter-spacing: 0.08em;
+1199:         color: var(--cork-text-secondary);
+1200:         margin-top: 6px;
+1201:       }
+1202: 
+1203:       .routing-conditions {
+1204:         display: flex;
+1205:         flex-direction: column;
+1206:         gap: 8px;
+1207:       }
+1208: 
+1209:       .routing-condition-row {
+1210:         display: grid;
+1211:         grid-template-columns: minmax(120px, 160px) minmax(120px, 160px) 1fr auto auto;
+1212:         gap: 8px;
+1213:         align-items: center;
+1214:       }
+1215: 
+1216:       .routing-actions {
+1217:         display: grid;
+1218:         gap: 10px;
+1219:       }
+1220: 
+1221:       .routing-inline {
+1222:         display: flex;
+1223:         gap: 10px;
+1224:         align-items: center;
+1225:         flex-wrap: wrap;
+1226:       }
+1227: 
+1228:       .routing-input,
+1229:       .routing-select {
+1230:         width: 100%;
+1231:         padding: 9px 10px;
+1232:         border-radius: 4px;
+1233:         border: 1px solid var(--cork-border-color);
+1234:         background: rgba(0, 0, 0, 0.2);
+1235:         color: var(--cork-text-primary);
+1236:         font-size: 0.9em;
+1237:         box-sizing: border-box;
+1238:       }
+1239: 
+1240:       .routing-checkbox {
+1241:         display: inline-flex;
+1242:         align-items: center;
+1243:         gap: 6px;
+1244:         font-size: 0.85em;
+1245:         color: var(--cork-text-secondary);
+1246:       }
+1247: 
+1248:       .routing-invalid {
+1249:         border-color: var(--cork-danger) !important;
+1250:         box-shadow: 0 0 0 2px rgba(231, 81, 90, 0.2);
+1251:       }
+1252: 
+1253:       .routing-empty {
+1254:         padding: 12px;
+1255:         border-radius: 6px;
+1256:         background: rgba(255, 255, 255, 0.04);
+1257:         color: var(--cork-text-secondary);
+1258:       }
+1259: 
+1260:       .routing-add-btn {
+1261:         margin-top: 4px;
+1262:         align-self: flex-start;
+1263:       }
+1264:       
+1265:       .panel-header {
+1266:         display: flex;
+1267:         justify-content: space-between;
+1268:         align-items: center;
+1269:         padding: 12px 16px;
+1270:         background: rgba(67, 97, 238, 0.05);
+1271:         border-bottom: 1px solid var(--cork-border-color);
 1272:         cursor: pointer;
-1273:         border-radius: 4px;
+1273:         user-select: none;
 1274:         transition: all 0.2s ease;
-1275:         display: flex;
-1276:         align-items: center;
-1277:         justify-content: center;
-1278:       }
-1279:       
-1280:       .lock-btn:hover {
-1281:         background: rgba(67, 97, 238, 0.1);
-1282:         transform: scale(1.1);
-1283:       }
-1284:       
-1285:       .lock-btn:active {
-1286:         transform: scale(0.95);
+1275:       }
+1276:       
+1277:       .panel-header:hover {
+1278:         background: rgba(67, 97, 238, 0.1);
+1279:       }
+1280:       
+1281:       .panel-title {
+1282:         display: flex;
+1283:         align-items: center;
+1284:         gap: 8px;
+1285:         font-weight: 600;
+1286:         color: var(--cork-text-primary);
 1287:       }
 1288:       
-1289:       .lock-btn:focus {
-1290:         outline: 2px solid var(--cork-primary-accent);
-1291:         outline-offset: 2px;
-1292:       }
-1293:       
-1294:       .lock-icon {
-1295:         font-size: 1.1em;
-1296:         transition: opacity 0.2s ease;
-1297:       }
-1298:       
-1299:       .lock-icon.locked {
-1300:         opacity: 1;
-1301:       }
-1302:       
-1303:       .lock-icon.unlocked {
-1304:         opacity: 0.7;
+1289:       .lock-btn {
+1290:         background: none;
+1291:         border: none;
+1292:         padding: 4px;
+1293:         margin-left: 8px;
+1294:         cursor: pointer;
+1295:         border-radius: 4px;
+1296:         transition: all 0.2s ease;
+1297:         display: flex;
+1298:         align-items: center;
+1299:         justify-content: center;
+1300:       }
+1301:       
+1302:       .lock-btn:hover {
+1303:         background: rgba(67, 97, 238, 0.1);
+1304:         transform: scale(1.1);
 1305:       }
 1306:       
-1307:       .routing-rules-list.locked {
-1308:         opacity: 0.6;
-1309:         pointer-events: none;
-1310:       }
-1311:       
-1312:       .routing-rules-list input:disabled,
-1313:       .routing-rules-list select:disabled,
-1314:       .routing-rules-list textarea:disabled,
-1315:       .routing-rules-list button:disabled {
-1316:         opacity: 0.5;
-1317:         cursor: not-allowed;
-1318:       }
-1319:       
-1320:       .panel-toggle {
-1321:         display: flex;
-1322:         align-items: center;
-1323:         gap: 8px;
-1324:       }
-1325:       
-1326:       .toggle-icon {
-1327:         width: 20px;
-1328:         height: 20px;
-1329:         transition: transform 0.3s ease;
-1330:         color: var(--cork-text-secondary);
-1331:       }
-1332:       
-1333:       .toggle-icon.rotated {
-1334:         transform: rotate(180deg);
-1335:       }
-1336:       
-1337:       .panel-status {
-1338:         font-size: 0.7em;
-1339:         padding: 2px 6px;
-1340:         border-radius: 10px;
-1341:         background: rgba(226, 160, 63, 0.15);
-1342:         color: var(--cork-warning);
-1343:         font-weight: 600;
-1344:       }
-1345:       
-1346:       .panel-status.saved {
-1347:         background: rgba(26, 188, 156, 0.15);
-1348:         color: var(--cork-success);
-1349:       }
-1350:       
-1351:       .panel-content {
-1352:         padding: 16px;
-1353:         max-height: 1000px;
-1354:         opacity: 1;
-1355:         transition: all 0.3s ease;
-1356:       }
-1357:       
-1358:       .panel-content.collapsed {
-1359:         max-height: 0;
-1360:         padding: 0 16px;
-1361:         opacity: 0;
-1362:         overflow: hidden;
-1363:       }
-1364:       
-1365:       .panel-actions {
-1366:         display: flex;
-1367:         justify-content: space-between;
-1368:         align-items: center;
-1369:         margin-top: 12px;
-1370:         padding-top: 12px;
-1371:         border-top: 1px solid rgba(255, 255, 255, 0.1);
-1372:       }
-1373:       
-1374:       .panel-save-btn {
-1375:         background: var(--cork-primary-accent);
-1376:         color: white;
-1377:         border: none;
-1378:         padding: 6px 12px;
-1379:         border-radius: 4px;
-1380:         font-size: 0.8em;
-1381:         cursor: pointer;
-1382:         transition: all 0.2s ease;
-1383:       }
-1384:       
-1385:       .panel-save-btn:hover {
-1386:         background: #5470f1;
-1387:         transform: translateY(-1px);
-1388:       }
-1389:       
-1390:       .panel-save-btn:disabled {
-1391:         background: var(--cork-text-secondary);
-1392:         cursor: not-allowed;
-1393:         transform: none;
+1307:       .lock-btn:active {
+1308:         transform: scale(0.95);
+1309:       }
+1310:       
+1311:       .lock-btn:focus {
+1312:         outline: 2px solid var(--cork-primary-accent);
+1313:         outline-offset: 2px;
+1314:       }
+1315:       
+1316:       .lock-icon {
+1317:         font-size: 1.1em;
+1318:         transition: opacity 0.2s ease;
+1319:       }
+1320:       
+1321:       .lock-icon.locked {
+1322:         opacity: 1;
+1323:       }
+1324:       
+1325:       .lock-icon.unlocked {
+1326:         opacity: 0.7;
+1327:       }
+1328:       
+1329:       .routing-rules-list.locked {
+1330:         opacity: 0.6;
+1331:         pointer-events: none;
+1332:       }
+1333:       
+1334:       .routing-rules-list input:disabled,
+1335:       .routing-rules-list select:disabled,
+1336:       .routing-rules-list textarea:disabled,
+1337:       .routing-rules-list button:disabled {
+1338:         opacity: 0.5;
+1339:         cursor: not-allowed;
+1340:       }
+1341:       
+1342:       .panel-toggle {
+1343:         display: flex;
+1344:         align-items: center;
+1345:         gap: 8px;
+1346:       }
+1347:       
+1348:       .toggle-icon {
+1349:         width: 20px;
+1350:         height: 20px;
+1351:         transition: transform 0.3s ease;
+1352:         color: var(--cork-text-secondary);
+1353:       }
+1354:       
+1355:       .toggle-icon.rotated {
+1356:         transform: rotate(180deg);
+1357:       }
+1358:       
+1359:       .panel-status {
+1360:         font-size: 0.7em;
+1361:         padding: 2px 6px;
+1362:         border-radius: 10px;
+1363:         background: rgba(226, 160, 63, 0.15);
+1364:         color: var(--cork-warning);
+1365:         font-weight: 600;
+1366:       }
+1367:       
+1368:       .panel-status.saved {
+1369:         background: rgba(26, 188, 156, 0.15);
+1370:         color: var(--cork-success);
+1371:       }
+1372:       
+1373:       .panel-content {
+1374:         padding: 16px;
+1375:         max-height: 1000px;
+1376:         opacity: 1;
+1377:         transition: all 0.3s ease;
+1378:       }
+1379:       
+1380:       .panel-content.collapsed {
+1381:         max-height: 0;
+1382:         padding: 0 16px;
+1383:         opacity: 0;
+1384:         overflow: hidden;
+1385:       }
+1386:       
+1387:       .panel-actions {
+1388:         display: flex;
+1389:         justify-content: space-between;
+1390:         align-items: center;
+1391:         margin-top: 12px;
+1392:         padding-top: 12px;
+1393:         border-top: 1px solid rgba(255, 255, 255, 0.1);
 1394:       }
 1395:       
-1396:       .panel-indicator {
-1397:         font-size: 0.7em;
-1398:         color: var(--cork-text-secondary);
-1399:         font-style: italic;
-1400:       }
-1401:       
-1402:       @media (max-width: 768px) {
-1403:         .panel-header {
-1404:           padding: 10px 12px;
-1405:         }
-1406:         
-1407:         .panel-content {
-1408:           padding: 12px;
-1409:         }
-1410:         
-1411:         .panel-actions {
-1412:           flex-direction: column;
-1413:           gap: 8px;
-1414:           align-items: stretch;
-1415:         }
-1416:         
-1417:         .panel-save-btn {
-1418:           width: 100%;
-1419:         }
-1420:         
-1421:         .routing-rules-list {
-1422:           max-height: 300px;
-1423:         }
-1424: 
-1425:         .routing-condition-row {
-1426:           grid-template-columns: 1fr;
+1396:       .panel-save-btn {
+1397:         background: var(--cork-primary-accent);
+1398:         color: white;
+1399:         border: none;
+1400:         padding: 6px 12px;
+1401:         border-radius: 4px;
+1402:         font-size: 0.8em;
+1403:         cursor: pointer;
+1404:         transition: all 0.2s ease;
+1405:       }
+1406:       
+1407:       .panel-save-btn:hover {
+1408:         background: #5470f1;
+1409:         transform: translateY(-1px);
+1410:       }
+1411:       
+1412:       .panel-save-btn:disabled {
+1413:         background: var(--cork-text-secondary);
+1414:         cursor: not-allowed;
+1415:         transform: none;
+1416:       }
+1417:       
+1418:       .panel-indicator {
+1419:         font-size: 0.7em;
+1420:         color: var(--cork-text-secondary);
+1421:         font-style: italic;
+1422:       }
+1423:       
+1424:       @media (max-width: 768px) {
+1425:         .panel-header {
+1426:           padding: 10px 12px;
 1427:         }
-1428: 
-1429:         .routing-rule-controls {
-1430:           justify-content: flex-start;
+1428:         
+1429:         .panel-content {
+1430:           padding: 12px;
 1431:         }
-1432:       }
-1433:       
-1434:       /* Indicateurs de sections modifiées */
-1435:       .section-indicator {
-1436:         font-size: 0.6em;
-1437:         padding: 2px 6px;
-1438:         border-radius: 8px;
-1439:         margin-left: 8px;
-1440:         font-weight: 600;
-1441:         text-transform: uppercase;
-1442:         letter-spacing: 0.5px;
-1443:         transition: all 0.2s ease;
-1444:       }
-1445:       
-1446:       .section-indicator.modifié {
-1447:         background: rgba(226, 160, 63, 0.15);
-1448:         color: var(--cork-warning);
-1449:         animation: pulse-modified 2s infinite;
-1450:       }
-1451:       
-1452:       .section-indicator.sauvegardé {
-1453:         background: rgba(26, 188, 156, 0.15);
-1454:         color: var(--cork-success);
-1455:       }
-1456:       
-1457:       @keyframes pulse-modified {
-1458:         0%, 100% { opacity: 1; }
-1459:         50% { opacity: 0.6; }
-1460:       }
-1461:       
-1462:       .card.modified,
-1463:       .collapsible-panel.modified {
-1464:         border-left: 3px solid var(--cork-warning);
-1465:         background: rgba(226, 160, 63, 0.02);
+1432:         
+1433:         .panel-actions {
+1434:           flex-direction: column;
+1435:           gap: 8px;
+1436:           align-items: stretch;
+1437:         }
+1438:         
+1439:         .panel-save-btn {
+1440:           width: 100%;
+1441:         }
+1442:         
+1443:         .routing-rules-list {
+1444:           max-height: 300px;
+1445:         }
+1446: 
+1447:         .routing-condition-row {
+1448:           grid-template-columns: 1fr;
+1449:         }
+1450: 
+1451:         .routing-rule-controls {
+1452:           justify-content: flex-start;
+1453:         }
+1454:       }
+1455:       
+1456:       /* Indicateurs de sections modifiées */
+1457:       .section-indicator {
+1458:         font-size: 0.6em;
+1459:         padding: 2px 6px;
+1460:         border-radius: 8px;
+1461:         margin-left: 8px;
+1462:         font-weight: 600;
+1463:         text-transform: uppercase;
+1464:         letter-spacing: 0.5px;
+1465:         transition: all 0.2s ease;
 1466:       }
 1467:       
-1468:       .card.saved,
-1469:       .collapsible-panel.saved {
-1470:         border-left: 3px solid var(--cork-success);
-1471:         background: rgba(26, 188, 156, 0.02);
+1468:       .section-indicator.modifié {
+1469:         background: rgba(226, 160, 63, 0.15);
+1470:         color: var(--cork-warning);
+1471:         animation: pulse-modified 2s infinite;
 1472:       }
 1473:       
-1474:       .auto-save-feedback {
-1475:         position: absolute;
-1476:         bottom: -20px;
-1477:         left: 0;
-1478:         right: 0;
-1479:         text-align: center;
-1480:         z-index: 10;
-1481:       }
-1482:     </style>
-1483:   </head>
-1484:   <body>
-1485:     <div class="container">
-1486:       <div class="header">
-1487:         <h1>
-1488:           <span class="emoji">📊</span>Dashboard Webhooks
-1489:         </h1>
-1490:         <a href="/logout" class="logout-link">Déconnexion</a>
-1491:       </div>
-1492:       
-1493:       <!-- Bandeau Statut Global -->
-1494:       <div id="globalStatusBanner" class="global-status-banner">
-1495:         <div class="status-header">
-1496:           <div class="status-title">
-1497:             <span class="status-icon" id="globalStatusIcon">🟢</span>
-1498:             <span class="status-text">Statut Global</span>
-1499:           </div>
-1500:           <div class="status-refresh">
-1501:             <button id="refreshStatusBtn" class="btn btn-small btn-secondary">🔄</button>
-1502:           </div>
-1503:         </div>
-1504:         <div class="status-content">
-1505:           <div class="status-item">
-1506:             <div class="status-label">Dernière exécution</div>
-1507:             <div class="status-value" id="lastExecutionTime">—</div>
-1508:           </div>
-1509:           <div class="status-item">
-1510:             <div class="status-label">Incidents récents</div>
-1511:             <div class="status-value" id="recentIncidents">—</div>
-1512:           </div>
-1513:           <div class="status-item">
-1514:             <div class="status-label">Erreurs critiques</div>
-1515:             <div class="status-value" id="criticalErrors">—</div>
-1516:           </div>
-1517:           <div class="status-item">
-1518:             <div class="status-label">Webhooks actifs</div>
-1519:             <div class="status-value" id="activeWebhooks">—</div>
-1520:           </div>
-1521:         </div>
-1522: 
-1523:       </div>
-1524:       
-1525:       <!-- Navigation principale -->
-1526:       <div class="nav-tabs" role="tablist">
-1527:         <button class="tab-btn active" data-target="#sec-overview" type="button">Vue d’ensemble</button>
-1528:         <button class="tab-btn" data-target="#sec-webhooks" type="button">Webhooks</button>
-1529:         <button class="tab-btn" data-target="#sec-email" type="button">Email</button>
-1530:         <button class="tab-btn" data-target="#sec-preferences" type="button">Préférences</button>
-1531:         <button class="tab-btn" data-target="#sec-tools" type="button">Outils</button>
-1532:       </div>
-1533: 
-1534:       <!-- Section: Webhooks (panneaux pliables) -->
-1535:       <div id="sec-webhooks" class="section-panel config">
-1536:         <!-- Panneau 1: URLs & SSL -->
-1537:         <div class="collapsible-panel" data-panel="urls-ssl">
-1538:           <div class="panel-header">
-1539:             <div class="panel-title">
-1540:               <span>🔗</span>
-1541:               <span>URLs & SSL</span>
-1542:             </div>
-1543:             <div class="panel-toggle">
-1544:               <span class="panel-status" id="urls-ssl-status">Sauvegarde requise</span>
-1545:               <span class="toggle-icon">▼</span>
-1546:             </div>
-1547:           </div>
-1548:           <div class="panel-content">
-1549:             <div class="form-group">
-1550:               <label for="webhookUrl">Webhook Personnalisé (WEBHOOK_URL)</label>
-1551:               <input id="webhookUrl" type="text" placeholder="https://...">
-1552:             </div>
-1553:             <div style="margin-top: 15px;">
-1554:               <label class="toggle-switch" style="vertical-align: middle;">
-1555:                 <input type="checkbox" id="sslVerifyToggle">
-1556:                 <span class="toggle-slider"></span>
-1557:               </label>
-1558:               <span style="margin-left: 10px; vertical-align: middle;">Vérification SSL (WEBHOOK_SSL_VERIFY)</span>
-1559:             </div>
-1560:             <div style="margin-top: 12px;">
-1561:               <label class="toggle-switch" style="vertical-align: middle;">
-1562:                 <input type="checkbox" id="webhookSendingToggle">
-1563:                 <span class="toggle-slider"></span>
-1564:               </label>
-1565:               <span style="margin-left: 10px; vertical-align: middle;">Activer l'envoi des webhooks (global)</span>
-1566:             </div>
-1567:             <div class="panel-actions">
-1568:               <button class="panel-save-btn" data-panel="urls-ssl">💾 Enregistrer</button>
-1569:               <span class="panel-indicator" id="urls-ssl-indicator">Dernière sauvegarde: —</span>
-1570:             </div>
-1571:             <div id="urls-ssl-msg" class="status-msg"></div>
-1572:           </div>
-1573:         </div>
-1574: 
-1575:         <!-- Panneau 2: Absence Globale -->
-1576:         <div class="collapsible-panel" data-panel="absence">
-1577:           <div class="panel-header">
-1578:             <div class="panel-title">
-1579:               <span>🚫</span>
-1580:               <span>Absence Globale</span>
+1474:       .section-indicator.sauvegardé {
+1475:         background: rgba(26, 188, 156, 0.15);
+1476:         color: var(--cork-success);
+1477:       }
+1478:       
+1479:       @keyframes pulse-modified {
+1480:         0%, 100% { opacity: 1; }
+1481:         50% { opacity: 0.6; }
+1482:       }
+1483:       
+1484:       .card.modified,
+1485:       .collapsible-panel.modified {
+1486:         border-left: 3px solid var(--cork-warning);
+1487:         background: rgba(226, 160, 63, 0.02);
+1488:       }
+1489:       
+1490:       .card.saved,
+1491:       .collapsible-panel.saved {
+1492:         border-left: 3px solid var(--cork-success);
+1493:         background: rgba(26, 188, 156, 0.02);
+1494:       }
+1495:       
+1496:       .auto-save-feedback {
+1497:         position: absolute;
+1498:         bottom: -20px;
+1499:         left: 0;
+1500:         right: 0;
+1501:         text-align: center;
+1502:         z-index: 10;
+1503:       }
+1504:     </style>
+1505:   </head>
+1506:   <body>
+1507:     <div class="container">
+1508:       <div class="header">
+1509:         <h1>
+1510:           <span class="emoji">📊</span>Dashboard Webhooks
+1511:         </h1>
+1512:         <a href="/logout" class="logout-link">Déconnexion</a>
+1513:       </div>
+1514:       
+1515:       <!-- Bandeau Statut Global -->
+1516:       <div id="globalStatusBanner" class="global-status-banner">
+1517:         <div class="status-header">
+1518:           <div class="status-title">
+1519:             <span class="status-icon" id="globalStatusIcon">🟢</span>
+1520:             <span class="status-text">Statut Global</span>
+1521:           </div>
+1522:           <div class="status-refresh">
+1523:             <button id="refreshStatusBtn" class="btn btn-small btn-secondary">🔄</button>
+1524:           </div>
+1525:         </div>
+1526:         <div class="status-content">
+1527:           <div class="status-item">
+1528:             <div class="status-label">Dernière exécution</div>
+1529:             <div class="status-value" id="lastExecutionTime">—</div>
+1530:           </div>
+1531:           <div class="status-item">
+1532:             <div class="status-label">Incidents récents</div>
+1533:             <div class="status-value" id="recentIncidents">—</div>
+1534:           </div>
+1535:           <div class="status-item">
+1536:             <div class="status-label">Erreurs critiques</div>
+1537:             <div class="status-value" id="criticalErrors">—</div>
+1538:           </div>
+1539:           <div class="status-item">
+1540:             <div class="status-label">Webhooks actifs</div>
+1541:             <div class="status-value" id="activeWebhooks">—</div>
+1542:           </div>
+1543:         </div>
+1544: 
+1545:       </div>
+1546:       
+1547:       <!-- Navigation principale -->
+1548:       <div class="nav-tabs" role="tablist">
+1549:         <button class="tab-btn active" data-target="#sec-overview" type="button">Vue d’ensemble</button>
+1550:         <button class="tab-btn" data-target="#sec-webhooks" type="button">Webhooks</button>
+1551:         <button class="tab-btn" data-target="#sec-email" type="button">Email</button>
+1552:         <button class="tab-btn" data-target="#sec-preferences" type="button">Préférences</button>
+1553:         <button class="tab-btn" data-target="#sec-tools" type="button">Outils</button>
+1554:       </div>
+1555: 
+1556:       <!-- Section: Webhooks (panneaux pliables) -->
+1557:       <div id="sec-webhooks" class="section-panel config">
+1558:         <!-- Panneau 1: URLs & SSL -->
+1559:         <div class="collapsible-panel" data-panel="urls-ssl">
+1560:           <div class="panel-header">
+1561:             <div class="panel-title">
+1562:               <span>🔗</span>
+1563:               <span>URLs & SSL</span>
+1564:             </div>
+1565:             <div class="panel-toggle">
+1566:               <span class="panel-status" id="urls-ssl-status">Sauvegarde requise</span>
+1567:               <span class="toggle-icon">▼</span>
+1568:             </div>
+1569:           </div>
+1570:           <div class="panel-content">
+1571:             <div class="form-group">
+1572:               <label for="webhookUrl">Webhook Personnalisé (WEBHOOK_URL)</label>
+1573:               <input id="webhookUrl" type="text" placeholder="https://...">
+1574:             </div>
+1575:             <div style="margin-top: 15px;">
+1576:               <label class="toggle-switch" style="vertical-align: middle;">
+1577:                 <input type="checkbox" id="sslVerifyToggle">
+1578:                 <span class="toggle-slider"></span>
+1579:               </label>
+1580:               <span style="margin-left: 10px; vertical-align: middle;">Vérification SSL (WEBHOOK_SSL_VERIFY)</span>
 1581:             </div>
-1582:             <div class="panel-toggle">
-1583:               <span class="panel-status" id="absence-status">Sauvegarde requise</span>
-1584:               <span class="toggle-icon">▼</span>
-1585:             </div>
-1586:           </div>
-1587:           <div class="panel-content">
-1588:             <div style="margin-bottom: 12px;">
-1589:               <label class="toggle-switch" style="vertical-align: middle;">
-1590:                 <input type="checkbox" id="absencePauseToggle">
-1591:                 <span class="toggle-slider"></span>
-1592:               </label>
-1593:               <span style="margin-left: 10px; vertical-align: middle; font-weight: 600;">Activer l'absence globale (stop emails)</span>
-1594:             </div>
-1595:             <div class="small-text" style="margin-bottom: 10px;">
-1596:               Lorsque activé, <strong>aucun email</strong> ne sera envoyé (ni DESABO ni Média Solution, urgent ou non) pour les jours sélectionnés ci-dessous.
-1597:             </div>
-1598:             <div class="form-group">
-1599:               <label>Jours d'absence (aucun email envoyé)</label>
-1600:               <div id="absencePauseDaysGroup" class="inline-group" style="flex-wrap: wrap; gap: 12px; margin-top: 6px;">
-1601:                 <label><input type="checkbox" name="absencePauseDay" value="monday"> Lundi</label>
-1602:                 <label><input type="checkbox" name="absencePauseDay" value="tuesday"> Mardi</label>
-1603:                 <label><input type="checkbox" name="absencePauseDay" value="wednesday"> Mercredi</label>
-1604:                 <label><input type="checkbox" name="absencePauseDay" value="thursday"> Jeudi</label>
-1605:                 <label><input type="checkbox" name="absencePauseDay" value="friday"> Vendredi</label>
-1606:                 <label><input type="checkbox" name="absencePauseDay" value="saturday"> Samedi</label>
-1607:                 <label><input type="checkbox" name="absencePauseDay" value="sunday"> Dimanche</label>
-1608:               </div>
-1609:               <div class="small-text">Sélectionnez au moins un jour si vous activez l'absence.</div>
-1610:             </div>
-1611:             <div class="panel-actions">
-1612:               <button class="panel-save-btn" data-panel="absence">💾 Enregistrer</button>
-1613:               <span class="panel-indicator" id="absence-indicator">Dernière sauvegarde: —</span>
-1614:             </div>
-1615:             <div id="absence-msg" class="status-msg"></div>
-1616:           </div>
-1617:         </div>
-1618: 
-1619:         <!-- Panneau 3: Fenêtre Horaire -->
-1620:         <div class="collapsible-panel" data-panel="time-window">
-1621:           <div class="panel-header">
-1622:             <div class="panel-title">
-1623:               <span>🕐</span>
-1624:               <span>Fenêtre Horaire</span>
-1625:             </div>
-1626:             <div class="panel-toggle">
-1627:               <span class="panel-status" id="time-window-status">Sauvegarde requise</span>
-1628:               <span class="toggle-icon">▼</span>
-1629:             </div>
-1630:           </div>
-1631:           <div class="panel-content">
-1632:             <div style="margin-bottom: 20px;">
-1633:               <h4 style="margin: 0 0 10px 0; color: var(--cork-text-primary);">Fenêtre Horaire Globale</h4>
-1634:               <div class="form-group">
-1635:                 <label for="webhooksTimeStart">Heure de début</label>
-1636:                 <input id="webhooksTimeStart" type="text" placeholder="ex: 11:30">
-1637:               </div>
-1638:               <div class="form-group">
-1639:                 <label for="webhooksTimeEnd">Heure de fin</label>
-1640:                 <input id="webhooksTimeEnd" type="text" placeholder="ex: 17:30">
-1641:               </div>
-1642:               <div id="timeWindowMsg" class="status-msg"></div>
-1643:               <div id="timeWindowDisplay" class="small-text"></div>
-1644:               <div class="small-text">Laissez les deux champs vides pour désactiver la contrainte horaire.</div>
-1645:               <div style="margin-top: 12px;">
-1646:                 <button id="saveTimeWindowBtn" class="btn btn-primary btn-small">💾 Enregistrer Fenêtre Globale</button>
-1647:               </div>
-1648:             </div>
-1649:             
-1650:             <div style="padding: 12px; background: rgba(67, 97, 238, 0.1); border-radius: 6px; border-left: 3px solid var(--cork-primary-accent);">
-1651:               <h4 style="margin: 0 0 10px 0; color: var(--cork-text-primary);">Fenêtre Horaire Webhooks</h4>
-1652:               <div class="form-group" style="margin-bottom: 10px;">
-1653:                 <label for="globalWebhookTimeStart">Heure de début</label>
-1654:                 <input id="globalWebhookTimeStart" type="text" placeholder="ex: 09:00" style="width: 100%; max-width: 100px;">
-1655:               </div>
-1656:               <div class="form-group" style="margin-bottom: 10px;">
-1657:                 <label for="globalWebhookTimeEnd">Heure de fin</label>
-1658:                 <input id="globalWebhookTimeEnd" type="text" placeholder="ex: 19:00" style="width: 100%; max-width: 100px;">
-1659:               </div>
-1660:               <div id="globalWebhookTimeMsg" class="status-msg" style="margin-top: 8px;"></div>
-1661:               <div class="small-text">Définissez quand les webhooks peuvent être envoyés (laissez vide pour désactiver).</div>
-1662:               <div style="margin-top: 12px;">
-1663:                 <button id="saveGlobalWebhookTimeBtn" class="btn btn-primary btn-small">💾 Enregistrer Fenêtre Webhook</button>
-1664:               </div>
-1665:             </div>
-1666:             
-1667:             <div class="panel-actions">
-1668:               <span class="panel-indicator" id="time-window-indicator">Dernière sauvegarde: —</span>
-1669:             </div>
-1670:           </div>
-1671:         </div>
-1672:       <!-- Panneau 4: Routage Dynamique -->
-1673:       <div class="collapsible-panel" data-panel="routing-rules">
-1674:         <div class="panel-header">
-1675:           <div class="panel-title">
-1676:             <span>🧭</span>
-1677:             <span>Routage Dynamique</span>
-1678:             <button id="routing-rules-lock-btn" class="lock-btn" type="button" title="Verrouiller/Déverrouiller l'édition des règles">
-1679:               <span class="lock-icon" id="routing-rules-lock-icon">🔒</span>
-1680:             </button>
-1681:           </div>
-1682:           <div class="panel-toggle">
-1683:             <span class="panel-status" id="routing-rules-status">Sauvegarde requise</span>
-1684:             <span class="toggle-icon">▼</span>
-1685:           </div>
-1686:         </div>
-1687:         <div class="panel-content">
-1688:           <div class="small-text" style="margin-bottom: 10px;">
-1689:             Définissez des règles conditionnelles pour router les emails vers des webhooks dédiés.
-1690:             Les règles sont évaluées dans l'ordre affiché.
-1691:           </div>
-1692:           <div class="inline-group" style="margin-bottom: 12px;">
-1693:             <button id="addRoutingRuleBtn" type="button" class="btn btn-primary btn-small">➕ Ajouter une règle</button>
-1694:             <button id="reloadRoutingRulesBtn" type="button" class="btn btn-secondary btn-small">🔄 Recharger</button>
-1695:           </div>
-1696:           <div id="routingRulesList" class="routing-rules-list"></div>
-1697:           <div class="panel-actions">
-1698:             <span class="panel-indicator" id="routing-rules-indicator">Dernière sauvegarde: —</span>
-1699:           </div>
-1700:           <div id="routing-rules-msg" class="status-msg"></div>
-1701:           <div id="routingRulesRedisInspectMsg" class="status-msg" style="margin-top: 12px;"></div>
-1702:           <pre id="routingRulesRedisInspectLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-1703:         </div>
-1704:       </div>
-1705:       </div>
-1706: 
-1707:       <!-- Section: Préférences Email (expéditeurs, dédup) -->
-1708:       <div id="sec-email" class="section-panel">
-1709:         <div class="card">
-1710:           <div class="card-title">🧩 Préférences Email (expéditeurs, dédup)</div>
-1711:           <div class="inline-group" style="margin: 8px 0 12px 0;">
-1712:             <label class="toggle-switch">
-1713:               <input type="checkbox" id="pollingToggle">
-1714:               <span class="toggle-slider"></span>
-1715:             </label>
-1716:             <span id="pollingStatusText" style="margin-left: 10px;">—</span>
-1717:           </div>
-1718:           <div id="pollingMsg" class="status-msg" style="margin-top: 6px;"></div>
-1719:           <div class="form-group">
-1720:             <label>SENDER_OF_INTEREST_FOR_POLLING</label>
-1721:             <div id="senderOfInterestContainer" class="stack" style="gap:8px;"></div>
-1722:             <button id="addSenderBtn" type="button" class="btn btn-secondary" style="margin-top:8px;">➕ Ajouter Email</button>
-1723:             <div class="small-text">Ajouter / modifier / supprimer des emails individuellement. Ils seront validés et normalisés (minuscules).</div>
-1724:           </div>
-1725:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-1726:             <div class="form-group">
-1727:               <label for="pollingStartHour">POLLING_ACTIVE_START_HOUR (0-23)</label>
-1728:               <input id="pollingStartHour" type="number" min="0" max="23" placeholder="ex: 9">
-1729:             </div>
-1730:             <div class="form-group">
-1731:               <label for="pollingEndHour">POLLING_ACTIVE_END_HOUR (0-23)</label>
-1732:               <input id="pollingEndHour" type="number" min="0" max="23" placeholder="ex: 23">
-1733:             </div>
-1734:           </div>
-1735:           <div class="form-group" style="margin-top: 10px;">
-1736:             <label>Jours actifs (POLLING_ACTIVE_DAYS)</label>
-1737:             <div id="pollingActiveDaysGroup" class="inline-group" style="flex-wrap: wrap; gap: 12px; margin-top: 6px;">
-1738:               <label><input type="checkbox" name="pollingDay" value="0"> Lun</label>
-1739:               <label><input type="checkbox" name="pollingDay" value="1"> Mar</label>
-1740:               <label><input type="checkbox" name="pollingDay" value="2"> Mer</label>
-1741:               <label><input type="checkbox" name="pollingDay" value="3"> Jeu</label>
-1742:               <label><input type="checkbox" name="pollingDay" value="4"> Ven</label>
-1743:               <label><input type="checkbox" name="pollingDay" value="5"> Sam</label>
-1744:               <label><input type="checkbox" name="pollingDay" value="6"> Dim</label>
-1745:             </div>
-1746:             <div class="small-text">0=Lundi ... 6=Dimanche. Sélectionnez au moins un jour.</div>
+1582:             <div style="margin-top: 12px;">
+1583:               <label class="toggle-switch" style="vertical-align: middle;">
+1584:                 <input type="checkbox" id="webhookSendingToggle">
+1585:                 <span class="toggle-slider"></span>
+1586:               </label>
+1587:               <span style="margin-left: 10px; vertical-align: middle;">Activer l'envoi des webhooks (global)</span>
+1588:             </div>
+1589:             <div class="panel-actions">
+1590:               <button class="panel-save-btn" data-panel="urls-ssl">💾 Enregistrer</button>
+1591:               <span class="panel-indicator" id="urls-ssl-indicator">Dernière sauvegarde: —</span>
+1592:             </div>
+1593:             <div id="urls-ssl-msg" class="status-msg"></div>
+1594:           </div>
+1595:         </div>
+1596: 
+1597:         <!-- Panneau 2: Absence Globale -->
+1598:         <div class="collapsible-panel" data-panel="absence">
+1599:           <div class="panel-header">
+1600:             <div class="panel-title">
+1601:               <span>🚫</span>
+1602:               <span>Absence Globale</span>
+1603:             </div>
+1604:             <div class="panel-toggle">
+1605:               <span class="panel-status" id="absence-status">Sauvegarde requise</span>
+1606:               <span class="toggle-icon">▼</span>
+1607:             </div>
+1608:           </div>
+1609:           <div class="panel-content">
+1610:             <div style="margin-bottom: 12px;">
+1611:               <label class="toggle-switch" style="vertical-align: middle;">
+1612:                 <input type="checkbox" id="absencePauseToggle">
+1613:                 <span class="toggle-slider"></span>
+1614:               </label>
+1615:               <span style="margin-left: 10px; vertical-align: middle; font-weight: 600;">Activer l'absence globale (stop emails)</span>
+1616:             </div>
+1617:             <div class="small-text" style="margin-bottom: 10px;">
+1618:               Lorsque activé, <strong>aucun email</strong> ne sera envoyé (ni DESABO ni Média Solution, urgent ou non) pour les jours sélectionnés ci-dessous.
+1619:             </div>
+1620:             <div class="form-group">
+1621:               <label>Jours d'absence (aucun email envoyé)</label>
+1622:               <div id="absencePauseDaysGroup" class="inline-group" style="flex-wrap: wrap; gap: 12px; margin-top: 6px;">
+1623:                 <label><input type="checkbox" name="absencePauseDay" value="monday"> Lundi</label>
+1624:                 <label><input type="checkbox" name="absencePauseDay" value="tuesday"> Mardi</label>
+1625:                 <label><input type="checkbox" name="absencePauseDay" value="wednesday"> Mercredi</label>
+1626:                 <label><input type="checkbox" name="absencePauseDay" value="thursday"> Jeudi</label>
+1627:                 <label><input type="checkbox" name="absencePauseDay" value="friday"> Vendredi</label>
+1628:                 <label><input type="checkbox" name="absencePauseDay" value="saturday"> Samedi</label>
+1629:                 <label><input type="checkbox" name="absencePauseDay" value="sunday"> Dimanche</label>
+1630:               </div>
+1631:               <div class="small-text">Sélectionnez au moins un jour si vous activez l'absence.</div>
+1632:             </div>
+1633:             <div class="panel-actions">
+1634:               <button class="panel-save-btn" data-panel="absence">💾 Enregistrer</button>
+1635:               <span class="panel-indicator" id="absence-indicator">Dernière sauvegarde: —</span>
+1636:             </div>
+1637:             <div id="absence-msg" class="status-msg"></div>
+1638:           </div>
+1639:         </div>
+1640: 
+1641:         <!-- Panneau 3: Fenêtre Horaire -->
+1642:         <div class="collapsible-panel" data-panel="time-window">
+1643:           <div class="panel-header">
+1644:             <div class="panel-title">
+1645:               <span>🕐</span>
+1646:               <span>Fenêtre Horaire</span>
+1647:             </div>
+1648:             <div class="panel-toggle">
+1649:               <span class="panel-status" id="time-window-status">Sauvegarde requise</span>
+1650:               <span class="toggle-icon">▼</span>
+1651:             </div>
+1652:           </div>
+1653:           <div class="panel-content">
+1654:             <div style="margin-bottom: 20px;">
+1655:               <h4 style="margin: 0 0 10px 0; color: var(--cork-text-primary);">Fenêtre Horaire Globale</h4>
+1656:               <div class="form-group">
+1657:                 <label for="webhooksTimeStart">Heure de début</label>
+1658:                 <select id="webhooksTimeStart" style="width: 100%; max-width: 120px;">
+1659:                   <option value="">Sélectionner...</option>
+1660:                 </select>
+1661:               </div>
+1662:               <div class="form-group">
+1663:                 <label for="webhooksTimeEnd">Heure de fin</label>
+1664:                 <select id="webhooksTimeEnd" style="width: 100%; max-width: 120px;">
+1665:                   <option value="">Sélectionner...</option>
+1666:                 </select>
+1667:               </div>
+1668:               <div id="timeWindowMsg" class="status-msg"></div>
+1669:               <div id="timeWindowDisplay" class="small-text"></div>
+1670:               <div class="small-text">Laissez les deux champs vides pour désactiver la contrainte horaire.</div>
+1671:               <div style="margin-top: 12px;">
+1672:                 <button id="saveTimeWindowBtn" class="btn btn-primary btn-small">💾 Enregistrer Fenêtre Globale</button>
+1673:               </div>
+1674:             </div>
+1675:             
+1676:             <div style="padding: 12px; background: rgba(67, 97, 238, 0.1); border-radius: 6px; border-left: 3px solid var(--cork-primary-accent);">
+1677:               <h4 style="margin: 0 0 10px 0; color: var(--cork-text-primary);">Fenêtre Horaire Webhooks</h4>
+1678:               <div class="form-group" style="margin-bottom: 10px;">
+1679:                 <label for="globalWebhookTimeStart">Heure de début</label>
+1680:                 <select id="globalWebhookTimeStart" style="width: 100%; max-width: 100px;">
+1681:                   <option value="">Sélectionner...</option>
+1682:                 </select>
+1683:               </div>
+1684:               <div class="form-group" style="margin-bottom: 10px;">
+1685:                 <label for="globalWebhookTimeEnd">Heure de fin</label>
+1686:                 <select id="globalWebhookTimeEnd" style="width: 100%; max-width: 100px;">
+1687:                   <option value="">Sélectionner...</option>
+1688:                 </select>
+1689:               </div>
+1690:               <div id="globalWebhookTimeMsg" class="status-msg" style="margin-top: 8px;"></div>
+1691:               <div class="small-text">Définissez quand les webhooks peuvent être envoyés (laissez vide pour désactiver).</div>
+1692:               <div style="margin-top: 12px;">
+1693:                 <button id="saveGlobalWebhookTimeBtn" class="btn btn-primary btn-small">💾 Enregistrer Fenêtre Webhook</button>
+1694:               </div>
+1695:             </div>
+1696:             
+1697:             <div class="panel-actions">
+1698:               <span class="panel-indicator" id="time-window-indicator">Dernière sauvegarde: —</span>
+1699:             </div>
+1700:           </div>
+1701:         </div>
+1702:       <!-- Panneau 4: Routage Dynamique -->
+1703:       <div class="collapsible-panel" data-panel="routing-rules">
+1704:         <div class="panel-header">
+1705:           <div class="panel-title">
+1706:             <span>🧭</span>
+1707:             <span>Routage Dynamique</span>
+1708:             <button id="routing-rules-lock-btn" class="lock-btn" type="button" title="Verrouiller/Déverrouiller l'édition des règles">
+1709:               <span class="lock-icon" id="routing-rules-lock-icon">🔒</span>
+1710:             </button>
+1711:           </div>
+1712:           <div class="panel-toggle">
+1713:             <span class="panel-status" id="routing-rules-status">Sauvegarde requise</span>
+1714:             <span class="toggle-icon">▼</span>
+1715:           </div>
+1716:         </div>
+1717:         <div class="panel-content">
+1718:           <div class="small-text" style="margin-bottom: 10px;">
+1719:             Définissez des règles conditionnelles pour router les emails vers des webhooks dédiés.
+1720:             Les règles sont évaluées dans l'ordre affiché.
+1721:           </div>
+1722:           <div class="inline-group" style="margin-bottom: 12px;">
+1723:             <button id="addRoutingRuleBtn" type="button" class="btn btn-primary btn-small">➕ Ajouter une règle</button>
+1724:             <button id="reloadRoutingRulesBtn" type="button" class="btn btn-secondary btn-small">🔄 Recharger</button>
+1725:           </div>
+1726:           <div id="routingRulesList" class="routing-rules-list"></div>
+1727:           <div class="panel-actions">
+1728:             <span class="panel-indicator" id="routing-rules-indicator">Dernière sauvegarde: —</span>
+1729:           </div>
+1730:           <div id="routing-rules-msg" class="status-msg"></div>
+1731:           <div id="routingRulesRedisInspectMsg" class="status-msg" style="margin-top: 12px;"></div>
+1732:           <pre id="routingRulesRedisInspectLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
+1733:         </div>
+1734:       </div>
+1735:       </div>
+1736: 
+1737:       <!-- Section: Préférences Email (expéditeurs, dédup) -->
+1738:       <div id="sec-email" class="section-panel">
+1739:         <div class="card">
+1740:           <div class="card-title">🧩 Préférences Email (expéditeurs, dédup)</div>
+1741:           <div class="inline-group" style="margin: 8px 0 12px 0;">
+1742:             <label class="toggle-switch">
+1743:               <input type="checkbox" id="pollingToggle">
+1744:               <span class="toggle-slider"></span>
+1745:             </label>
+1746:             <span id="pollingStatusText" style="margin-left: 10px;">—</span>
 1747:           </div>
-1748:           <div class="inline-group" style="margin: 8px 0 12px 0;">
-1749:             <label class="toggle-switch">
-1750:               <input type="checkbox" id="enableSubjectGroupDedup">
-1751:               <span class="toggle-slider"></span>
-1752:             </label>
-1753:             <span style="margin-left: 10px;">ENABLE_SUBJECT_GROUP_DEDUP</span>
+1748:           <div id="pollingMsg" class="status-msg" style="margin-top: 6px;"></div>
+1749:           <div class="form-group">
+1750:             <label>SENDER_OF_INTEREST_FOR_POLLING</label>
+1751:             <div id="senderOfInterestContainer" class="stack" style="gap:8px;"></div>
+1752:             <button id="addSenderBtn" type="button" class="btn btn-secondary" style="margin-top:8px;">➕ Ajouter Email</button>
+1753:             <div class="small-text">Ajouter / modifier / supprimer des emails individuellement. Ils seront validés et normalisés (minuscules).</div>
 1754:           </div>
-1755:           <button id="saveEmailPrefsBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer les préférences</button>
-1756:           <div id="emailPrefsSaveStatus" class="status-msg" style="margin-top: 10px;"></div>
-1757:           <!-- Fallback status container (legacy ID used by JS as a fallback) -->
-1758:           <div id="pollingCfgMsg" class="status-msg" style="margin-top: 6px;"></div>
-1759:         </div>
-1760:         
-1761:       </div>
-1762: 
-1763:       <!-- Section: Préférences (filtres + fiabilité) -->
-1764:       <div id="sec-preferences" class="section-panel">
-1765:         <div class="card">
-1766:           <div class="card-title">🔍 Filtres Email Avancés</div>
-1767:           <div class="form-group">
-1768:             <label for="excludeKeywordsRecadrage">Mots-clés à exclure (Recadrage) — un par ligne</label>
-1769:             <textarea id="excludeKeywordsRecadrage" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-1770:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `RECADRAGE_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
-1771:           </div>
-1772:           <div class="form-group">
-1773:             <label for="excludeKeywordsAutorepondeur">Mots-clés à exclure (Autorépondeur) — un par ligne</label>
-1774:             <textarea id="excludeKeywordsAutorepondeur" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-1775:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `AUTOREPONDEUR_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
-1776:           </div>
-1777:           <div class="form-group">
-1778:             <label for="excludeKeywords">Mots-clés à exclure (global, compatibilité) — un par ligne</label>
-1779:             <textarea id="excludeKeywords" rows="3" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-1780:             <div class="small-text">Liste globale (héritage). S'applique avant toute logique et avant les listes spécifiques.</div>
+1755:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+1756:             <div class="form-group">
+1757:               <label for="pollingStartHour">POLLING_ACTIVE_START_HOUR (0-23)</label>
+1758:               <select id="pollingStartHour" style="width: 100%; max-width: 100px;">
+1759:                 <option value="">Sélectionner...</option>
+1760:               </select>
+1761:             </div>
+1762:             <div class="form-group">
+1763:               <label for="pollingEndHour">POLLING_ACTIVE_END_HOUR (0-23)</label>
+1764:               <select id="pollingEndHour" style="width: 100%; max-width: 100px;">
+1765:                 <option value="">Sélectionner...</option>
+1766:               </select>
+1767:             </div>
+1768:           </div>
+1769:           <div class="form-group" style="margin-top: 10px;">
+1770:             <label>Jours actifs (POLLING_ACTIVE_DAYS)</label>
+1771:             <div id="pollingActiveDaysGroup" class="inline-group" style="flex-wrap: wrap; gap: 12px; margin-top: 6px;">
+1772:               <label><input type="checkbox" name="pollingDay" value="0"> Lun</label>
+1773:               <label><input type="checkbox" name="pollingDay" value="1"> Mar</label>
+1774:               <label><input type="checkbox" name="pollingDay" value="2"> Mer</label>
+1775:               <label><input type="checkbox" name="pollingDay" value="3"> Jeu</label>
+1776:               <label><input type="checkbox" name="pollingDay" value="4"> Ven</label>
+1777:               <label><input type="checkbox" name="pollingDay" value="5"> Sam</label>
+1778:               <label><input type="checkbox" name="pollingDay" value="6"> Dim</label>
+1779:             </div>
+1780:             <div class="small-text">0=Lundi ... 6=Dimanche. Sélectionnez au moins un jour.</div>
 1781:           </div>
-1782:           <div class="form-group">
-1783:             <label for="attachmentDetectionToggle">Détection de pièces jointes requise</label>
-1784:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
-1785:               <input type="checkbox" id="attachmentDetectionToggle">
-1786:               <span class="toggle-slider"></span>
-1787:             </label>
+1782:           <div class="inline-group" style="margin: 8px 0 12px 0;">
+1783:             <label class="toggle-switch">
+1784:               <input type="checkbox" id="enableSubjectGroupDedup">
+1785:               <span class="toggle-slider"></span>
+1786:             </label>
+1787:             <span style="margin-left: 10px;">ENABLE_SUBJECT_GROUP_DEDUP</span>
 1788:           </div>
-1789:           <div class="form-group">
-1790:             <label for="maxEmailSizeMB">Taille maximale des emails à traiter (Mo)</label>
-1791:             <input id="maxEmailSizeMB" type="number" min="1" max="100" placeholder="ex: 25">
-1792:           </div>
-1793:           <div class="form-group">
-1794:             <label for="senderPriority">Priorité des expéditeurs (JSON simple)</label>
-1795:             <textarea id="senderPriority" rows="3" placeholder='{"vip@example.com":"high","team@example.com":"medium"}' style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-1796:             <div class="small-text">Format: { "email": "high|medium|low", ... } — Validé côté client uniquement pour l'instant.</div>
-1797:           </div>
-1798:         </div>
-1799:         <div class="card" style="margin-top: 20px;">
-1800:           <div class="card-title">⚡ Paramètres de Fiabilité</div>
-1801:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
-1802:             <div class="form-group">
-1803:               <label for="retryCount">Nombre de tentatives (retries)</label>
-1804:               <input id="retryCount" type="number" min="0" max="10" placeholder="ex: 3">
-1805:             </div>
-1806:             <div class="form-group">
-1807:               <label for="retryDelaySec">Délai entre retries (secondes)</label>
-1808:               <input id="retryDelaySec" type="number" min="0" max="600" placeholder="ex: 10">
-1809:             </div>
-1810:             <div class="form-group">
-1811:               <label for="webhookTimeoutSec">Timeout Webhook (secondes)</label>
-1812:               <input id="webhookTimeoutSec" type="number" min="1" max="120" placeholder="ex: 30">
-1813:             </div>
-1814:             <div class="form-group">
-1815:               <label for="rateLimitPerHour">Limite d'envoi (webhooks/heure)</label>
-1816:               <input id="rateLimitPerHour" type="number" min="1" max="10000" placeholder="ex: 300">
-1817:             </div>
-1818:           </div>
-1819:           <div style="margin-top: 8px;">
-1820:             <label class="toggle-switch" style="vertical-align: middle;">
-1821:               <input type="checkbox" id="notifyOnFailureToggle">
-1822:               <span class="toggle-slider"></span>
-1823:             </label>
-1824:             <span style="margin-left: 10px; vertical-align: middle;">Notifications d'échec par email (UI-only)</span>
-1825:           </div>
-1826:           <div style="margin-top: 12px;">
-1827:             <button id="processingPrefsSaveBtn" class="btn btn-primary">💾 Enregistrer Préférences de Traitement</button>
-1828:             <div id="processingPrefsMsg" class="status-msg"></div>
-1829:           </div>
-1830:         </div>
-1831:       </div>
-1832: 
-1833:       <!-- Section: Vue d'ensemble (métriques + logs) -->
-1834:       <div id="sec-overview" class="section-panel monitoring active">
-1835:         <div class="card">
-1836:           <div class="card-title">📊 Monitoring & Métriques (24h)</div>
-1837:           <div class="inline-group" style="margin-bottom: 10px;">
-1838:             <label class="toggle-switch">
-1839:               <input type="checkbox" id="enableMetricsToggle">
-1840:               <span class="toggle-slider"></span>
-1841:             </label>
-1842:             <span style="margin-left: 10px;">Activer le calcul de métriques locales</span>
-1843:           </div>
-1844:           <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
-1845:             <div class="form-group"><label>Emails traités</label><div id="metricEmailsProcessed" class="small-text">—</div></div>
-1846:             <div class="form-group"><label>Webhooks envoyés</label><div id="metricWebhooksSent" class="small-text">—</div></div>
-1847:             <div class="form-group"><label>Erreurs</label><div id="metricErrors" class="small-text">—</div></div>
-1848:             <div class="form-group"><label>Taux de succès (%)</label><div id="metricSuccessRate" class="small-text">—</div></div>
-1849:           </div>
-1850:           <div id="metricsMiniChart" style="height: 60px; background: rgba(255,255,255,0.05); border:1px solid var(--cork-border-color); border-radius:4px; margin-top:10px; position: relative; overflow:hidden;"></div>
-1851:           <div class="small-text">Graphique simplifié généré côté client à partir de `/api/webhook_logs`.</div>
-1852:         </div>
-1853:         <div class="logs-container">
-1854:           <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
-1855:           <div style="margin-bottom: 15px;">
-1856:             <button id="refreshLogsBtn" class="btn btn-primary">🔄 Actualiser</button>
-1857:           </div>
-1858:           <div id="logsContainer">
-1859:             <div class="log-empty">Chargement des logs...</div>
-1860:           </div>
-1861:         </div>
-1862:       </div>
-1863: 
-1864:       <!-- Section: Outils (config mgmt + outils de test) -->
-1865:       <div id="sec-tools" class="section-panel">
-1866:         <div class="card">
-1867:           <div class="card-title">💾 Gestion des Configurations</div>
-1868:           <div class="inline-group" style="margin-bottom: 10px;">
-1869:             <button id="exportConfigBtn" class="btn btn-primary">⬇️ Exporter</button>
-1870:             <input id="importConfigFile" type="file" accept="application/json" style="display:none;"/>
-1871:             <button id="importConfigBtn" class="btn btn-primary">⬆️ Importer</button>
-1872:           </div>
-1873:           <div id="configMgmtMsg" class="status-msg"></div>
-1874:           <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
-1875:         </div>
-1876:         <div class="card" style="margin-top: 20px;">
-1877:           <div class="card-title">🚀 Déploiement de l'application</div>
-1878:           <div class="form-group">
-1879:             <p class="small-text">Certaines modifications (ex: paramètres applicatifs, configuration reverse proxy) nécessitent un déploiement pour être pleinement appliquées.</p>
-1880:           </div>
-1881:           <div class="inline-group" style="margin-bottom: 10px;">
-1882:             <button id="restartServerBtn" class="btn btn-success">🚀 Déployer l'application</button>
+1789:           <button id="saveEmailPrefsBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer les préférences</button>
+1790:           <div id="emailPrefsSaveStatus" class="status-msg" style="margin-top: 10px;"></div>
+1791:           <!-- Fallback status container (legacy ID used by JS as a fallback) -->
+1792:           <div id="pollingCfgMsg" class="status-msg" style="margin-top: 6px;"></div>
+1793:         </div>
+1794:         
+1795:       </div>
+1796: 
+1797:       <!-- Section: Préférences (filtres + fiabilité) -->
+1798:       <div id="sec-preferences" class="section-panel">
+1799:         <div class="card">
+1800:           <div class="card-title">🔍 Filtres Email Avancés</div>
+1801:           <div class="form-group">
+1802:             <label for="excludeKeywordsRecadrage">Mots-clés à exclure (Recadrage) — un par ligne</label>
+1803:             <textarea id="excludeKeywordsRecadrage" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+1804:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `RECADRAGE_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
+1805:           </div>
+1806:           <div class="form-group">
+1807:             <label for="excludeKeywordsAutorepondeur">Mots-clés à exclure (Autorépondeur) — un par ligne</label>
+1808:             <textarea id="excludeKeywordsAutorepondeur" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+1809:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `AUTOREPONDEUR_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
+1810:           </div>
+1811:           <div class="form-group">
+1812:             <label for="excludeKeywords">Mots-clés à exclure (global, compatibilité) — un par ligne</label>
+1813:             <textarea id="excludeKeywords" rows="3" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+1814:             <div class="small-text">Liste globale (héritage). S'applique avant toute logique et avant les listes spécifiques.</div>
+1815:           </div>
+1816:           <div class="form-group">
+1817:             <label for="attachmentDetectionToggle">Détection de pièces jointes requise</label>
+1818:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+1819:               <input type="checkbox" id="attachmentDetectionToggle">
+1820:               <span class="toggle-slider"></span>
+1821:             </label>
+1822:           </div>
+1823:           <div class="form-group">
+1824:             <label for="maxEmailSizeMB">Taille maximale des emails à traiter (Mo)</label>
+1825:             <input id="maxEmailSizeMB" type="number" min="1" max="100" placeholder="ex: 25">
+1826:           </div>
+1827:           <div class="form-group">
+1828:             <label for="senderPriority">Priorité des expéditeurs (JSON simple)</label>
+1829:             <textarea id="senderPriority" rows="3" placeholder='{"vip@example.com":"high","team@example.com":"medium"}' style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+1830:             <div class="small-text">Format: { "email": "high|medium|low", ... } — Validé côté client uniquement pour l'instant.</div>
+1831:           </div>
+1832:         </div>
+1833:         <div class="card" style="margin-top: 20px;">
+1834:           <div class="card-title">⚡ Paramètres de Fiabilité</div>
+1835:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+1836:             <div class="form-group">
+1837:               <label for="retryCount">Nombre de tentatives (retries)</label>
+1838:               <input id="retryCount" type="number" min="0" max="10" placeholder="ex: 3">
+1839:             </div>
+1840:             <div class="form-group">
+1841:               <label for="retryDelaySec">Délai entre retries (secondes)</label>
+1842:               <input id="retryDelaySec" type="number" min="0" max="600" placeholder="ex: 10">
+1843:             </div>
+1844:             <div class="form-group">
+1845:               <label for="webhookTimeoutSec">Timeout Webhook (secondes)</label>
+1846:               <input id="webhookTimeoutSec" type="number" min="1" max="120" placeholder="ex: 30">
+1847:             </div>
+1848:             <div class="form-group">
+1849:               <label for="rateLimitPerHour">Limite d'envoi (webhooks/heure)</label>
+1850:               <input id="rateLimitPerHour" type="number" min="1" max="10000" placeholder="ex: 300">
+1851:             </div>
+1852:           </div>
+1853:           <div style="margin-top: 8px;">
+1854:             <label class="toggle-switch" style="vertical-align: middle;">
+1855:               <input type="checkbox" id="notifyOnFailureToggle">
+1856:               <span class="toggle-slider"></span>
+1857:             </label>
+1858:             <span style="margin-left: 10px; vertical-align: middle;">Notifications d'échec par email (UI-only)</span>
+1859:           </div>
+1860:           <div style="margin-top: 12px;">
+1861:             <button id="processingPrefsSaveBtn" class="btn btn-primary">💾 Enregistrer Préférences de Traitement</button>
+1862:             <div id="processingPrefsMsg" class="status-msg"></div>
+1863:           </div>
+1864:         </div>
+1865:       </div>
+1866: 
+1867:       <!-- Section: Vue d'ensemble (métriques + logs) -->
+1868:       <div id="sec-overview" class="section-panel monitoring active">
+1869:         <div class="card">
+1870:           <div class="card-title">📊 Monitoring & Métriques (24h)</div>
+1871:           <div class="inline-group" style="margin-bottom: 10px;">
+1872:             <label class="toggle-switch">
+1873:               <input type="checkbox" id="enableMetricsToggle" checked>
+1874:               <span class="toggle-slider"></span>
+1875:             </label>
+1876:             <span style="margin-left: 10px;">Activer le calcul de métriques locales</span>
+1877:           </div>
+1878:           <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
+1879:             <div class="form-group"><label>Emails traités</label><div id="metricEmailsProcessed" class="small-text">—</div></div>
+1880:             <div class="form-group"><label>Webhooks envoyés</label><div id="metricWebhooksSent" class="small-text">—</div></div>
+1881:             <div class="form-group"><label>Erreurs</label><div id="metricErrors" class="small-text">—</div></div>
+1882:             <div class="form-group"><label>Taux de succès (%)</label><div id="metricSuccessRate" class="small-text">—</div></div>
 1883:           </div>
-1884:           <div id="restartMsg" class="status-msg"></div>
-1885:           <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
+1884:           <div id="metricsMiniChart" style="height: 60px; background: rgba(255,255,255,0.05); border:1px solid var(--cork-border-color); border-radius:4px; margin-top:10px; position: relative; overflow:hidden;"></div>
+1885:           <div class="small-text">Graphique simplifié généré côté client à partir de `/api/webhook_logs`.</div>
 1886:         </div>
-1887:         <div class="card" style="margin-top: 20px;">
-1888:           <div class="card-title">🗂️ Migration configs → Redis</div>
-1889:           <p>Rejouez le script <code>migrate_configs_to_redis.py</code> directement sur le serveur Render avec toutes les variables d'environnement de production.</p>
-1890:           <div class="inline-group" style="margin-bottom: 10px;">
-1891:             <button id="migrateConfigsBtn" class="btn btn-warning">📦 Migrer les configurations</button>
-1892:           </div>
-1893:           <div id="migrateConfigsMsg" class="status-msg"></div>
-1894:           <pre id="migrateConfigsLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-1895:           <hr style="margin: 18px 0; border-color: rgba(255,255,255,0.1);">
-1896:           <p style="margin-bottom:10px;">Vérifiez l'état des données persistées dans Redis (structures JSON, attributs requis, dates de mise à jour).</p>
-1897:           <div class="inline-group" style="margin-bottom: 10px;">
-1898:             <button id="verifyConfigStoreBtn" class="btn btn-info">🔍 Vérifier les données en Redis</button>
-1899:           </div>
-1900:           <label for="verifyConfigStoreRawToggle" class="small-text" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-1901:             <input type="checkbox" id="verifyConfigStoreRawToggle">
-1902:             <span>Inclure le JSON complet dans le log pour faciliter le debug.</span>
-1903:           </label>
-1904:           <div id="verifyConfigStoreMsg" class="status-msg"></div>
-1905:           <pre id="verifyConfigStoreLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-1906:         </div>
-1907:         <div class="card" style="margin-top: 20px;">
-1908:           <div class="card-title">🔐 Accès Magic Link</div>
-1909:           <p>Générez un lien pré-authentifié à usage unique pour ouvrir rapidement le dashboard sans retaper vos identifiants. Le lien est automatiquement copié.</p>
-1910:           <div class="inline-group" style="margin-bottom: 12px;">
-1911:             <label class="toggle-switch">
-1912:               <input type="checkbox" id="magicLinkUnlimitedToggle">
-1913:               <span class="toggle-slider"></span>
-1914:             </label>
-1915:             <span style="margin-left: 10px;">
-1916:               Mode illimité (désactivé = lien one-shot avec expiration)
-1917:             </span>
-1918:           </div>
-1919:           <button id="generateMagicLinkBtn" class="btn btn-primary">✨ Générer un magic link</button>
-1920:           <div id="magicLinkOutput" class="status-msg" style="margin-top: 12px;"></div>
-1921:           <div class="small-text">
-1922:             Important : partagez ce lien uniquement avec des personnes autorisées.
-1923:             En mode one-shot, il expire après quelques minutes et s'invalide dès qu'il est utilisé.
-1924:             En mode illimité, aucun délai mais vous devez révoquer manuellement en cas de fuite.
-1925:           </div>
-1926:         </div>
-1927:         <div class="card" style="margin-top: 20px;">
-1928:           <div class="card-title">🧪 Outils de Test</div>
-1929:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
-1930:             <div class="form-group">
-1931:               <label for="testWebhookUrl">Valider une URL de webhook</label>
-1932:               <input id="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
-1933:               <button id="validateWebhookUrlBtn" class="btn btn-primary" style="margin-top: 8px;">Valider</button>
-1934:               <div id="webhookUrlValidationMsg" class="status-msg"></div>
-1935:             </div>
-1936:             <div class="form-group">
-1937:               <label>Prévisualiser un payload</label>
-1938:               <input id="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
-1939:               <input id="previewSender" type="email" placeholder="Expéditeur (ex: media@solution.fr)" style="margin-top: 6px;">
-1940:               <textarea id="previewBody" rows="4" placeholder="Corps de l'email (coller du texte)" style="margin-top: 6px; width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-1941:               <button id="buildPayloadPreviewBtn" class="btn btn-primary" style="margin-top: 8px;">Générer</button>
-1942:               <pre id="payloadPreview" style="margin-top:8px; background: rgba(0,0,0,0.2); border:1px solid var(--cork-border-color); padding:10px; border-radius:4px; max-height:200px; overflow:auto; color: var(--cork-text-primary);"></pre>
-1943:             </div>
-1944:           </div>
-1945:           <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
-1946:         </div>
-1947:         <div class="card" style="margin-top: 20px;">
-1948:           <div class="card-title">🔗 Ouvrir une page de téléchargement</div>
-1949:           <div class="form-group">
-1950:             <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
-1951:             <input id="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
-1952:             <button id="openDownloadPageBtn" class="btn btn-primary" style="margin-top: 8px;">Ouvrir la page</button>
-1953:             <div id="openDownloadMsg" class="status-msg"></div>
-1954:             <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
-1955:           </div>
-1956:         </div>
-1957:         <div class="card" style="margin-top: 20px;">
-1958:           <div class="card-title"> Flags Runtime (Debug)</div>
-1959:           <div class="form-group">
-1960:             <label>Bypass déduplication par ID d’email (debug)</label>
-1961:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
-1962:               <input type="checkbox" id="disableEmailIdDedupToggle">
-1963:               <span class="toggle-slider"></span>
-1964:             </label>
-1965:             <div class="small-text">Quand activé, ignore la déduplication par ID d'email. À utiliser uniquement pour des tests.
-1966:             </div>
-1967:           </div>
-1968:           <div class="form-group" style="margin-top: 10px;">
-1969:             <label>Autoriser envoi CUSTOM sans liens de livraison</label>
-1970:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
-1971:               <input type="checkbox" id="allowCustomWithoutLinksToggle">
-1972:               <span class="toggle-slider"></span>
-1973:             </label>
-1974:             <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu’aucun lien (Dropbox/FromSmash/SwissTransfer) n’est détecté, pour éviter les 422.</div>
-1975:           </div>
-1976:           <div style="margin-top: 12px;">
-1977:             <button id="runtimeFlagsSaveBtn" class="btn btn-primary"> Enregistrer Flags Runtime</button>
-1978:             <div id="runtimeFlagsMsg" class="status-msg"></div>
-1979:           </div>
+1887:         <div class="logs-container">
+1888:           <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
+1889:           <div style="margin-bottom: 15px;">
+1890:             <button id="refreshLogsBtn" class="btn btn-primary">🔄 Actualiser</button>
+1891:           </div>
+1892:           <div id="webhookLogs">
+1893:             <div class="log-empty">Chargement des logs...</div>
+1894:           </div>
+1895:         </div>
+1896:       </div>
+1897: 
+1898:       <!-- Section: Outils (config mgmt + outils de test) -->
+1899:       <div id="sec-tools" class="section-panel">
+1900:         <div class="card">
+1901:           <div class="card-title">💾 Gestion des Configurations</div>
+1902:           <div class="inline-group" style="margin-bottom: 10px;">
+1903:             <button id="exportConfigBtn" class="btn btn-primary">⬇️ Exporter</button>
+1904:             <input id="importConfigFile" type="file" accept="application/json" style="display:none;"/>
+1905:             <button id="importConfigBtn" class="btn btn-primary">⬆️ Importer</button>
+1906:           </div>
+1907:           <div id="configMgmtMsg" class="status-msg"></div>
+1908:           <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
+1909:         </div>
+1910:         <div class="card" style="margin-top: 20px;">
+1911:           <div class="card-title">🚀 Déploiement de l'application</div>
+1912:           <div class="form-group">
+1913:             <p class="small-text">Certaines modifications (ex: paramètres applicatifs, configuration reverse proxy) nécessitent un déploiement pour être pleinement appliquées.</p>
+1914:           </div>
+1915:           <div class="inline-group" style="margin-bottom: 10px;">
+1916:             <button id="restartServerBtn" class="btn btn-success">🚀 Déployer l'application</button>
+1917:           </div>
+1918:           <div id="restartMsg" class="status-msg"></div>
+1919:           <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
+1920:         </div>
+1921:         <div class="card" style="margin-top: 20px;">
+1922:           <div class="card-title">🗂️ Migration configs → Redis</div>
+1923:           <p>Rejouez le script <code>migrate_configs_to_redis.py</code> directement sur le serveur Render avec toutes les variables d'environnement de production.</p>
+1924:           <div class="inline-group" style="margin-bottom: 10px;">
+1925:             <button id="migrateConfigsBtn" class="btn btn-warning">📦 Migrer les configurations</button>
+1926:           </div>
+1927:           <div id="migrateConfigsMsg" class="status-msg"></div>
+1928:           <pre id="migrateConfigsLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
+1929:           <hr style="margin: 18px 0; border-color: rgba(255,255,255,0.1);">
+1930:           <p style="margin-bottom:10px;">Vérifiez l'état des données persistées dans Redis (structures JSON, attributs requis, dates de mise à jour).</p>
+1931:           <div class="inline-group" style="margin-bottom: 10px;">
+1932:             <button id="verifyConfigStoreBtn" class="btn btn-info">🔍 Vérifier les données en Redis</button>
+1933:           </div>
+1934:           <label for="verifyConfigStoreRawToggle" class="small-text" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+1935:             <input type="checkbox" id="verifyConfigStoreRawToggle">
+1936:             <span>Inclure le JSON complet dans le log pour faciliter le debug.</span>
+1937:           </label>
+1938:           <div id="verifyConfigStoreMsg" class="status-msg"></div>
+1939:           <pre id="verifyConfigStoreLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
+1940:         </div>
+1941:         <div class="card" style="margin-top: 20px;">
+1942:           <div class="card-title">🔐 Accès Magic Link</div>
+1943:           <p>Générez un lien pré-authentifié à usage unique pour ouvrir rapidement le dashboard sans retaper vos identifiants. Le lien est automatiquement copié.</p>
+1944:           <div class="inline-group" style="margin-bottom: 12px;">
+1945:             <label class="toggle-switch">
+1946:               <input type="checkbox" id="magicLinkUnlimitedToggle">
+1947:               <span class="toggle-slider"></span>
+1948:             </label>
+1949:             <span style="margin-left: 10px;">
+1950:               Mode illimité (désactivé = lien one-shot avec expiration)
+1951:             </span>
+1952:           </div>
+1953:           <button id="generateMagicLinkBtn" class="btn btn-primary">✨ Générer un magic link</button>
+1954:           <div id="magicLinkOutput" class="status-msg" style="margin-top: 12px;"></div>
+1955:           <div class="small-text">
+1956:             Important : partagez ce lien uniquement avec des personnes autorisées.
+1957:             En mode one-shot, il expire après quelques minutes et s'invalide dès qu'il est utilisé.
+1958:             En mode illimité, aucun délai mais vous devez révoquer manuellement en cas de fuite.
+1959:           </div>
+1960:         </div>
+1961:         <div class="card" style="margin-top: 20px;">
+1962:           <div class="card-title">🧪 Outils de Test</div>
+1963:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+1964:             <div class="form-group">
+1965:               <label for="testWebhookUrl">Valider une URL de webhook</label>
+1966:               <input id="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
+1967:               <button id="validateWebhookUrlBtn" class="btn btn-primary" style="margin-top: 8px;">Valider</button>
+1968:               <div id="webhookUrlValidationMsg" class="status-msg"></div>
+1969:             </div>
+1970:             <div class="form-group">
+1971:               <label>Prévisualiser un payload</label>
+1972:               <input id="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
+1973:               <input id="previewSender" type="email" placeholder="Expéditeur (ex: media@solution.fr)" style="margin-top: 6px;">
+1974:               <textarea id="previewBody" rows="4" placeholder="Corps de l'email (coller du texte)" style="margin-top: 6px; width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+1975:               <button id="buildPayloadPreviewBtn" class="btn btn-primary" style="margin-top: 8px;">Générer</button>
+1976:               <pre id="payloadPreview" style="margin-top:8px; background: rgba(0,0,0,0.2); border:1px solid var(--cork-border-color); padding:10px; border-radius:4px; max-height:200px; overflow:auto; color: var(--cork-text-primary);"></pre>
+1977:             </div>
+1978:           </div>
+1979:           <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
 1980:         </div>
-1981:       </div>
-1982:     </div>
-1983:     <!-- Chargement des modules JavaScript -->
-1984:     <script type="module" src="{{ url_for('static', filename='utils/MessageHelper.js') }}"></script>
-1985:     <script type="module" src="{{ url_for('static', filename='services/ApiService.js') }}"></script>
-1986:     <script type="module" src="{{ url_for('static', filename='services/WebhookService.js') }}"></script>
-1987:     <script type="module" src="{{ url_for('static', filename='services/LogService.js') }}"></script>
-1988:     <script type="module" src="{{ url_for('static', filename='components/TabManager.js') }}"></script>
-1989:     <script type="module" src="{{ url_for('static', filename='dashboard.js') }}?v=20260118-modular"></script>
-1990:   </body>
-1991: </html>
+1981:         <div class="card" style="margin-top: 20px;">
+1982:           <div class="card-title">🔗 Ouvrir une page de téléchargement</div>
+1983:           <div class="form-group">
+1984:             <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
+1985:             <input id="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
+1986:             <button id="openDownloadPageBtn" class="btn btn-primary" style="margin-top: 8px;">Ouvrir la page</button>
+1987:             <div id="openDownloadMsg" class="status-msg"></div>
+1988:             <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
+1989:           </div>
+1990:         </div>
+1991:         <div class="card" style="margin-top: 20px;">
+1992:           <div class="card-title"> Flags Runtime (Debug)</div>
+1993:           <div class="form-group">
+1994:             <label>Bypass déduplication par ID d’email (debug)</label>
+1995:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+1996:               <input type="checkbox" id="disableEmailIdDedupToggle">
+1997:               <span class="toggle-slider"></span>
+1998:             </label>
+1999:             <div class="small-text">Quand activé, ignore la déduplication par ID d'email. À utiliser uniquement pour des tests.
+2000:             </div>
+2001:           </div>
+2002:           <div class="form-group" style="margin-top: 10px;">
+2003:             <label>Autoriser envoi CUSTOM sans liens de livraison</label>
+2004:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+2005:               <input type="checkbox" id="allowCustomWithoutLinksToggle">
+2006:               <span class="toggle-slider"></span>
+2007:             </label>
+2008:             <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu’aucun lien (Dropbox/FromSmash/SwissTransfer) n’est détecté, pour éviter les 422.</div>
+2009:           </div>
+2010:           <div style="margin-top: 12px;">
+2011:             <button id="runtimeFlagsSaveBtn" class="btn btn-primary"> Enregistrer Flags Runtime</button>
+2012:             <div id="runtimeFlagsMsg" class="status-msg"></div>
+2013:           </div>
+2014:         </div>
+2015:       </div>
+2016:     </div>
+2017:     <!-- Chargement des modules JavaScript -->
+2018:     <script type="module" src="{{ url_for('static', filename='utils/MessageHelper.js') }}"></script>
+2019:     <script type="module" src="{{ url_for('static', filename='services/ApiService.js') }}"></script>
+2020:     <script type="module" src="{{ url_for('static', filename='services/WebhookService.js') }}"></script>
+2021:     <script type="module" src="{{ url_for('static', filename='services/LogService.js') }}"></script>
+2022:     <script type="module" src="{{ url_for('static', filename='components/TabManager.js') }}"></script>
+2023:     <script type="module" src="{{ url_for('static', filename='dashboard.js') }}?v=20260118-modular"></script>
+2024:   </body>
+2025: </html>
 ````
 
 ## File: static/dashboard.js
@@ -18361,1595 +18395,1769 @@ requirements.txt
  299:         });
  300:     });
  301:     
- 302:     const restartBtn = document.getElementById('restartServerBtn');
- 303:     if (restartBtn) {
- 304:         restartBtn.addEventListener('click', handleDeployApplication);
- 305:     }
- 306:     
- 307:     const migrateBtn = document.getElementById('migrateConfigsBtn');
- 308:     if (migrateBtn) {
- 309:         migrateBtn.addEventListener('click', handleConfigMigration);
- 310:     }
- 311: 
- 312:     const verifyBtn = document.getElementById('verifyConfigStoreBtn');
- 313:     if (verifyBtn) {
- 314:         verifyBtn.addEventListener('click', handleConfigVerification);
- 315:     }
- 316: }
- 317: 
- 318: async function loadInitialData() {
- 319:     try {
- 320:         await Promise.all([
- 321:             WebhookService.loadConfig(),
- 322:             loadPollingStatus(),
- 323:             loadTimeWindow(),
- 324:             loadPollingConfig(),
- 325:             loadRuntimeFlags(),
- 326:             loadProcessingPrefsFromServer(),
- 327:             loadLocalPreferences()
- 328:         ]);
- 329:         
- 330:         await loadGlobalWebhookTimeWindow();
- 331:         
- 332:         await LogService.loadAndRenderLogs();
- 333:         
- 334:         await updateGlobalStatus();
- 335:         
- 336:     } catch (e) {
- 337:         console.error('Erreur lors du chargement des données initiales:', e);
- 338:     }
- 339: }
- 340: 
- 341: function showCopiedFeedback() {
- 342:     let toast = document.querySelector('.copied-feedback');
- 343:     if (!toast) {
- 344:         toast = document.createElement('div');
- 345:         toast.className = 'copied-feedback';
- 346:         toast.textContent = '🔗 Magic link copié dans le presse-papiers !';
- 347:         document.body.appendChild(toast);
- 348:     }
- 349:     toast.classList.add('show');
- 350:     
- 351:     setTimeout(() => {
- 352:         toast.classList.remove('show');
- 353:     }, 3000);
- 354: }
- 355: 
- 356: async function generateMagicLink() {
- 357:     const btn = document.getElementById('generateMagicLinkBtn');
- 358:     const output = document.getElementById('magicLinkOutput');
- 359:     const unlimitedToggle = document.getElementById('magicLinkUnlimitedToggle');
- 360:     
- 361:     if (!btn || !output) return;
- 362:     
- 363:     output.textContent = '';
- 364:     MessageHelper.setButtonLoading(btn, true);
- 365:     
- 366:     try {
- 367:         const unlimited = unlimitedToggle?.checked ?? false;
- 368:         const data = await ApiService.post('/api/auth/magic-link', { unlimited });
- 369:         
- 370:         if (data.success && data.magic_link) {
- 371:             const expiresText = data.unlimited ? 'aucune expiration' : (data.expires_at || 'bientôt');
- 372:             output.textContent = `${data.magic_link} (exp. ${expiresText})`;
- 373:             output.className = 'status-msg success';
- 374:             
- 375:             try {
- 376:                 await navigator.clipboard.writeText(data.magic_link);
- 377:                 output.textContent += ' — Copié dans le presse-papiers';
- 378:                 showCopiedFeedback();
- 379:             } catch (clipboardError) {
- 380:                 // Silently fail clipboard copy
- 381:             }
- 382:         } else {
- 383:             output.textContent = data.message || 'Impossible de générer le magic link.';
- 384:             output.className = 'status-msg error';
- 385:         }
- 386:     } catch (e) {
- 387:         console.error('generateMagicLink error', e);
- 388:         output.textContent = 'Erreur de génération du magic link.';
- 389:         output.className = 'status-msg error';
- 390:     } finally {
- 391:         MessageHelper.setButtonLoading(btn, false);
- 392:         setTimeout(() => {
- 393:             if (output) output.className = 'status-msg';
- 394:         }, 7000);
- 395:     }
- 396: }
- 397: 
- 398: // Polling control
- 399: async function loadPollingStatus() {
- 400:     try {
- 401:         const data = await ApiService.get('/api/get_polling_config');
- 402:         
- 403:         if (data.success) {
- 404:             const isEnabled = !!data.config?.enable_polling;
- 405:             const toggle = document.getElementById('pollingToggle');
- 406:             const statusText = document.getElementById('pollingStatusText');
- 407:             
- 408:             if (toggle) toggle.checked = isEnabled;
- 409:             if (statusText) {
- 410:                 statusText.textContent = isEnabled ? '✅ Polling activé' : '❌ Polling désactivé';
- 411:             }
- 412:         }
- 413:     } catch (e) {
- 414:         console.error('Erreur chargement statut polling:', e);
- 415:         const statusText = document.getElementById('pollingStatusText');
- 416:         if (statusText) statusText.textContent = '⚠️ Erreur de chargement';
- 417:     }
+ 302:     // Populate dropdowns with options
+ 303:     const timeDropdowns = ['webhooksTimeStart', 'webhooksTimeEnd', 'globalWebhookTimeStart', 'globalWebhookTimeEnd'];
+ 304:     timeDropdowns.forEach(id => {
+ 305:         const select = document.getElementById(id);
+ 306:         if (select) {
+ 307:             select.innerHTML = generateTimeOptions(30);
+ 308:         }
+ 309:     });
+ 310:     
+ 311:     const hourDropdowns = ['pollingStartHour', 'pollingEndHour'];
+ 312:     hourDropdowns.forEach(id => {
+ 313:         const select = document.getElementById(id);
+ 314:         if (select) {
+ 315:             select.innerHTML = generateHourOptions();
+ 316:         }
+ 317:     });
+ 318:     
+ 319:     const restartBtn = document.getElementById('restartServerBtn');
+ 320:     if (restartBtn) {
+ 321:         restartBtn.addEventListener('click', handleDeployApplication);
+ 322:     }
+ 323:     
+ 324:     const migrateBtn = document.getElementById('migrateConfigsBtn');
+ 325:     if (migrateBtn) {
+ 326:         migrateBtn.addEventListener('click', handleConfigMigration);
+ 327:     }
+ 328: 
+ 329:     const verifyBtn = document.getElementById('verifyConfigStoreBtn');
+ 330:     if (verifyBtn) {
+ 331:         verifyBtn.addEventListener('click', handleConfigVerification);
+ 332:     }
+ 333:     
+ 334:     // Metrics toggle event
+ 335:     const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+ 336:     if (enableMetricsToggle) {
+ 337:         enableMetricsToggle.addEventListener('change', async () => {
+ 338:             saveLocalPreferences();
+ 339:             if (enableMetricsToggle.checked) {
+ 340:                 await computeAndRenderMetrics();
+ 341:             } else {
+ 342:                 clearMetrics();
+ 343:             }
+ 344:         });
+ 345:     }
+ 346: }
+ 347: 
+ 348: async function loadInitialData() {
+ 349:     try {
+ 350:         await Promise.all([
+ 351:             WebhookService.loadConfig(),
+ 352:             loadPollingStatus(),
+ 353:             loadTimeWindow(),
+ 354:             loadPollingConfig(),
+ 355:             loadRuntimeFlags(),
+ 356:             loadProcessingPrefsFromServer(),
+ 357:             loadLocalPreferences()
+ 358:         ]);
+ 359:         
+ 360:         await loadGlobalWebhookTimeWindow();
+ 361:         
+ 362:         await LogService.loadAndRenderLogs();
+ 363:         
+ 364:         await updateGlobalStatus();
+ 365:         
+ 366:         // Trigger metrics computation if toggle is enabled (default)
+ 367:         const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+ 368:         if (enableMetricsToggle && enableMetricsToggle.checked) {
+ 369:             await computeAndRenderMetrics();
+ 370:         }
+ 371:         
+ 372:     } catch (e) {
+ 373:         console.error('Erreur lors du chargement des données initiales:', e);
+ 374:     }
+ 375: }
+ 376: 
+ 377: // Metrics functions
+ 378: async function computeAndRenderMetrics() {
+ 379:     try {
+ 380:         const res = await ApiService.get('/api/webhook_logs?days=1');
+ 381:         if (!res.ok) { 
+ 382:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 383:                 console.warn('metrics: non-200', res.status);
+ 384:             }
+ 385:             clearMetrics(); return; 
+ 386:         }
+ 387:         const data = await res.json();
+ 388:         const logs = (data.success && Array.isArray(data.logs)) ? data.logs : [];
+ 389:         const total = logs.length;
+ 390:         const sent = logs.filter(l => l.status === 'success').length;
+ 391:         const errors = logs.filter(l => l.status === 'error').length;
+ 392:         const successRate = total ? Math.round((sent / total) * 100) : 0;
+ 393:         setMetric('metricEmailsProcessed', String(total));
+ 394:         setMetric('metricWebhooksSent', String(sent));
+ 395:         setMetric('metricErrors', String(errors));
+ 396:         setMetric('metricSuccessRate', String(successRate));
+ 397:         renderMiniChart(logs);
+ 398:     } catch (e) {
+ 399:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 400:             console.warn('metrics error', e);
+ 401:         }
+ 402:         clearMetrics();
+ 403:     }
+ 404: }
+ 405: 
+ 406: function clearMetrics() {
+ 407:     setMetric('metricEmailsProcessed', '—');
+ 408:     setMetric('metricWebhooksSent', '—');
+ 409:     setMetric('metricErrors', '—');
+ 410:     setMetric('metricSuccessRate', '—');
+ 411:     const chart = document.getElementById('metricsMiniChart');
+ 412:     if (chart) chart.innerHTML = '';
+ 413: }
+ 414: 
+ 415: function setMetric(id, text) {
+ 416:     const el = document.getElementById(id);
+ 417:     if (el) el.textContent = text;
  418: }
  419: 
- 420: async function togglePolling() {
- 421:     const enable = document.getElementById('pollingToggle').checked;
- 422:     
- 423:     try {
- 424:         const data = await ApiService.post('/api/update_polling_config', { enable_polling: enable });
- 425:         
- 426:         if (data.success) {
- 427:             MessageHelper.showInfo('pollingMsg', data.message);
- 428:             const statusText = document.getElementById('pollingStatusText');
- 429:             if (statusText) {
- 430:                 statusText.textContent = enable ? '✅ Polling activé' : '❌ Polling désactivé';
- 431:             }
- 432:         } else {
- 433:             MessageHelper.showError('pollingMsg', data.message || 'Erreur lors du changement.');
- 434:         }
- 435:     } catch (e) {
- 436:         MessageHelper.showError('pollingMsg', 'Erreur de communication avec le serveur.');
- 437:     }
- 438: }
- 439: 
- 440: // Time window
- 441: async function loadTimeWindow() {
- 442:     const applyWindowValues = (startValue = '', endValue = '') => {
- 443:         const startInput = document.getElementById('webhooksTimeStart');
- 444:         const endInput = document.getElementById('webhooksTimeEnd');
- 445:         if (startInput) startInput.value = startValue || '';
- 446:         if (endInput) endInput.value = endValue || '';
- 447:         renderTimeWindowDisplay(startValue || '', endValue || '');
- 448:     };
- 449:     
- 450:     try {
- 451:         // 0) Source principale : fenêtre horaire globale (ancien endpoint)
- 452:         const globalTimeResponse = await ApiService.get('/api/get_webhook_time_window');
- 453:         if (globalTimeResponse.success) {
- 454:             applyWindowValues(
- 455:                 globalTimeResponse.webhooks_time_start || '',
- 456:                 globalTimeResponse.webhooks_time_end || ''
- 457:             );
- 458:             return;
- 459:         }
- 460:     } catch (e) {
- 461:         console.warn('Impossible de charger la fenêtre horaire globale:', e);
- 462:     }
- 463:     
- 464:     try {
- 465:         // 2) Fallback: ancienne source (time window override)
- 466:         const data = await ApiService.get('/api/get_webhook_time_window');
- 467:         if (data.success) {
- 468:             applyWindowValues(data.webhooks_time_start, data.webhooks_time_end);
- 469:         }
- 470:     } catch (e) {
- 471:         console.error('Erreur chargement fenêtre horaire (fallback):', e);
- 472:     }
- 473: }
- 474: 
- 475: async function saveTimeWindow() {
- 476:     const startInput = document.getElementById('webhooksTimeStart');
- 477:     const endInput = document.getElementById('webhooksTimeEnd');
- 478:     const start = startInput.value.trim();
- 479:     const end = endInput.value.trim();
- 480:     
- 481:     // Validation des formats
- 482:     if (start && !MessageHelper.isValidTimeFormat(start)) {
- 483:         MessageHelper.showError('timeWindowMsg', 'Format d\'heure invalide (ex: 09:30 ou 9h30).');
- 484:         return false;
- 485:     }
- 486:     
- 487:     if (end && !MessageHelper.isValidTimeFormat(end)) {
- 488:         MessageHelper.showError('timeWindowMsg', 'Format d\'heure invalide (ex: 17:30 ou 17h30).');
- 489:         return false;
- 490:     }
- 491:     
- 492:     // Normalisation des formats
- 493:     const normalizedStart = start ? MessageHelper.normalizeTimeFormat(start) : '';
- 494:     const normalizedEnd = end ? MessageHelper.normalizeTimeFormat(end) : '';
- 495:     
- 496:     try {
- 497:         const data = await ApiService.post('/api/set_webhook_time_window', { 
- 498:             start: normalizedStart, 
- 499:             end: normalizedEnd 
- 500:         });
- 501:         
- 502:         if (data.success) {
- 503:             MessageHelper.showSuccess('timeWindowMsg', 'Fenêtre horaire enregistrée avec succès !');
- 504:             updatePanelStatus('time-window', true);
- 505:             updatePanelIndicator('time-window');
- 506:             
- 507:             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
- 508:             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
- 509:                 startInput.value = data.webhooks_time_start || '';
- 510:             }
- 511:             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
- 512:                 endInput.value = data.webhooks_time_end || '';
- 513:             }
- 514:             
- 515:             renderTimeWindowDisplay(data.webhooks_time_start || normalizedStart, data.webhooks_time_end || normalizedEnd);
- 516:             
- 517:             // S'assurer que la source persistée est rechargée
- 518:             await loadTimeWindow();
- 519:             return true;
- 520:         } else {
- 521:             MessageHelper.showError('timeWindowMsg', data.message || 'Erreur lors de la sauvegarde.');
- 522:             updatePanelStatus('time-window', false);
- 523:             return false;
- 524:         }
- 525:     } catch (e) {
- 526:         MessageHelper.showError('timeWindowMsg', 'Erreur de communication avec le serveur.');
- 527:         updatePanelStatus('time-window', false);
- 528:         return false;
- 529:     }
- 530: }
- 531: 
- 532: function renderTimeWindowDisplay(start, end) {
- 533:     const displayEl = document.getElementById('timeWindowDisplay');
- 534:     if (!displayEl) return;
- 535:     
- 536:     const hasStart = Boolean(start && String(start).trim());
- 537:     const hasEnd = Boolean(end && String(end).trim());
- 538:     
- 539:     if (!hasStart && !hasEnd) {
- 540:         displayEl.textContent = 'Dernière fenêtre enregistrée: aucune contrainte horaire active';
- 541:         return;
- 542:     }
- 543:     
- 544:     const startText = hasStart ? String(start) : '—';
- 545:     const endText = hasEnd ? String(end) : '—';
- 546:     displayEl.textContent = `Dernière fenêtre enregistrée: ${startText} → ${endText}`;
- 547: }
- 548: 
- 549: // Polling configuration
- 550: async function loadPollingConfig() {
- 551:     try {
- 552:         const data = await ApiService.get('/api/get_polling_config');
- 553:         
- 554:         if (data.success) {
- 555:             const cfg = data.config || {};
- 556:             
- 557:             // Déduplication
- 558:             const dedupEl = document.getElementById('enableSubjectGroupDedup');
- 559:             if (dedupEl) dedupEl.checked = !!cfg.enable_subject_group_dedup;
- 560:             
- 561:             // Senders
- 562:             const senders = Array.isArray(cfg.sender_of_interest_for_polling) ? cfg.sender_of_interest_for_polling : [];
- 563:             renderSenderInputs(senders);
- 564:             
- 565:             // Active days and hours
- 566:             try {
- 567:                 if (Array.isArray(cfg.active_days)) setDayCheckboxes(cfg.active_days);
- 568:                 
- 569:                 const sh = document.getElementById('pollingStartHour');
- 570:                 const eh = document.getElementById('pollingEndHour');
- 571:                 if (sh && Number.isInteger(cfg.active_start_hour)) sh.value = String(cfg.active_start_hour);
- 572:                 if (eh && Number.isInteger(cfg.active_end_hour)) eh.value = String(cfg.active_end_hour);
- 573:             } catch (e) {
- 574:                 console.warn('loadPollingConfig: applying days/hours failed', e);
- 575:             }
- 576:         }
- 577:     } catch (e) {
- 578:         console.error('Erreur chargement config polling:', e);
- 579:     }
- 580: }
- 581: 
- 582: async function savePollingConfig(event) {
- 583:     const btn = event?.target || document.getElementById('savePollingCfgBtn');
- 584:     if (btn) btn.disabled = true;
- 585:     
- 586:     const dedup = document.getElementById('enableSubjectGroupDedup')?.checked;
- 587:     const senders = collectSenderInputs();
- 588:     const activeDays = collectDayCheckboxes();
- 589:     const startHourStr = document.getElementById('pollingStartHour')?.value?.trim() ?? '';
- 590:     const endHourStr = document.getElementById('pollingEndHour')?.value?.trim() ?? '';
- 591:     const statusId = document.getElementById('emailPrefsSaveStatus') ? 'emailPrefsSaveStatus' : 'pollingCfgMsg';
- 592: 
- 593:     // Validation
- 594:     const startHour = startHourStr === '' ? null : Number.parseInt(startHourStr, 10);
- 595:     const endHour = endHourStr === '' ? null : Number.parseInt(endHourStr, 10);
- 596:     
- 597:     if (!activeDays || activeDays.length === 0) {
- 598:         MessageHelper.showError(statusId, 'Veuillez sélectionner au moins un jour actif.');
- 599:         if (btn) btn.disabled = false;
- 600:         return;
- 601:     }
- 602:     
- 603:     if (startHour === null || Number.isNaN(startHour) || startHour < 0 || startHour > 23) {
- 604:         MessageHelper.showError(statusId, 'Heure de début invalide (0-23).');
- 605:         if (btn) btn.disabled = false;
- 606:         return;
- 607:     }
- 608:     
- 609:     if (endHour === null || Number.isNaN(endHour) || endHour < 0 || endHour > 23) {
- 610:         MessageHelper.showError(statusId, 'Heure de fin invalide (0-23).');
- 611:         if (btn) btn.disabled = false;
- 612:         return;
- 613:     }
- 614:     
- 615:     if (startHour === endHour) {
- 616:         MessageHelper.showError(statusId, 'L\'heure de début et de fin ne peuvent pas être identiques.');
- 617:         if (btn) btn.disabled = false;
- 618:         return;
+ 420: function renderMiniChart(logs) {
+ 421:     const chart = document.getElementById('metricsMiniChart');
+ 422:     if (!chart) return;
+ 423:     chart.innerHTML = '';
+ 424:     const width = chart.clientWidth || 300;
+ 425:     const height = chart.clientHeight || 60;
+ 426:     const canvas = document.createElement('canvas');
+ 427:     canvas.width = width; canvas.height = height;
+ 428:     const ctx = canvas.getContext('2d');
+ 429:     
+ 430:     // Simple line chart implementation
+ 431:     const padding = 5;
+ 432:     const chartWidth = width - 2 * padding;
+ 433:     const chartHeight = height - 2 * padding;
+ 434:     
+ 435:     // Group logs by hour
+ 436:     const hourlyData = new Array(24).fill(0);
+ 437:     logs.forEach(log => {
+ 438:         const hour = new Date(log.timestamp).getHours();
+ 439:         hourlyData[hour]++;
+ 440:     });
+ 441:     
+ 442:     const maxCount = Math.max(...hourlyData, 1);
+ 443:     const stepX = chartWidth / 23;
+ 444:     
+ 445:     ctx.strokeStyle = '#4CAF50';
+ 446:     ctx.lineWidth = 2;
+ 447:     ctx.beginPath();
+ 448:     
+ 449:     hourlyData.forEach((count, i) => {
+ 450:         const x = padding + i * stepX;
+ 451:         const y = padding + chartHeight - (count / maxCount) * chartHeight;
+ 452:         
+ 453:         if (i === 0) {
+ 454:             ctx.moveTo(x, y);
+ 455:         } else {
+ 456:             ctx.lineTo(x, y);
+ 457:         }
+ 458:     });
+ 459:     
+ 460:     ctx.stroke();
+ 461:     chart.appendChild(canvas);
+ 462: }
+ 463: 
+ 464: function showCopiedFeedback() {
+ 465:     let toast = document.querySelector('.copied-feedback');
+ 466:     if (!toast) {
+ 467:         toast = document.createElement('div');
+ 468:         toast.className = 'copied-feedback';
+ 469:         toast.textContent = '🔗 Magic link copié dans le presse-papiers !';
+ 470:         document.body.appendChild(toast);
+ 471:     }
+ 472:     toast.classList.add('show');
+ 473:     
+ 474:     setTimeout(() => {
+ 475:         toast.classList.remove('show');
+ 476:     }, 3000);
+ 477: }
+ 478: 
+ 479: async function generateMagicLink() {
+ 480:     const btn = document.getElementById('generateMagicLinkBtn');
+ 481:     const output = document.getElementById('magicLinkOutput');
+ 482:     const unlimitedToggle = document.getElementById('magicLinkUnlimitedToggle');
+ 483:     
+ 484:     if (!btn || !output) return;
+ 485:     
+ 486:     output.textContent = '';
+ 487:     MessageHelper.setButtonLoading(btn, true);
+ 488:     
+ 489:     try {
+ 490:         const unlimited = unlimitedToggle?.checked ?? false;
+ 491:         const data = await ApiService.post('/api/auth/magic-link', { unlimited });
+ 492:         
+ 493:         if (data.success && data.magic_link) {
+ 494:             const expiresText = data.unlimited ? 'aucune expiration' : (data.expires_at || 'bientôt');
+ 495:             output.textContent = `${data.magic_link} (exp. ${expiresText})`;
+ 496:             output.className = 'status-msg success';
+ 497:             
+ 498:             try {
+ 499:                 await navigator.clipboard.writeText(data.magic_link);
+ 500:                 output.textContent += ' — Copié dans le presse-papiers';
+ 501:                 showCopiedFeedback();
+ 502:             } catch (clipboardError) {
+ 503:                 // Silently fail clipboard copy
+ 504:             }
+ 505:         } else {
+ 506:             output.textContent = data.message || 'Impossible de générer le magic link.';
+ 507:             output.className = 'status-msg error';
+ 508:         }
+ 509:     } catch (e) {
+ 510:         console.error('generateMagicLink error', e);
+ 511:         output.textContent = 'Erreur de génération du magic link.';
+ 512:         output.className = 'status-msg error';
+ 513:     } finally {
+ 514:         MessageHelper.setButtonLoading(btn, false);
+ 515:         setTimeout(() => {
+ 516:             if (output) output.className = 'status-msg';
+ 517:         }, 7000);
+ 518:     }
+ 519: }
+ 520: 
+ 521: // Polling control
+ 522: async function loadPollingStatus() {
+ 523:     try {
+ 524:         const data = await ApiService.get('/api/get_polling_config');
+ 525:         
+ 526:         if (data.success) {
+ 527:             const isEnabled = !!data.config?.enable_polling;
+ 528:             const toggle = document.getElementById('pollingToggle');
+ 529:             const statusText = document.getElementById('pollingStatusText');
+ 530:             
+ 531:             if (toggle) toggle.checked = isEnabled;
+ 532:             if (statusText) {
+ 533:                 statusText.textContent = isEnabled ? '✅ Polling activé' : '❌ Polling désactivé';
+ 534:             }
+ 535:         }
+ 536:     } catch (e) {
+ 537:         console.error('Erreur chargement statut polling:', e);
+ 538:         const statusText = document.getElementById('pollingStatusText');
+ 539:         if (statusText) statusText.textContent = '⚠️ Erreur de chargement';
+ 540:     }
+ 541: }
+ 542: 
+ 543: async function togglePolling() {
+ 544:     const enable = document.getElementById('pollingToggle').checked;
+ 545:     
+ 546:     try {
+ 547:         const data = await ApiService.post('/api/update_polling_config', { enable_polling: enable });
+ 548:         
+ 549:         if (data.success) {
+ 550:             MessageHelper.showInfo('pollingMsg', data.message);
+ 551:             const statusText = document.getElementById('pollingStatusText');
+ 552:             if (statusText) {
+ 553:                 statusText.textContent = enable ? '✅ Polling activé' : '❌ Polling désactivé';
+ 554:             }
+ 555:         } else {
+ 556:             MessageHelper.showError('pollingMsg', data.message || 'Erreur lors du changement.');
+ 557:         }
+ 558:     } catch (e) {
+ 559:         MessageHelper.showError('pollingMsg', 'Erreur de communication avec le serveur.');
+ 560:     }
+ 561: }
+ 562: 
+ 563: // Time window helpers
+ 564: function generateTimeOptions(stepMinutes = 30) {
+ 565:     const options = ['<option value="">Sélectionner...</option>'];
+ 566:     for (let hour = 0; hour < 24; hour++) {
+ 567:         for (let minute = 0; minute < 60; minute += stepMinutes) {
+ 568:             const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+ 569:             options.push(`<option value="${timeStr}">${timeStr}</option>`);
+ 570:         }
+ 571:     }
+ 572:     return options.join('');
+ 573: }
+ 574: 
+ 575: function generateHourOptions() {
+ 576:     const options = ['<option value="">Sélectionner...</option>'];
+ 577:     for (let hour = 0; hour < 24; hour++) {
+ 578:         const label = `${hour.toString().padStart(2, '0')}h`;
+ 579:         options.push(`<option value="${hour}">${label}</option>`);
+ 580:     }
+ 581:     return options.join('');
+ 582: }
+ 583: 
+ 584: function setSelectedOption(selectElement, value) {
+ 585:     if (!selectElement) return;
+ 586:     // Try to find exact match first
+ 587:     for (let i = 0; i < selectElement.options.length; i++) {
+ 588:         if (selectElement.options[i].value === value || selectElement.options[i].value === value.toString()) {
+ 589:             selectElement.selectedIndex = i;
+ 590:             return;
+ 591:         }
+ 592:     }
+ 593:     // If no match, select first (empty) option
+ 594:     selectElement.selectedIndex = 0;
+ 595: }
+ 596: 
+ 597: // Time window
+ 598: async function loadTimeWindow() {
+ 599:     const applyWindowValues = (startValue = '', endValue = '') => {
+ 600:         const startInput = document.getElementById('webhooksTimeStart');
+ 601:         const endInput = document.getElementById('webhooksTimeEnd');
+ 602:         if (startInput) setSelectedOption(startInput, startValue || '');
+ 603:         if (endInput) setSelectedOption(endInput, endValue || '');
+ 604:         renderTimeWindowDisplay(startValue || '', endValue || '');
+ 605:     };
+ 606:     
+ 607:     try {
+ 608:         // 0) Source principale : fenêtre horaire globale (ancien endpoint)
+ 609:         const globalTimeResponse = await ApiService.get('/api/get_webhook_time_window');
+ 610:         if (globalTimeResponse.success) {
+ 611:             applyWindowValues(
+ 612:                 globalTimeResponse.webhooks_time_start || '',
+ 613:                 globalTimeResponse.webhooks_time_end || ''
+ 614:             );
+ 615:             return;
+ 616:         }
+ 617:     } catch (e) {
+ 618:         console.warn('Impossible de charger la fenêtre horaire globale:', e);
  619:     }
- 620: 
- 621:     const payload = {
- 622:         enable_subject_group_dedup: dedup,
- 623:         sender_of_interest_for_polling: senders,
- 624:         active_days: activeDays,
- 625:         active_start_hour: startHour,
- 626:         active_end_hour: endHour
- 627:     };
- 628: 
- 629:     try {
- 630:         const data = await ApiService.post('/api/update_polling_config', payload);
- 631:         
- 632:         if (data.success) {
- 633:             MessageHelper.showSuccess(statusId, data.message || 'Préférences enregistrées avec succès !');
- 634:             await loadPollingConfig();
- 635:         } else {
- 636:             MessageHelper.showError(statusId, data.message || 'Erreur lors de la sauvegarde.');
- 637:         }
- 638:     } catch (e) {
- 639:         MessageHelper.showError(statusId, 'Erreur de communication avec le serveur.');
- 640:     } finally {
- 641:         if (btn) btn.disabled = false;
+ 620:     
+ 621:     try {
+ 622:         // 2) Fallback: ancienne source (time window override)
+ 623:         const data = await ApiService.get('/api/get_webhook_time_window');
+ 624:         if (data.success) {
+ 625:             applyWindowValues(data.webhooks_time_start, data.webhooks_time_end);
+ 626:         }
+ 627:     } catch (e) {
+ 628:         console.error('Erreur chargement fenêtre horaire (fallback):', e);
+ 629:     }
+ 630: }
+ 631: 
+ 632: async function saveTimeWindow() {
+ 633:     const startInput = document.getElementById('webhooksTimeStart');
+ 634:     const endInput = document.getElementById('webhooksTimeEnd');
+ 635:     const start = startInput.value.trim();
+ 636:     const end = endInput.value.trim();
+ 637:     
+ 638:     // For dropdowns, validation is simpler - format is guaranteed HH:MM
+ 639:     if (start && !/^\d{2}:\d{2}$/.test(start)) {
+ 640:         MessageHelper.showError('timeWindowMsg', 'Veuillez sélectionner une heure valide.');
+ 641:         return false;
  642:     }
- 643: }
- 644: 
- 645: // Runtime flags
- 646: async function loadRuntimeFlags() {
- 647:     try {
- 648:         const data = await ApiService.get('/api/get_runtime_flags');
- 649:         
- 650:         if (data.success) {
- 651:             const flags = data.flags || {};
- 652: 
- 653:             const disableDedup = document.getElementById('disableEmailIdDedupToggle');
- 654:             if (disableDedup && Object.prototype.hasOwnProperty.call(flags, 'disable_email_id_dedup')) {
- 655:                 disableDedup.checked = !!flags.disable_email_id_dedup;
- 656:             }
- 657: 
- 658:             const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
- 659:             if (
- 660:                 allowCustom
- 661:                 && Object.prototype.hasOwnProperty.call(flags, 'allow_custom_webhook_without_links')
- 662:             ) {
- 663:                 allowCustom.checked = !!flags.allow_custom_webhook_without_links;
- 664:             }
- 665:         }
- 666:     } catch (e) {
- 667:         console.error('loadRuntimeFlags error', e);
- 668:     }
- 669: }
- 670: 
- 671: async function saveRuntimeFlags() {
- 672:     const msgId = 'runtimeFlagsMsg';
- 673:     const btn = document.getElementById('runtimeFlagsSaveBtn');
- 674:     
- 675:     MessageHelper.setButtonLoading(btn, true);
- 676:     
- 677:     try {
- 678:         const disableDedup = document.getElementById('disableEmailIdDedupToggle');
- 679:         const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
- 680: 
- 681:         const payload = {
- 682:             disable_email_id_dedup: disableDedup?.checked ?? false,
- 683:             allow_custom_webhook_without_links: allowCustom?.checked ?? false,
- 684:         };
- 685: 
- 686:         const data = await ApiService.post('/api/update_runtime_flags', payload);
- 687:         
- 688:         if (data.success) {
- 689:             MessageHelper.showSuccess(msgId, 'Flags de débogage enregistrés avec succès !');
- 690:         } else {
- 691:             MessageHelper.showError(msgId, data.message || 'Erreur lors de la sauvegarde.');
- 692:         }
- 693:     } catch (e) {
- 694:         MessageHelper.showError(msgId, 'Erreur de communication avec le serveur.');
- 695:     } finally {
- 696:         MessageHelper.setButtonLoading(btn, false);
+ 643:     
+ 644:     if (end && !/^\d{2}:\d{2}$/.test(end)) {
+ 645:         MessageHelper.showError('timeWindowMsg', 'Veuillez sélectionner une heure valide.');
+ 646:         return false;
+ 647:     }
+ 648:     
+ 649:     // No normalization needed for dropdowns - format is already HH:MM
+ 650:     
+ 651:     try {
+ 652:         const data = await ApiService.post('/api/set_webhook_time_window', { 
+ 653:             start: start, 
+ 654:             end: end 
+ 655:         });
+ 656:         
+ 657:         if (data.success) {
+ 658:             MessageHelper.showSuccess('timeWindowMsg', 'Fenêtre horaire enregistrée avec succès !');
+ 659:             updatePanelStatus('time-window', true);
+ 660:             updatePanelIndicator('time-window');
+ 661:             
+ 662:             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
+ 663:             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
+ 664:                 setSelectedOption(startInput, data.webhooks_time_start || '');
+ 665:             }
+ 666:             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
+ 667:                 setSelectedOption(endInput, data.webhooks_time_end || '');
+ 668:             }
+ 669:             
+ 670:             renderTimeWindowDisplay(data.webhooks_time_start || start, data.webhooks_time_end || end);
+ 671:             
+ 672:             // S'assurer que la source persistée est rechargée
+ 673:             await loadTimeWindow();
+ 674:             return true;
+ 675:         } else {
+ 676:             MessageHelper.showError('timeWindowMsg', data.message || 'Erreur lors de la sauvegarde.');
+ 677:             updatePanelStatus('time-window', false);
+ 678:             return false;
+ 679:         }
+ 680:     } catch (e) {
+ 681:         MessageHelper.showError('timeWindowMsg', 'Erreur de communication avec le serveur.');
+ 682:         updatePanelStatus('time-window', false);
+ 683:         return false;
+ 684:     }
+ 685: }
+ 686: 
+ 687: function renderTimeWindowDisplay(start, end) {
+ 688:     const displayEl = document.getElementById('timeWindowDisplay');
+ 689:     if (!displayEl) return;
+ 690:     
+ 691:     const hasStart = Boolean(start && String(start).trim());
+ 692:     const hasEnd = Boolean(end && String(end).trim());
+ 693:     
+ 694:     if (!hasStart && !hasEnd) {
+ 695:         displayEl.textContent = 'Dernière fenêtre enregistrée: aucune contrainte horaire active';
+ 696:         return;
  697:     }
- 698: }
- 699: 
- 700: // Processing preferences
- 701: async function loadProcessingPrefsFromServer() {
- 702:     try {
- 703:         const data = await ApiService.get('/api/processing_prefs');
- 704:         
- 705:         if (data.success) {
- 706:             const prefs = data.prefs || {};
- 707:             
- 708:             // Mapping des préférences vers les éléments UI avec les bons IDs
- 709:             const mappings = {
- 710:                 // Filtres
- 711:                 'exclude_keywords': 'excludeKeywords',
- 712:                 'exclude_keywords_recadrage': 'excludeKeywordsRecadrage', 
- 713:                 'exclude_keywords_autorepondeur': 'excludeKeywordsAutorepondeur',
- 714:                 
- 715:                 // Paramètres
- 716:                 'require_attachments': 'attachmentDetectionToggle',
- 717:                 'max_email_size_mb': 'maxEmailSizeMB',
- 718:                 'sender_priority': 'senderPriority',
- 719:                 
- 720:                 // Fiabilité
- 721:                 'retry_count': 'retryCount',
- 722:                 'retry_delay_sec': 'retryDelaySec',
- 723:                 'webhook_timeout_sec': 'webhookTimeoutSec',
- 724:                 'rate_limit_per_hour': 'rateLimitPerHour',
- 725:                 'notify_on_failure': 'notifyOnFailureToggle'
- 726:             };
- 727:             
- 728:             Object.entries(mappings).forEach(([prefKey, elementId]) => {
- 729:                 const el = document.getElementById(elementId);
- 730:                 if (el && prefs[prefKey] !== undefined) {
- 731:                     if (el.type === 'checkbox') {
- 732:                         el.checked = Boolean(prefs[prefKey]);
- 733:                     } else if (el.tagName === 'TEXTAREA' && Array.isArray(prefs[prefKey])) {
- 734:                         // Convertir les tableaux en chaînes multi-lignes pour les textarea
- 735:                         el.value = prefs[prefKey].join('\n');
- 736:                     } else if (el.tagName === 'TEXTAREA' && typeof prefs[prefKey] === 'object') {
- 737:                         // Convertir les objets JSON en chaînes formatées pour les textarea
- 738:                         el.value = JSON.stringify(prefs[prefKey], null, 2);
- 739:                     } else if (el.type === 'number' && prefs[prefKey] === null) {
- 740:                         el.value = '';
- 741:                     } else {
- 742:                         el.value = prefs[prefKey];
- 743:                     }
- 744:                 }
- 745:             });
- 746:         }
- 747:     } catch (e) {
- 748:         console.error('loadProcessingPrefs error', e);
- 749:     }
- 750: }
- 751: 
- 752: async function saveProcessingPrefsToServer() {
- 753:     const btn = document.getElementById('processingPrefsSaveBtn');
- 754:     const msgId = 'processingPrefsMsg';
- 755:     
- 756:     MessageHelper.setButtonLoading(btn, true);
+ 698:     
+ 699:     const startText = hasStart ? String(start) : '—';
+ 700:     const endText = hasEnd ? String(end) : '—';
+ 701:     displayEl.textContent = `Dernière fenêtre enregistrée: ${startText} → ${endText}`;
+ 702: }
+ 703: 
+ 704: // Polling configuration
+ 705: async function loadPollingConfig() {
+ 706:     try {
+ 707:         const data = await ApiService.get('/api/get_polling_config');
+ 708:         
+ 709:         if (data.success) {
+ 710:             const cfg = data.config || {};
+ 711:             
+ 712:             // Déduplication
+ 713:             const dedupEl = document.getElementById('enableSubjectGroupDedup');
+ 714:             if (dedupEl) dedupEl.checked = !!cfg.enable_subject_group_dedup;
+ 715:             
+ 716:             // Senders
+ 717:             const senders = Array.isArray(cfg.sender_of_interest_for_polling) ? cfg.sender_of_interest_for_polling : [];
+ 718:             renderSenderInputs(senders);
+ 719:             
+ 720:             // Active days and hours
+ 721:             try {
+ 722:                 if (Array.isArray(cfg.active_days)) setDayCheckboxes(cfg.active_days);
+ 723:                 
+ 724:                 const sh = document.getElementById('pollingStartHour');
+ 725:                 const eh = document.getElementById('pollingEndHour');
+ 726:                 if (sh && Number.isInteger(cfg.active_start_hour)) setSelectedOption(sh, String(cfg.active_start_hour));
+ 727:                 if (eh && Number.isInteger(cfg.active_end_hour)) setSelectedOption(eh, String(cfg.active_end_hour));
+ 728:             } catch (e) {
+ 729:                 console.warn('loadPollingConfig: applying days/hours failed', e);
+ 730:             }
+ 731:         }
+ 732:     } catch (e) {
+ 733:         console.error('Erreur chargement config polling:', e);
+ 734:     }
+ 735: }
+ 736: 
+ 737: async function savePollingConfig(event) {
+ 738:     const btn = event?.target || document.getElementById('savePollingCfgBtn');
+ 739:     if (btn) btn.disabled = true;
+ 740:     
+ 741:     const dedup = document.getElementById('enableSubjectGroupDedup')?.checked;
+ 742:     const senders = collectSenderInputs();
+ 743:     const activeDays = collectDayCheckboxes();
+ 744:     const startHourStr = document.getElementById('pollingStartHour')?.value?.trim() ?? '';
+ 745:     const endHourStr = document.getElementById('pollingEndHour')?.value?.trim() ?? '';
+ 746:     const statusId = document.getElementById('emailPrefsSaveStatus') ? 'emailPrefsSaveStatus' : 'pollingCfgMsg';
+ 747: 
+ 748:     // Validation
+ 749:     const startHour = startHourStr === '' ? null : Number.parseInt(startHourStr, 10);
+ 750:     const endHour = endHourStr === '' ? null : Number.parseInt(endHourStr, 10);
+ 751:     
+ 752:     if (!activeDays || activeDays.length === 0) {
+ 753:         MessageHelper.showError(statusId, 'Veuillez sélectionner au moins un jour actif.');
+ 754:         if (btn) btn.disabled = false;
+ 755:         return;
+ 756:     }
  757:     
- 758:     try {
- 759:         // Mapping des éléments UI vers les clés de préférences
- 760:         const mappings = {
- 761:             // Filtres
- 762:             'excludeKeywords': 'exclude_keywords',
- 763:             'excludeKeywordsRecadrage': 'exclude_keywords_recadrage', 
- 764:             'excludeKeywordsAutorepondeur': 'exclude_keywords_autorepondeur',
- 765:             
- 766:             // Paramètres
- 767:             'attachmentDetectionToggle': 'require_attachments',
- 768:             'maxEmailSizeMB': 'max_email_size_mb',
- 769:             'senderPriority': 'sender_priority',
- 770:             
- 771:             // Fiabilité
- 772:             'retryCount': 'retry_count',
- 773:             'retryDelaySec': 'retry_delay_sec',
- 774:             'webhookTimeoutSec': 'webhook_timeout_sec',
- 775:             'rateLimitPerHour': 'rate_limit_per_hour',
- 776:             'notifyOnFailureToggle': 'notify_on_failure'
- 777:         };
- 778:         
- 779:         // Collecter les préférences depuis les éléments UI
- 780:         const prefs = {};
- 781:         
- 782:         Object.entries(mappings).forEach(([elementId, prefKey]) => {
- 783:             const el = document.getElementById(elementId);
- 784:             if (el) {
- 785:                 if (el.type === 'checkbox') {
- 786:                     prefs[prefKey] = el.checked;
- 787:                 } else if (el.tagName === 'TEXTAREA') {
- 788:                     const value = el.value.trim();
- 789:                     if (value) {
- 790:                         // Pour les textarea de mots-clés, convertir en tableau
- 791:                         if (elementId.includes('Keywords')) {
- 792:                             prefs[prefKey] = value.split('\n').map(line => line.trim()).filter(line => line);
- 793:                         } 
- 794:                         // Pour le textarea JSON (sender_priority)
- 795:                         else if (elementId === 'senderPriority') {
- 796:                             try {
- 797:                                 prefs[prefKey] = JSON.parse(value);
- 798:                             } catch (e) {
- 799:                                 console.warn('Invalid JSON in senderPriority, using empty object');
- 800:                                 prefs[prefKey] = {};
- 801:                             }
- 802:                         }
- 803:                         // Pour les autres textarea
- 804:                         else {
- 805:                             prefs[prefKey] = value;
- 806:                         }
- 807:                     } else {
- 808:                         // Valeur vide selon le type
- 809:                         if (elementId.includes('Keywords')) {
- 810:                             prefs[prefKey] = [];
- 811:                         } else if (elementId === 'senderPriority') {
- 812:                             prefs[prefKey] = {};
- 813:                         } else {
- 814:                             prefs[prefKey] = value;
- 815:                         }
- 816:                     }
- 817:                 } else {
- 818:                     // Pour les inputs normaux
- 819:                     const value = (el.value ?? '').toString().trim();
- 820:                     if (el.type === 'number') {
- 821:                         if (value === '') {
- 822:                             if (elementId === 'maxEmailSizeMB') {
- 823:                                 prefs[prefKey] = null;
- 824:                             }
- 825:                             return;
- 826:                         }
- 827:                         prefs[prefKey] = parseInt(value, 10);
- 828:                         return;
- 829:                     }
- 830:                     prefs[prefKey] = value;
- 831:                 }
- 832:             }
- 833:         });
- 834:         
- 835:         const data = await ApiService.post('/api/processing_prefs', prefs);
- 836:         
- 837:         if (data.success) {
- 838:             MessageHelper.showSuccess(msgId, 'Préférences de traitement enregistrées avec succès !');
- 839:         } else {
- 840:             MessageHelper.showError(msgId, data.message || 'Erreur lors de la sauvegarde.');
- 841:         }
- 842:     } catch (e) {
- 843:         MessageHelper.showError(msgId, 'Erreur de communication avec le serveur.');
- 844:     } finally {
- 845:         MessageHelper.setButtonLoading(btn, false);
- 846:     }
- 847: }
- 848: 
- 849: // Local preferences
- 850: function loadLocalPreferences() {
- 851:     try {
- 852:         const raw = localStorage.getItem('dashboard_prefs_v1');
- 853:         if (!raw) return;
- 854:         
- 855:         const prefs = JSON.parse(raw);
- 856:         
- 857:         // Appliquer les préférences locales
- 858:         Object.keys(prefs).forEach(key => {
- 859:             const el = document.getElementById(key);
- 860:             if (el) {
- 861:                 if (el.type === 'checkbox') {
- 862:                     el.checked = prefs[key];
- 863:                 } else {
- 864:                     el.value = prefs[key];
- 865:                 }
- 866:             }
- 867:         });
- 868:     } catch (e) {
- 869:         console.warn('Erreur chargement préférences locales:', e);
- 870:     }
- 871: }
- 872: 
- 873: function saveLocalPreferences() {
- 874:     try {
- 875:         const prefs = {};
- 876:         
- 877:         // Collecter les préférences locales
- 878:         const localElements = document.querySelectorAll('[data-pref="local"]');
- 879:         localElements.forEach(el => {
- 880:             const prefName = el.id;
- 881:             if (el.type === 'checkbox') {
- 882:                 prefs[prefName] = el.checked;
- 883:             } else {
- 884:                 prefs[prefName] = el.value;
- 885:             }
- 886:         });
- 887:         
- 888:         localStorage.setItem('dashboard_prefs_v1', JSON.stringify(prefs));
- 889:     } catch (e) {
- 890:         console.warn('Erreur sauvegarde préférences locales:', e);
- 891:     }
- 892: }
- 893: 
- 894: // Configuration management
- 895: async function exportAllConfig() {
- 896:     try {
- 897:         const [webhookCfg, pollingCfg, timeWin, processingPrefs] = await Promise.all([
- 898:             ApiService.get('/api/webhooks/config'),
- 899:             ApiService.get('/api/get_polling_config'),
- 900:             ApiService.get('/api/get_webhook_time_window'),
- 901:             ApiService.get('/api/processing_prefs')
- 902:         ]);
- 903:         
- 904:         const prefsRaw = localStorage.getItem('dashboard_prefs_v1');
- 905:         const exportObj = {
- 906:             exported_at: new Date().toISOString(),
- 907:             webhook_config: webhookCfg,
- 908:             polling_config: pollingCfg,
- 909:             time_window: timeWin,
- 910:             processing_prefs: processingPrefs,
- 911:             ui_preferences: prefsRaw ? JSON.parse(prefsRaw) : {}
- 912:         };
- 913:         
- 914:         const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
- 915:         const url = URL.createObjectURL(blob);
- 916:         const a = document.createElement('a');
- 917:         a.href = url;
- 918:         a.download = 'render_signal_dashboard_config.json';
- 919:         a.click();
- 920:         URL.revokeObjectURL(url);
- 921:         
- 922:         MessageHelper.showSuccess('configMgmtMsg', 'Export réalisé avec succès.');
- 923:     } catch (e) {
- 924:         MessageHelper.showError('configMgmtMsg', 'Erreur lors de l\'export.');
- 925:     }
- 926: }
- 927: 
- 928: function handleImportConfigFile(evt) {
- 929:     const file = evt.target.files && evt.target.files[0];
- 930:     if (!file) return;
- 931:     
- 932:     const reader = new FileReader();
- 933:     reader.onload = async () => {
- 934:         try {
- 935:             const obj = JSON.parse(String(reader.result || '{}'));
- 936:             
- 937:             // Appliquer la configuration serveur
- 938:             await applyImportedServerConfig(obj);
- 939:             
- 940:             // Appliquer les préférences UI
- 941:             if (obj.ui_preferences) {
- 942:                 localStorage.setItem('dashboard_prefs_v1', JSON.stringify(obj.ui_preferences));
- 943:                 loadLocalPreferences();
- 944:             }
- 945:             
- 946:             MessageHelper.showSuccess('configMgmtMsg', 'Import appliqué.');
- 947:         } catch (e) {
- 948:             MessageHelper.showError('configMgmtMsg', 'Fichier invalide.');
- 949:         }
- 950:     };
- 951:     reader.readAsText(file);
- 952:     
- 953:     // Reset input pour permettre les imports consécutifs
- 954:     evt.target.value = '';
- 955: }
- 956: 
- 957: async function applyImportedServerConfig(obj) {
- 958:     // Webhook config
- 959:     if (obj?.webhook_config?.config) {
- 960:         const cfg = obj.webhook_config.config;
- 961:         const payload = {};
- 962: 
- 963:         if (
- 964:             cfg.webhook_url
- 965:             && typeof cfg.webhook_url === 'string'
- 966:             && !cfg.webhook_url.includes('***')
- 967:         ) {
- 968:             payload.webhook_url = cfg.webhook_url;
- 969:         }
- 970:         if (typeof cfg.webhook_ssl_verify === 'boolean') payload.webhook_ssl_verify = cfg.webhook_ssl_verify;
- 971:         if (typeof cfg.webhook_sending_enabled === 'boolean') {
- 972:             payload.webhook_sending_enabled = cfg.webhook_sending_enabled;
- 973:         }
- 974:         if (typeof cfg.absence_pause_enabled === 'boolean') {
- 975:             payload.absence_pause_enabled = cfg.absence_pause_enabled;
- 976:         }
- 977:         if (Array.isArray(cfg.absence_pause_days)) {
- 978:             payload.absence_pause_days = cfg.absence_pause_days;
- 979:         }
- 980:         
- 981:         if (Object.keys(payload).length) {
- 982:             await ApiService.post('/api/webhooks/config', payload);
- 983:             await WebhookService.loadConfig();
- 984:         }
- 985:     }
- 986:     
- 987:     // Polling config
- 988:     if (obj?.polling_config?.config) {
- 989:         const cfg = obj.polling_config.config;
- 990:         const payload = {};
+ 758:     if (startHour === null || Number.isNaN(startHour) || startHour < 0 || startHour > 23) {
+ 759:         MessageHelper.showError(statusId, 'Heure de début invalide (0-23).');
+ 760:         if (btn) btn.disabled = false;
+ 761:         return;
+ 762:     }
+ 763:     
+ 764:     if (endHour === null || Number.isNaN(endHour) || endHour < 0 || endHour > 23) {
+ 765:         MessageHelper.showError(statusId, 'Heure de fin invalide (0-23).');
+ 766:         if (btn) btn.disabled = false;
+ 767:         return;
+ 768:     }
+ 769:     
+ 770:     if (startHour === endHour) {
+ 771:         MessageHelper.showError(statusId, 'L\'heure de début et de fin ne peuvent pas être identiques.');
+ 772:         if (btn) btn.disabled = false;
+ 773:         return;
+ 774:     }
+ 775: 
+ 776:     const payload = {
+ 777:         enable_subject_group_dedup: dedup,
+ 778:         sender_of_interest_for_polling: senders,
+ 779:         active_days: activeDays,
+ 780:         active_start_hour: startHour,
+ 781:         active_end_hour: endHour
+ 782:     };
+ 783: 
+ 784:     try {
+ 785:         const data = await ApiService.post('/api/update_polling_config', payload);
+ 786:         
+ 787:         if (data.success) {
+ 788:             MessageHelper.showSuccess(statusId, data.message || 'Préférences enregistrées avec succès !');
+ 789:             await loadPollingConfig();
+ 790:         } else {
+ 791:             MessageHelper.showError(statusId, data.message || 'Erreur lors de la sauvegarde.');
+ 792:         }
+ 793:     } catch (e) {
+ 794:         MessageHelper.showError(statusId, 'Erreur de communication avec le serveur.');
+ 795:     } finally {
+ 796:         if (btn) btn.disabled = false;
+ 797:     }
+ 798: }
+ 799: 
+ 800: // Runtime flags
+ 801: async function loadRuntimeFlags() {
+ 802:     try {
+ 803:         const data = await ApiService.get('/api/get_runtime_flags');
+ 804:         
+ 805:         if (data.success) {
+ 806:             const flags = data.flags || {};
+ 807: 
+ 808:             const disableDedup = document.getElementById('disableEmailIdDedupToggle');
+ 809:             if (disableDedup && Object.prototype.hasOwnProperty.call(flags, 'disable_email_id_dedup')) {
+ 810:                 disableDedup.checked = !!flags.disable_email_id_dedup;
+ 811:             }
+ 812: 
+ 813:             const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
+ 814:             if (
+ 815:                 allowCustom
+ 816:                 && Object.prototype.hasOwnProperty.call(flags, 'allow_custom_webhook_without_links')
+ 817:             ) {
+ 818:                 allowCustom.checked = !!flags.allow_custom_webhook_without_links;
+ 819:             }
+ 820:         }
+ 821:     } catch (e) {
+ 822:         console.error('loadRuntimeFlags error', e);
+ 823:     }
+ 824: }
+ 825: 
+ 826: async function saveRuntimeFlags() {
+ 827:     const msgId = 'runtimeFlagsMsg';
+ 828:     const btn = document.getElementById('runtimeFlagsSaveBtn');
+ 829:     
+ 830:     MessageHelper.setButtonLoading(btn, true);
+ 831:     
+ 832:     try {
+ 833:         const disableDedup = document.getElementById('disableEmailIdDedupToggle');
+ 834:         const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
+ 835: 
+ 836:         const payload = {
+ 837:             disable_email_id_dedup: disableDedup?.checked ?? false,
+ 838:             allow_custom_webhook_without_links: allowCustom?.checked ?? false,
+ 839:         };
+ 840: 
+ 841:         const data = await ApiService.post('/api/update_runtime_flags', payload);
+ 842:         
+ 843:         if (data.success) {
+ 844:             MessageHelper.showSuccess(msgId, 'Flags de débogage enregistrés avec succès !');
+ 845:         } else {
+ 846:             MessageHelper.showError(msgId, data.message || 'Erreur lors de la sauvegarde.');
+ 847:         }
+ 848:     } catch (e) {
+ 849:         MessageHelper.showError(msgId, 'Erreur de communication avec le serveur.');
+ 850:     } finally {
+ 851:         MessageHelper.setButtonLoading(btn, false);
+ 852:     }
+ 853: }
+ 854: 
+ 855: // Processing preferences
+ 856: async function loadProcessingPrefsFromServer() {
+ 857:     try {
+ 858:         const data = await ApiService.get('/api/processing_prefs');
+ 859:         
+ 860:         if (data.success) {
+ 861:             const prefs = data.prefs || {};
+ 862:             
+ 863:             // Mapping des préférences vers les éléments UI avec les bons IDs
+ 864:             const mappings = {
+ 865:                 // Filtres
+ 866:                 'exclude_keywords': 'excludeKeywords',
+ 867:                 'exclude_keywords_recadrage': 'excludeKeywordsRecadrage', 
+ 868:                 'exclude_keywords_autorepondeur': 'excludeKeywordsAutorepondeur',
+ 869:                 
+ 870:                 // Paramètres
+ 871:                 'require_attachments': 'attachmentDetectionToggle',
+ 872:                 'max_email_size_mb': 'maxEmailSizeMB',
+ 873:                 'sender_priority': 'senderPriority',
+ 874:                 
+ 875:                 // Fiabilité
+ 876:                 'retry_count': 'retryCount',
+ 877:                 'retry_delay_sec': 'retryDelaySec',
+ 878:                 'webhook_timeout_sec': 'webhookTimeoutSec',
+ 879:                 'rate_limit_per_hour': 'rateLimitPerHour',
+ 880:                 'notify_on_failure': 'notifyOnFailureToggle'
+ 881:             };
+ 882:             
+ 883:             Object.entries(mappings).forEach(([prefKey, elementId]) => {
+ 884:                 const el = document.getElementById(elementId);
+ 885:                 if (el && prefs[prefKey] !== undefined) {
+ 886:                     if (el.type === 'checkbox') {
+ 887:                         el.checked = Boolean(prefs[prefKey]);
+ 888:                     } else if (el.tagName === 'TEXTAREA' && Array.isArray(prefs[prefKey])) {
+ 889:                         // Convertir les tableaux en chaînes multi-lignes pour les textarea
+ 890:                         el.value = prefs[prefKey].join('\n');
+ 891:                     } else if (el.tagName === 'TEXTAREA' && typeof prefs[prefKey] === 'object') {
+ 892:                         // Convertir les objets JSON en chaînes formatées pour les textarea
+ 893:                         el.value = JSON.stringify(prefs[prefKey], null, 2);
+ 894:                     } else if (el.type === 'number' && prefs[prefKey] === null) {
+ 895:                         el.value = '';
+ 896:                     } else {
+ 897:                         el.value = prefs[prefKey];
+ 898:                     }
+ 899:                 }
+ 900:             });
+ 901:         }
+ 902:     } catch (e) {
+ 903:         console.error('loadProcessingPrefs error', e);
+ 904:     }
+ 905: }
+ 906: 
+ 907: async function saveProcessingPrefsToServer() {
+ 908:     const btn = document.getElementById('processingPrefsSaveBtn');
+ 909:     const msgId = 'processingPrefsMsg';
+ 910:     
+ 911:     MessageHelper.setButtonLoading(btn, true);
+ 912:     
+ 913:     try {
+ 914:         // Mapping des éléments UI vers les clés de préférences
+ 915:         const mappings = {
+ 916:             // Filtres
+ 917:             'excludeKeywords': 'exclude_keywords',
+ 918:             'excludeKeywordsRecadrage': 'exclude_keywords_recadrage', 
+ 919:             'excludeKeywordsAutorepondeur': 'exclude_keywords_autorepondeur',
+ 920:             
+ 921:             // Paramètres
+ 922:             'attachmentDetectionToggle': 'require_attachments',
+ 923:             'maxEmailSizeMB': 'max_email_size_mb',
+ 924:             'senderPriority': 'sender_priority',
+ 925:             
+ 926:             // Fiabilité
+ 927:             'retryCount': 'retry_count',
+ 928:             'retryDelaySec': 'retry_delay_sec',
+ 929:             'webhookTimeoutSec': 'webhook_timeout_sec',
+ 930:             'rateLimitPerHour': 'rate_limit_per_hour',
+ 931:             'notifyOnFailureToggle': 'notify_on_failure'
+ 932:         };
+ 933:         
+ 934:         // Collecter les préférences depuis les éléments UI
+ 935:         const prefs = {};
+ 936:         
+ 937:         Object.entries(mappings).forEach(([elementId, prefKey]) => {
+ 938:             const el = document.getElementById(elementId);
+ 939:             if (el) {
+ 940:                 if (el.type === 'checkbox') {
+ 941:                     prefs[prefKey] = el.checked;
+ 942:                 } else if (el.tagName === 'TEXTAREA') {
+ 943:                     const value = el.value.trim();
+ 944:                     if (value) {
+ 945:                         // Pour les textarea de mots-clés, convertir en tableau
+ 946:                         if (elementId.includes('Keywords')) {
+ 947:                             prefs[prefKey] = value.split('\n').map(line => line.trim()).filter(line => line);
+ 948:                         } 
+ 949:                         // Pour le textarea JSON (sender_priority)
+ 950:                         else if (elementId === 'senderPriority') {
+ 951:                             try {
+ 952:                                 prefs[prefKey] = JSON.parse(value);
+ 953:                             } catch (e) {
+ 954:                                 console.warn('Invalid JSON in senderPriority, using empty object');
+ 955:                                 prefs[prefKey] = {};
+ 956:                             }
+ 957:                         }
+ 958:                         // Pour les autres textarea
+ 959:                         else {
+ 960:                             prefs[prefKey] = value;
+ 961:                         }
+ 962:                     } else {
+ 963:                         // Valeur vide selon le type
+ 964:                         if (elementId.includes('Keywords')) {
+ 965:                             prefs[prefKey] = [];
+ 966:                         } else if (elementId === 'senderPriority') {
+ 967:                             prefs[prefKey] = {};
+ 968:                         } else {
+ 969:                             prefs[prefKey] = value;
+ 970:                         }
+ 971:                     }
+ 972:                 } else {
+ 973:                     // Pour les inputs normaux
+ 974:                     const value = (el.value ?? '').toString().trim();
+ 975:                     if (el.type === 'number') {
+ 976:                         if (value === '') {
+ 977:                             if (elementId === 'maxEmailSizeMB') {
+ 978:                                 prefs[prefKey] = null;
+ 979:                             }
+ 980:                             return;
+ 981:                         }
+ 982:                         prefs[prefKey] = parseInt(value, 10);
+ 983:                         return;
+ 984:                     }
+ 985:                     prefs[prefKey] = value;
+ 986:                 }
+ 987:             }
+ 988:         });
+ 989:         
+ 990:         const data = await ApiService.post('/api/processing_prefs', prefs);
  991:         
- 992:         if (Array.isArray(cfg.active_days)) payload.active_days = cfg.active_days;
- 993:         if (Number.isInteger(cfg.active_start_hour)) payload.active_start_hour = cfg.active_start_hour;
- 994:         if (Number.isInteger(cfg.active_end_hour)) payload.active_end_hour = cfg.active_end_hour;
- 995:         if (typeof cfg.enable_subject_group_dedup === 'boolean') payload.enable_subject_group_dedup = cfg.enable_subject_group_dedup;
- 996:         if (Array.isArray(cfg.sender_of_interest_for_polling)) payload.sender_of_interest_for_polling = cfg.sender_of_interest_for_polling;
- 997:         
- 998:         if (Object.keys(payload).length) {
- 999:             await ApiService.post('/api/update_polling_config', payload);
-1000:             await loadPollingConfig();
-1001:         }
-1002:     }
-1003:     
-1004:     // Time window
-1005:     if (obj?.time_window) {
-1006:         const start = obj.time_window.webhooks_time_start ?? '';
-1007:         const end = obj.time_window.webhooks_time_end ?? '';
-1008:         await ApiService.post('/api/set_webhook_time_window', { start, end });
-1009:         await loadTimeWindow();
-1010:     }
-1011: 
-1012:     // Processing prefs
-1013:     if (obj?.processing_prefs?.prefs && typeof obj.processing_prefs.prefs === 'object') {
-1014:         await ApiService.post('/api/processing_prefs', obj.processing_prefs.prefs);
-1015:         await loadProcessingPrefsFromServer();
-1016:     }
-1017: }
-1018: 
-1019: // Validation
-1020: function validateWebhookUrlFromInput() {
-1021:     const inp = document.getElementById('testWebhookUrl');
-1022:     const msgId = 'webhookUrlValidationMsg';
-1023:     const val = (inp?.value || '').trim();
-1024:     
-1025:     if (!val) {
-1026:         MessageHelper.showError(msgId, 'Veuillez saisir une URL ou un alias.');
-1027:         return;
-1028:     }
-1029:     
-1030:     const ok = WebhookService.isValidWebhookUrl(val) || WebhookService.isValidHttpsUrl(val);
-1031:     if (ok) {
-1032:         MessageHelper.showSuccess(msgId, 'Format valide.');
-1033:     } else {
-1034:         MessageHelper.showError(msgId, 'Format invalide.');
-1035:     }
-1036: }
-1037: 
-1038: function buildPayloadPreview() {
-1039:     const subject = (document.getElementById('previewSubject')?.value || '').trim();
-1040:     const sender = (document.getElementById('previewSender')?.value || '').trim();
-1041:     const body = (document.getElementById('previewBody')?.value || '').trim();
-1042:     
-1043:     const payload = {
-1044:         subject,
-1045:         sender_email: sender,
-1046:         body_excerpt: body.slice(0, 500),
-1047:         delivery_links: [],
-1048:         first_direct_download_url: null,
-1049:         meta: { 
-1050:             preview: true, 
-1051:             generated_at: new Date().toISOString() 
-1052:         }
-1053:     };
-1054:     
-1055:     const pre = document.getElementById('payloadPreview');
-1056:     if (pre) pre.textContent = JSON.stringify(payload, null, 2);
-1057: }
-1058: 
-1059: // UI helpers
-1060: function setDayCheckboxes(days) {
-1061:     const group = document.getElementById('pollingActiveDaysGroup');
-1062:     if (!group) return;
-1063:     
-1064:     const set = new Set(Array.isArray(days) ? days : []);
-1065:     const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
-1066:     
-1067:     boxes.forEach(cb => {
-1068:         const idx = parseInt(cb.value, 10);
-1069:         cb.checked = set.has(idx);
-1070:     });
-1071: }
-1072: 
-1073: function collectDayCheckboxes() {
-1074:     const group = document.getElementById('pollingActiveDaysGroup');
-1075:     if (!group) return [];
-1076:     
-1077:     const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
-1078:     const out = [];
-1079:     
-1080:     boxes.forEach(cb => {
-1081:         if (cb.checked) out.push(parseInt(cb.value, 10));
-1082:     });
-1083:     
-1084:     // Trier croissant et garantir l'unicité
-1085:     return Array.from(new Set(out)).sort((a, b) => a - b);
-1086: }
-1087: 
-1088: function addEmailField(value) {
-1089:     const container = document.getElementById('senderOfInterestContainer');
-1090:     if (!container) return;
-1091:     
-1092:     const row = document.createElement('div');
-1093:     row.className = 'inline-group';
-1094:     
-1095:     const input = document.createElement('input');
-1096:     input.type = 'email';
-1097:     input.placeholder = 'ex: email@example.com';
-1098:     input.value = value || '';
-1099:     input.style.flex = '1';
-1100:     
-1101:     const btn = document.createElement('button');
-1102:     btn.type = 'button';
-1103:     btn.className = 'email-remove-btn';
-1104:     btn.textContent = '❌';
-1105:     btn.title = 'Supprimer cet email';
-1106:     btn.addEventListener('click', () => row.remove());
+ 992:         if (data.success) {
+ 993:             MessageHelper.showSuccess(msgId, 'Préférences de traitement enregistrées avec succès !');
+ 994:         } else {
+ 995:             MessageHelper.showError(msgId, data.message || 'Erreur lors de la sauvegarde.');
+ 996:         }
+ 997:     } catch (e) {
+ 998:         MessageHelper.showError(msgId, 'Erreur de communication avec le serveur.');
+ 999:     } finally {
+1000:         MessageHelper.setButtonLoading(btn, false);
+1001:     }
+1002: }
+1003: 
+1004: // Local preferences
+1005: function loadLocalPreferences() {
+1006:     try {
+1007:         const raw = localStorage.getItem('dashboard_prefs_v1');
+1008:         if (!raw) {
+1009:             // Default: enable metrics if no preference exists
+1010:             const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+1011:             if (enableMetricsToggle) {
+1012:                 enableMetricsToggle.checked = true;
+1013:             }
+1014:             return;
+1015:         }
+1016:         
+1017:         const prefs = JSON.parse(raw);
+1018:         
+1019:         // Apply metrics preference if exists, otherwise default to true
+1020:         if (prefs.hasOwnProperty('enableMetricsToggle')) {
+1021:             const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+1022:             if (enableMetricsToggle) {
+1023:                 enableMetricsToggle.checked = prefs.enableMetricsToggle;
+1024:             }
+1025:         }
+1026:         
+1027:         // Appliquer les préférences locales
+1028:         Object.keys(prefs).forEach(key => {
+1029:             const el = document.getElementById(key);
+1030:             if (el) {
+1031:                 if (el.type === 'checkbox') {
+1032:                     el.checked = prefs[key];
+1033:                 } else {
+1034:                     el.value = prefs[key];
+1035:                 }
+1036:             }
+1037:         });
+1038:     } catch (e) {
+1039:         console.warn('Erreur chargement préférences locales:', e);
+1040:     }
+1041: }
+1042: 
+1043: function saveLocalPreferences() {
+1044:     try {
+1045:         const prefs = {};
+1046:         
+1047:         // Collecter les préférences locales
+1048:         const localElements = document.querySelectorAll('[data-pref="local"]');
+1049:         localElements.forEach(el => {
+1050:             const prefName = el.id;
+1051:             if (el.type === 'checkbox') {
+1052:                 prefs[prefName] = el.checked;
+1053:             } else {
+1054:                 prefs[prefName] = el.value;
+1055:             }
+1056:         });
+1057:         
+1058:         // Always save enableMetricsToggle preference
+1059:         const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+1060:         if (enableMetricsToggle) {
+1061:             prefs.enableMetricsToggle = enableMetricsToggle.checked;
+1062:         }
+1063:         
+1064:         localStorage.setItem('dashboard_prefs_v1', JSON.stringify(prefs));
+1065:     } catch (e) {
+1066:         console.warn('Erreur sauvegarde préférences locales:', e);
+1067:     }
+1068: }
+1069: 
+1070: // Configuration management
+1071: async function exportAllConfig() {
+1072:     try {
+1073:         const [webhookCfg, pollingCfg, timeWin, processingPrefs] = await Promise.all([
+1074:             ApiService.get('/api/webhooks/config'),
+1075:             ApiService.get('/api/get_polling_config'),
+1076:             ApiService.get('/api/get_webhook_time_window'),
+1077:             ApiService.get('/api/processing_prefs')
+1078:         ]);
+1079:         
+1080:         const prefsRaw = localStorage.getItem('dashboard_prefs_v1');
+1081:         const exportObj = {
+1082:             exported_at: new Date().toISOString(),
+1083:             webhook_config: webhookCfg,
+1084:             polling_config: pollingCfg,
+1085:             time_window: timeWin,
+1086:             processing_prefs: processingPrefs,
+1087:             ui_preferences: prefsRaw ? JSON.parse(prefsRaw) : {}
+1088:         };
+1089:         
+1090:         const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
+1091:         const url = URL.createObjectURL(blob);
+1092:         const a = document.createElement('a');
+1093:         a.href = url;
+1094:         a.download = 'render_signal_dashboard_config.json';
+1095:         a.click();
+1096:         URL.revokeObjectURL(url);
+1097:         
+1098:         MessageHelper.showSuccess('configMgmtMsg', 'Export réalisé avec succès.');
+1099:     } catch (e) {
+1100:         MessageHelper.showError('configMgmtMsg', 'Erreur lors de l\'export.');
+1101:     }
+1102: }
+1103: 
+1104: function handleImportConfigFile(evt) {
+1105:     const file = evt.target.files && evt.target.files[0];
+1106:     if (!file) return;
 1107:     
-1108:     row.appendChild(input);
-1109:     row.appendChild(btn);
-1110:     container.appendChild(row);
-1111: }
-1112: 
-1113: function renderSenderInputs(list) {
-1114:     const container = document.getElementById('senderOfInterestContainer');
-1115:     if (!container) return;
-1116:     
-1117:     container.innerHTML = '';
-1118:     (list || []).forEach(e => addEmailField(e));
-1119:     if (!list || list.length === 0) addEmailField('');
-1120: }
-1121: 
-1122: function collectSenderInputs() {
-1123:     const container = document.getElementById('senderOfInterestContainer');
-1124:     if (!container) return [];
-1125:     
-1126:     const inputs = Array.from(container.querySelectorAll('input[type="email"]'));
-1127:     const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-1128:     const out = [];
-1129:     const seen = new Set();
-1130:     
-1131:     for (const i of inputs) {
-1132:         const v = (i.value || '').trim().toLowerCase();
-1133:         if (!v) continue;
-1134:         
-1135:         if (emailRe.test(v) && !seen.has(v)) {
-1136:             seen.add(v);
-1137:             out.push(v);
-1138:         }
-1139:     }
-1140:     
-1141:     return out;
-1142: }
-1143: 
-1144: // Fenêtre horaire global webhook
-1145: async function loadGlobalWebhookTimeWindow() {
-1146:     const applyGlobalWindowValues = (startValue = '', endValue = '') => {
-1147:         const startInput = document.getElementById('globalWebhookTimeStart');
-1148:         const endInput = document.getElementById('globalWebhookTimeEnd');
-1149:         if (startInput) startInput.value = startValue || '';
-1150:         if (endInput) endInput.value = endValue || '';
-1151:     };
-1152:     
-1153:     try {
-1154:         const timeWindowResponse = await ApiService.get('/api/webhooks/time-window');
-1155:         if (timeWindowResponse.success) {
-1156:             applyGlobalWindowValues(
-1157:                 timeWindowResponse.webhooks_time_start || '',
-1158:                 timeWindowResponse.webhooks_time_end || ''
-1159:             );
-1160:             return;
-1161:         }
-1162:     } catch (e) {
-1163:         console.warn('Impossible de charger la fenêtre horaire webhook globale:', e);
-1164:     }
-1165: }
-1166: 
-1167: async function saveGlobalWebhookTimeWindow() {
-1168:     const startInput = document.getElementById('globalWebhookTimeStart');
-1169:     const endInput = document.getElementById('globalWebhookTimeEnd');
-1170:     const start = startInput.value.trim();
-1171:     const end = endInput.value.trim();
-1172:     
-1173:     // Validation des formats
-1174:     if (start && !MessageHelper.isValidTimeFormat(start)) {
-1175:         MessageHelper.showError('globalWebhookTimeMsg', 'Format d\'heure invalide (ex: 09:00 ou 9h00).');
-1176:         return false;
-1177:     }
-1178:     
-1179:     if (end && !MessageHelper.isValidTimeFormat(end)) {
-1180:         MessageHelper.showError('globalWebhookTimeMsg', 'Format d\'heure invalide (ex: 19:00 ou 19h00).');
-1181:         return false;
-1182:     }
-1183:     
-1184:     // Normalisation des formats
-1185:     const normalizedStart = start ? MessageHelper.normalizeTimeFormat(start) : '';
-1186:     const normalizedEnd = end ? MessageHelper.normalizeTimeFormat(end) : '';
-1187:     
-1188:     try {
-1189:         const data = await ApiService.post('/api/webhooks/time-window', { 
-1190:             start: normalizedStart, 
-1191:             end: normalizedEnd 
-1192:         });
-1193:         
-1194:         if (data.success) {
-1195:             MessageHelper.showSuccess('globalWebhookTimeMsg', 'Fenêtre horaire webhook enregistrée avec succès !');
-1196:             updatePanelStatus('time-window', true);
-1197:             updatePanelIndicator('time-window');
-1198:             
-1199:             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
-1200:             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
-1201:                 startInput.value = data.webhooks_time_start || '';
-1202:             }
-1203:             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
-1204:                 endInput.value = data.webhooks_time_end || '';
-1205:             }
-1206:             await loadGlobalWebhookTimeWindow();
-1207:             return true;
-1208:         } else {
-1209:             MessageHelper.showError('globalWebhookTimeMsg', data.message || 'Erreur lors de la sauvegarde.');
-1210:             updatePanelStatus('time-window', false);
-1211:             return false;
-1212:         }
-1213:     } catch (e) {
-1214:         MessageHelper.showError('globalWebhookTimeMsg', 'Erreur de communication avec le serveur.');
-1215:         updatePanelStatus('time-window', false);
-1216:         return false;
-1217:     }
-1218: }
-1219: 
-1220: // -------------------- Statut Global --------------------
-1221: /**
-1222:  * Met à jour le bandeau de statut global avec les données récentes
-1223:  */
-1224: async function updateGlobalStatus() {
-1225:     try {
-1226:         // Récupérer les logs récents pour analyser le statut
-1227:         const logsResponse = await ApiService.get('/api/webhook_logs?limit=50');
-1228:         const configResponse = await ApiService.get('/api/webhooks/config');
-1229:         
-1230:         if (!logsResponse.success || !configResponse.success) {
-1231:             console.warn('Impossible de récupérer les données pour le statut global');
-1232:             return;
-1233:         }
-1234:         
-1235:         const logs = logsResponse.logs || [];
-1236:         const config = configResponse.config || {};
-1237:         
-1238:         // Analyser les logs pour déterminer le statut
-1239:         const statusData = analyzeLogsForStatus(logs);
-1240:         
-1241:         // Mettre à jour l'interface
-1242:         updateStatusBanner(statusData, config);
-1243:         
-1244:     } catch (error) {
-1245:         console.error('Erreur lors de la mise à jour du statut global:', error);
-1246:         // Afficher un statut d'erreur
-1247:         updateStatusBanner({
-1248:             lastExecution: 'Erreur',
-1249:             recentIncidents: '—',
-1250:             criticalErrors: '—',
-1251:             activeWebhooks: config?.webhook_url ? '1' : '0',
-1252:             status: 'error'
-1253:         }, {});
-1254:     }
-1255: }
-1256: 
-1257: /**
-1258:  * Analyse les logs pour extraire les informations de statut
-1259:  */
-1260: function analyzeLogsForStatus(logs) {
-1261:     const now = new Date();
-1262:     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-1263:     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-1264:     
-1265:     let lastExecution = null;
-1266:     let recentIncidents = 0;
-1267:     let criticalErrors = 0;
-1268:     let totalWebhooks = 0;
-1269:     let successfulWebhooks = 0;
+1108:     const reader = new FileReader();
+1109:     reader.onload = async () => {
+1110:         try {
+1111:             const obj = JSON.parse(String(reader.result || '{}'));
+1112:             
+1113:             // Appliquer la configuration serveur
+1114:             await applyImportedServerConfig(obj);
+1115:             
+1116:             // Appliquer les préférences UI
+1117:             if (obj.ui_preferences) {
+1118:                 localStorage.setItem('dashboard_prefs_v1', JSON.stringify(obj.ui_preferences));
+1119:                 loadLocalPreferences();
+1120:             }
+1121:             
+1122:             MessageHelper.showSuccess('configMgmtMsg', 'Import appliqué.');
+1123:         } catch (e) {
+1124:             MessageHelper.showError('configMgmtMsg', 'Fichier invalide.');
+1125:         }
+1126:     };
+1127:     reader.readAsText(file);
+1128:     
+1129:     // Reset input pour permettre les imports consécutifs
+1130:     evt.target.value = '';
+1131: }
+1132: 
+1133: async function applyImportedServerConfig(obj) {
+1134:     // Webhook config
+1135:     if (obj?.webhook_config?.config) {
+1136:         const cfg = obj.webhook_config.config;
+1137:         const payload = {};
+1138: 
+1139:         if (
+1140:             cfg.webhook_url
+1141:             && typeof cfg.webhook_url === 'string'
+1142:             && !cfg.webhook_url.includes('***')
+1143:         ) {
+1144:             payload.webhook_url = cfg.webhook_url;
+1145:         }
+1146:         if (typeof cfg.webhook_ssl_verify === 'boolean') payload.webhook_ssl_verify = cfg.webhook_ssl_verify;
+1147:         if (typeof cfg.webhook_sending_enabled === 'boolean') {
+1148:             payload.webhook_sending_enabled = cfg.webhook_sending_enabled;
+1149:         }
+1150:         if (typeof cfg.absence_pause_enabled === 'boolean') {
+1151:             payload.absence_pause_enabled = cfg.absence_pause_enabled;
+1152:         }
+1153:         if (Array.isArray(cfg.absence_pause_days)) {
+1154:             payload.absence_pause_days = cfg.absence_pause_days;
+1155:         }
+1156:         
+1157:         if (Object.keys(payload).length) {
+1158:             await ApiService.post('/api/webhooks/config', payload);
+1159:             await WebhookService.loadConfig();
+1160:         }
+1161:     }
+1162:     
+1163:     // Polling config
+1164:     if (obj?.polling_config?.config) {
+1165:         const cfg = obj.polling_config.config;
+1166:         const payload = {};
+1167:         
+1168:         if (Array.isArray(cfg.active_days)) payload.active_days = cfg.active_days;
+1169:         if (Number.isInteger(cfg.active_start_hour)) payload.active_start_hour = cfg.active_start_hour;
+1170:         if (Number.isInteger(cfg.active_end_hour)) payload.active_end_hour = cfg.active_end_hour;
+1171:         if (typeof cfg.enable_subject_group_dedup === 'boolean') payload.enable_subject_group_dedup = cfg.enable_subject_group_dedup;
+1172:         if (Array.isArray(cfg.sender_of_interest_for_polling)) payload.sender_of_interest_for_polling = cfg.sender_of_interest_for_polling;
+1173:         
+1174:         if (Object.keys(payload).length) {
+1175:             await ApiService.post('/api/update_polling_config', payload);
+1176:             await loadPollingConfig();
+1177:         }
+1178:     }
+1179:     
+1180:     // Time window
+1181:     if (obj?.time_window) {
+1182:         const start = obj.time_window.webhooks_time_start ?? '';
+1183:         const end = obj.time_window.webhooks_time_end ?? '';
+1184:         await ApiService.post('/api/set_webhook_time_window', { start, end });
+1185:         await loadTimeWindow();
+1186:     }
+1187: 
+1188:     // Processing prefs
+1189:     if (obj?.processing_prefs?.prefs && typeof obj.processing_prefs.prefs === 'object') {
+1190:         await ApiService.post('/api/processing_prefs', obj.processing_prefs.prefs);
+1191:         await loadProcessingPrefsFromServer();
+1192:     }
+1193: }
+1194: 
+1195: // Validation
+1196: function validateWebhookUrlFromInput() {
+1197:     const inp = document.getElementById('testWebhookUrl');
+1198:     const msgId = 'webhookUrlValidationMsg';
+1199:     const val = (inp?.value || '').trim();
+1200:     
+1201:     if (!val) {
+1202:         MessageHelper.showError(msgId, 'Veuillez saisir une URL ou un alias.');
+1203:         return;
+1204:     }
+1205:     
+1206:     const ok = WebhookService.isValidWebhookUrl(val) || WebhookService.isValidHttpsUrl(val);
+1207:     if (ok) {
+1208:         MessageHelper.showSuccess(msgId, 'Format valide.');
+1209:     } else {
+1210:         MessageHelper.showError(msgId, 'Format invalide.');
+1211:     }
+1212: }
+1213: 
+1214: function buildPayloadPreview() {
+1215:     const subject = (document.getElementById('previewSubject')?.value || '').trim();
+1216:     const sender = (document.getElementById('previewSender')?.value || '').trim();
+1217:     const body = (document.getElementById('previewBody')?.value || '').trim();
+1218:     
+1219:     const payload = {
+1220:         subject,
+1221:         sender_email: sender,
+1222:         body_excerpt: body.slice(0, 500),
+1223:         delivery_links: [],
+1224:         first_direct_download_url: null,
+1225:         meta: { 
+1226:             preview: true, 
+1227:             generated_at: new Date().toISOString() 
+1228:         }
+1229:     };
+1230:     
+1231:     const pre = document.getElementById('payloadPreview');
+1232:     if (pre) pre.textContent = JSON.stringify(payload, null, 2);
+1233: }
+1234: 
+1235: // UI helpers
+1236: function setDayCheckboxes(days) {
+1237:     const group = document.getElementById('pollingActiveDaysGroup');
+1238:     if (!group) return;
+1239:     
+1240:     const set = new Set(Array.isArray(days) ? days : []);
+1241:     const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
+1242:     
+1243:     boxes.forEach(cb => {
+1244:         const idx = parseInt(cb.value, 10);
+1245:         cb.checked = set.has(idx);
+1246:     });
+1247: }
+1248: 
+1249: function collectDayCheckboxes() {
+1250:     const group = document.getElementById('pollingActiveDaysGroup');
+1251:     if (!group) return [];
+1252:     
+1253:     const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
+1254:     const out = [];
+1255:     
+1256:     boxes.forEach(cb => {
+1257:         if (cb.checked) out.push(parseInt(cb.value, 10));
+1258:     });
+1259:     
+1260:     // Trier croissant et garantir l'unicité
+1261:     return Array.from(new Set(out)).sort((a, b) => a - b);
+1262: }
+1263: 
+1264: function addEmailField(value) {
+1265:     const container = document.getElementById('senderOfInterestContainer');
+1266:     if (!container) return;
+1267:     
+1268:     const row = document.createElement('div');
+1269:     row.className = 'inline-group';
 1270:     
-1271:     logs.forEach(log => {
-1272:         const logTime = new Date(log.timestamp);
-1273:         
-1274:         // Dernière exécution
-1275:         if (!lastExecution || logTime > lastExecution) {
-1276:             lastExecution = logTime;
-1277:         }
-1278:         
-1279:         // Webhooks envoyés (dernière heure)
-1280:         if (logTime >= oneHourAgo) {
-1281:             totalWebhooks++;
-1282:             if (log.status === 'success') {
-1283:                 successfulWebhooks++;
-1284:             } else if (log.status === 'error') {
-1285:                 criticalErrors++;
-1286:             }
-1287:         }
-1288:         
-1289:         // Incidents récents (dernières 24h)
-1290:         if (logTime >= oneDayAgo && log.status === 'error') {
-1291:             recentIncidents++;
-1292:         }
-1293:     });
-1294:     
-1295:     // Formater la dernière exécution
-1296:     let lastExecutionText = '—';
-1297:     if (lastExecution) {
-1298:         const diffMinutes = Math.floor((now - lastExecution) / (1000 * 60));
-1299:         if (diffMinutes < 1) {
-1300:             lastExecutionText = 'À l\'instant';
-1301:         } else if (diffMinutes < 60) {
-1302:             lastExecutionText = `Il y a ${diffMinutes} min`;
-1303:         } else if (diffMinutes < 1440) {
-1304:             lastExecutionText = `Il y a ${Math.floor(diffMinutes / 60)}h`;
-1305:         } else {
-1306:             lastExecutionText = lastExecution.toLocaleDateString('fr-FR', { 
-1307:                 hour: '2-digit', 
-1308:                 minute: '2-digit' 
-1309:             });
-1310:         }
-1311:     }
-1312:     
-1313:     // Déterminer le statut global
-1314:     let status = 'success';
-1315:     if (criticalErrors > 0) {
-1316:         status = 'error';
-1317:     } else if (recentIncidents > 0) {
-1318:         status = 'warning';
-1319:     }
-1320:     
-1321:     return {
-1322:         lastExecution: lastExecutionText,
-1323:         recentIncidents: recentIncidents.toString(),
-1324:         criticalErrors: criticalErrors.toString(),
-1325:         activeWebhooks: totalWebhooks.toString(),
-1326:         status: status
+1271:     const input = document.createElement('input');
+1272:     input.type = 'email';
+1273:     input.placeholder = 'ex: email@example.com';
+1274:     input.value = value || '';
+1275:     input.style.flex = '1';
+1276:     
+1277:     const btn = document.createElement('button');
+1278:     btn.type = 'button';
+1279:     btn.className = 'email-remove-btn';
+1280:     btn.textContent = '❌';
+1281:     btn.title = 'Supprimer cet email';
+1282:     btn.addEventListener('click', () => row.remove());
+1283:     
+1284:     row.appendChild(input);
+1285:     row.appendChild(btn);
+1286:     container.appendChild(row);
+1287: }
+1288: 
+1289: function renderSenderInputs(list) {
+1290:     const container = document.getElementById('senderOfInterestContainer');
+1291:     if (!container) return;
+1292:     
+1293:     container.innerHTML = '';
+1294:     (list || []).forEach(e => addEmailField(e));
+1295:     if (!list || list.length === 0) addEmailField('');
+1296: }
+1297: 
+1298: function collectSenderInputs() {
+1299:     const container = document.getElementById('senderOfInterestContainer');
+1300:     if (!container) return [];
+1301:     
+1302:     const inputs = Array.from(container.querySelectorAll('input[type="email"]'));
+1303:     const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+1304:     const out = [];
+1305:     const seen = new Set();
+1306:     
+1307:     for (const i of inputs) {
+1308:         const v = (i.value || '').trim().toLowerCase();
+1309:         if (!v) continue;
+1310:         
+1311:         if (emailRe.test(v) && !seen.has(v)) {
+1312:             seen.add(v);
+1313:             out.push(v);
+1314:         }
+1315:     }
+1316:     
+1317:     return out;
+1318: }
+1319: 
+1320: // Fenêtre horaire global webhook
+1321: async function loadGlobalWebhookTimeWindow() {
+1322:     const applyGlobalWindowValues = (startValue = '', endValue = '') => {
+1323:         const startInput = document.getElementById('globalWebhookTimeStart');
+1324:         const endInput = document.getElementById('globalWebhookTimeEnd');
+1325:         if (startInput) setSelectedOption(startInput, startValue || '');
+1326:         if (endInput) setSelectedOption(endInput, endValue || '');
 1327:     };
-1328: }
-1329: 
-1330: /**
-1331:  * Met à jour l'affichage du bandeau de statut
-1332:  */
-1333: function updateStatusBanner(statusData, config) {
-1334:     // Mettre à jour les valeurs
-1335:     document.getElementById('lastExecutionTime').textContent = statusData.lastExecution;
-1336:     document.getElementById('recentIncidents').textContent = statusData.recentIncidents;
-1337:     document.getElementById('criticalErrors').textContent = statusData.criticalErrors;
-1338:     document.getElementById('activeWebhooks').textContent = statusData.activeWebhooks;
-1339:     
-1340:     // Mettre à jour l'icône de statut
-1341:     const statusIcon = document.getElementById('globalStatusIcon');
-1342:     statusIcon.className = 'status-icon ' + statusData.status;
-1343:     
-1344:     switch (statusData.status) {
-1345:         case 'success':
-1346:             statusIcon.textContent = '🟢';
-1347:             break;
-1348:         case 'warning':
-1349:             statusIcon.textContent = '🟡';
-1350:             break;
-1351:         case 'error':
-1352:             statusIcon.textContent = '🔴';
-1353:             break;
-1354:         default:
-1355:             statusIcon.textContent = '🟢';
-1356:     }
-1357: }
-1358: 
-1359: // -------------------- Panneaux Pliables Webhooks --------------------
-1360: /**
-1361:  * Initialise les panneaux pliables des webhooks
-1362:  */
-1363: function initializeCollapsiblePanels() {
-1364:     const panels = document.querySelectorAll('.collapsible-panel');
-1365:     
-1366:     panels.forEach(panel => {
-1367:         const header = panel.querySelector('.panel-header');
-1368:         const content = panel.querySelector('.panel-content');
-1369:         const toggleIcon = panel.querySelector('.toggle-icon');
-1370:         
-1371:         if (header && content && toggleIcon) {
-1372:             header.addEventListener('click', () => {
-1373:                 const isCollapsed = content.classList.contains('collapsed');
-1374:                 
-1375:                 if (isCollapsed) {
-1376:                     content.classList.remove('collapsed');
-1377:                     toggleIcon.classList.remove('rotated');
-1378:                 } else {
-1379:                     content.classList.add('collapsed');
-1380:                     toggleIcon.classList.add('rotated');
-1381:                 }
-1382:             });
-1383:         }
-1384:     });
-1385: }
-1386: 
-1387: /**
-1388:  * Met à jour le statut d'un panneau
-1389:  * @param {string} panelType - Type de panneau
-1390:  * @param {boolean} success - Si la sauvegarde a réussi
-1391:  */
-1392: function updatePanelStatus(panelType, success) {
-1393:     const statusElement = document.getElementById(`${panelType}-status`);
-1394:     if (statusElement) {
-1395:         if (success) {
-1396:             statusElement.textContent = 'Sauvegardé';
-1397:             statusElement.classList.add('saved');
-1398:         } else {
-1399:             statusElement.textContent = 'Erreur';
-1400:             statusElement.classList.remove('saved');
-1401:         }
-1402:         
-1403:         // Réinitialiser après 3 secondes
-1404:         setTimeout(() => {
-1405:             statusElement.textContent = 'Sauvegarde requise';
-1406:             statusElement.classList.remove('saved');
-1407:         }, 3000);
-1408:     }
-1409: }
-1410: 
-1411: /**
-1412:  * Met à jour l'indicateur de dernière sauvegarde
-1413:  * @param {string} panelType - Type de panneau
-1414:  */
-1415: function updatePanelIndicator(panelType) {
-1416:     const indicator = document.getElementById(`${panelType}-indicator`);
-1417:     if (indicator) {
-1418:         const now = new Date();
-1419:         const timeString = now.toLocaleTimeString('fr-FR', { 
-1420:             hour: '2-digit', 
-1421:             minute: '2-digit' 
-1422:         });
-1423:         indicator.textContent = `Dernière sauvegarde: ${timeString}`;
-1424:     }
-1425: }
-1426: 
-1427: /**
-1428:  * Sauvegarde un panneau de configuration webhook
-1429:  * @param {string} panelType - Type de panneau (urls-ssl, absence, time-window)
-1430:  */
-1431: async function saveWebhookPanel(panelType) {
-1432:     try {
-1433:         let data;
-1434:         let endpoint;
-1435:         let successMessage;
-1436:         
-1437:         switch (panelType) {
-1438:             case 'urls-ssl':
-1439:                 data = collectUrlsData();
-1440:                 endpoint = '/api/webhooks/config';
-1441:                 successMessage = 'Configuration URLs & SSL enregistrée avec succès !';
-1442:                 break;
-1443:                 
-1444:             case 'absence':
-1445:                 data = collectAbsenceData();
-1446:                 endpoint = '/api/webhooks/config';
-1447:                 successMessage = 'Configuration Absence Globale enregistrée avec succès !';
-1448:                 break;
-1449:                 
-1450:             case 'time-window':
-1451:                 data = collectTimeWindowData();
-1452:                 endpoint = '/api/webhooks/time-window';
-1453:                 successMessage = 'Fenêtre horaire enregistrée avec succès !';
-1454:                 break;
-1455:                 
-1456:             default:
-1457:                 console.error('Type de panneau inconnu:', panelType);
-1458:                 return;
-1459:         }
-1460:         
-1461:         // Envoyer les données au serveur
-1462:         const response = await ApiService.post(endpoint, data);
-1463:         
-1464:         if (response.success) {
-1465:             MessageHelper.showSuccess(`${panelType}-msg`, successMessage);
-1466:             updatePanelStatus(panelType, true);
-1467:             updatePanelIndicator(panelType);
-1468:         } else {
-1469:             MessageHelper.showError(`${panelType}-msg`, response.message || 'Erreur lors de la sauvegarde');
-1470:             updatePanelStatus(panelType, false);
-1471:         }
-1472:         
-1473:     } catch (error) {
-1474:         console.error(`Erreur lors de la sauvegarde du panneau ${panelType}:`, error);
-1475:         MessageHelper.showError(`${panelType}-msg`, 'Erreur lors de la sauvegarde');
-1476:         updatePanelStatus(panelType, false);
-1477:     }
-1478: }
-1479: 
-1480: /**
-1481:  * Collecte les données du panneau URLs & SSL
-1482:  */
-1483: function collectUrlsData() {
-1484:     const webhookUrl = document.getElementById('webhookUrl')?.value || '';
-1485:     const webhookUrlPlaceholder = document.getElementById('webhookUrl')?.placeholder || '';
-1486:     const sslToggle = document.getElementById('sslVerifyToggle');
-1487:     const sendingToggle = document.getElementById('webhookSendingToggle');
-1488:     const sslVerify = sslToggle?.checked ?? true;
-1489:     const sendingEnabled = sendingToggle?.checked ?? true;
-1490: 
-1491:     const payload = {
-1492:         webhook_ssl_verify: sslVerify,
-1493:         webhook_sending_enabled: sendingEnabled,
-1494:     };
-1495: 
-1496:     const trimmedWebhookUrl = webhookUrl.trim();
-1497:     if (trimmedWebhookUrl && !MessageHelper.isPlaceholder(trimmedWebhookUrl, webhookUrlPlaceholder)) {
-1498:         payload.webhook_url = trimmedWebhookUrl;
-1499:     }
-1500: 
-1501:     return payload;
+1328:     
+1329:     try {
+1330:         const timeWindowResponse = await ApiService.get('/api/webhooks/time-window');
+1331:         if (timeWindowResponse.success) {
+1332:             applyGlobalWindowValues(
+1333:                 timeWindowResponse.webhooks_time_start || '',
+1334:                 timeWindowResponse.webhooks_time_end || ''
+1335:             );
+1336:             return;
+1337:         }
+1338:     } catch (e) {
+1339:         console.warn('Impossible de charger la fenêtre horaire webhook globale:', e);
+1340:     }
+1341: }
+1342: 
+1343: async function saveGlobalWebhookTimeWindow() {
+1344:     const startInput = document.getElementById('globalWebhookTimeStart');
+1345:     const endInput = document.getElementById('globalWebhookTimeEnd');
+1346:     const start = startInput.value.trim();
+1347:     const end = endInput.value.trim();
+1348:     
+1349:     // Validation des formats - dropdowns guarantee HH:MM format
+1350:     if (start && !/^\d{2}:\d{2}$/.test(start)) {
+1351:         MessageHelper.showError('globalWebhookTimeMsg', 'Veuillez sélectionner une heure valide.');
+1352:         return false;
+1353:     }
+1354:     
+1355:     if (end && !/^\d{2}:\d{2}$/.test(end)) {
+1356:         MessageHelper.showError('globalWebhookTimeMsg', 'Veuillez sélectionner une heure valide.');
+1357:         return false;
+1358:     }
+1359:     
+1360:     // No normalization needed for dropdowns - format is already HH:MM
+1361:     
+1362:     try {
+1363:         const data = await ApiService.post('/api/webhooks/time-window', { 
+1364:             start: start, 
+1365:             end: end 
+1366:         });
+1367:         
+1368:         if (data.success) {
+1369:             MessageHelper.showSuccess('globalWebhookTimeMsg', 'Fenêtre horaire webhook enregistrée avec succès !');
+1370:             updatePanelStatus('time-window', true);
+1371:             updatePanelIndicator('time-window');
+1372:             
+1373:             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
+1374:             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
+1375:                 setSelectedOption(startInput, data.webhooks_time_start || '');
+1376:             }
+1377:             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
+1378:                 setSelectedOption(endInput, data.webhooks_time_end || '');
+1379:             }
+1380:             await loadGlobalWebhookTimeWindow();
+1381:             return true;
+1382:         } else {
+1383:             MessageHelper.showError('globalWebhookTimeMsg', data.message || 'Erreur lors de la sauvegarde.');
+1384:             updatePanelStatus('time-window', false);
+1385:             return false;
+1386:         }
+1387:     } catch (e) {
+1388:         MessageHelper.showError('globalWebhookTimeMsg', 'Erreur de communication avec le serveur.');
+1389:         updatePanelStatus('time-window', false);
+1390:         return false;
+1391:     }
+1392: }
+1393: 
+1394: // -------------------- Statut Global --------------------
+1395: /**
+1396:  * Met à jour le bandeau de statut global avec les données récentes
+1397:  */
+1398: async function updateGlobalStatus() {
+1399:     try {
+1400:         // Récupérer les logs récents pour analyser le statut
+1401:         const logsResponse = await ApiService.get('/api/webhook_logs?limit=50');
+1402:         const configResponse = await ApiService.get('/api/webhooks/config');
+1403:         
+1404:         if (!logsResponse.success || !configResponse.success) {
+1405:             console.warn('Impossible de récupérer les données pour le statut global');
+1406:             return;
+1407:         }
+1408:         
+1409:         const logs = logsResponse.logs || [];
+1410:         const config = configResponse.config || {};
+1411:         
+1412:         // Analyser les logs pour déterminer le statut
+1413:         const statusData = analyzeLogsForStatus(logs);
+1414:         
+1415:         // Mettre à jour l'interface
+1416:         updateStatusBanner(statusData, config);
+1417:         
+1418:     } catch (error) {
+1419:         console.error('Erreur lors de la mise à jour du statut global:', error);
+1420:         // Afficher un statut d'erreur
+1421:         updateStatusBanner({
+1422:             lastExecution: 'Erreur',
+1423:             recentIncidents: '—',
+1424:             criticalErrors: '—',
+1425:             activeWebhooks: config?.webhook_url ? '1' : '0',
+1426:             status: 'error'
+1427:         }, {});
+1428:     }
+1429: }
+1430: 
+1431: /**
+1432:  * Analyse les logs pour extraire les informations de statut
+1433:  */
+1434: function analyzeLogsForStatus(logs) {
+1435:     const now = new Date();
+1436:     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+1437:     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+1438:     
+1439:     let lastExecution = null;
+1440:     let recentIncidents = 0;
+1441:     let criticalErrors = 0;
+1442:     let totalWebhooks = 0;
+1443:     let successfulWebhooks = 0;
+1444:     
+1445:     logs.forEach(log => {
+1446:         const logTime = new Date(log.timestamp);
+1447:         
+1448:         // Dernière exécution
+1449:         if (!lastExecution || logTime > lastExecution) {
+1450:             lastExecution = logTime;
+1451:         }
+1452:         
+1453:         // Webhooks envoyés (dernière heure)
+1454:         if (logTime >= oneHourAgo) {
+1455:             totalWebhooks++;
+1456:             if (log.status === 'success') {
+1457:                 successfulWebhooks++;
+1458:             } else if (log.status === 'error') {
+1459:                 criticalErrors++;
+1460:             }
+1461:         }
+1462:         
+1463:         // Incidents récents (dernières 24h)
+1464:         if (logTime >= oneDayAgo && log.status === 'error') {
+1465:             recentIncidents++;
+1466:         }
+1467:     });
+1468:     
+1469:     // Formater la dernière exécution
+1470:     let lastExecutionText = '—';
+1471:     if (lastExecution) {
+1472:         const diffMinutes = Math.floor((now - lastExecution) / (1000 * 60));
+1473:         if (diffMinutes < 1) {
+1474:             lastExecutionText = 'À l\'instant';
+1475:         } else if (diffMinutes < 60) {
+1476:             lastExecutionText = `Il y a ${diffMinutes} min`;
+1477:         } else if (diffMinutes < 1440) {
+1478:             lastExecutionText = `Il y a ${Math.floor(diffMinutes / 60)}h`;
+1479:         } else {
+1480:             lastExecutionText = lastExecution.toLocaleDateString('fr-FR', { 
+1481:                 hour: '2-digit', 
+1482:                 minute: '2-digit' 
+1483:             });
+1484:         }
+1485:     }
+1486:     
+1487:     // Déterminer le statut global
+1488:     let status = 'success';
+1489:     if (criticalErrors > 0) {
+1490:         status = 'error';
+1491:     } else if (recentIncidents > 0) {
+1492:         status = 'warning';
+1493:     }
+1494:     
+1495:     return {
+1496:         lastExecution: lastExecutionText,
+1497:         recentIncidents: recentIncidents.toString(),
+1498:         criticalErrors: criticalErrors.toString(),
+1499:         activeWebhooks: totalWebhooks.toString(),
+1500:         status: status
+1501:     };
 1502: }
 1503: 
 1504: /**
-1505:  * Collecte les données du panneau fenêtre horaire
+1505:  * Met à jour l'affichage du bandeau de statut
 1506:  */
-1507: function collectTimeWindowData() {
-1508:     const startInput = document.getElementById('globalWebhookTimeStart');
-1509:     const endInput = document.getElementById('globalWebhookTimeEnd');
-1510:     const start = startInput?.value?.trim() || '';
-1511:     const end = endInput?.value?.trim() || '';
-1512:     
-1513:     // Normaliser les formats
-1514:     const normalizedStart = start ? (MessageHelper.normalizeTimeFormat(start) || '') : '';
-1515:     const normalizedEnd = end ? (MessageHelper.normalizeTimeFormat(end) || '') : '';
-1516:     
-1517:     return {
-1518:         start: normalizedStart,
-1519:         end: normalizedEnd
-1520:     };
-1521: }
-1522: 
-1523: /**
-1524:  * Collecte les données du panneau d'absence
-1525:  */
-1526: function collectAbsenceData() {
-1527:     const toggle = document.getElementById('absencePauseToggle');
-1528:     const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]:checked');
-1529:     
-1530:     return {
-1531:         absence_pause_enabled: toggle ? toggle.checked : false,
-1532:         absence_pause_days: Array.from(dayCheckboxes).map(cb => cb.value)
-1533:     };
-1534: }
-1535: 
-1536: // -------------------- Déploiement Application --------------------
-1537: async function handleDeployApplication() {
-1538:     const button = document.getElementById('restartServerBtn');
-1539:     const messageId = 'restartMsg';
-1540:     
-1541:     if (!button) {
-1542:         MessageHelper.showError(messageId, 'Bouton de déploiement introuvable.');
-1543:         return;
-1544:     }
-1545:     
-1546:     const confirmed = window.confirm("Confirmez-vous le déploiement de l'application ? Elle peut être indisponible pendant quelques secondes.");
-1547:     if (!confirmed) {
-1548:         return;
-1549:     }
-1550:     
-1551:     button.disabled = true;
-1552:     MessageHelper.showInfo(messageId, 'Déploiement en cours...');
-1553:     
-1554:     try {
-1555:         const response = await ApiService.post('/api/deploy_application');
-1556:         if (response?.success) {
-1557:             MessageHelper.showSuccess(messageId, response.message || 'Déploiement planifié. Vérification du service…');
-1558:             try {
-1559:                 await pollHealthCheck({ attempts: 12, intervalMs: 1500, timeoutMs: 30000 });
-1560:                 window.location.reload();
-1561:             } catch (healthError) {
-1562:                 console.warn('Health check failed after deployment:', healthError);
-1563:                 MessageHelper.showError(messageId, "Le service ne répond pas encore. Réessayez dans quelques secondes ou rechargez la page.");
-1564:             }
-1565:         } else {
-1566:             MessageHelper.showError(messageId, response?.message || 'Échec du déploiement. Vérifiez les journaux serveur.');
-1567:         }
-1568:     } catch (error) {
-1569:         console.error('Erreur déploiement application:', error);
-1570:         MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
-1571:     } finally {
-1572:         button.disabled = false;
-1573:     }
-1574: }
-1575: 
-1576: async function pollHealthCheck({ attempts = 10, intervalMs = 1200, timeoutMs = 20000 } = {}) {
-1577:     const safeAttempts = Math.max(1, Number(attempts));
-1578:     const delayMs = Math.max(250, Number(intervalMs));
-1579:     const controller = new AbortController();
-1580:     const timeoutId = setTimeout(() => controller.abort(), Math.max(delayMs, Number(timeoutMs)));
-1581:     
-1582:     try {
-1583:         for (let attempt = 0; attempt < safeAttempts; attempt++) {
-1584:             try {
-1585:                 const res = await fetch('/health', { cache: 'no-store', signal: controller.signal });
-1586:                 if (res.ok) {
-1587:                     clearTimeout(timeoutId);
-1588:                     return true;
-1589:                 }
-1590:             } catch {
-1591:                 // Service peut être indisponible lors du redéploiement, ignorer
-1592:             }
-1593:             await new Promise(resolve => setTimeout(resolve, delayMs));
-1594:         }
-1595:         throw new Error('healthcheck failed');
-1596:     } finally {
-1597:         clearTimeout(timeoutId);
+1507: function updateStatusBanner(statusData, config) {
+1508:     // Mettre à jour les valeurs
+1509:     document.getElementById('lastExecutionTime').textContent = statusData.lastExecution;
+1510:     document.getElementById('recentIncidents').textContent = statusData.recentIncidents;
+1511:     document.getElementById('criticalErrors').textContent = statusData.criticalErrors;
+1512:     document.getElementById('activeWebhooks').textContent = statusData.activeWebhooks;
+1513:     
+1514:     // Mettre à jour l'icône de statut
+1515:     const statusIcon = document.getElementById('globalStatusIcon');
+1516:     statusIcon.className = 'status-icon ' + statusData.status;
+1517:     
+1518:     switch (statusData.status) {
+1519:         case 'success':
+1520:             statusIcon.textContent = '🟢';
+1521:             break;
+1522:         case 'warning':
+1523:             statusIcon.textContent = '🟡';
+1524:             break;
+1525:         case 'error':
+1526:             statusIcon.textContent = '🔴';
+1527:             break;
+1528:         default:
+1529:             statusIcon.textContent = '🟢';
+1530:     }
+1531: }
+1532: 
+1533: // -------------------- Panneaux Pliables Webhooks --------------------
+1534: /**
+1535:  * Initialise les panneaux pliables des webhooks
+1536:  */
+1537: function initializeCollapsiblePanels() {
+1538:     const panels = document.querySelectorAll('.collapsible-panel');
+1539:     
+1540:     panels.forEach(panel => {
+1541:         const header = panel.querySelector('.panel-header');
+1542:         const content = panel.querySelector('.panel-content');
+1543:         const toggleIcon = panel.querySelector('.toggle-icon');
+1544:         
+1545:         if (header && content && toggleIcon) {
+1546:             header.addEventListener('click', () => {
+1547:                 const isCollapsed = content.classList.contains('collapsed');
+1548:                 
+1549:                 if (isCollapsed) {
+1550:                     content.classList.remove('collapsed');
+1551:                     toggleIcon.classList.remove('rotated');
+1552:                 } else {
+1553:                     content.classList.add('collapsed');
+1554:                     toggleIcon.classList.add('rotated');
+1555:                 }
+1556:             });
+1557:         }
+1558:     });
+1559: }
+1560: 
+1561: /**
+1562:  * Met à jour le statut d'un panneau
+1563:  * @param {string} panelType - Type de panneau
+1564:  * @param {boolean} success - Si la sauvegarde a réussi
+1565:  */
+1566: function updatePanelStatus(panelType, success) {
+1567:     const statusElement = document.getElementById(`${panelType}-status`);
+1568:     if (statusElement) {
+1569:         if (success) {
+1570:             statusElement.textContent = 'Sauvegardé';
+1571:             statusElement.classList.add('saved');
+1572:         } else {
+1573:             statusElement.textContent = 'Erreur';
+1574:             statusElement.classList.remove('saved');
+1575:         }
+1576:         
+1577:         // Réinitialiser après 3 secondes
+1578:         setTimeout(() => {
+1579:             statusElement.textContent = 'Sauvegarde requise';
+1580:             statusElement.classList.remove('saved');
+1581:         }, 3000);
+1582:     }
+1583: }
+1584: 
+1585: /**
+1586:  * Met à jour l'indicateur de dernière sauvegarde
+1587:  * @param {string} panelType - Type de panneau
+1588:  */
+1589: function updatePanelIndicator(panelType) {
+1590:     const indicator = document.getElementById(`${panelType}-indicator`);
+1591:     if (indicator) {
+1592:         const now = new Date();
+1593:         const timeString = now.toLocaleTimeString('fr-FR', { 
+1594:             hour: '2-digit', 
+1595:             minute: '2-digit' 
+1596:         });
+1597:         indicator.textContent = `Dernière sauvegarde: ${timeString}`;
 1598:     }
 1599: }
 1600: 
-1601: // -------------------- Auto-sauvegarde Intelligente --------------------
-1602: /**
-1603:  * Initialise l'auto-sauvegarde intelligente
+1601: /**
+1602:  * Sauvegarde un panneau de configuration webhook
+1603:  * @param {string} panelType - Type de panneau (urls-ssl, absence, time-window)
 1604:  */
-1605: function initializeAutoSave() {
-1606:     // Préférences qui peuvent être sauvegardées automatiquement
-1607:     const autoSaveFields = [
-1608:         'attachmentDetectionToggle',
-1609:         'retryCount', 
-1610:         'retryDelaySec',
-1611:         'webhookTimeoutSec',
-1612:         'rateLimitPerHour',
-1613:         'notifyOnFailureToggle'
-1614:     ];
-1615:     
-1616:     // Écouter les changements sur les champs d'auto-sauvegarde
-1617:     autoSaveFields.forEach(fieldId => {
-1618:         const field = document.getElementById(fieldId);
-1619:         if (field) {
-1620:             field.addEventListener('change', () => handleAutoSaveChange(fieldId));
-1621:             field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 2000));
-1622:         }
-1623:     });
-1624:     
-1625:     // Écouter les changements sur les textarea de préférences
-1626:     const preferenceTextareas = [
-1627:         'excludeKeywordsRecadrage',
-1628:         'excludeKeywordsAutorepondeur',
-1629:         'excludeKeywords',
-1630:         'senderPriority'
-1631:     ];
-1632:     
-1633:     preferenceTextareas.forEach(fieldId => {
-1634:         const field = document.getElementById(fieldId);
-1635:         if (field) {
-1636:             field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 3000));
-1637:         }
-1638:     });
-1639: }
-1640: 
-1641: /**
-1642:  * Gère les changements pour l'auto-sauvegarde
-1643:  * @param {string} fieldId - ID du champ modifié
-1644:  */
-1645: async function handleAutoSaveChange(fieldId) {
-1646:     try {
-1647:         // Marquer la section comme modifiée
-1648:         markSectionAsModified(fieldId);
-1649:         
-1650:         // Collecter les données de préférences
-1651:         const prefsData = collectPreferencesData();
-1652:         
-1653:         // Sauvegarder automatiquement
-1654:         const result = await ApiService.post('/api/processing_prefs', prefsData);
-1655:         
-1656:         if (result.success) {
-1657:             // Marquer la section comme sauvegardée
-1658:             markSectionAsSaved(fieldId);
-1659:             showAutoSaveFeedback(fieldId, true);
-1660:         } else {
-1661:             showAutoSaveFeedback(fieldId, false, result.message);
-1662:         }
-1663:         
-1664:     } catch (error) {
-1665:         console.error('Erreur lors de l\'auto-sauvegarde:', error);
-1666:         showAutoSaveFeedback(fieldId, false, 'Erreur de connexion');
-1667:     }
-1668: }
+1605: async function saveWebhookPanel(panelType) {
+1606:     try {
+1607:         let data;
+1608:         let endpoint;
+1609:         let successMessage;
+1610:         
+1611:         switch (panelType) {
+1612:             case 'urls-ssl':
+1613:                 data = collectUrlsData();
+1614:                 endpoint = '/api/webhooks/config';
+1615:                 successMessage = 'Configuration URLs & SSL enregistrée avec succès !';
+1616:                 break;
+1617:                 
+1618:             case 'absence':
+1619:                 data = collectAbsenceData();
+1620:                 endpoint = '/api/webhooks/config';
+1621:                 successMessage = 'Configuration Absence Globale enregistrée avec succès !';
+1622:                 break;
+1623:                 
+1624:             case 'time-window':
+1625:                 data = collectTimeWindowData();
+1626:                 endpoint = '/api/webhooks/time-window';
+1627:                 successMessage = 'Fenêtre horaire enregistrée avec succès !';
+1628:                 break;
+1629:                 
+1630:             default:
+1631:                 console.error('Type de panneau inconnu:', panelType);
+1632:                 return;
+1633:         }
+1634:         
+1635:         // Envoyer les données au serveur
+1636:         const response = await ApiService.post(endpoint, data);
+1637:         
+1638:         if (response.success) {
+1639:             MessageHelper.showSuccess(`${panelType}-msg`, successMessage);
+1640:             updatePanelStatus(panelType, true);
+1641:             updatePanelIndicator(panelType);
+1642:         } else {
+1643:             MessageHelper.showError(`${panelType}-msg`, response.message || 'Erreur lors de la sauvegarde');
+1644:             updatePanelStatus(panelType, false);
+1645:         }
+1646:         
+1647:     } catch (error) {
+1648:         console.error(`Erreur lors de la sauvegarde du panneau ${panelType}:`, error);
+1649:         MessageHelper.showError(`${panelType}-msg`, 'Erreur lors de la sauvegarde');
+1650:         updatePanelStatus(panelType, false);
+1651:     }
+1652: }
+1653: 
+1654: /**
+1655:  * Collecte les données du panneau URLs & SSL
+1656:  */
+1657: function collectUrlsData() {
+1658:     const webhookUrl = document.getElementById('webhookUrl')?.value || '';
+1659:     const webhookUrlPlaceholder = document.getElementById('webhookUrl')?.placeholder || '';
+1660:     const sslToggle = document.getElementById('sslVerifyToggle');
+1661:     const sendingToggle = document.getElementById('webhookSendingToggle');
+1662:     const sslVerify = sslToggle?.checked ?? true;
+1663:     const sendingEnabled = sendingToggle?.checked ?? true;
+1664: 
+1665:     const payload = {
+1666:         webhook_ssl_verify: sslVerify,
+1667:         webhook_sending_enabled: sendingEnabled,
+1668:     };
 1669: 
-1670: /**
-1671:  * Collecte les données des préférences
-1672:  */
-1673: function collectPreferencesData() {
-1674:     const data = {};
-1675:     
-1676:     // Préférences de filtres (tableaux)
-1677:     const excludeKeywordsRecadrage = document.getElementById('excludeKeywordsRecadrage')?.value || '';
-1678:     const excludeKeywordsAutorepondeur = document.getElementById('excludeKeywordsAutorepondeur')?.value || '';
-1679:     const excludeKeywords = document.getElementById('excludeKeywords')?.value || '';
-1680:     
-1681:     data.exclude_keywords_recadrage = excludeKeywordsRecadrage ? 
-1682:         excludeKeywordsRecadrage.split('\n').map(line => line.trim()).filter(line => line) : [];
-1683:     data.exclude_keywords_autorepondeur = excludeKeywordsAutorepondeur ? 
-1684:         excludeKeywordsAutorepondeur.split('\n').map(line => line.trim()).filter(line => line) : [];
-1685:     data.exclude_keywords = excludeKeywords ? 
-1686:         excludeKeywords.split('\n').map(line => line.trim()).filter(line => line) : [];
-1687:     
-1688:     // Préférences de fiabilité
-1689:     data.require_attachments = document.getElementById('attachmentDetectionToggle')?.checked || false;
-1690: 
-1691:     const retryCountRaw = document.getElementById('retryCount')?.value;
-1692:     if (retryCountRaw !== undefined && String(retryCountRaw).trim() !== '') {
-1693:         data.retry_count = parseInt(String(retryCountRaw).trim(), 10);
-1694:     }
-1695: 
-1696:     const retryDelayRaw = document.getElementById('retryDelaySec')?.value;
-1697:     if (retryDelayRaw !== undefined && String(retryDelayRaw).trim() !== '') {
-1698:         data.retry_delay_sec = parseInt(String(retryDelayRaw).trim(), 10);
-1699:     }
-1700: 
-1701:     const webhookTimeoutRaw = document.getElementById('webhookTimeoutSec')?.value;
-1702:     if (webhookTimeoutRaw !== undefined && String(webhookTimeoutRaw).trim() !== '') {
-1703:         data.webhook_timeout_sec = parseInt(String(webhookTimeoutRaw).trim(), 10);
-1704:     }
-1705: 
-1706:     const rateLimitRaw = document.getElementById('rateLimitPerHour')?.value;
-1707:     if (rateLimitRaw !== undefined && String(rateLimitRaw).trim() !== '') {
-1708:         data.rate_limit_per_hour = parseInt(String(rateLimitRaw).trim(), 10);
-1709:     }
-1710: 
-1711:     data.notify_on_failure = document.getElementById('notifyOnFailureToggle')?.checked || false;
-1712:     
-1713:     // Préférences de priorité (JSON)
-1714:     const senderPriorityText = document.getElementById('senderPriority')?.value || '{}';
-1715:     try {
-1716:         data.sender_priority = JSON.parse(senderPriorityText);
-1717:     } catch (e) {
-1718:         data.sender_priority = {};
-1719:     }
-1720:     
-1721:     return data;
-1722: }
-1723: 
-1724: /**
-1725:  * Marque une section comme modifiée
-1726:  * @param {string} fieldId - ID du champ modifié
-1727:  */
-1728: function markSectionAsModified(fieldId) {
-1729:     const section = getFieldSection(fieldId);
-1730:     if (section) {
-1731:         section.classList.add('modified');
-1732:         updateSectionIndicator(section, 'Modifié');
-1733:     }
-1734: }
-1735: 
-1736: /**
-1737:  * Marque une section comme sauvegardée
-1738:  * @param {string} fieldId - ID du champ sauvegardé
-1739:  */
-1740: function markSectionAsSaved(fieldId) {
-1741:     const section = getFieldSection(fieldId);
-1742:     if (section) {
-1743:         section.classList.remove('modified');
-1744:         section.classList.add('saved');
-1745:         updateSectionIndicator(section, 'Sauvegardé');
-1746:         
-1747:         // Retirer la classe 'saved' après 2 secondes
-1748:         setTimeout(() => {
-1749:             section.classList.remove('saved');
-1750:             updateSectionIndicator(section, '');
-1751:         }, 2000);
-1752:     }
-1753: }
-1754: 
-1755: /**
-1756:  * Obtient la section d'un champ
-1757:  * @param {string} fieldId - ID du champ
-1758:  * @returns {HTMLElement|null} Section parente
-1759:  */
-1760: function getFieldSection(fieldId) {
-1761:     const field = document.getElementById(fieldId);
-1762:     if (!field) return null;
-1763:     
-1764:     // Remonter jusqu'à trouver une carte ou un panneau
-1765:     let parent = field.parentElement;
-1766:     while (parent && parent !== document.body) {
-1767:         if (parent.classList.contains('card') || parent.classList.contains('collapsible-panel')) {
-1768:             return parent;
-1769:         }
-1770:         parent = parent.parentElement;
-1771:     }
-1772:     
-1773:     return null;
-1774: }
-1775: 
+1670:     const trimmedWebhookUrl = webhookUrl.trim();
+1671:     if (trimmedWebhookUrl && !MessageHelper.isPlaceholder(trimmedWebhookUrl, webhookUrlPlaceholder)) {
+1672:         payload.webhook_url = trimmedWebhookUrl;
+1673:     }
+1674: 
+1675:     return payload;
+1676: }
+1677: 
+1678: /**
+1679:  * Collecte les données du panneau fenêtre horaire
+1680:  */
+1681: function collectTimeWindowData() {
+1682:     const startInput = document.getElementById('globalWebhookTimeStart');
+1683:     const endInput = document.getElementById('globalWebhookTimeEnd');
+1684:     const start = startInput?.value?.trim() || '';
+1685:     const end = endInput?.value?.trim() || '';
+1686:     
+1687:     // Normaliser les formats
+1688:     const normalizedStart = start ? (MessageHelper.normalizeTimeFormat(start) || '') : '';
+1689:     const normalizedEnd = end ? (MessageHelper.normalizeTimeFormat(end) || '') : '';
+1690:     
+1691:     return {
+1692:         start: normalizedStart,
+1693:         end: normalizedEnd
+1694:     };
+1695: }
+1696: 
+1697: /**
+1698:  * Collecte les données du panneau d'absence
+1699:  */
+1700: function collectAbsenceData() {
+1701:     const toggle = document.getElementById('absencePauseToggle');
+1702:     const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]:checked');
+1703:     
+1704:     return {
+1705:         absence_pause_enabled: toggle ? toggle.checked : false,
+1706:         absence_pause_days: Array.from(dayCheckboxes).map(cb => cb.value)
+1707:     };
+1708: }
+1709: 
+1710: // -------------------- Déploiement Application --------------------
+1711: async function handleDeployApplication() {
+1712:     const button = document.getElementById('restartServerBtn');
+1713:     const messageId = 'restartMsg';
+1714:     
+1715:     if (!button) {
+1716:         MessageHelper.showError(messageId, 'Bouton de déploiement introuvable.');
+1717:         return;
+1718:     }
+1719:     
+1720:     const confirmed = window.confirm("Confirmez-vous le déploiement de l'application ? Elle peut être indisponible pendant quelques secondes.");
+1721:     if (!confirmed) {
+1722:         return;
+1723:     }
+1724:     
+1725:     button.disabled = true;
+1726:     MessageHelper.showInfo(messageId, 'Déploiement en cours...');
+1727:     
+1728:     try {
+1729:         const response = await ApiService.post('/api/deploy_application');
+1730:         if (response?.success) {
+1731:             MessageHelper.showSuccess(messageId, response.message || 'Déploiement planifié. Vérification du service…');
+1732:             try {
+1733:                 await pollHealthCheck({ attempts: 12, intervalMs: 1500, timeoutMs: 30000 });
+1734:                 window.location.reload();
+1735:             } catch (healthError) {
+1736:                 console.warn('Health check failed after deployment:', healthError);
+1737:                 MessageHelper.showError(messageId, "Le service ne répond pas encore. Réessayez dans quelques secondes ou rechargez la page.");
+1738:             }
+1739:         } else {
+1740:             MessageHelper.showError(messageId, response?.message || 'Échec du déploiement. Vérifiez les journaux serveur.');
+1741:         }
+1742:     } catch (error) {
+1743:         console.error('Erreur déploiement application:', error);
+1744:         MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
+1745:     } finally {
+1746:         button.disabled = false;
+1747:     }
+1748: }
+1749: 
+1750: async function pollHealthCheck({ attempts = 10, intervalMs = 1200, timeoutMs = 20000 } = {}) {
+1751:     const safeAttempts = Math.max(1, Number(attempts));
+1752:     const delayMs = Math.max(250, Number(intervalMs));
+1753:     const controller = new AbortController();
+1754:     const timeoutId = setTimeout(() => controller.abort(), Math.max(delayMs, Number(timeoutMs)));
+1755:     
+1756:     try {
+1757:         for (let attempt = 0; attempt < safeAttempts; attempt++) {
+1758:             try {
+1759:                 const res = await fetch('/health', { cache: 'no-store', signal: controller.signal });
+1760:                 if (res.ok) {
+1761:                     clearTimeout(timeoutId);
+1762:                     return true;
+1763:                 }
+1764:             } catch {
+1765:                 // Service peut être indisponible lors du redéploiement, ignorer
+1766:             }
+1767:             await new Promise(resolve => setTimeout(resolve, delayMs));
+1768:         }
+1769:         throw new Error('healthcheck failed');
+1770:     } finally {
+1771:         clearTimeout(timeoutId);
+1772:     }
+1773: }
+1774: 
+1775: // -------------------- Auto-sauvegarde Intelligente --------------------
 1776: /**
-1777:  * Met à jour l'indicateur de section
-1778:  * @param {HTMLElement} section - Section à mettre à jour
-1779:  * @param {string} status - Statut à afficher
-1780:  */
-1781: function updateSectionIndicator(section, status) {
-1782:     let indicator = section.querySelector('.section-indicator');
-1783:     
-1784:     if (!indicator) {
-1785:         // Créer l'indicateur s'il n'existe pas
-1786:         indicator = document.createElement('div');
-1787:         indicator.className = 'section-indicator';
-1788:         
-1789:         // Insérer après le titre
-1790:         const title = section.querySelector('.card-title, .panel-title');
-1791:         if (title) {
-1792:             title.appendChild(indicator);
-1793:         }
-1794:     }
-1795:     
-1796:     if (status) {
-1797:         indicator.textContent = status;
-1798:         indicator.className = `section-indicator ${status.toLowerCase()}`;
-1799:     } else {
-1800:         indicator.textContent = '';
-1801:         indicator.className = 'section-indicator';
-1802:     }
-1803: }
-1804: 
-1805: /**
-1806:  * Affiche un feedback d'auto-sauvegarde
-1807:  * @param {string} fieldId - ID du champ
-1808:  * @param {boolean} success - Si la sauvegarde a réussi
-1809:  * @param {string} message - Message optionnel
-1810:  */
-1811: function showAutoSaveFeedback(fieldId, success, message = '') {
-1812:     const field = document.getElementById(fieldId);
-1813:     if (!field) return;
-1814:     
-1815:     // Créer ou récupérer le conteneur de feedback
-1816:     let feedback = field.parentElement.querySelector('.auto-save-feedback');
-1817:     if (!feedback) {
-1818:         feedback = document.createElement('div');
-1819:         feedback.className = 'auto-save-feedback';
-1820:         field.parentElement.appendChild(feedback);
-1821:     }
-1822:     
-1823:     // Définir le style et le message
-1824:     feedback.style.cssText = `
-1825:         font-size: 0.7em;
-1826:         margin-top: 4px;
-1827:         padding: 2px 6px;
-1828:         border-radius: 3px;
-1829:         opacity: 0;
-1830:         transition: opacity 0.3s ease;
-1831:     `;
-1832:     
-1833:     if (success) {
-1834:         feedback.style.background = 'rgba(26, 188, 156, 0.2)';
-1835:         feedback.style.color = 'var(--cork-success)';
-1836:         feedback.textContent = '✓ Auto-sauvegardé';
-1837:     } else {
-1838:         feedback.style.background = 'rgba(231, 81, 90, 0.2)';
-1839:         feedback.style.color = 'var(--cork-danger)';
-1840:         feedback.textContent = `✗ Erreur: ${message}`;
+1777:  * Initialise l'auto-sauvegarde intelligente
+1778:  */
+1779: function initializeAutoSave() {
+1780:     // Préférences qui peuvent être sauvegardées automatiquement
+1781:     const autoSaveFields = [
+1782:         'attachmentDetectionToggle',
+1783:         'retryCount', 
+1784:         'retryDelaySec',
+1785:         'webhookTimeoutSec',
+1786:         'rateLimitPerHour',
+1787:         'notifyOnFailureToggle'
+1788:     ];
+1789:     
+1790:     // Écouter les changements sur les champs d'auto-sauvegarde
+1791:     autoSaveFields.forEach(fieldId => {
+1792:         const field = document.getElementById(fieldId);
+1793:         if (field) {
+1794:             field.addEventListener('change', () => handleAutoSaveChange(fieldId));
+1795:             field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 2000));
+1796:         }
+1797:     });
+1798:     
+1799:     // Écouter les changements sur les textarea de préférences
+1800:     const preferenceTextareas = [
+1801:         'excludeKeywordsRecadrage',
+1802:         'excludeKeywordsAutorepondeur',
+1803:         'excludeKeywords',
+1804:         'senderPriority'
+1805:     ];
+1806:     
+1807:     preferenceTextareas.forEach(fieldId => {
+1808:         const field = document.getElementById(fieldId);
+1809:         if (field) {
+1810:             field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 3000));
+1811:         }
+1812:     });
+1813: }
+1814: 
+1815: /**
+1816:  * Gère les changements pour l'auto-sauvegarde
+1817:  * @param {string} fieldId - ID du champ modifié
+1818:  */
+1819: async function handleAutoSaveChange(fieldId) {
+1820:     try {
+1821:         // Marquer la section comme modifiée
+1822:         markSectionAsModified(fieldId);
+1823:         
+1824:         // Collecter les données de préférences
+1825:         const prefsData = collectPreferencesData();
+1826:         
+1827:         // Sauvegarder automatiquement
+1828:         const result = await ApiService.post('/api/processing_prefs', prefsData);
+1829:         
+1830:         if (result.success) {
+1831:             // Marquer la section comme sauvegardée
+1832:             markSectionAsSaved(fieldId);
+1833:             showAutoSaveFeedback(fieldId, true);
+1834:         } else {
+1835:             showAutoSaveFeedback(fieldId, false, result.message);
+1836:         }
+1837:         
+1838:     } catch (error) {
+1839:         console.error('Erreur lors de l\'auto-sauvegarde:', error);
+1840:         showAutoSaveFeedback(fieldId, false, 'Erreur de connexion');
 1841:     }
-1842:     
-1843:     // Afficher le feedback
-1844:     feedback.style.opacity = '1';
-1845:     
-1846:     // Masquer après 3 secondes
-1847:     setTimeout(() => {
-1848:         feedback.style.opacity = '0';
-1849:     }, 3000);
-1850: }
-1851: 
-1852: /**
-1853:  * Fonction de debounce pour limiter les appels
-1854:  * @param {Function} func - Fonction à débouncer
-1855:  * @param {number} wait - Temps d'attente en ms
-1856:  * @returns {Function} Fonction débouncée
-1857:  */
-1858: function debounce(func, wait) {
-1859:     let timeout;
-1860:     return function executedFunction(...args) {
-1861:         const later = () => {
-1862:             clearTimeout(timeout);
-1863:             func(...args);
-1864:         };
-1865:         clearTimeout(timeout);
-1866:         timeout = setTimeout(later, wait);
-1867:     };
-1868: }
+1842: }
+1843: 
+1844: /**
+1845:  * Collecte les données des préférences
+1846:  */
+1847: function collectPreferencesData() {
+1848:     const data = {};
+1849:     
+1850:     // Préférences de filtres (tableaux)
+1851:     const excludeKeywordsRecadrage = document.getElementById('excludeKeywordsRecadrage')?.value || '';
+1852:     const excludeKeywordsAutorepondeur = document.getElementById('excludeKeywordsAutorepondeur')?.value || '';
+1853:     const excludeKeywords = document.getElementById('excludeKeywords')?.value || '';
+1854:     
+1855:     data.exclude_keywords_recadrage = excludeKeywordsRecadrage ? 
+1856:         excludeKeywordsRecadrage.split('\n').map(line => line.trim()).filter(line => line) : [];
+1857:     data.exclude_keywords_autorepondeur = excludeKeywordsAutorepondeur ? 
+1858:         excludeKeywordsAutorepondeur.split('\n').map(line => line.trim()).filter(line => line) : [];
+1859:     data.exclude_keywords = excludeKeywords ? 
+1860:         excludeKeywords.split('\n').map(line => line.trim()).filter(line => line) : [];
+1861:     
+1862:     // Préférences de fiabilité
+1863:     data.require_attachments = document.getElementById('attachmentDetectionToggle')?.checked || false;
+1864: 
+1865:     const retryCountRaw = document.getElementById('retryCount')?.value;
+1866:     if (retryCountRaw !== undefined && String(retryCountRaw).trim() !== '') {
+1867:         data.retry_count = parseInt(String(retryCountRaw).trim(), 10);
+1868:     }
 1869: 
-1870: // -------------------- Nettoyage --------------------
-1871: window.addEventListener('beforeunload', () => {
-1872:     // Arrêter le polling des logs
-1873:     LogService.stopLogPolling();
-1874:     
-1875:     // Nettoyer le gestionnaire d'onglets
-1876:     if (tabManager) {
-1877:         tabManager.destroy();
+1870:     const retryDelayRaw = document.getElementById('retryDelaySec')?.value;
+1871:     if (retryDelayRaw !== undefined && String(retryDelayRaw).trim() !== '') {
+1872:         data.retry_delay_sec = parseInt(String(retryDelayRaw).trim(), 10);
+1873:     }
+1874: 
+1875:     const webhookTimeoutRaw = document.getElementById('webhookTimeoutSec')?.value;
+1876:     if (webhookTimeoutRaw !== undefined && String(webhookTimeoutRaw).trim() !== '') {
+1877:         data.webhook_timeout_sec = parseInt(String(webhookTimeoutRaw).trim(), 10);
 1878:     }
-1879:     
-1880:     // Sauvegarder les préférences locales
-1881:     saveLocalPreferences();
-1882: });
-1883: 
-1884: // -------------------- Export pour compatibilité --------------------
-1885: // Exporter les classes pour utilisation externe si nécessaire
-1886: window.DashboardServices = {
-1887:     ApiService,
-1888:     WebhookService,
-1889:     LogService,
-1890:     MessageHelper,
-1891:     TabManager
-1892: };
+1879: 
+1880:     const rateLimitRaw = document.getElementById('rateLimitPerHour')?.value;
+1881:     if (rateLimitRaw !== undefined && String(rateLimitRaw).trim() !== '') {
+1882:         data.rate_limit_per_hour = parseInt(String(rateLimitRaw).trim(), 10);
+1883:     }
+1884: 
+1885:     data.notify_on_failure = document.getElementById('notifyOnFailureToggle')?.checked || false;
+1886:     
+1887:     // Préférences de priorité (JSON)
+1888:     const senderPriorityText = document.getElementById('senderPriority')?.value || '{}';
+1889:     try {
+1890:         data.sender_priority = JSON.parse(senderPriorityText);
+1891:     } catch (e) {
+1892:         data.sender_priority = {};
+1893:     }
+1894:     
+1895:     return data;
+1896: }
+1897: 
+1898: /**
+1899:  * Marque une section comme modifiée
+1900:  * @param {string} fieldId - ID du champ modifié
+1901:  */
+1902: function markSectionAsModified(fieldId) {
+1903:     const section = getFieldSection(fieldId);
+1904:     if (section) {
+1905:         section.classList.add('modified');
+1906:         updateSectionIndicator(section, 'Modifié');
+1907:     }
+1908: }
+1909: 
+1910: /**
+1911:  * Marque une section comme sauvegardée
+1912:  * @param {string} fieldId - ID du champ sauvegardé
+1913:  */
+1914: function markSectionAsSaved(fieldId) {
+1915:     const section = getFieldSection(fieldId);
+1916:     if (section) {
+1917:         section.classList.remove('modified');
+1918:         section.classList.add('saved');
+1919:         updateSectionIndicator(section, 'Sauvegardé');
+1920:         
+1921:         // Retirer la classe 'saved' après 2 secondes
+1922:         setTimeout(() => {
+1923:             section.classList.remove('saved');
+1924:             updateSectionIndicator(section, '');
+1925:         }, 2000);
+1926:     }
+1927: }
+1928: 
+1929: /**
+1930:  * Obtient la section d'un champ
+1931:  * @param {string} fieldId - ID du champ
+1932:  * @returns {HTMLElement|null} Section parente
+1933:  */
+1934: function getFieldSection(fieldId) {
+1935:     const field = document.getElementById(fieldId);
+1936:     if (!field) return null;
+1937:     
+1938:     // Remonter jusqu'à trouver une carte ou un panneau
+1939:     let parent = field.parentElement;
+1940:     while (parent && parent !== document.body) {
+1941:         if (parent.classList.contains('card') || parent.classList.contains('collapsible-panel')) {
+1942:             return parent;
+1943:         }
+1944:         parent = parent.parentElement;
+1945:     }
+1946:     
+1947:     return null;
+1948: }
+1949: 
+1950: /**
+1951:  * Met à jour l'indicateur de section
+1952:  * @param {HTMLElement} section - Section à mettre à jour
+1953:  * @param {string} status - Statut à afficher
+1954:  */
+1955: function updateSectionIndicator(section, status) {
+1956:     let indicator = section.querySelector('.section-indicator');
+1957:     
+1958:     if (!indicator) {
+1959:         // Créer l'indicateur s'il n'existe pas
+1960:         indicator = document.createElement('div');
+1961:         indicator.className = 'section-indicator';
+1962:         
+1963:         // Insérer après le titre
+1964:         const title = section.querySelector('.card-title, .panel-title');
+1965:         if (title) {
+1966:             title.appendChild(indicator);
+1967:         }
+1968:     }
+1969:     
+1970:     if (status) {
+1971:         indicator.textContent = status;
+1972:         indicator.className = `section-indicator ${status.toLowerCase()}`;
+1973:     } else {
+1974:         indicator.textContent = '';
+1975:         indicator.className = 'section-indicator';
+1976:     }
+1977: }
+1978: 
+1979: /**
+1980:  * Affiche un feedback d'auto-sauvegarde
+1981:  * @param {string} fieldId - ID du champ
+1982:  * @param {boolean} success - Si la sauvegarde a réussi
+1983:  * @param {string} message - Message optionnel
+1984:  */
+1985: function showAutoSaveFeedback(fieldId, success, message = '') {
+1986:     const field = document.getElementById(fieldId);
+1987:     if (!field) return;
+1988:     
+1989:     // Créer ou récupérer le conteneur de feedback
+1990:     let feedback = field.parentElement.querySelector('.auto-save-feedback');
+1991:     if (!feedback) {
+1992:         feedback = document.createElement('div');
+1993:         feedback.className = 'auto-save-feedback';
+1994:         field.parentElement.appendChild(feedback);
+1995:     }
+1996:     
+1997:     // Définir le style et le message
+1998:     feedback.style.cssText = `
+1999:         font-size: 0.7em;
+2000:         margin-top: 4px;
+2001:         padding: 2px 6px;
+2002:         border-radius: 3px;
+2003:         opacity: 0;
+2004:         transition: opacity 0.3s ease;
+2005:     `;
+2006:     
+2007:     if (success) {
+2008:         feedback.style.background = 'rgba(26, 188, 156, 0.2)';
+2009:         feedback.style.color = 'var(--cork-success)';
+2010:         feedback.textContent = '✓ Auto-sauvegardé';
+2011:     } else {
+2012:         feedback.style.background = 'rgba(231, 81, 90, 0.2)';
+2013:         feedback.style.color = 'var(--cork-danger)';
+2014:         feedback.textContent = `✗ Erreur: ${message}`;
+2015:     }
+2016:     
+2017:     // Afficher le feedback
+2018:     feedback.style.opacity = '1';
+2019:     
+2020:     // Masquer après 3 secondes
+2021:     setTimeout(() => {
+2022:         feedback.style.opacity = '0';
+2023:     }, 3000);
+2024: }
+2025: 
+2026: /**
+2027:  * Fonction de debounce pour limiter les appels
+2028:  * @param {Function} func - Fonction à débouncer
+2029:  * @param {number} wait - Temps d'attente en ms
+2030:  * @returns {Function} Fonction débouncée
+2031:  */
+2032: function debounce(func, wait) {
+2033:     let timeout;
+2034:     return function executedFunction(...args) {
+2035:         const later = () => {
+2036:             clearTimeout(timeout);
+2037:             func(...args);
+2038:         };
+2039:         clearTimeout(timeout);
+2040:         timeout = setTimeout(later, wait);
+2041:     };
+2042: }
+2043: 
+2044: // -------------------- Nettoyage --------------------
+2045: window.addEventListener('beforeunload', () => {
+2046:     // Arrêter le polling des logs
+2047:     LogService.stopLogPolling();
+2048:     
+2049:     // Nettoyer le gestionnaire d'onglets
+2050:     if (tabManager) {
+2051:         tabManager.destroy();
+2052:     }
+2053:     
+2054:     // Sauvegarder les préférences locales
+2055:     saveLocalPreferences();
+2056: });
+2057: 
+2058: // -------------------- Export pour compatibilité --------------------
+2059: // Exporter les classes pour utilisation externe si nécessaire
+2060: window.DashboardServices = {
+2061:     ApiService,
+2062:     WebhookService,
+2063:     LogService,
+2064:     MessageHelper,
+2065:     TabManager
+2066: };
 ````
