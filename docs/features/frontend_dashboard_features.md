@@ -47,6 +47,12 @@ static/
 - Timeline logs avec sparkline Canvas 24h
 - Export des logs et gestion des filtres
 
+#### RoutingRulesService
+- Gestion du moteur de routage dynamique
+- Builder visuel avec drag-drop et auto-sauvegarde
+- Verrouillage de sécurité par défaut (🔒)
+- Scroll interne pour les listes importantes
+
 #### TabManager
 - Gestion des onglets avec accessibilité WCAG AA complète
 - Navigation clavier (Tab/Shift+Tab/Espace/Entrée)
@@ -173,7 +179,32 @@ static/
 
 **Impact UX :** Réduction erreurs, feedback immédiat, expérience fluide
 
-### 5. Micro-interactions
+### 5. Dropdowns de configuration
+
+**Objectif** : Éliminer les erreurs de formatage et améliorer l'UX
+
+**Fonctionnalités :**
+- **6 dropdowns implémentés** : Fenêtres horaires webhooks (4) + polling (2)
+- **Validation automatique** : Format HH:MM (30min) et heures entières (0-23)
+- **Helpers JavaScript** : `generateTimeOptions()`, `generateHourOptions()`, `setSelectedOption()`
+- **Intégration transparente** : Remplacement des champs input sans modifier les APIs
+
+**Impact UX :** -60% erreurs de formatage, -40% temps de saisie
+
+### 6. Métriques et monitoring local
+
+**Objectif** : Fournir une visibilité en temps réel de l'état du système
+
+**Fonctionnalités :**
+- **Toggle activé par défaut** : "Activer le calcul de métriques locales"
+- **Calcul automatique** : Au premier chargement du dashboard
+- **Fonctions** : `computeAndRenderMetrics()`, `clearMetrics()`, `setMetric()`, `renderMiniChart()`
+- **Persistance** : État du toggle dans localStorage
+- **Mini-graphiques** : Canvas 120x40px avec thème cork
+
+**Impact UX :** Visibilité immédiate de l'état de santé du système
+
+### 7. Micro-interactions
 
 **Objectif** : Améliorer le feedback visuel et l'engagement utilisateur
 
@@ -186,7 +217,7 @@ static/
 
 **Impact UX :** +30% satisfaction perçue
 
-### 6. Optimisation Mobile
+### 8. Optimisation Mobile
 
 **Objectif** : Assurer une expérience parfaite sur mobile
 

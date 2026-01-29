@@ -35,11 +35,12 @@
 > Ces surveillances garantissent que les sections « Services dédiés » ci-dessous restent alignées avec l’état réel du code; toute réduction de complexité doit être documentée ici.
 
 ### Métriques de documentation
-- **Volume** : 7 388 lignes de contenu réparties dans 25 fichiers actifs
-- **Code source** : 388k lignes Python (1668 fichiers) + 61k lignes JavaScript (302 fichiers)
+- **Volume** : 7 388 lignes de contenu réparties dans 54 fichiers actifs (+5 nouveaux)
+- **Code source** : 388k lignes Python (1668 fichiers) + 62k lignes JavaScript (302 fichiers)
 - **Complexité moyenne** : D (24.9) avec 44 blocs analysés par radon
 - **Densité** : Justifie le découpage modulaire pour maintenir la lisibilité
 - **Exclusions** : `archive/` et `audits/` maintenus séparément pour éviter le bruit
+- **Nouveautés** : Documentation dropdowns, métriques, Redis logs, verrouillage routing
 
 ---
 

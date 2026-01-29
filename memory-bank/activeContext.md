@@ -1,9 +1,12 @@
 # Contexte Actif
 
 ## Tâches Terminées
- **[2026-01-29 13:10:00]** - Activation par défaut du calcul de métriques locales : Le toggle "Activer le calcul de métriques locales" est maintenant activé par défaut dans le dashboard, avec calcul automatique des métriques au premier chargement et persistance du choix utilisateur.
- **[2026-01-29 12:55:00]** - Correction Bug Affichage Logs Webhooks Dashboard : Résolution du problème d'affichage des logs dans le dashboard (incohérence HTML ID et champs JSON). Correction de `dashboard.html` et `email_processing/orchestrator.py`, tests validés.
- **[2026-01-28 21:58:00]** - Implémentation Persistance Redis Logs Webhooks : Correction du problème de perte des logs au redéploiement Render en implémentant la persistance Redis via `redis.Redis.from_url()` et branchement de l'API logs. Tests backend complets créés et validés (7/7 passent).
+
+- **2026-01-29 14:00:00** - Documentation complète mise à jour via workflow /docs-updater
+  - Audit structurel avec tree, cloc, radon (388k lignes Python, complexité D)
+  - Création de 5 nouveaux fichiers de documentation (dropdowns, métriques, Redis logs, verrouillage routing, scroll UI)
+  - Mise à jour des fichiers existants (architecture overview, frontend dashboard features)
+  - Synchronisation complète entre code et documentation
 
 ## Questions Ouvertes
 - Aucune question en attente.

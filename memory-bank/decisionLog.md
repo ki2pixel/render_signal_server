@@ -7,6 +7,19 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 
 ## Décisions 2026
 
+[2026-01-29 13:30:00] - **Implémentation Dropdowns Fenêtres Horaires et Préférences Email**
+- **Décision** : Remplacer les champs texte par des dropdowns pour améliorer l'UX et réduire les erreurs de saisie dans le dashboard.
+- **Raisonnement** : Les utilisateurs faisaient des erreurs de format (ex: "9h" au lieu de "09:00") et l'interface textuelle était propice aux fautes de frappe. Les dropdowns garantissent un format correct et simplifient la sélection.
+- **Implémentation** :
+  1. **HTML dashboard.html** : Remplacement de 6 champs input type="text"/"number" par des <select> avec options vides par défaut
+  2. **JavaScript dashboard.js** : Ajout de 3 helpers (generateTimeOptions, generateHourOptions, setSelectedOption) et mise à jour des fonctions de chargement/sauvegarde
+  3. **Validation simplifiée** : Les dropdowns garantissent le format HH:MM (30min) ou les heures entières (0-23), éliminant le besoin de validation complexe
+  4. **Population automatique** : Les dropdowns sont peuplées dans bindEvents() avec les bonnes options (30min pour fenêtres horaires, 1h pour polling)
+- **Alternatives considérées** : Conserver les inputs textuels avec validation améliorée (rejeté pour UX inférieure); utiliser des time pickers (rejeté pour complexité inutile).
+- **Impact** : UX améliorée, zéro erreur de format, sélection plus rapide, maintien de la compatibilité avec les APIs existantes. Les 6 dropdowns concernés sont : webhooksTimeStart, webhooksTimeEnd, globalWebhookTimeStart, globalWebhookTimeEnd (fenêtres horaires) et pollingStartHour, pollingEndHour (préférences email).
+- **Fichiers modifiés** : dashboard.html (6 inputs → selects), static/dashboard.js (helpers + mises à jour load/save).
+- **Tests manuels** : Serveur démarré sur http://localhost:8082 pour validation visuelle des dropdowns fonctionnels.
+
 [2026-01-29 13:10:00] - **Activation par défaut du calcul de métriques locales**
 - **Décision** : Activer par défaut le toggle "Activer le calcul de métriques locales" dans la section "📊 Monitoring & Métriques (24h)" pour améliorer l'expérience utilisateur en fournissant les métriques automatiquement sans action manuelle.
 - **Raisonnement** : Les utilisateurs ne bénéficiaient pas des métriques par défaut car le toggle était désactivé, nécessitant une action manuelle pour voir les données. L'activation par défaut offre une valeur immédiate tout en préservant la possibilité de désactiver.

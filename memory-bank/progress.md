@@ -18,6 +18,38 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ---
 
+[2026-01-29 13:30:00] - Implémentation Dropdowns Fenêtres Horaires et Préférences Email Terminée
+- **Objectif** : Remplacer les champs texte par des dropdowns pour améliorer l'UX et réduire les erreurs de saisie dans le dashboard.
+- **Actions réalisées** :
+  1. **HTML dashboard.html** : Remplacement de 6 champs input type="text"/"number" par des <select> avec options vides par défaut (lignes 1636-1644, 1658-1666, 1736-1744).
+  2. **JavaScript dashboard.js** : Ajout de 3 helpers (generateTimeOptions, generateHourOptions, setSelectedOption) pour générer les options et gérer la sélection (lignes 546-578).
+  3. **Mise à jour fonctions load/save** : Modification de loadTimeWindow(), loadGlobalWebhookTimeWindow(), saveTimeWindow(), saveGlobalWebhookTimeWindow() et loadPollingConfig() pour utiliser setSelectedOption() au lieu de .value.
+  4. **Validation simplifiée** : Les dropdowns garantissent le format HH:MM (30min) ou les heures entières (0-23), éliminant le besoin de validation complexe.
+  5. **Population automatique** : Les dropdowns sont peuplées dans bindEvents() avec les bonnes options (30min pour fenêtres horaires, 1h pour polling) (lignes 302-317).
+- **Résultat** : UX améliorée, zéro erreur de format, sélection plus rapide, maintien de la compatibilité avec les APIs existantes. Les 6 dropdowns concernés sont : webhooksTimeStart, webhooksTimeEnd, globalWebhookTimeStart, globalWebhookTimeEnd (fenêtres horaires) et pollingStartHour, pollingEndHour (préférences email).
+- **Fichiers modifiés** : dashboard.html (6 inputs → selects), static/dashboard.js (helpers + mises à jour load/save).
+- **Tests manuels** : Serveur démarré sur http://localhost:8082 pour validation visuelle des dropdowns fonctionnels.
+- **Statut** : Terminé avec succès, dropdowns opérationnels et UX améliorée.
+
+[2026-01-29 14:00:00] - Documentation complète mise à jour via workflow /docs-updater Terminée
+- **Objectif** : Exécuter le workflow `/docs-updater` pour analyser la Memory Bank, inspecter le code source impacté et synchroniser toute la documentation avec les évolutions récentes du projet.
+- **Actions réalisées** :
+  1. **Audit structurel** : Exécution des commandes `tree`, `cloc` et `radon` pour collecter les métriques requises par le workflow (388k lignes Python, complexité moyenne D).
+  2. **Diagnostic triangulé** : Identification des divergences code/docs - les fonctionnalités récentes (dropdowns, métriques, Redis logs, verrouillage routing, scroll UI) n'étaient pas documentées.
+  3. **Création de 5 nouveaux fichiers** :
+     - `docs/features/dropdowns_ui_ux.md` : Documentation des dropdowns de configuration (fenêtres horaires, polling)
+     - `docs/features/metrics_monitoring.md` : Documentation du système de métriques locales activé par défaut
+     - `docs/features/webhook_logs_redis.md` : Documentation de la persistance Redis des logs webhooks
+     - `docs/features/routing_rules_lock.md` : Documentation du mécanisme de verrouillage du routing dynamique
+     - `docs/features/scroll_ui_routing.md` : Documentation du scroll interne pour le routing dynamique
+  4. **Mise à jour fichiers existants** :
+     - `docs/features/frontend_dashboard_features.md` : Ajout des sections dropdowns, métriques et routing rules service
+     - `docs/architecture/overview.md` : Mise à jour des métriques de documentation (54 fichiers actifs)
+  5. **Memory Bank synchronisée** : Mise à jour de `activeContext.md` pour documenter la complétion de cette tâche.
+- **Résultat** : Documentation entièrement synchronisée avec l'état actuel du code, cohérence maintenue entre évolutions récentes et documentation, référence unique pour les développeurs et ops.
+- **Fichiers modifiés** : 5 nouveaux fichiers créés, 2 fichiers mis à jour, Memory Bank synchronisée.
+- **Statut** : Workflow docs-updater terminé avec succès, documentation à jour et complète.
+
 ## Terminé
 
 [2026-01-29 13:10:00] - Activation par défaut du calcul de métriques locales Terminée
