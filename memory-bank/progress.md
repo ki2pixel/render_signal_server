@@ -20,6 +20,19 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-01-29 12:55:00] - Correction Bug Affichage Logs Webhooks Dashboard Terminée
+- **Objectif** : Résoudre le bug où la section "📜 Historique des Webhooks (7 derniers jours)" affichait "Chargement des logs..." sans jamais afficher les logs réels.
+- **Actions réalisées** :
+  1. **Diagnostic HTML/JS** : Identification d'une incohérence d'ID - HTML utilisait `id="logsContainer"` mais JavaScript cherchait `id="webhookLogs"`.
+  2. **Correction HTML** : Modification de `dashboard.html` ligne 1858 pour changer `id="logsContainer"` en `id="webhookLogs"`.
+  3. **Diagnostic Backend/Frontend** : Identification d'incohérences de noms de champs JSON - backend envoyait `target_url` et `error` mais frontend attendait `webhook_url` et `error_message`.
+  4. **Correction Backend** : Mise à jour des 5 appels `append_webhook_log()` dans `email_processing/orchestrator.py` pour utiliser les bons noms de champs.
+  5. **Tests de validation** : Exécution des tests webhook logger et webhook logs persistence - tous passent avec succès.
+- **Résultat** : Les logs de webhooks s'affichent maintenant correctement dans le dashboard, remplaçant "Chargement des logs..." par les entrées réelles ou "Aucun log trouvé pour cette période." quand aucun log n'existe.
+- **Fichiers modifiés** : `dashboard.html` (ID corrigé), `email_processing/orchestrator.py` (5 appels append_webhook_log corrigés).
+- **Tests** : Tests webhook logger (2/2 passent), tests webhook logs persistence (7/7 passent).
+- **Statut** : Terminé avec succès, bug résolu, logs affichés correctement.
+
 [2026-01-28 21:58:00] - Implémentation Persistance Redis Logs Webhooks Terminée
 - **Objectif** : Corriger le problème où les logs de webhooks dans "📜 Historique des Webhooks (7 derniers jours)" étaient stockés dans debug/webhook_logs.json (éphémère sur Render) et perdus au redéploiement.
 - **Actions réalisées** :

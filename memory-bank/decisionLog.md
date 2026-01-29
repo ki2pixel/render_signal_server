@@ -7,6 +7,13 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 
 ## Décisions 2026
 
+[2026-01-29 12:55:00] - **Correction Bug Affichage Logs Webhooks Dashboard**
+- **Décision** : Corriger les incohérences entre HTML/JavaScript et backend/frontend qui empêchaient l'affichage des logs de webhooks dans le dashboard.
+- **Raisonnement** : La section "📜 Historique des Webhooks (7 derniers jours)" affichait "Chargement des logs..." indéfiniment à cause de deux problèmes : (1) HTML utilisait `id="logsContainer"` mais JavaScript cherchait `id="webhookLogs"`; (2) backend envoyait `target_url` et `error` mais frontend attendait `webhook_url` et `error_message`.
+- **Implémentation** : Correction de l'ID HTML dans `dashboard.html`; mise à jour des 5 appels `append_webhook_log()` dans `email_processing/orchestrator.py` pour utiliser les bons noms de champs JSON.
+- **Alternatives considérées** : Modification du JavaScript pour correspondre à l'HTML (rejeté car LogService.js est utilisé par d'autres parties); modification du frontend pour accepter les anciens champs (rejeté pour cohérence avec le reste du code).
+- **Impact** : Les logs de webhooks s'affichent maintenant correctement dans le dashboard; bug résolu avec modifications minimales et ciblées; tests existants passent toujours.
+
 [2026-01-28 21:58:00] - **Implémentation Persistance Redis Logs Webhooks**
 - **Décision** : Initialiser un client Redis au démarrage via `redis.Redis.from_url()` et brancher l'API logs pour utiliser la liste Redis `r:ss:webhook_logs:v1` comme source de vérité, avec fallback transparent vers fichier JSON.
 - **Raisonnement** : Les logs webhook étaient stockés dans `debug/webhook_logs.json` (éphémère sur Render) et perdus au redéploiement. Redis est déjà utilisé pour d'autres configurations et offre la persistance nécessaire.

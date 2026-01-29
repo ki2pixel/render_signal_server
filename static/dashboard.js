@@ -313,6 +313,19 @@ function bindEvents() {
     if (verifyBtn) {
         verifyBtn.addEventListener('click', handleConfigVerification);
     }
+    
+    // Metrics toggle event
+    const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+    if (enableMetricsToggle) {
+        enableMetricsToggle.addEventListener('change', async () => {
+            saveLocalPreferences();
+            if (enableMetricsToggle.checked) {
+                await computeAndRenderMetrics();
+            } else {
+                clearMetrics();
+            }
+        });
+    }
 }
 
 async function loadInitialData() {
@@ -333,9 +346,102 @@ async function loadInitialData() {
         
         await updateGlobalStatus();
         
+        // Trigger metrics computation if toggle is enabled (default)
+        const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+        if (enableMetricsToggle && enableMetricsToggle.checked) {
+            await computeAndRenderMetrics();
+        }
+        
     } catch (e) {
         console.error('Erreur lors du chargement des données initiales:', e);
     }
+}
+
+// Metrics functions
+async function computeAndRenderMetrics() {
+    try {
+        const res = await ApiService.get('/api/webhook_logs?days=1');
+        if (!res.ok) { 
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                console.warn('metrics: non-200', res.status);
+            }
+            clearMetrics(); return; 
+        }
+        const data = await res.json();
+        const logs = (data.success && Array.isArray(data.logs)) ? data.logs : [];
+        const total = logs.length;
+        const sent = logs.filter(l => l.status === 'success').length;
+        const errors = logs.filter(l => l.status === 'error').length;
+        const successRate = total ? Math.round((sent / total) * 100) : 0;
+        setMetric('metricEmailsProcessed', String(total));
+        setMetric('metricWebhooksSent', String(sent));
+        setMetric('metricErrors', String(errors));
+        setMetric('metricSuccessRate', String(successRate));
+        renderMiniChart(logs);
+    } catch (e) {
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            console.warn('metrics error', e);
+        }
+        clearMetrics();
+    }
+}
+
+function clearMetrics() {
+    setMetric('metricEmailsProcessed', '—');
+    setMetric('metricWebhooksSent', '—');
+    setMetric('metricErrors', '—');
+    setMetric('metricSuccessRate', '—');
+    const chart = document.getElementById('metricsMiniChart');
+    if (chart) chart.innerHTML = '';
+}
+
+function setMetric(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+}
+
+function renderMiniChart(logs) {
+    const chart = document.getElementById('metricsMiniChart');
+    if (!chart) return;
+    chart.innerHTML = '';
+    const width = chart.clientWidth || 300;
+    const height = chart.clientHeight || 60;
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    
+    // Simple line chart implementation
+    const padding = 5;
+    const chartWidth = width - 2 * padding;
+    const chartHeight = height - 2 * padding;
+    
+    // Group logs by hour
+    const hourlyData = new Array(24).fill(0);
+    logs.forEach(log => {
+        const hour = new Date(log.timestamp).getHours();
+        hourlyData[hour]++;
+    });
+    
+    const maxCount = Math.max(...hourlyData, 1);
+    const stepX = chartWidth / 23;
+    
+    ctx.strokeStyle = '#4CAF50';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    
+    hourlyData.forEach((count, i) => {
+        const x = padding + i * stepX;
+        const y = padding + chartHeight - (count / maxCount) * chartHeight;
+        
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+    });
+    
+    ctx.stroke();
+    chart.appendChild(canvas);
 }
 
 function showCopiedFeedback() {
@@ -850,9 +956,24 @@ async function saveProcessingPrefsToServer() {
 function loadLocalPreferences() {
     try {
         const raw = localStorage.getItem('dashboard_prefs_v1');
-        if (!raw) return;
+        if (!raw) {
+            // Default: enable metrics if no preference exists
+            const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+            if (enableMetricsToggle) {
+                enableMetricsToggle.checked = true;
+            }
+            return;
+        }
         
         const prefs = JSON.parse(raw);
+        
+        // Apply metrics preference if exists, otherwise default to true
+        if (prefs.hasOwnProperty('enableMetricsToggle')) {
+            const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+            if (enableMetricsToggle) {
+                enableMetricsToggle.checked = prefs.enableMetricsToggle;
+            }
+        }
         
         // Appliquer les préférences locales
         Object.keys(prefs).forEach(key => {
@@ -884,6 +1005,12 @@ function saveLocalPreferences() {
                 prefs[prefName] = el.value;
             }
         });
+        
+        // Always save enableMetricsToggle preference
+        const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+        if (enableMetricsToggle) {
+            prefs.enableMetricsToggle = enableMetricsToggle.checked;
+        }
         
         localStorage.setItem('dashboard_prefs_v1', JSON.stringify(prefs));
     } catch (e) {
