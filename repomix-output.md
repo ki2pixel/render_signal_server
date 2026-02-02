@@ -106,6 +106,11 @@ services/
 static/
   components/
     TabManager.js
+  css/
+    base.css
+    components.css
+    modules.css
+    variables.css
   remote/
     api.js
     main.js
@@ -2215,6 +2220,1524 @@ requirements.txt
 317:             )
 318: 
 319:         return True, "ok", normalized
+````
+
+## File: static/css/base.css
+````css
+  1: /* static/css/base.css - Reset, layout global, typographie, responsive */
+  2: 
+  3: /* Reset & Base */
+  4: body {
+  5:   font-family: 'Nunito', sans-serif;
+  6:   margin: 0;
+  7:   background-color: var(--cork-dark-bg);
+  8:   color: var(--cork-text-primary);
+  9:   padding: 20px;
+ 10:   box-sizing: border-box;
+ 11: }
+ 12: 
+ 13: /* Layout Container */
+ 14: .container {
+ 15:   max-width: 1200px;
+ 16:   margin: 0 auto;
+ 17: }
+ 18: 
+ 19: /* Header */
+ 20: .header {
+ 21:   display: flex;
+ 22:   justify-content: space-between;
+ 23:   align-items: center;
+ 24:   margin-bottom: 30px;
+ 25:   padding: 20px;
+ 26:   background-color: var(--cork-card-bg);
+ 27:   border-radius: var(--radius-lg);
+ 28:   border: 1px solid var(--cork-border-color);
+ 29: }
+ 30: 
+ 31: /* Typography */
+ 32: h1 {
+ 33:   color: var(--cork-text-primary);
+ 34:   font-size: 1.8em;
+ 35:   font-weight: 600;
+ 36:   margin: 0;
+ 37: }
+ 38: 
+ 39: h1 .emoji {
+ 40:   font-size: 1.2em;
+ 41:   margin-right: 10px;
+ 42: }
+ 43: 
+ 44: /* Navigation Tabs */
+ 45: .nav-tabs {
+ 46:   display: flex;
+ 47:   gap: 8px;
+ 48:   margin: 0 0 16px 0;
+ 49:   flex-wrap: wrap;
+ 50:   position: sticky;
+ 51:   top: 0;
+ 52:   z-index: var(--z-sticky);
+ 53:   background: var(--cork-dark-bg);
+ 54:   padding: 8px 0;
+ 55: }
+ 56: 
+ 57: /* Tab Panels */
+ 58: .section-panel {
+ 59:   display: none;
+ 60:   opacity: 0;
+ 61:   transform: translateY(10px);
+ 62:   transition: opacity var(--transition-slow) ease, transform var(--transition-slow) ease;
+ 63: }
+ 64: 
+ 65: .section-panel.active {
+ 66:   display: block;
+ 67:   opacity: 1;
+ 68:   transform: translateY(0);
+ 69: }
+ 70: 
+ 71: /* Grid System */
+ 72: .grid {
+ 73:   display: grid;
+ 74:   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+ 75:   gap: 20px;
+ 76:   margin-bottom: 20px;
+ 77: }
+ 78: 
+ 79: /* Utility Classes */
+ 80: .inline-group {
+ 81:   display: flex;
+ 82:   gap: 10px;
+ 83:   align-items: center;
+ 84: }
+ 85: 
+ 86: .small-text {
+ 87:   font-size: 0.85em;
+ 88:   color: var(--cork-text-secondary);
+ 89:   margin-top: 5px;
+ 90: }
+ 91: 
+ 92: .btn-small {
+ 93:   padding: 4px 8px;
+ 94:   font-size: 0.8em;
+ 95:   min-width: auto;
+ 96: }
+ 97: 
+ 98: /* Loading States */
+ 99: .loading {
+100:   position: relative;
+101:   pointer-events: none;
+102: }
+103: 
+104: .loading::after {
+105:   content: '';
+106:   position: absolute;
+107:   top: 50%;
+108:   left: 50%;
+109:   width: 20px;
+110:   height: 20px;
+111:   margin: -10px 0 0 -10px;
+112:   border: 2px solid var(--cork-primary-accent);
+113:   border-top: 2px solid transparent;
+114:   border-radius: 50%;
+115:   animation: spin 1s linear infinite;
+116: }
+117: 
+118: @keyframes spin {
+119:   0% { transform: rotate(0deg); }
+120:   100% { transform: rotate(360deg); }
+121: }
+122: 
+123: /* Skeleton Loading */
+124: .skeleton {
+125:   background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%);
+126:   background-size: 200% 100%;
+127:   animation: loading 1.5s infinite;
+128: }
+129: 
+130: @keyframes loading {
+131:   0% { background-position: 200% 0; }
+132:   100% { background-position: -200% 0; }
+133: }
+134: 
+135: /* Scrollbar Styling */
+136: ::-webkit-scrollbar {
+137:   width: 8px;
+138: }
+139: 
+140: ::-webkit-scrollbar-track {
+141:   background: rgba(255, 255, 255, 0.05);
+142:   border-radius: var(--radius-sm);
+143: }
+144: 
+145: ::-webkit-scrollbar-thumb {
+146:   background: rgba(255, 255, 255, 0.2);
+147:   border-radius: var(--radius-sm);
+148: }
+149: 
+150: ::-webkit-scrollbar-thumb:hover {
+151:   background: rgba(255, 255, 255, 0.3);
+152: }
+153: 
+154: /* Accessibility - Reduced Motion */
+155: @media (prefers-reduced-motion: reduce) {
+156:   *,
+157:   *::before,
+158:   *::after {
+159:     animation-duration: 0.01ms !important;
+160:     animation-iteration-count: 1 !important;
+161:     transition-duration: 0.01ms !important;
+162:     scroll-behavior: auto !important;
+163:   }
+164: }
+165: 
+166: /* Responsive Design */
+167: @media (max-width: 768px) {
+168:   body {
+169:     padding: 10px;
+170:   }
+171:   
+172:   .container {
+173:     max-width: 100%;
+174:   }
+175:   
+176:   .header {
+177:     flex-direction: column;
+178:     gap: 15px;
+179:     text-align: center;
+180:   }
+181:   
+182:   h1 {
+183:     font-size: 1.5em;
+184:   }
+185:   
+186:   .grid {
+187:     grid-template-columns: 1fr;
+188:     gap: 15px;
+189:   }
+190:   
+191:   .nav-tabs {
+192:     justify-content: center;
+193:   }
+194:   
+195:   .nav-tabs .tab-btn {
+196:     font-size: 0.85em;
+197:     padding: 6px 10px;
+198:   }
+199:   
+200:   .btn-small {
+201:     padding: 3px 6px;
+202:     font-size: 0.75em;
+203:   }
+204: }
+205: 
+206: @media (max-width: 480px) {
+207:   .header {
+208:     padding: 15px;
+209:   }
+210:   
+211:   .nav-tabs .tab-btn {
+212:     font-size: 0.8em;
+213:     padding: 5px 8px;
+214:   }
+215:   
+216:   .grid {
+217:     gap: 12px;
+218:   }
+219:   
+220:   .inline-group {
+221:     flex-direction: column;
+222:     align-items: stretch;
+223:   }
+224:   
+225:   .btn {
+226:     width: 100%;
+227:     margin-bottom: 10px;
+228:   }
+229: }
+````
+
+## File: static/css/components.css
+````css
+  1: /* static/css/components.css - Boutons, formulaires, cartes, onglets, toggles */
+  2: 
+  3: /* Cards */
+  4: .card {
+  5:   background-color: var(--cork-card-bg);
+  6:   padding: 20px;
+  7:   border-radius: var(--radius-lg);
+  8:   border: 1px solid var(--cork-border-color);
+  9:   transition: transform var(--transition-normal) ease, box-shadow var(--transition-normal) ease;
+ 10: }
+ 11: 
+ 12: .card:hover {
+ 13:   transform: translateY(-2px);
+ 14:   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+ 15: }
+ 16: 
+ 17: .card-title {
+ 18:   font-weight: 600;
+ 19:   color: var(--cork-secondary-accent);
+ 20:   font-size: 1.1em;
+ 21:   margin-bottom: 15px;
+ 22:   padding-bottom: 10px;
+ 23:   border-bottom: 1px solid var(--cork-border-color);
+ 24: }
+ 25: 
+ 26: /* Form Elements */
+ 27: .form-group {
+ 28:   margin-bottom: 15px;
+ 29: }
+ 30: 
+ 31: .form-group label {
+ 32:   display: block;
+ 33:   margin-bottom: 5px;
+ 34:   font-size: 0.9em;
+ 35:   color: var(--cork-text-secondary);
+ 36: }
+ 37: 
+ 38: .form-group input,
+ 39: .form-group select,
+ 40: .form-group textarea {
+ 41:   width: 100%;
+ 42:   padding: 10px;
+ 43:   border-radius: var(--radius-sm);
+ 44:   border: 1px solid var(--cork-border-color);
+ 45:   background: rgba(0, 0, 0, 0.2);
+ 46:   color: var(--cork-text-primary);
+ 47:   font-size: 0.95em;
+ 48:   box-sizing: border-box;
+ 49:   transition: border-color var(--transition-normal) ease, background var(--transition-normal) ease, transform var(--transition-normal) ease, box-shadow var(--transition-normal) ease;
+ 50: }
+ 51: 
+ 52: .form-group input:focus,
+ 53: .form-group select:focus,
+ 54: .form-group textarea:focus {
+ 55:   outline: none;
+ 56:   border-color: var(--cork-primary-accent);
+ 57:   background: rgba(67, 97, 238, 0.05);
+ 58:   box-shadow: var(--focus-ring);
+ 59:   transform: translateY(-1px);
+ 60: }
+ 61: 
+ 62: .form-group input:hover,
+ 63: .form-group select:hover,
+ 64: .form-group textarea:hover {
+ 65:   border-color: rgba(67, 97, 238, 0.3);
+ 66: }
+ 67: 
+ 68: /* Select Styling */
+ 69: .form-group select {
+ 70:   appearance: none;
+ 71:   background-image: linear-gradient(45deg, transparent 50%, var(--cork-text-secondary) 50%),
+ 72:     linear-gradient(135deg, var(--cork-text-secondary) 50%, transparent 50%);
+ 73:   background-position: calc(100% - 18px) calc(50% - 3px), calc(100% - 12px) calc(50% - 3px);
+ 74:   background-size: 6px 6px, 6px 6px;
+ 75:   background-repeat: no-repeat;
+ 76:   padding-right: 32px;
+ 77: }
+ 78: 
+ 79: select option,
+ 80: select optgroup {
+ 81:   background-color: var(--cork-card-bg);
+ 82:   color: var(--cork-text-primary);
+ 83: }
+ 84: 
+ 85: select option:checked,
+ 86: select option:hover {
+ 87:   background-color: var(--cork-primary-accent);
+ 88:   color: #ffffff;
+ 89: }
+ 90: 
+ 91: /* Buttons */
+ 92: .btn {
+ 93:   padding: 10px 20px;
+ 94:   font-weight: 600;
+ 95:   cursor: pointer;
+ 96:   color: white;
+ 97:   border: none;
+ 98:   border-radius: var(--radius-md);
+ 99:   font-size: 0.95em;
+100:   transition: all var(--transition-normal) ease;
+101: }
+102: 
+103: .btn-primary {
+104:   background: linear-gradient(to right, var(--cork-primary-accent) 0%, #5470f1 100%);
+105:   position: relative;
+106:   overflow: hidden;
+107:   transition: transform var(--transition-normal) ease, box-shadow var(--transition-normal) ease;
+108: }
+109: 
+110: .btn-primary:hover {
+111:   transform: translateY(-1px);
+112:   box-shadow: var(--shadow-button);
+113: }
+114: 
+115: .btn-primary:active {
+116:   transform: translateY(0);
+117: }
+118: 
+119: .btn-primary::before {
+120:   content: '';
+121:   position: absolute;
+122:   top: 50%;
+123:   left: 50%;
+124:   width: 0;
+125:   height: 0;
+126:   border-radius: 50%;
+127:   background: rgba(255, 255, 255, 0.3);
+128:   transform: translate(-50%, -50%);
+129:   transition: width var(--transition-ripple) ease, height var(--transition-ripple) ease;
+130:   pointer-events: none;
+131: }
+132: 
+133: .btn-primary:active::before {
+134:   width: 300px;
+135:   height: 300px;
+136: }
+137: 
+138: .btn-success {
+139:   background: linear-gradient(to right, var(--cork-success) 0%, #22c98f 100%);
+140: }
+141: 
+142: .btn-success:hover {
+143:   transform: translateY(-1px);
+144:   box-shadow: var(--shadow-button-success);
+145: }
+146: 
+147: .btn-secondary {
+148:   background: linear-gradient(to right, rgba(13, 25, 48, 0.95) 0%, rgba(28, 41, 72, 0.95) 100%);
+149:   border: 1px solid rgba(255, 255, 255, 0.08);
+150: }
+151: 
+152: .btn-secondary:hover {
+153:   transform: translateY(-1px);
+154:   box-shadow: var(--shadow-button-secondary);
+155:   border-color: rgba(255, 255, 255, 0.2);
+156: }
+157: 
+158: .btn-warning {
+159:   background: linear-gradient(to right, var(--cork-warning) 0%, #f4b86d 100%);
+160:   color: #1e1e2f;
+161: }
+162: 
+163: .btn-warning:hover {
+164:   transform: translateY(-1px);
+165:   box-shadow: var(--shadow-button-warning);
+166: }
+167: 
+168: .btn-info {
+169:   background: linear-gradient(to right, var(--cork-info) 0%, #5ac2ff 100%);
+170: }
+171: 
+172: .btn-info:hover {
+173:   transform: translateY(-1px);
+174:   box-shadow: var(--shadow-button-info);
+175: }
+176: 
+177: .btn:disabled {
+178:   background: #555e72;
+179:   color: var(--cork-text-secondary);
+180:   cursor: not-allowed;
+181:   transform: none;
+182: }
+183: 
+184: /* Toggle Switch */
+185: .toggle-switch {
+186:   position: relative;
+187:   display: inline-block;
+188:   width: 50px;
+189:   height: 24px;
+190: }
+191: 
+192: .toggle-switch input {
+193:   opacity: 0;
+194:   width: 0;
+195:   height: 0;
+196: }
+197: 
+198: .toggle-slider {
+199:   position: absolute;
+200:   cursor: pointer;
+201:   top: 0;
+202:   left: 0;
+203:   right: 0;
+204:   bottom: 0;
+205:   background-color: #555e72;
+206:   transition: var(--transition-slow);
+207:   border-radius: 24px;
+208: }
+209: 
+210: .toggle-slider:before {
+211:   position: absolute;
+212:   content: "";
+213:   height: 18px;
+214:   width: 18px;
+215:   left: 3px;
+216:   bottom: 3px;
+217:   background-color: white;
+218:   transition: var(--transition-slow);
+219:   border-radius: 50%;
+220: }
+221: 
+222: input:checked + .toggle-slider {
+223:   background-color: var(--cork-success);
+224: }
+225: 
+226: input:checked + .toggle-slider:before {
+227:   transform: translateX(26px);
+228: }
+229: 
+230: .toggle-switch input:focus-visible + .toggle-slider {
+231:   box-shadow: 0 0 0 3px rgba(255,255,255,0.25);
+232: }
+233: 
+234: /* Status Messages */
+235: .status-msg {
+236:   margin-top: 10px;
+237:   padding: 10px;
+238:   border-radius: var(--radius-sm);
+239:   font-size: 0.9em;
+240:   display: none;
+241: }
+242: 
+243: .status-msg.success {
+244:   background: rgba(26, 188, 156, 0.2);
+245:   color: var(--cork-success);
+246:   border: 1px solid var(--cork-success);
+247:   display: block;
+248: }
+249: 
+250: .status-msg.error {
+251:   background: rgba(231, 81, 90, 0.2);
+252:   color: var(--cork-danger);
+253:   border: 1px solid var(--cork-danger);
+254:   display: block;
+255: }
+256: 
+257: .status-msg.info {
+258:   background: rgba(33, 150, 243, 0.2);
+259:   color: var(--cork-info);
+260:   border: 1px solid var(--cork-info);
+261:   display: block;
+262: }
+263: 
+264: /* Pills/Badges */
+265: .pill {
+266:   font-size: 0.7rem;
+267:   text-transform: uppercase;
+268:   border-radius: var(--radius-full);
+269:   padding: 3px 8px;
+270:   margin-left: 8px;
+271: }
+272: 
+273: .pill-manual {
+274:   background: rgba(226,160,63,0.15);
+275:   color: #e2a03f;
+276: }
+277: 
+278: /* Logout Link */
+279: .logout-link {
+280:   text-decoration: none;
+281:   font-size: 0.9em;
+282:   font-weight: 600;
+283:   background-color: var(--cork-danger);
+284:   color: white;
+285:   padding: 8px 16px;
+286:   border-radius: var(--radius-sm);
+287:   transition: background-color var(--transition-normal) ease;
+288: }
+289: 
+290: .logout-link:hover {
+291:   background-color: #c93e47;
+292: }
+293: 
+294: /* Email Remove Button */
+295: .email-remove-btn {
+296:   background-color: var(--cork-card-bg);
+297:   border: 1px solid var(--cork-border-color);
+298:   color: var(--cork-text-primary);
+299:   border-radius: var(--radius-sm);
+300:   cursor: pointer;
+301:   padding: 2px 8px;
+302:   margin-left: 5px;
+303: }
+304: 
+305: .email-remove-btn:hover {
+306:   background-color: var(--cork-danger);
+307:   color: white;
+308: }
+309: 
+310: #addSenderBtn {
+311:   background-color: var(--cork-card-bg);
+312:   color: var(--cork-text-primary);
+313:   border: 1px solid var(--cork-border-color);
+314: }
+315: 
+316: #addSenderBtn:hover {
+317:   background-color: var(--cork-primary-accent);
+318:   color: white;
+319: }
+320: 
+321: /* Responsive Adjustments */
+322: @media (max-width: 480px) {
+323:   .toggle-switch {
+324:     width: 45px;
+325:     height: 22px;
+326:   }
+327: 
+328:   .toggle-slider:before {
+329:     width: 16px;
+330:     height: 16px;
+331:     left: 3px;
+332:     bottom: 3px;
+333:   }
+334: 
+335:   input:checked + .toggle-slider:before {
+336:     transform: translateX(23px);
+337:   }
+338: 
+339:   .card {
+340:     padding: 15px;
+341:   }
+342: }
+````
+
+## File: static/css/modules.css
+````css
+  1: /* static/css/modules.css - Widgets spécifiques (Timeline, Routing Rules, Banner) */
+  2: 
+  3: /* Tab Buttons */
+  4: .nav-tabs .tab-btn {
+  5:   appearance: none;
+  6:   background: var(--cork-card-bg);
+  7:   color: var(--cork-text-primary);
+  8:   border: 1px solid var(--cork-border-color);
+  9:   border-radius: var(--radius-md);
+ 10:   padding: 8px 12px;
+ 11:   cursor: pointer;
+ 12:   font-weight: 600;
+ 13:   transition: background var(--transition-fast) ease, border-color var(--transition-fast) ease, transform var(--transition-fast) ease;
+ 14: }
+ 15: 
+ 16: .nav-tabs .tab-btn.active {
+ 17:   background: var(--cork-primary-accent);
+ 18:   border-color: var(--cork-primary-accent);
+ 19:   color: #ffffff;
+ 20: }
+ 21: 
+ 22: .nav-tabs .tab-btn:hover {
+ 23:   border-color: var(--cork-primary-accent);
+ 24: }
+ 25: 
+ 26: .nav-tabs .tab-btn:active {
+ 27:   transform: translateY(1px);
+ 28: }
+ 29: 
+ 30: .nav-tabs .tab-btn:focus {
+ 31:   outline: 2px solid var(--cork-primary-accent);
+ 32:   outline-offset: 2px;
+ 33: }
+ 34: 
+ 35: /* Section Panel Hierarchy */
+ 36: .section-panel.config .card {
+ 37:   border-left: 4px solid var(--cork-primary-accent);
+ 38:   background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(67, 97, 238, 0.05) 100%);
+ 39: }
+ 40: 
+ 41: .section-panel.monitoring .card {
+ 42:   border-left: 4px solid var(--cork-info);
+ 43:   background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(33, 150, 243, 0.03) 100%);
+ 44: }
+ 45: 
+ 46: /* Global Status Banner */
+ 47: .global-status-banner {
+ 48:   background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(67, 97, 238, 0.08) 100%);
+ 49:   border: 1px solid var(--cork-border-color);
+ 50:   border-radius: var(--radius-lg);
+ 51:   padding: 16px 20px;
+ 52:   margin-bottom: 20px;
+ 53:   box-shadow: var(--shadow-card);
+ 54:   transition: all var(--transition-slow) ease;
+ 55: }
+ 56: 
+ 57: .global-status-banner:hover {
+ 58:   transform: translateY(-1px);
+ 59:   box-shadow: var(--shadow-hover);
+ 60: }
+ 61: 
+ 62: .status-header {
+ 63:   display: flex;
+ 64:   justify-content: space-between;
+ 65:   align-items: center;
+ 66:   margin-bottom: 12px;
+ 67:   padding-bottom: 8px;
+ 68:   border-bottom: 1px solid var(--cork-border-color);
+ 69: }
+ 70: 
+ 71: .status-title {
+ 72:   display: flex;
+ 73:   align-items: center;
+ 74:   gap: 8px;
+ 75:   font-weight: 600;
+ 76:   font-size: 1.1em;
+ 77:   color: var(--cork-text-primary);
+ 78: }
+ 79: 
+ 80: .status-icon {
+ 81:   font-size: 1.2em;
+ 82:   animation: pulse 2s infinite;
+ 83: }
+ 84: 
+ 85: .status-icon.warning {
+ 86:   color: var(--cork-warning);
+ 87: }
+ 88: 
+ 89: .status-icon.error {
+ 90:   color: var(--cork-danger);
+ 91: }
+ 92: 
+ 93: .status-icon.success {
+ 94:   color: var(--cork-success);
+ 95: }
+ 96: 
+ 97: @keyframes pulse {
+ 98:   0%, 100% { opacity: 1; }
+ 99:   50% { opacity: 0.7; }
+100: }
+101: 
+102: .status-content {
+103:   display: grid;
+104:   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+105:   gap: 16px;
+106: }
+107: 
+108: .status-item {
+109:   text-align: center;
+110:   padding: 8px;
+111:   border-radius: var(--radius-md);
+112:   background: rgba(0, 0, 0, 0.2);
+113:   border: 1px solid rgba(255, 255, 255, 0.1);
+114:   transition: all var(--transition-normal) ease;
+115: }
+116: 
+117: .status-item:hover {
+118:   background: rgba(0, 0, 0, 0.3);
+119:   transform: translateY(-1px);
+120: }
+121: 
+122: .status-label {
+123:   font-size: 0.8em;
+124:   color: var(--cork-text-secondary);
+125:   text-transform: uppercase;
+126:   letter-spacing: 0.5px;
+127:   margin-bottom: 4px;
+128:   font-weight: 600;
+129: }
+130: 
+131: .status-value {
+132:   font-size: 1.1em;
+133:   font-weight: 700;
+134:   color: var(--cork-text-primary);
+135: }
+136: 
+137: /* Timeline Logs */
+138: .timeline-container {
+139:   position: relative;
+140:   padding: 20px 0;
+141: }
+142: 
+143: .timeline-line {
+144:   position: absolute;
+145:   left: 20px;
+146:   top: 0;
+147:   bottom: 0;
+148:   width: 2px;
+149:   background: linear-gradient(to bottom, var(--cork-primary-accent), var(--cork-info));
+150:   opacity: 0.3;
+151: }
+152: 
+153: .timeline-item {
+154:   position: relative;
+155:   padding-left: 50px;
+156:   margin-bottom: 20px;
+157:   animation: slideInLeft var(--transition-slow) ease;
+158: }
+159: 
+160: .timeline-marker {
+161:   position: absolute;
+162:   left: 12px;
+163:   top: 8px;
+164:   width: 16px;
+165:   height: 16px;
+166:   border-radius: 50%;
+167:   background: var(--cork-card-bg);
+168:   border: 2px solid var(--cork-primary-accent);
+169:   z-index: var(--z-timeline);
+170:   display: flex;
+171:   align-items: center;
+172:   justify-content: center;
+173:   font-size: 10px;
+174:   font-weight: bold;
+175: }
+176: 
+177: .timeline-marker.success {
+178:   border-color: var(--cork-success);
+179:   color: var(--cork-success);
+180: }
+181: 
+182: .timeline-marker.error {
+183:   border-color: var(--cork-danger);
+184:   color: var(--cork-danger);
+185: }
+186: 
+187: .timeline-content {
+188:   background: rgba(0, 0, 0, 0.2);
+189:   border: 1px solid var(--cork-border-color);
+190:   border-radius: var(--radius-lg);
+191:   padding: 12px 16px;
+192:   transition: all var(--transition-normal) ease;
+193: }
+194: 
+195: .timeline-content:hover {
+196:   background: rgba(0, 0, 0, 0.3);
+197:   transform: translateY(-1px);
+198:   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+199: }
+200: 
+201: .timeline-header {
+202:   display: flex;
+203:   justify-content: space-between;
+204:   align-items: center;
+205:   margin-bottom: 8px;
+206: }
+207: 
+208: .timeline-time {
+209:   font-size: 0.8em;
+210:   color: var(--cork-text-secondary);
+211:   font-weight: 600;
+212: }
+213: 
+214: .timeline-status {
+215:   font-size: 0.7em;
+216:   padding: 2px 8px;
+217:   border-radius: 12px;
+218:   font-weight: 700;
+219:   text-transform: uppercase;
+220: }
+221: 
+222: .timeline-status.success {
+223:   background: rgba(26, 188, 156, 0.18);
+224:   color: var(--cork-success);
+225: }
+226: 
+227: .timeline-status.error {
+228:   background: rgba(231, 81, 90, 0.18);
+229:   color: var(--cork-danger);
+230: }
+231: 
+232: .timeline-details {
+233:   color: var(--cork-text-primary);
+234:   line-height: 1.4;
+235: }
+236: 
+237: .timeline-sparkline {
+238:   height: 40px;
+239:   background: rgba(255, 255, 255, 0.05);
+240:   border: 1px solid var(--cork-border-color);
+241:   border-radius: var(--radius-sm);
+242:   margin: 10px 0;
+243:   position: relative;
+244:   overflow: hidden;
+245: }
+246: 
+247: .sparkline-canvas {
+248:   width: 100%;
+249:   height: 100%;
+250: }
+251: 
+252: @keyframes slideInLeft {
+253:   from {
+254:     opacity: 0;
+255:     transform: translateX(-20px);
+256:   }
+257:   to {
+258:     opacity: 1;
+259:     transform: translateX(0);
+260:   }
+261: }
+262: 
+263: /* Log Entries */
+264: .logs-container {
+265:   background-color: var(--cork-card-bg);
+266:   padding: 20px;
+267:   border-radius: var(--radius-lg);
+268:   border: 1px solid var(--cork-border-color);
+269: }
+270: 
+271: .log-entry {
+272:   position: relative;
+273:   padding: 16px;
+274:   margin-bottom: 12px;
+275:   border-radius: var(--radius-md);
+276:   background: rgba(0, 0, 0, 0.3);
+277:   border-left: 4px solid var(--cork-text-secondary);
+278:   transition: all var(--transition-normal) ease;
+279: }
+280: 
+281: .log-entry::before {
+282:   content: attr(data-status-icon);
+283:   display: inline-flex;
+284:   width: 1.25rem;
+285:   height: 1.25rem;
+286:   align-items: center;
+287:   justify-content: center;
+288:   margin-right: 8px;
+289:   border-radius: var(--radius-full);
+290:   background: rgba(255,255,255,0.08);
+291:   font-weight: bold;
+292: }
+293: 
+294: .log-entry.success::before {
+295:   content: "✓";
+296:   background: rgba(26,188,156,0.18);
+297:   color: #1abc9c;
+298: }
+299: 
+300: .log-entry.error::before {
+301:   content: "⚠";
+302:   background: rgba(231,81,90,0.18);
+303:   color: #e7515a;
+304: }
+305: 
+306: .log-entry.success {
+307:   border-left-color: var(--cork-success);
+308: }
+309: 
+310: .log-entry.error {
+311:   border-left-color: var(--cork-danger);
+312: }
+313: 
+314: .log-entry-time {
+315:   font-size: 0.75em;
+316:   color: var(--cork-text-secondary);
+317:   font-weight: 600;
+318:   text-transform: uppercase;
+319:   letter-spacing: 0.5px;
+320: }
+321: 
+322: .log-entry-status {
+323:   display: inline-block;
+324:   padding: 3px 8px;
+325:   border-radius: 12px;
+326:   font-size: 0.7em;
+327:   font-weight: 700;
+328:   margin-left: 8px;
+329: }
+330: 
+331: .log-entry-type.custom {
+332:   background: var(--cork-info);
+333:   color: white;
+334: }
+335: 
+336: .log-entry-type.makecom {
+337:   background: var(--cork-warning);
+338:   color: white;
+339: }
+340: 
+341: .log-empty {
+342:   text-align: center;
+343: }
+344: 
+345: /* Collapsible Panels */
+346: .collapsible-panel {
+347:   background: rgba(0, 0, 0, 0.2);
+348:   border: 1px solid var(--cork-border-color);
+349:   border-radius: var(--radius-lg);
+350:   margin-bottom: 16px;
+351:   overflow: hidden;
+352:   transition: all var(--transition-slow) ease;
+353: }
+354: 
+355: .collapsible-panel:hover {
+356:   border-color: rgba(67, 97, 238, 0.3);
+357:   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+358: }
+359: 
+360: .panel-header {
+361:   display: flex;
+362:   justify-content: space-between;
+363:   align-items: center;
+364:   padding: 12px 16px;
+365:   background: rgba(67, 97, 238, 0.05);
+366:   border-bottom: 1px solid var(--cork-border-color);
+367:   cursor: pointer;
+368:   user-select: none;
+369:   transition: all var(--transition-normal) ease;
+370: }
+371: 
+372: .panel-header:hover {
+373:   background: rgba(67, 97, 238, 0.1);
+374: }
+375: 
+376: .panel-title {
+377:   display: flex;
+378:   align-items: center;
+379:   gap: 8px;
+380:   font-weight: 600;
+381:   color: var(--cork-text-primary);
+382: }
+383: 
+384: .panel-toggle {
+385:   display: flex;
+386:   align-items: center;
+387:   gap: 8px;
+388: }
+389: 
+390: .toggle-icon {
+391:   width: 20px;
+392:   height: 20px;
+393:   transition: transform var(--transition-slow) ease;
+394:   color: var(--cork-text-secondary);
+395: }
+396: 
+397: .toggle-icon.rotated {
+398:   transform: rotate(180deg);
+399: }
+400: 
+401: .panel-status {
+402:   font-size: 0.7em;
+403:   padding: 2px 6px;
+404:   border-radius: 10px;
+405:   background: rgba(226, 160, 63, 0.15);
+406:   color: var(--cork-warning);
+407:   font-weight: 600;
+408: }
+409: 
+410: .panel-status.saved {
+411:   background: rgba(26, 188, 156, 0.15);
+412:   color: var(--cork-success);
+413: }
+414: 
+415: .panel-content {
+416:   padding: 16px;
+417:   max-height: 1000px;
+418:   opacity: 1;
+419:   transition: all var(--transition-slow) ease;
+420: }
+421: 
+422: .panel-content.collapsed {
+423:   max-height: 0;
+424:   padding: 0 16px;
+425:   opacity: 0;
+426:   overflow: hidden;
+427: }
+428: 
+429: .panel-actions {
+430:   display: flex;
+431:   justify-content: space-between;
+432:   align-items: center;
+433:   margin-top: 12px;
+434:   padding-top: 12px;
+435:   border-top: 1px solid rgba(255, 255, 255, 0.1);
+436: }
+437: 
+438: .panel-save-btn {
+439:   background: var(--cork-primary-accent);
+440:   color: white;
+441:   border: none;
+442:   padding: 6px 12px;
+443:   border-radius: var(--radius-sm);
+444:   font-size: 0.8em;
+445:   cursor: pointer;
+446:   transition: all var(--transition-normal) ease;
+447: }
+448: 
+449: .panel-save-btn:hover {
+450:   background: #5470f1;
+451:   transform: translateY(-1px);
+452: }
+453: 
+454: .panel-save-btn:disabled {
+455:   background: var(--cork-text-secondary);
+456:   cursor: not-allowed;
+457:   transform: none;
+458: }
+459: 
+460: .panel-indicator {
+461:   font-size: 0.7em;
+462:   color: var(--cork-text-secondary);
+463:   font-style: italic;
+464: }
+465: 
+466: /* Routing Rules */
+467: .routing-rules-list {
+468:   display: flex;
+469:   flex-direction: column;
+470:   gap: 12px;
+471:   margin-top: 10px;
+472:   max-height: 400px;
+473:   overflow-y: auto;
+474:   padding-right: 8px;
+475: }
+476: 
+477: .routing-rules-list::-webkit-scrollbar {
+478:   width: 8px;
+479: }
+480: 
+481: .routing-rules-list::-webkit-scrollbar-track {
+482:   background: rgba(255, 255, 255, 0.05);
+483:   border-radius: var(--radius-sm);
+484: }
+485: 
+486: .routing-rules-list::-webkit-scrollbar-thumb {
+487:   background: rgba(255, 255, 255, 0.2);
+488:   border-radius: var(--radius-sm);
+489: }
+490: 
+491: .routing-rules-list::-webkit-scrollbar-thumb:hover {
+492:   background: rgba(255, 255, 255, 0.3);
+493: }
+494: 
+495: .routing-rule-card {
+496:   background: rgba(8, 12, 28, 0.7);
+497:   border: 1px solid var(--cork-border-color);
+498:   border-radius: var(--radius-lg);
+499:   padding: 14px;
+500:   display: flex;
+501:   flex-direction: column;
+502:   gap: 10px;
+503: }
+504: 
+505: .routing-rule-header {
+506:   display: flex;
+507:   justify-content: space-between;
+508:   gap: 12px;
+509:   flex-wrap: wrap;
+510: }
+511: 
+512: .routing-rule-title {
+513:   flex: 1;
+514:   min-width: 220px;
+515:   display: flex;
+516:   flex-direction: column;
+517:   gap: 6px;
+518: }
+519: 
+520: .routing-rule-controls {
+521:   display: flex;
+522:   align-items: center;
+523:   gap: 6px;
+524: }
+525: 
+526: .routing-icon-btn {
+527:   background: rgba(67, 97, 238, 0.12);
+528:   border: 1px solid rgba(67, 97, 238, 0.4);
+529:   color: var(--cork-text-primary);
+530:   border-radius: var(--radius-md);
+531:   padding: 6px 8px;
+532:   cursor: pointer;
+533:   transition: transform var(--transition-fast) ease, border-color var(--transition-fast) ease;
+534: }
+535: 
+536: .routing-icon-btn:hover {
+537:   border-color: var(--cork-primary-accent);
+538:   transform: translateY(-1px);
+539: }
+540: 
+541: .routing-section-title {
+542:   font-size: 0.8rem;
+543:   text-transform: uppercase;
+544:   letter-spacing: 0.08em;
+545:   color: var(--cork-text-secondary);
+546:   margin-top: 6px;
+547: }
+548: 
+549: .routing-conditions {
+550:   display: flex;
+551:   flex-direction: column;
+552:   gap: 8px;
+553: }
+554: 
+555: .routing-condition-row {
+556:   display: grid;
+557:   grid-template-columns: minmax(120px, 160px) minmax(120px, 160px) 1fr auto auto;
+558:   gap: 8px;
+559:   align-items: center;
+560: }
+561: 
+562: .routing-actions {
+563:   display: grid;
+564:   gap: 10px;
+565: }
+566: 
+567: .routing-inline {
+568:   display: flex;
+569:   gap: 10px;
+570:   align-items: center;
+571:   flex-wrap: wrap;
+572: }
+573: 
+574: .routing-input,
+575: .routing-select {
+576:   width: 100%;
+577:   padding: 9px 10px;
+578:   border-radius: var(--radius-sm);
+579:   border: 1px solid var(--cork-border-color);
+580:   background: rgba(0, 0, 0, 0.2);
+581:   color: var(--cork-text-primary);
+582:   font-size: 0.9em;
+583:   box-sizing: border-box;
+584: }
+585: 
+586: .routing-checkbox {
+587:   display: inline-flex;
+588:   align-items: center;
+589:   gap: 6px;
+590:   font-size: 0.85em;
+591:   color: var(--cork-text-secondary);
+592: }
+593: 
+594: .routing-invalid {
+595:   border-color: var(--cork-danger) !important;
+596:   box-shadow: var(--focus-ring-danger);
+597: }
+598: 
+599: .routing-empty {
+600:   padding: 12px;
+601:   border-radius: var(--radius-md);
+602:   background: rgba(255, 255, 255, 0.04);
+603:   color: var(--cork-text-secondary);
+604: }
+605: 
+606: .routing-add-btn {
+607:   margin-top: 4px;
+608:   align-self: flex-start;
+609: }
+610: 
+611: /* Lock Button */
+612: .lock-btn {
+613:   background: none;
+614:   border: none;
+615:   padding: 4px;
+616:   margin-left: 8px;
+617:   cursor: pointer;
+618:   border-radius: var(--radius-sm);
+619:   transition: all var(--transition-normal) ease;
+620:   display: flex;
+621:   align-items: center;
+622:   justify-content: center;
+623: }
+624: 
+625: .lock-btn:hover {
+626:   background: rgba(67, 97, 238, 0.1);
+627:   transform: scale(1.1);
+628: }
+629: 
+630: .lock-btn:active {
+631:   transform: scale(0.95);
+632: }
+633: 
+634: .lock-btn:focus {
+635:   outline: 2px solid var(--cork-primary-accent);
+636:   outline-offset: 2px;
+637: }
+638: 
+639: .lock-icon {
+640:   font-size: 1.1em;
+641:   transition: opacity var(--transition-normal) ease;
+642: }
+643: 
+644: .lock-icon.locked {
+645:   opacity: 1;
+646: }
+647: 
+648: .lock-icon.unlocked {
+649:   opacity: 0.7;
+650: }
+651: 
+652: .routing-rules-list.locked {
+653:   opacity: 0.6;
+654:   pointer-events: none;
+655: }
+656: 
+657: .routing-rules-list input:disabled,
+658: .routing-rules-list select:disabled,
+659: .routing-rules-list textarea:disabled,
+660: .routing-rules-list button:disabled {
+661:   opacity: 0.5;
+662:   cursor: not-allowed;
+663: }
+664: 
+665: /* Section Indicators */
+666: .section-indicator {
+667:   font-size: 0.6em;
+668:   padding: 2px 6px;
+669:   border-radius: 8px;
+670:   margin-left: 8px;
+671:   font-weight: 600;
+672:   text-transform: uppercase;
+673:   letter-spacing: 0.5px;
+674:   transition: all var(--transition-normal) ease;
+675: }
+676: 
+677: .section-indicator.modifié {
+678:   background: rgba(226, 160, 63, 0.15);
+679:   color: var(--cork-warning);
+680:   animation: pulse-modified 2s infinite;
+681: }
+682: 
+683: .section-indicator.sauvegardé {
+684:   background: rgba(26, 188, 156, 0.15);
+685:   color: var(--cork-success);
+686: }
+687: 
+688: @keyframes pulse-modified {
+689:   0%, 100% { opacity: 1; }
+690:   50% { opacity: 0.6; }
+691: }
+692: 
+693: .card.modified,
+694: .collapsible-panel.modified {
+695:   border-left: 3px solid var(--cork-warning);
+696:   background: rgba(226, 160, 63, 0.02);
+697: }
+698: 
+699: .card.saved,
+700: .collapsible-panel.saved {
+701:   border-left: 3px solid var(--cork-success);
+702:   background: rgba(26, 188, 156, 0.02);
+703: }
+704: 
+705: /* Toast Notification */
+706: .copied-feedback {
+707:   position: fixed;
+708:   top: 20px;
+709:   right: 20px;
+710:   background: var(--cork-success);
+711:   color: white;
+712:   padding: 12px 20px;
+713:   border-radius: var(--radius-md);
+714:   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+715:   transform: translateX(400px);
+716:   transition: transform var(--transition-slow) ease;
+717:   z-index: var(--z-toast);
+718:   font-weight: 500;
+719: }
+720: 
+721: .copied-feedback.show {
+722:   transform: translateX(0);
+723: }
+724: 
+725: /* Auto-save Feedback */
+726: .auto-save-feedback {
+727:   position: absolute;
+728:   bottom: -20px;
+729:   left: 0;
+730:   right: 0;
+731:   text-align: center;
+732:   z-index: var(--z-dropdown);
+733: }
+734: 
+735: /* Responsive Adjustments */
+736: @media (max-width: 768px) {
+737:   .global-status-banner {
+738:     padding: 12px 16px;
+739:     margin-bottom: 15px;
+740:   }
+741: 
+742:   .status-content {
+743:     grid-template-columns: repeat(2, 1fr);
+744:     gap: 12px;
+745:   }
+746: 
+747:   .status-item {
+748:     padding: 6px;
+749:   }
+750: 
+751:   .status-title {
+752:     font-size: 1em;
+753:   }
+754: 
+755:   .timeline-item {
+756:     padding-left: 40px;
+757:     margin-bottom: 15px;
+758:   }
+759: 
+760:   .timeline-line {
+761:     left: 15px;
+762:   }
+763: 
+764:   .timeline-marker {
+765:     left: 8px;
+766:     width: 14px;
+767:     height: 14px;
+768:     font-size: 8px;
+769:   }
+770: 
+771:   .timeline-content {
+772:     padding: 10px 12px;
+773:   }
+774: 
+775:   .timeline-header {
+776:     flex-direction: column;
+777:     align-items: flex-start;
+778:     gap: 4px;
+779:   }
+780: 
+781:   .panel-header {
+782:     padding: 10px 12px;
+783:   }
+784: 
+785:   .panel-content {
+786:     padding: 12px;
+787:   }
+788: 
+789:   .panel-actions {
+790:     flex-direction: column;
+791:     gap: 8px;
+792:     align-items: stretch;
+793:   }
+794: 
+795:   .panel-save-btn {
+796:     width: 100%;
+797:   }
+798: 
+799:   .routing-rules-list {
+800:     max-height: 300px;
+801:   }
+802: 
+803:   .routing-condition-row {
+804:     grid-template-columns: 1fr;
+805:   }
+806: 
+807:   .routing-rule-controls {
+808:     justify-content: flex-start;
+809:   }
+810: }
+811: 
+812: @media (max-width: 480px) {
+813:   .status-content {
+814:     grid-template-columns: 1fr;
+815:     gap: 8px;
+816:   }
+817: 
+818:   .status-header {
+819:     flex-direction: column;
+820:     gap: 8px;
+821:     text-align: center;
+822:   }
+823: 
+824:   .timeline-container {
+825:     padding: 15px 0;
+826:   }
+827: 
+828:   .timeline-item {
+829:     padding-left: 35px;
+830:     margin-bottom: 12px;
+831:   }
+832: 
+833:   .timeline-line {
+834:     left: 12px;
+835:   }
+836: 
+837:   .timeline-marker {
+838:     left: 6px;
+839:     width: 12px;
+840:     height: 12px;
+841:   }
+842: 
+843:   .timeline-content {
+844:     padding: 8px 10px;
+845:   }
+846: 
+847:   .log-entry {
+848:     padding: 12px;
+849:     margin-bottom: 8px;
+850:   }
+851: 
+852:   .log-entry-time {
+853:     display: block;
+854:     margin-bottom: 4px;
+855:   }
+856: 
+857:   .log-entry-status {
+858:     position: absolute;
+859:     top: 12px;
+860:     right: 12px;
+861:   }
+862: 
+863:   .copied-feedback {
+864:     right: 10px;
+865:     top: 10px;
+866:     left: 10px;
+867:     transform: translateY(-100px);
+868:   }
+869: 
+870:   .copied-feedback.show {
+871:     transform: translateY(0);
+872:   }
+873: }
+````
+
+## File: static/css/variables.css
+````css
+ 1: /* static/css/variables.css - Couleurs et variables CSS (:root) */
+ 2: 
+ 3: :root {
+ 4:   /* Cork Theme - Colors */
+ 5:   --cork-dark-bg: #060818;
+ 6:   --cork-card-bg: #0e1726;
+ 7:   --cork-text-primary: #e0e6ed;
+ 8:   --cork-text-secondary: #888ea8;
+ 9:   --cork-primary-accent: #4361ee;
+10:   --cork-secondary-accent: #1abc9c;
+11:   --cork-success: #1abc9c;
+12:   --cork-warning: #e2a03f;
+13:   --cork-danger: #e7515a;
+14:   --cork-info: #2196f3;
+15:   --cork-border-color: #191e3a;
+16: 
+17:   /* Animation Durations */
+18:   --transition-fast: 0.15s ease;
+19:   --transition-normal: 0.2s ease;
+20:   --transition-slow: 0.3s ease;
+21:   --transition-ripple: 0.6s ease;
+22: 
+23:   /* Spacing */
+24:   --spacing-xs: 4px;
+25:   --spacing-sm: 6px;
+26:   --spacing-md: 8px;
+27:   --spacing-lg: 10px;
+28:   --spacing-xl: 12px;
+29:   --spacing-2xl: 16px;
+30:   --spacing-3xl: 20px;
+31:   --spacing-4xl: 30px;
+32: 
+33:   /* Border Radius */
+34:   --radius-sm: 4px;
+35:   --radius-md: 6px;
+36:   --radius-lg: 8px;
+37:   --radius-xl: 12px;
+38:   --radius-full: 999px;
+39: 
+40:   /* Shadows */
+41:   --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.3);
+42:   --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.4);
+43:   --shadow-button: 0 5px 15px rgba(67, 97, 238, 0.4);
+44:   --shadow-button-success: 0 5px 15px rgba(26, 188, 156, 0.4);
+45:   --shadow-button-warning: 0 5px 15px rgba(226, 160, 63, 0.45);
+46:   --shadow-button-info: 0 5px 15px rgba(33, 150, 243, 0.4);
+47:   --shadow-button-secondary: 0 5px 15px rgba(14, 23, 38, 0.35);
+48: 
+49:   /* Focus Ring */
+50:   --focus-ring: 0 0 0 3px rgba(67, 97, 238, 0.1);
+51:   --focus-ring-danger: 0 0 0 2px rgba(231, 81, 90, 0.2);
+52: 
+53:   /* Z-Index */
+54:   --z-dropdown: 10;
+55:   --z-sticky: 5;
+56:   --z-toast: 1000;
+57:   --z-timeline: 2;
+58: }
 ````
 
 ## File: static/remote/api.js
@@ -16065,2031 +17588,540 @@ requirements.txt
 
 ## File: dashboard.html
 ````html
-   1: <!DOCTYPE html>
-   2: <html lang="fr">
-   3:   <head>
-   4:     <meta charset="UTF-8">
-   5:     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-   6:     <link rel="icon" type="image/x-icon" href="data:image/x-icon;base64,AAABAAEAEBAAAAEAIABoBAAAFgAAACgA...">
-   7:     <title>📊 Dashboard Webhooks - Contrôle</title>
-   8:     <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700" rel="stylesheet">
-   9:     <style>
-  10:       :root {
-  11:         --cork-dark-bg: #060818;
-  12:         --cork-card-bg: #0e1726;
-  13:         --cork-text-primary: #e0e6ed;
-  14:         --cork-text-secondary: #888ea8;
-  15:         --cork-primary-accent: #4361ee;
-  16:         --cork-secondary-accent: #1abc9c;
-  17:         --cork-success: #1abc9c;
-  18:         --cork-warning: #e2a03f;
-  19:         --cork-danger: #e7515a;
-  20:         --cork-info: #2196f3;
-  21:         --cork-border-color: #191e3a;
-  22:       }
-  23: 
-  24:       body {
-  25:         font-family: 'Nunito', sans-serif;
-  26:         margin: 0;
-  27:         background-color: var(--cork-dark-bg);
-  28:         color: var(--cork-text-primary);
-  29:         padding: 20px;
-  30:         box-sizing: border-box;
-  31:       }
-  32: 
-  33:       .container {
-  34:         max-width: 1200px;
-  35:         margin: 0 auto;
-  36:       }
-  37: 
-  38:       .header {
-  39:         display: flex;
-  40:         justify-content: space-between;
-  41:         align-items: center;
-  42:         margin-bottom: 30px;
-  43:         padding: 20px;
-  44:         background-color: var(--cork-card-bg);
-  45:         border-radius: 8px;
-  46:         border: 1px solid var(--cork-border-color);
-  47:       }
-  48: 
-  49:       h1 {
-  50:         color: var(--cork-text-primary);
-  51:         font-size: 1.8em;
-  52:         font-weight: 600;
-  53:         margin: 0;
-  54:       }
-  55: 
-  56:       h1 .emoji {
-  57:         font-size: 1.2em;
-  58:         margin-right: 10px;
-  59:       }
-  60: 
-  61:       /* ---- Navigation par onglets ---- */
-  62:       .nav-tabs {
-  63:         display: flex;
-  64:         gap: 8px;
-  65:         margin: 0 0 16px 0;
-  66:         flex-wrap: wrap;
-  67:         position: sticky; /* reste visible si contenu long */
-  68:         top: 0;
-  69:         z-index: 5;
-  70:         background: var(--cork-dark-bg);
-  71:         padding: 8px 0;
-  72:       }
-  73:       .nav-tabs .tab-btn {
-  74:         appearance: none;
-  75:         background: var(--cork-card-bg);
-  76:         color: var(--cork-text-primary);
-  77:         border: 1px solid var(--cork-border-color);
-  78:         border-radius: 6px;
-  79:         padding: 8px 12px;
-  80:         cursor: pointer;
-  81:         font-weight: 600;
-  82:         transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
-  83:       }
-  84:       .nav-tabs .tab-btn.active {
-  85:         background: var(--cork-primary-accent);
-  86:         border-color: var(--cork-primary-accent);
-  87:         color: #ffffff;
-  88:       }
-  89:       .nav-tabs .tab-btn:hover { border-color: var(--cork-primary-accent); }
-  90:       .nav-tabs .tab-btn:active { transform: translateY(1px); }
-  91:       .nav-tabs .tab-btn:focus { outline: 2px solid var(--cork-primary-accent); outline-offset: 2px; }
-  92: 
-  93:       /* ---- Panneaux d'onglets ---- */
-  94:       .section-panel { display: none; }
-  95:       .section-panel.active { display: block; }
-  96: 
-  97:       .logout-link {
-  98:         text-decoration: none;
-  99:         font-size: 0.9em;
- 100:         font-weight: 600;
- 101:         background-color: var(--cork-danger);
- 102:         color: white;
- 103:         padding: 8px 16px;
- 104:         border-radius: 4px;
- 105:         transition: background-color 0.2s ease;
- 106:       }
- 107: 
- 108:       .logout-link:hover {
- 109:         background-color: #c93e47;
- 110:       }
- 111: 
- 112:       .grid {
- 113:         display: grid;
- 114:         grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
- 115:         gap: 20px;
- 116:         margin-bottom: 20px;
- 117:       }
- 118: 
- 119:       /* Responsive design pour mobile */
- 120:       @media (max-width: 768px) {
- 121:         body {
- 122:           padding: 10px;
- 123:         }
- 124:         
- 125:         .container {
- 126:           max-width: 100%;
- 127:         }
- 128:         
- 129:         .header {
- 130:           flex-direction: column;
- 131:           gap: 15px;
- 132:           text-align: center;
- 133:         }
- 134:         
- 135:         h1 {
- 136:           font-size: 1.5em;
- 137:         }
- 138:         
- 139:         .grid {
- 140:           grid-template-columns: 1fr;
- 141:           gap: 15px;
- 142:         }
- 143:         
- 144:         .nav-tabs {
- 145:           justify-content: center;
- 146:         }
- 147:         
- 148:         .nav-tabs .tab-btn {
- 149:           font-size: 0.85em;
- 150:           padding: 6px 10px;
- 151:         }
- 152:         
- 153:         .card {
- 154:           padding: 15px;
- 155:         }
- 156:         
- 157:         .btn {
- 158:           width: 100%;
- 159:           margin-bottom: 10px;
- 160:         }
- 161:         
- 162:         .inline-group {
- 163:           flex-direction: column;
- 164:           align-items: stretch;
- 165:         }
- 166:         
- 167:         .form-group input,
- 168:         .form-group select,
- 169:         .form-group textarea {
- 170:           font-size: 16px; /* Évite le zoom sur iOS */
- 171:         }
- 172:       }
- 173: 
- 174:       @media (max-width: 480px) {
- 175:         .header {
- 176:           padding: 15px;
- 177:         }
- 178:         
- 179:         .card {
- 180:           padding: 12px;
- 181:         }
- 182:         
- 183:         .nav-tabs .tab-btn {
- 184:           font-size: 0.8em;
- 185:           padding: 5px 8px;
- 186:         }
- 187:         
- 188:         .toggle-switch {
- 189:           width: 45px;
- 190:           height: 22px;
- 191:         }
- 192:         
- 193:         .toggle-slider:before {
- 194:           width: 16px;
- 195:           height: 16px;
- 196:           left: 3px;
- 197:           bottom: 3px;
- 198:         }
- 199:         
- 200:         input:checked + .toggle-slider:before {
- 201:           transform: translateX(23px);
- 202:         }
- 203:       }
- 204: 
- 205:       .card {
- 206:         background-color: var(--cork-card-bg);
- 207:         padding: 20px;
- 208:         border-radius: 8px;
- 209:         border: 1px solid var(--cork-border-color);
- 210:       }
- 211: 
- 212:       .card-title {
- 213:         font-weight: 600;
- 214:         color: var(--cork-secondary-accent);
- 215:         font-size: 1.1em;
- 216:         margin-bottom: 15px;
- 217:         padding-bottom: 10px;
- 218:         border-bottom: 1px solid var(--cork-border-color);
- 219:       }
- 220: 
- 221:       .form-group {
- 222:         margin-bottom: 15px;
- 223:       }
- 224: 
- 225:       .form-group label {
- 226:         display: block;
- 227:         margin-bottom: 5px;
- 228:         font-size: 0.9em;
- 229:         color: var(--cork-text-secondary);
- 230:       }
- 231: 
- 232:       .form-group input,
- 233:       .form-group select {
- 234:         width: 100%;
- 235:         padding: 10px;
- 236:         border-radius: 4px;
- 237:         border: 1px solid var(--cork-border-color);
- 238:         background: rgba(0, 0, 0, 0.2);
- 239:         color: var(--cork-text-primary);
- 240:         font-size: 0.95em;
- 241:         box-sizing: border-box;
- 242:       }
- 243: 
- 244:       .form-group select {
- 245:         appearance: none;
- 246:         background-image: linear-gradient(45deg, transparent 50%, var(--cork-text-secondary) 50%),
- 247:           linear-gradient(135deg, var(--cork-text-secondary) 50%, transparent 50%);
- 248:         background-position: calc(100% - 18px) calc(50% - 3px), calc(100% - 12px) calc(50% - 3px);
- 249:         background-size: 6px 6px, 6px 6px;
- 250:         background-repeat: no-repeat;
- 251:         padding-right: 32px;
- 252:       }
- 253: 
- 254:       .form-group input:focus {
- 255:         outline: none;
- 256:         border-color: var(--cork-primary-accent);
- 257:         background: rgba(67, 97, 238, 0.05);
- 258:         box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
- 259:         transform: translateY(-1px);
- 260:       }
- 261: 
- 262:       .form-group input:hover,
- 263:       .form-group select:focus,
- 264:       .form-group textarea:focus {
- 265:         outline: none;
- 266:         border-color: var(--cork-primary-accent);
- 267:         background: rgba(67, 97, 238, 0.05);
- 268:         box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
- 269:         transform: translateY(-1px);
- 270:       }
- 271: 
- 272:       .form-group input:hover,
- 273:       .form-group select:hover,
- 274:       .form-group textarea:hover {
- 275:         border-color: rgba(67, 97, 238, 0.3);
- 276:       }
- 277: 
- 278:       select option,
- 279:       select optgroup {
- 280:         background-color: var(--cork-card-bg);
- 281:         color: var(--cork-text-primary);
- 282:       }
- 283: 
- 284:       select option:checked,
- 285:       select option:hover {
- 286:         background-color: var(--cork-primary-accent);
- 287:         color: #ffffff;
- 288:       }
- 289: 
- 290:       .toggle-switch input:focus-visible + .toggle-slider {
- 291:         box-shadow: 0 0 0 3px rgba(255,255,255,0.25);
- 292:       }
- 293: 
- 294:       /* Badges d'alerte pour sections non sauvegardées */
- 295:       .pill { 
- 296:         font-size: 0.7rem; 
- 297:         text-transform: uppercase; 
- 298:         border-radius: 999px; 
- 299:         padding: 3px 8px; 
- 300:         margin-left: 8px;
- 301:       }
- 302: 
- 303:       .pill-manual { 
- 304:         background: rgba(226,160,63,0.15); 
- 305:         color: #e2a03f; 
- 306:       }
- 307: 
- 308:       .btn {
- 309:         padding: 10px 20px;
- 310:         font-weight: 600;
- 311:         cursor: pointer;
- 312:         color: white;
- 313:         border: none;
- 314:         border-radius: 6px;
- 315:         font-size: 0.95em;
- 316:         transition: all 0.2s ease;
- 317:       }
- 318: 
- 319:       .btn-primary {
- 320:         background: linear-gradient(to right, var(--cork-primary-accent) 0%, #5470f1 100%);
- 321:       }
- 322: 
- 323:       .btn-primary:hover {
- 324:         transform: translateY(-1px);
- 325:         box-shadow: 0 5px 15px rgba(67, 97, 238, 0.4);
- 326:       }
- 327: 
- 328:       .btn-success {
- 329:         background: linear-gradient(to right, var(--cork-success) 0%, #22c98f 100%);
- 330:       }
- 331: 
- 332:       .btn-success:hover {
- 333:         transform: translateY(-1px);
- 334:         box-shadow: 0 5px 15px rgba(26, 188, 156, 0.4);
- 335:       }
- 336: 
- 337:       .btn-secondary {
- 338:         background: linear-gradient(to right, rgba(13, 25, 48, 0.95) 0%, rgba(28, 41, 72, 0.95) 100%);
- 339:         border: 1px solid rgba(255, 255, 255, 0.08);
- 340:       }
- 341: 
- 342:       .btn-secondary:hover {
- 343:         transform: translateY(-1px);
- 344:         box-shadow: 0 5px 15px rgba(14, 23, 38, 0.35);
- 345:         border-color: rgba(255, 255, 255, 0.2);
- 346:       }
- 347: 
- 348:       .btn-warning {
- 349:         background: linear-gradient(to right, var(--cork-warning) 0%, #f4b86d 100%);
- 350:         color: #1e1e2f;
- 351:       }
- 352: 
- 353:       .btn-warning:hover {
- 354:         transform: translateY(-1px);
- 355:         box-shadow: 0 5px 15px rgba(226, 160, 63, 0.45);
- 356:       }
- 357: 
- 358:       .btn-info {
- 359:         background: linear-gradient(to right, var(--cork-info) 0%, #5ac2ff 100%);
- 360:       }
- 361: 
- 362:       .btn-info:hover {
- 363:         transform: translateY(-1px);
- 364:         box-shadow: 0 5px 15px rgba(33, 150, 243, 0.4);
- 365:       }
- 366: 
- 367:       .btn:disabled {
- 368:         background: #555e72;
- 369:         color: var(--cork-text-secondary);
- 370:         cursor: not-allowed;
- 371:         transform: none;
- 372:       }
- 373: 
- 374:       .status-msg {
- 375:         margin-top: 10px;
- 376:         padding: 10px;
- 377:         border-radius: 4px;
- 378:         font-size: 0.9em;
- 379:         display: none;
- 380:       }
- 381: 
- 382:       .status-msg.success {
- 383:         background: rgba(26, 188, 156, 0.2);
- 384:         color: var(--cork-success);
- 385:         border: 1px solid var(--cork-success);
- 386:         display: block;
- 387:       }
- 388: 
- 389:       .status-msg.error {
- 390:         background: rgba(231, 81, 90, 0.2);
- 391:         color: var(--cork-danger);
- 392:         border: 1px solid var(--cork-danger);
- 393:         display: block;
- 394:       }
- 395: 
- 396:       .status-msg.info {
- 397:         background: rgba(33, 150, 243, 0.2);
- 398:         color: var(--cork-info);
- 399:         border: 1px solid var(--cork-info);
- 400:         display: block;
- 401:       }
- 402: 
- 403:       .toggle-switch {
- 404:         position: relative;
- 405:         display: inline-block;
- 406:         width: 50px;
- 407:         height: 24px;
- 408:       }
- 409: 
- 410:       .toggle-switch input {
- 411:         opacity: 0;
- 412:         width: 0;
- 413:         height: 0;
- 414:       }
- 415: 
- 416:       .toggle-slider {
- 417:         position: absolute;
- 418:         cursor: pointer;
- 419:         top: 0;
- 420:         left: 0;
- 421:         right: 0;
- 422:         bottom: 0;
- 423:         background-color: #555e72;
- 424:         transition: 0.3s;
- 425:         border-radius: 24px;
- 426:       }
- 427: 
- 428:       .toggle-slider:before {
- 429:         position: absolute;
- 430:         content: "";
- 431:         height: 18px;
- 432:         width: 18px;
- 433:         left: 3px;
- 434:         bottom: 3px;
- 435:         background-color: white;
- 436:         transition: 0.3s;
- 437:         border-radius: 50%;
- 438:       }
- 439: 
- 440:       input:checked+.toggle-slider {
- 441:         background-color: var(--cork-success);
- 442:       }
- 443: 
- 444:       input:checked+.toggle-slider:before {
- 445:         transform: translateX(26px);
- 446:       }
- 447: 
- 448:       .logs-container {
- 449:         background-color: var(--cork-card-bg);
- 450:         padding: 20px;
- 451:         border-radius: 8px;
- 452:         border: 1px solid var(--cork-border-color);
- 453:       }
- 454: 
- 455:       .log-entry {
- 456:         padding: 12px;
- 457:         margin-bottom: 8px;
- 458:         border-radius: 4px;
- 459:         background: rgba(0, 0, 0, 0.2);
- 460:         border-left: 3px solid var(--cork-text-secondary);
- 461:         font-size: 0.85em;
- 462:         line-height: 1.5;
- 463:       }
- 464: 
- 465:       .log-entry.success {
- 466:         border-left-color: var(--cork-success);
- 467:       }
- 468: 
- 469:       .log-entry.error {
- 470:         border-left-color: var(--cork-danger);
- 471:       }
- 472: 
- 473:       .log-entry-time {
- 474:         color: var(--cork-text-secondary);
- 475:         font-size: 0.85em;
- 476:       }
- 477: 
- 478:       .log-entry-type {
- 479:         display: inline-block;
- 480:         padding: 2px 8px;
- 481:         border-radius: 3px;
- 482:         font-size: 0.8em;
- 483:         font-weight: 600;
- 484:         margin-left: 8px;
- 485:       }
- 486: 
- 487:       .log-entry-type.custom {
- 488:         background: var(--cork-info);
- 489:         color: white;
- 490:       }
- 491: 
- 492:       /* Hiérarchie visuelle des cartes de configuration */
- 493:       .section-panel.config .card { 
- 494:         border-left: 4px solid var(--cork-primary-accent);
- 495:         background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(67, 97, 238, 0.05) 100%);
- 496:       }
- 497: 
- 498:       .section-panel.monitoring .card { 
- 499:         border-left: 4px solid var(--cork-info);
- 500:         background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(33, 150, 243, 0.03) 100%);
- 501:       }
- 502: 
- 503:       /* Style enrichi pour les entrées de logs */
- 504:       .log-entry {
- 505:         position: relative;
- 506:         padding: 16px;
- 507:         margin-bottom: 12px;
- 508:         border-radius: 6px;
- 509:         background: rgba(0, 0, 0, 0.3);
- 510:         border-left: 4px solid var(--cork-text-secondary);
- 511:         transition: all 0.2s ease;
- 512:       }
- 513: 
- 514:       .log-entry::before {
- 515:         content: attr(data-status-icon);
- 516:         display: inline-flex;
- 517:         width: 1.25rem;
- 518:         height: 1.25rem;
- 519:         align-items: center;
- 520:         justify-content: center;
- 521:         margin-right: 8px;
- 522:         border-radius: 999px;
- 523:         background: rgba(255,255,255,0.08);
- 524:         font-weight: bold;
- 525:       }
- 526: 
- 527:       .log-entry.success::before { 
- 528:         content: "✓";
- 529:         background: rgba(26,188,156,0.18); 
- 530:         color: #1abc9c; 
- 531:       }
- 532: 
- 533:       .log-entry.error::before { 
- 534:         content: "⚠";
- 535:         background: rgba(231,81,90,0.18); 
- 536:         color: #e7515a; 
- 537:       }
- 538: 
- 539:       .log-entry-time {
- 540:         font-size: 0.75em;
- 541:         color: var(--cork-text-secondary);
- 542:         font-weight: 600;
- 543:         text-transform: uppercase;
- 544:         letter-spacing: 0.5px;
- 545:       }
- 546: 
- 547:       .log-entry-status {
- 548:         display: inline-block;
- 549:         padding: 3px 8px;
- 550:         border-radius: 12px;
- 551:         font-size: 0.7em;
- 552:         font-weight: 700;
- 553:         margin-left: 8px;
- 554:       }
- 555: 
- 556:       .log-entry-type.makecom {
- 557:         background: var(--cork-warning);
- 558:         color: white;
- 559:       }
- 560: 
- 561:       .log-empty {
- 562:         text-align: center;
- 563:       }
- 564: 
- 565:       /* Micro-interactions pour les actions critiques */
- 566:       .btn-primary {
- 567:         background: linear-gradient(to right, var(--cork-primary-accent) 0%, #5470f1 100%);
- 568:         position: relative;
- 569:         overflow: hidden;
- 570:         transition: transform 0.2s ease, box-shadow 0.2s ease;
- 571:       }
- 572: 
- 573:       .btn-primary:hover {
- 574:         transform: translateY(-1px);
- 575:         box-shadow: 0 4px 12px rgba(67, 97, 238, 0.3);
- 576:       }
- 577: 
- 578:       .btn-primary:active {
- 579:         transform: translateY(0);
- 580:       }
- 581: 
- 582:       .btn-primary::before {
- 583:         content: '';
- 584:         position: absolute;
- 585:         top: 50%;
- 586:         left: 50%;
- 587:         width: 0;
- 588:         height: 0;
- 589:         border-radius: 50%;
- 590:         background: rgba(255, 255, 255, 0.3);
- 591:         transform: translate(-50%, -50%);
- 592:         transition: width 0.6s, height 0.6s;
- 593:         pointer-events: none;
- 594:       }
- 595: 
- 596:       .btn-primary:active::before {
- 597:         width: 300px;
- 598:         height: 300px;
- 599:       }
- 600: 
- 601:       /* Toast notification pour copie magic link */
- 602:       .copied-feedback {
- 603:         position: fixed;
- 604:         top: 20px;
- 605:         right: 20px;
- 606:         background: var(--cork-success);
- 607:         color: white;
- 608:         padding: 12px 20px;
- 609:         border-radius: 6px;
- 610:         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
- 611:         transform: translateX(400px);
- 612:         transition: transform 0.3s ease;
- 613:         z-index: 1000;
- 614:         font-weight: 500;
- 615:       }
- 616: 
- 617:       .copied-feedback.show {
- 618:         transform: translateX(0);
- 619:       }
- 620: 
- 621:       /* Micro-animations sur les cards */
- 622:       .card {
- 623:         transition: transform 0.2s ease, box-shadow 0.2s ease;
- 624:       }
- 625: 
- 626:       .card:hover {
- 627:         transform: translateY(-2px);
- 628:         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
- 629:       }
- 630: 
- 631:       /* Transitions cohérentes pour tous les éléments interactifs */
- 632:       .form-group input,
- 633:       .form-group select,
- 634:       .form-group textarea {
- 635:         transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
- 636:       }
- 637: 
- 638:       .toggle-switch input:focus-visible + .toggle-slider {
- 639:         transition: box-shadow 0.2s ease;
- 640:       }
- 641: 
- 642:       /* Optimisation mobile - Priorité 2 */
- 643:       @media (max-width: 480px) {
- 644:         .log-entry {
- 645:           padding: 12px;
- 646:           margin-bottom: 8px;
- 647:         }
- 648:         
- 649:         .log-entry-time {
- 650:           display: block;
- 651:           margin-bottom: 4px;
- 652:         }
- 653:         
- 654:         .log-entry-status {
- 655:           position: absolute;
- 656:           top: 12px;
- 657:           right: 12px;
- 658:         }
- 659:         
- 660:         #absencePauseDaysGroup,
- 661:         #pollingActiveDaysGroup {
- 662:           display: grid;
- 663:           grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
- 664:           gap: 8px;
- 665:         }
- 666:         
- 667:         #metricsSection .grid {
- 668:           grid-template-columns: 1fr;
- 669:         }
- 670:         
- 671:         .grid {
- 672:           grid-template-columns: 1fr;
- 673:           gap: 12px;
- 674:         }
- 675:         
- 676:         .card {
- 677:           padding: 16px;
- 678:         }
- 679: 
- 680:         .copied-feedback {
- 681:           right: 10px;
- 682:           top: 10px;
- 683:           left: 10px;
- 684:           transform: translateY(-100px);
- 685:         }
- 686: 
- 687:         .copied-feedback.show {
- 688:           transform: translateY(0);
- 689:         }
- 690:       }
- 691: 
- 692:       /* Respect pour prefers-reduced-motion */
- 693:       @media (prefers-reduced-motion: reduce) {
- 694:         .btn-primary,
- 695:         .btn-primary::before,
- 696:         .card,
- 697:         .form-group input,
- 698:         .form-group select,
- 699:         .form-group textarea,
- 700:         .copied-feedback {
- 701:           transition: none;
- 702:         }
- 703: 
- 704:         .btn-primary:hover,
- 705:         .card:hover {
- 706:           transform: none;
- 707:         }
- 708:       }
- 709: 
- 710:       /* Layout utilitaire pour éléments en ligne */
- 711:       .inline-group {
- 712:         display: flex;
- 713:         gap: 10px;
- 714:         align-items: center;
- 715:       }
- 716: 
- 717:       /* Style pour les boutons d'emails */
- 718:       .email-remove-btn {
- 719:         background-color: var(--cork-card-bg);
- 720:         border: 1px solid var(--cork-border-color);
- 721:         color: var(--cork-text-primary);
- 722:         border-radius: 4px;
- 723:         cursor: pointer;
- 724:         padding: 2px 8px;
- 725:         margin-left: 5px;
- 726:       }
- 727: 
- 728:       .email-remove-btn:hover {
- 729:         background-color: var(--cork-danger);
- 730:         color: white;
- 731:       }
- 732: 
- 733:       #addSenderBtn {
- 734:         background-color: var(--cork-card-bg);
- 735:         color: var(--cork-text-primary);
- 736:         border: 1px solid var(--cork-border-color);
- 737:       }
- 738: 
- 739:       #addSenderBtn:hover {
- 740:         background-color: var(--cork-primary-accent);
- 741:         color: white;
- 742:       }
- 743: 
- 744:       /* Performance optimizations */
- 745:       .section-panel {
- 746:         opacity: 0;
- 747:         transform: translateY(10px);
- 748:         transition: opacity 0.3s ease, transform 0.3s ease;
- 749:       }
- 750:       
- 751:       .section-panel.active {
- 752:         opacity: 1;
- 753:         transform: translateY(0);
- 754:       }
- 755:       
- 756:       /* Loading states */
- 757:       .loading {
- 758:         position: relative;
- 759:         pointer-events: none;
- 760:       }
- 761:       
- 762:       .loading::after {
- 763:         content: '';
- 764:         position: absolute;
- 765:         top: 50%;
- 766:         left: 50%;
- 767:         width: 20px;
- 768:         height: 20px;
- 769:         margin: -10px 0 0 -10px;
- 770:         border: 2px solid var(--cork-primary-accent);
- 771:         border-top: 2px solid transparent;
- 772:         border-radius: 50%;
- 773:         animation: spin 1s linear infinite;
- 774:       }
- 775:       
- 776:       @keyframes spin {
- 777:         0% { transform: rotate(0deg); }
- 778:         100% { transform: rotate(360deg); }
- 779:       }
- 780:       
- 781:       /* Skeleton loading */
- 782:       .skeleton {
- 783:         background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%);
- 784:         background-size: 200% 100%;
- 785:         animation: loading 1.5s infinite;
- 786:       }
- 787:       
- 788:       @keyframes loading {
- 789:         0% { background-position: 200% 0; }
- 790:         100% { background-position: -200% 0; }
- 791:       }
- 792: 
- 793:       .small-text {
- 794:         font-size: 0.85em;
- 795:         color: var(--cork-text-secondary);
- 796:         margin-top: 5px;
- 797:       }
- 798:       
- 799:       /* Bandeau Statut Global */
- 800:       .global-status-banner {
- 801:         background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(67, 97, 238, 0.08) 100%);
- 802:         border: 1px solid var(--cork-border-color);
- 803:         border-radius: 8px;
- 804:         padding: 16px 20px;
- 805:         margin-bottom: 20px;
- 806:         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
- 807:         transition: all 0.3s ease;
- 808:       }
- 809:       
- 810:       .global-status-banner:hover {
- 811:         transform: translateY(-1px);
- 812:         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
- 813:       }
- 814:       
- 815:       .status-header {
- 816:         display: flex;
- 817:         justify-content: space-between;
- 818:         align-items: center;
- 819:         margin-bottom: 12px;
- 820:         padding-bottom: 8px;
- 821:         border-bottom: 1px solid var(--cork-border-color);
- 822:       }
- 823:       
- 824:       .status-title {
- 825:         display: flex;
- 826:         align-items: center;
- 827:         gap: 8px;
- 828:         font-weight: 600;
- 829:         font-size: 1.1em;
- 830:         color: var(--cork-text-primary);
- 831:       }
- 832:       
- 833:       .status-icon {
- 834:         font-size: 1.2em;
- 835:         animation: pulse 2s infinite;
- 836:       }
- 837:       
- 838:       .status-icon.warning {
- 839:         color: var(--cork-warning);
- 840:       }
- 841:       
- 842:       .status-icon.error {
- 843:         color: var(--cork-danger);
- 844:       }
- 845:       
- 846:       .status-icon.success {
- 847:         color: var(--cork-success);
- 848:       }
- 849:       
- 850:       @keyframes pulse {
- 851:         0%, 100% { opacity: 1; }
- 852:         50% { opacity: 0.7; }
- 853:       }
- 854:       
- 855:       .status-content {
- 856:         display: grid;
- 857:         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
- 858:         gap: 16px;
- 859:       }
- 860:       
- 861:       .status-item {
- 862:         text-align: center;
- 863:         padding: 8px;
- 864:         border-radius: 6px;
- 865:         background: rgba(0, 0, 0, 0.2);
- 866:         border: 1px solid rgba(255, 255, 255, 0.1);
- 867:         transition: all 0.2s ease;
- 868:       }
- 869:       
- 870:       .status-item:hover {
- 871:         background: rgba(0, 0, 0, 0.3);
- 872:         transform: translateY(-1px);
- 873:       }
- 874:       
- 875:       .status-label {
- 876:         font-size: 0.8em;
- 877:         color: var(--cork-text-secondary);
- 878:         text-transform: uppercase;
- 879:         letter-spacing: 0.5px;
- 880:         margin-bottom: 4px;
- 881:         font-weight: 600;
- 882:       }
- 883:       
- 884:       .status-value {
- 885:         font-size: 1.1em;
- 886:         font-weight: 700;
- 887:         color: var(--cork-text-primary);
- 888:       }
- 889:       
- 890:       .btn-small {
- 891:         padding: 4px 8px;
- 892:         font-size: 0.8em;
- 893:         min-width: auto;
- 894:       }
- 895:       
- 896:       @media (max-width: 768px) {
- 897:         .global-status-banner {
- 898:           padding: 12px 16px;
- 899:           margin-bottom: 15px;
- 900:         }
- 901:         
- 902:         .status-content {
- 903:           grid-template-columns: repeat(2, 1fr);
- 904:           gap: 12px;
- 905:         }
- 906:         
- 907:         .status-item {
- 908:           padding: 6px;
- 909:         }
- 910:         
- 911:         .status-title {
- 912:           font-size: 1em;
- 913:         }
- 914:       }
- 915:       
- 916:       @media (max-width: 480px) {
- 917:         .status-content {
- 918:           grid-template-columns: 1fr;
- 919:           gap: 8px;
- 920:         }
- 921:         
- 922:         .status-header {
- 923:           flex-direction: column;
- 924:           gap: 8px;
- 925:           text-align: center;
- 926:         }
- 927:       }
- 928:       
- 929:       /* Timeline Logs */
- 930:       .timeline-container {
- 931:         position: relative;
- 932:         padding: 20px 0;
- 933:       }
- 934:       
- 935:       .timeline-line {
- 936:         position: absolute;
- 937:         left: 20px;
- 938:         top: 0;
- 939:         bottom: 0;
- 940:         width: 2px;
- 941:         background: linear-gradient(to bottom, var(--cork-primary-accent), var(--cork-info));
- 942:         opacity: 0.3;
- 943:       }
- 944:       
- 945:       .timeline-item {
- 946:         position: relative;
- 947:         padding-left: 50px;
- 948:         margin-bottom: 20px;
- 949:         animation: slideInLeft 0.3s ease;
- 950:       }
- 951:       
- 952:       .timeline-marker {
- 953:         position: absolute;
- 954:         left: 12px;
- 955:         top: 8px;
- 956:         width: 16px;
- 957:         height: 16px;
- 958:         border-radius: 50%;
- 959:         background: var(--cork-card-bg);
- 960:         border: 2px solid var(--cork-primary-accent);
- 961:         z-index: 2;
- 962:         display: flex;
- 963:         align-items: center;
- 964:         justify-content: center;
- 965:         font-size: 10px;
- 966:         font-weight: bold;
- 967:       }
- 968:       
- 969:       .timeline-marker.success {
- 970:         border-color: var(--cork-success);
- 971:         color: var(--cork-success);
- 972:       }
- 973:       
- 974:       .timeline-marker.error {
- 975:         border-color: var(--cork-danger);
- 976:         color: var(--cork-danger);
- 977:       }
- 978:       
- 979:       .timeline-content {
- 980:         background: rgba(0, 0, 0, 0.2);
- 981:         border: 1px solid var(--cork-border-color);
- 982:         border-radius: 8px;
- 983:         padding: 12px 16px;
- 984:         transition: all 0.2s ease;
- 985:       }
- 986:       
- 987:       .timeline-content:hover {
- 988:         background: rgba(0, 0, 0, 0.3);
- 989:         transform: translateY(-1px);
- 990:         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
- 991:       }
- 992:       
- 993:       .timeline-header {
- 994:         display: flex;
- 995:         justify-content: space-between;
- 996:         align-items: center;
- 997:         margin-bottom: 8px;
- 998:       }
- 999:       
-1000:       .timeline-time {
-1001:         font-size: 0.8em;
-1002:         color: var(--cork-text-secondary);
-1003:         font-weight: 600;
-1004:       }
-1005:       
-1006:       .timeline-status {
-1007:         font-size: 0.7em;
-1008:         padding: 2px 8px;
-1009:         border-radius: 12px;
-1010:         font-weight: 700;
-1011:         text-transform: uppercase;
-1012:       }
-1013:       
-1014:       .timeline-status.success {
-1015:         background: rgba(26, 188, 156, 0.18);
-1016:         color: var(--cork-success);
-1017:       }
-1018:       
-1019:       .timeline-status.error {
-1020:         background: rgba(231, 81, 90, 0.18);
-1021:         color: var(--cork-danger);
-1022:       }
-1023:       
-1024:       .timeline-details {
-1025:         color: var(--cork-text-primary);
-1026:         line-height: 1.4;
-1027:       }
-1028:       
-1029:       .timeline-sparkline {
-1030:         height: 40px;
-1031:         background: rgba(255, 255, 255, 0.05);
-1032:         border: 1px solid var(--cork-border-color);
-1033:         border-radius: 4px;
-1034:         margin: 10px 0;
-1035:         position: relative;
-1036:         overflow: hidden;
-1037:       }
-1038:       
-1039:       .sparkline-canvas {
-1040:         width: 100%;
-1041:         height: 100%;
-1042:       }
-1043:       
-1044:       @keyframes slideInLeft {
-1045:         from {
-1046:           opacity: 0;
-1047:           transform: translateX(-20px);
-1048:         }
-1049:         to {
-1050:           opacity: 1;
-1051:           transform: translateX(0);
-1052:         }
-1053:       }
-1054:       
-1055:       @media (max-width: 768px) {
-1056:         .timeline-item {
-1057:           padding-left: 40px;
-1058:           margin-bottom: 15px;
-1059:         }
-1060:         
-1061:         .timeline-line {
-1062:           left: 15px;
-1063:         }
-1064:         
-1065:         .timeline-marker {
-1066:           left: 8px;
-1067:           width: 14px;
-1068:           height: 14px;
-1069:           font-size: 8px;
-1070:         }
-1071:         
-1072:         .timeline-content {
-1073:           padding: 10px 12px;
-1074:         }
-1075:         
-1076:         .timeline-header {
-1077:           flex-direction: column;
-1078:           align-items: flex-start;
-1079:           gap: 4px;
-1080:         }
-1081:       }
-1082:       
-1083:       @media (max-width: 480px) {
-1084:         .timeline-container {
-1085:           padding: 15px 0;
-1086:         }
-1087:         
-1088:         .timeline-item {
-1089:           padding-left: 35px;
-1090:           margin-bottom: 12px;
-1091:         }
-1092:         
-1093:         .timeline-line {
-1094:           left: 12px;
-1095:         }
-1096:         
-1097:         .timeline-marker {
-1098:           left: 6px;
-1099:           width: 12px;
-1100:           height: 12px;
-1101:         }
-1102:         
-1103:         .timeline-content {
-1104:           padding: 8px 10px;
-1105:         }
-1106:       }
-1107:       
-1108:       /* Panneaux Pliables Webhooks */
-1109:       .collapsible-panel {
-1110:         background: rgba(0, 0, 0, 0.2);
-1111:         border: 1px solid var(--cork-border-color);
-1112:         border-radius: 8px;
-1113:         margin-bottom: 16px;
-1114:         overflow: hidden;
-1115:         transition: all 0.3s ease;
-1116:       }
-1117:       
-1118:       .collapsible-panel:hover {
-1119:         border-color: rgba(67, 97, 238, 0.3);
-1120:         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-1121:       }
-1122: 
-1123:       .routing-rules-list {
-1124:         display: flex;
-1125:         flex-direction: column;
-1126:         gap: 12px;
-1127:         margin-top: 10px;
-1128:         max-height: 400px;
-1129:         overflow-y: auto;
-1130:         padding-right: 8px;
-1131:       }
-1132:       
-1133:       /* Scrollbar styling for webkit */
-1134:       .routing-rules-list::-webkit-scrollbar {
-1135:         width: 8px;
-1136:       }
-1137:       .routing-rules-list::-webkit-scrollbar-track {
-1138:         background: rgba(255, 255, 255, 0.05);
-1139:         border-radius: 4px;
-1140:       }
-1141:       .routing-rules-list::-webkit-scrollbar-thumb {
-1142:         background: rgba(255, 255, 255, 0.2);
-1143:         border-radius: 4px;
-1144:       }
-1145:       .routing-rules-list::-webkit-scrollbar-thumb:hover {
-1146:         background: rgba(255, 255, 255, 0.3);
-1147:       }
-1148: 
-1149:       .routing-rule-card {
-1150:         background: rgba(8, 12, 28, 0.7);
-1151:         border: 1px solid var(--cork-border-color);
-1152:         border-radius: 8px;
-1153:         padding: 14px;
-1154:         display: flex;
-1155:         flex-direction: column;
-1156:         gap: 10px;
-1157:       }
-1158: 
-1159:       .routing-rule-header {
-1160:         display: flex;
-1161:         justify-content: space-between;
-1162:         gap: 12px;
-1163:         flex-wrap: wrap;
-1164:       }
-1165: 
-1166:       .routing-rule-title {
-1167:         flex: 1;
-1168:         min-width: 220px;
-1169:         display: flex;
-1170:         flex-direction: column;
-1171:         gap: 6px;
-1172:       }
-1173: 
-1174:       .routing-rule-controls {
-1175:         display: flex;
-1176:         align-items: center;
-1177:         gap: 6px;
-1178:       }
-1179: 
-1180:       .routing-icon-btn {
-1181:         background: rgba(67, 97, 238, 0.12);
-1182:         border: 1px solid rgba(67, 97, 238, 0.4);
-1183:         color: var(--cork-text-primary);
-1184:         border-radius: 6px;
-1185:         padding: 6px 8px;
-1186:         cursor: pointer;
-1187:         transition: transform 0.15s ease, border-color 0.15s ease;
-1188:       }
-1189: 
-1190:       .routing-icon-btn:hover {
-1191:         border-color: var(--cork-primary-accent);
-1192:         transform: translateY(-1px);
-1193:       }
-1194: 
-1195:       .routing-section-title {
-1196:         font-size: 0.8rem;
-1197:         text-transform: uppercase;
-1198:         letter-spacing: 0.08em;
-1199:         color: var(--cork-text-secondary);
-1200:         margin-top: 6px;
-1201:       }
-1202: 
-1203:       .routing-conditions {
-1204:         display: flex;
-1205:         flex-direction: column;
-1206:         gap: 8px;
-1207:       }
-1208: 
-1209:       .routing-condition-row {
-1210:         display: grid;
-1211:         grid-template-columns: minmax(120px, 160px) minmax(120px, 160px) 1fr auto auto;
-1212:         gap: 8px;
-1213:         align-items: center;
-1214:       }
-1215: 
-1216:       .routing-actions {
-1217:         display: grid;
-1218:         gap: 10px;
-1219:       }
-1220: 
-1221:       .routing-inline {
-1222:         display: flex;
-1223:         gap: 10px;
-1224:         align-items: center;
-1225:         flex-wrap: wrap;
-1226:       }
-1227: 
-1228:       .routing-input,
-1229:       .routing-select {
-1230:         width: 100%;
-1231:         padding: 9px 10px;
-1232:         border-radius: 4px;
-1233:         border: 1px solid var(--cork-border-color);
-1234:         background: rgba(0, 0, 0, 0.2);
-1235:         color: var(--cork-text-primary);
-1236:         font-size: 0.9em;
-1237:         box-sizing: border-box;
-1238:       }
-1239: 
-1240:       .routing-checkbox {
-1241:         display: inline-flex;
-1242:         align-items: center;
-1243:         gap: 6px;
-1244:         font-size: 0.85em;
-1245:         color: var(--cork-text-secondary);
-1246:       }
-1247: 
-1248:       .routing-invalid {
-1249:         border-color: var(--cork-danger) !important;
-1250:         box-shadow: 0 0 0 2px rgba(231, 81, 90, 0.2);
-1251:       }
-1252: 
-1253:       .routing-empty {
-1254:         padding: 12px;
-1255:         border-radius: 6px;
-1256:         background: rgba(255, 255, 255, 0.04);
-1257:         color: var(--cork-text-secondary);
-1258:       }
-1259: 
-1260:       .routing-add-btn {
-1261:         margin-top: 4px;
-1262:         align-self: flex-start;
-1263:       }
-1264:       
-1265:       .panel-header {
-1266:         display: flex;
-1267:         justify-content: space-between;
-1268:         align-items: center;
-1269:         padding: 12px 16px;
-1270:         background: rgba(67, 97, 238, 0.05);
-1271:         border-bottom: 1px solid var(--cork-border-color);
-1272:         cursor: pointer;
-1273:         user-select: none;
-1274:         transition: all 0.2s ease;
-1275:       }
-1276:       
-1277:       .panel-header:hover {
-1278:         background: rgba(67, 97, 238, 0.1);
-1279:       }
-1280:       
-1281:       .panel-title {
-1282:         display: flex;
-1283:         align-items: center;
-1284:         gap: 8px;
-1285:         font-weight: 600;
-1286:         color: var(--cork-text-primary);
-1287:       }
-1288:       
-1289:       .lock-btn {
-1290:         background: none;
-1291:         border: none;
-1292:         padding: 4px;
-1293:         margin-left: 8px;
-1294:         cursor: pointer;
-1295:         border-radius: 4px;
-1296:         transition: all 0.2s ease;
-1297:         display: flex;
-1298:         align-items: center;
-1299:         justify-content: center;
-1300:       }
-1301:       
-1302:       .lock-btn:hover {
-1303:         background: rgba(67, 97, 238, 0.1);
-1304:         transform: scale(1.1);
-1305:       }
-1306:       
-1307:       .lock-btn:active {
-1308:         transform: scale(0.95);
-1309:       }
-1310:       
-1311:       .lock-btn:focus {
-1312:         outline: 2px solid var(--cork-primary-accent);
-1313:         outline-offset: 2px;
-1314:       }
-1315:       
-1316:       .lock-icon {
-1317:         font-size: 1.1em;
-1318:         transition: opacity 0.2s ease;
-1319:       }
-1320:       
-1321:       .lock-icon.locked {
-1322:         opacity: 1;
-1323:       }
-1324:       
-1325:       .lock-icon.unlocked {
-1326:         opacity: 0.7;
-1327:       }
-1328:       
-1329:       .routing-rules-list.locked {
-1330:         opacity: 0.6;
-1331:         pointer-events: none;
-1332:       }
-1333:       
-1334:       .routing-rules-list input:disabled,
-1335:       .routing-rules-list select:disabled,
-1336:       .routing-rules-list textarea:disabled,
-1337:       .routing-rules-list button:disabled {
-1338:         opacity: 0.5;
-1339:         cursor: not-allowed;
-1340:       }
-1341:       
-1342:       .panel-toggle {
-1343:         display: flex;
-1344:         align-items: center;
-1345:         gap: 8px;
-1346:       }
-1347:       
-1348:       .toggle-icon {
-1349:         width: 20px;
-1350:         height: 20px;
-1351:         transition: transform 0.3s ease;
-1352:         color: var(--cork-text-secondary);
-1353:       }
-1354:       
-1355:       .toggle-icon.rotated {
-1356:         transform: rotate(180deg);
-1357:       }
-1358:       
-1359:       .panel-status {
-1360:         font-size: 0.7em;
-1361:         padding: 2px 6px;
-1362:         border-radius: 10px;
-1363:         background: rgba(226, 160, 63, 0.15);
-1364:         color: var(--cork-warning);
-1365:         font-weight: 600;
-1366:       }
-1367:       
-1368:       .panel-status.saved {
-1369:         background: rgba(26, 188, 156, 0.15);
-1370:         color: var(--cork-success);
-1371:       }
-1372:       
-1373:       .panel-content {
-1374:         padding: 16px;
-1375:         max-height: 1000px;
-1376:         opacity: 1;
-1377:         transition: all 0.3s ease;
-1378:       }
-1379:       
-1380:       .panel-content.collapsed {
-1381:         max-height: 0;
-1382:         padding: 0 16px;
-1383:         opacity: 0;
-1384:         overflow: hidden;
-1385:       }
-1386:       
-1387:       .panel-actions {
-1388:         display: flex;
-1389:         justify-content: space-between;
-1390:         align-items: center;
-1391:         margin-top: 12px;
-1392:         padding-top: 12px;
-1393:         border-top: 1px solid rgba(255, 255, 255, 0.1);
-1394:       }
-1395:       
-1396:       .panel-save-btn {
-1397:         background: var(--cork-primary-accent);
-1398:         color: white;
-1399:         border: none;
-1400:         padding: 6px 12px;
-1401:         border-radius: 4px;
-1402:         font-size: 0.8em;
-1403:         cursor: pointer;
-1404:         transition: all 0.2s ease;
-1405:       }
-1406:       
-1407:       .panel-save-btn:hover {
-1408:         background: #5470f1;
-1409:         transform: translateY(-1px);
-1410:       }
-1411:       
-1412:       .panel-save-btn:disabled {
-1413:         background: var(--cork-text-secondary);
-1414:         cursor: not-allowed;
-1415:         transform: none;
-1416:       }
-1417:       
-1418:       .panel-indicator {
-1419:         font-size: 0.7em;
-1420:         color: var(--cork-text-secondary);
-1421:         font-style: italic;
-1422:       }
-1423:       
-1424:       @media (max-width: 768px) {
-1425:         .panel-header {
-1426:           padding: 10px 12px;
-1427:         }
-1428:         
-1429:         .panel-content {
-1430:           padding: 12px;
-1431:         }
-1432:         
-1433:         .panel-actions {
-1434:           flex-direction: column;
-1435:           gap: 8px;
-1436:           align-items: stretch;
-1437:         }
-1438:         
-1439:         .panel-save-btn {
-1440:           width: 100%;
-1441:         }
-1442:         
-1443:         .routing-rules-list {
-1444:           max-height: 300px;
-1445:         }
-1446: 
-1447:         .routing-condition-row {
-1448:           grid-template-columns: 1fr;
-1449:         }
-1450: 
-1451:         .routing-rule-controls {
-1452:           justify-content: flex-start;
-1453:         }
-1454:       }
-1455:       
-1456:       /* Indicateurs de sections modifiées */
-1457:       .section-indicator {
-1458:         font-size: 0.6em;
-1459:         padding: 2px 6px;
-1460:         border-radius: 8px;
-1461:         margin-left: 8px;
-1462:         font-weight: 600;
-1463:         text-transform: uppercase;
-1464:         letter-spacing: 0.5px;
-1465:         transition: all 0.2s ease;
-1466:       }
-1467:       
-1468:       .section-indicator.modifié {
-1469:         background: rgba(226, 160, 63, 0.15);
-1470:         color: var(--cork-warning);
-1471:         animation: pulse-modified 2s infinite;
-1472:       }
-1473:       
-1474:       .section-indicator.sauvegardé {
-1475:         background: rgba(26, 188, 156, 0.15);
-1476:         color: var(--cork-success);
-1477:       }
-1478:       
-1479:       @keyframes pulse-modified {
-1480:         0%, 100% { opacity: 1; }
-1481:         50% { opacity: 0.6; }
-1482:       }
-1483:       
-1484:       .card.modified,
-1485:       .collapsible-panel.modified {
-1486:         border-left: 3px solid var(--cork-warning);
-1487:         background: rgba(226, 160, 63, 0.02);
-1488:       }
-1489:       
-1490:       .card.saved,
-1491:       .collapsible-panel.saved {
-1492:         border-left: 3px solid var(--cork-success);
-1493:         background: rgba(26, 188, 156, 0.02);
-1494:       }
-1495:       
-1496:       .auto-save-feedback {
-1497:         position: absolute;
-1498:         bottom: -20px;
-1499:         left: 0;
-1500:         right: 0;
-1501:         text-align: center;
-1502:         z-index: 10;
-1503:       }
-1504:     </style>
-1505:   </head>
-1506:   <body>
-1507:     <div class="container">
-1508:       <div class="header">
-1509:         <h1>
-1510:           <span class="emoji">📊</span>Dashboard Webhooks
-1511:         </h1>
-1512:         <a href="/logout" class="logout-link">Déconnexion</a>
-1513:       </div>
-1514:       
-1515:       <!-- Bandeau Statut Global -->
-1516:       <div id="globalStatusBanner" class="global-status-banner">
-1517:         <div class="status-header">
-1518:           <div class="status-title">
-1519:             <span class="status-icon" id="globalStatusIcon">🟢</span>
-1520:             <span class="status-text">Statut Global</span>
-1521:           </div>
-1522:           <div class="status-refresh">
-1523:             <button id="refreshStatusBtn" class="btn btn-small btn-secondary">🔄</button>
-1524:           </div>
-1525:         </div>
-1526:         <div class="status-content">
-1527:           <div class="status-item">
-1528:             <div class="status-label">Dernière exécution</div>
-1529:             <div class="status-value" id="lastExecutionTime">—</div>
-1530:           </div>
-1531:           <div class="status-item">
-1532:             <div class="status-label">Incidents récents</div>
-1533:             <div class="status-value" id="recentIncidents">—</div>
-1534:           </div>
-1535:           <div class="status-item">
-1536:             <div class="status-label">Erreurs critiques</div>
-1537:             <div class="status-value" id="criticalErrors">—</div>
-1538:           </div>
-1539:           <div class="status-item">
-1540:             <div class="status-label">Webhooks actifs</div>
-1541:             <div class="status-value" id="activeWebhooks">—</div>
-1542:           </div>
-1543:         </div>
-1544: 
-1545:       </div>
-1546:       
-1547:       <!-- Navigation principale -->
-1548:       <div class="nav-tabs" role="tablist">
-1549:         <button class="tab-btn active" data-target="#sec-overview" type="button">Vue d’ensemble</button>
-1550:         <button class="tab-btn" data-target="#sec-webhooks" type="button">Webhooks</button>
-1551:         <button class="tab-btn" data-target="#sec-email" type="button">Email</button>
-1552:         <button class="tab-btn" data-target="#sec-preferences" type="button">Préférences</button>
-1553:         <button class="tab-btn" data-target="#sec-tools" type="button">Outils</button>
-1554:       </div>
-1555: 
-1556:       <!-- Section: Webhooks (panneaux pliables) -->
-1557:       <div id="sec-webhooks" class="section-panel config">
-1558:         <!-- Panneau 1: URLs & SSL -->
-1559:         <div class="collapsible-panel" data-panel="urls-ssl">
-1560:           <div class="panel-header">
-1561:             <div class="panel-title">
-1562:               <span>🔗</span>
-1563:               <span>URLs & SSL</span>
-1564:             </div>
-1565:             <div class="panel-toggle">
-1566:               <span class="panel-status" id="urls-ssl-status">Sauvegarde requise</span>
-1567:               <span class="toggle-icon">▼</span>
-1568:             </div>
-1569:           </div>
-1570:           <div class="panel-content">
-1571:             <div class="form-group">
-1572:               <label for="webhookUrl">Webhook Personnalisé (WEBHOOK_URL)</label>
-1573:               <input id="webhookUrl" type="text" placeholder="https://...">
-1574:             </div>
-1575:             <div style="margin-top: 15px;">
-1576:               <label class="toggle-switch" style="vertical-align: middle;">
-1577:                 <input type="checkbox" id="sslVerifyToggle">
-1578:                 <span class="toggle-slider"></span>
-1579:               </label>
-1580:               <span style="margin-left: 10px; vertical-align: middle;">Vérification SSL (WEBHOOK_SSL_VERIFY)</span>
-1581:             </div>
-1582:             <div style="margin-top: 12px;">
-1583:               <label class="toggle-switch" style="vertical-align: middle;">
-1584:                 <input type="checkbox" id="webhookSendingToggle">
-1585:                 <span class="toggle-slider"></span>
-1586:               </label>
-1587:               <span style="margin-left: 10px; vertical-align: middle;">Activer l'envoi des webhooks (global)</span>
-1588:             </div>
-1589:             <div class="panel-actions">
-1590:               <button class="panel-save-btn" data-panel="urls-ssl">💾 Enregistrer</button>
-1591:               <span class="panel-indicator" id="urls-ssl-indicator">Dernière sauvegarde: —</span>
-1592:             </div>
-1593:             <div id="urls-ssl-msg" class="status-msg"></div>
-1594:           </div>
-1595:         </div>
-1596: 
-1597:         <!-- Panneau 2: Absence Globale -->
-1598:         <div class="collapsible-panel" data-panel="absence">
-1599:           <div class="panel-header">
-1600:             <div class="panel-title">
-1601:               <span>🚫</span>
-1602:               <span>Absence Globale</span>
-1603:             </div>
-1604:             <div class="panel-toggle">
-1605:               <span class="panel-status" id="absence-status">Sauvegarde requise</span>
-1606:               <span class="toggle-icon">▼</span>
-1607:             </div>
-1608:           </div>
-1609:           <div class="panel-content">
-1610:             <div style="margin-bottom: 12px;">
-1611:               <label class="toggle-switch" style="vertical-align: middle;">
-1612:                 <input type="checkbox" id="absencePauseToggle">
-1613:                 <span class="toggle-slider"></span>
-1614:               </label>
-1615:               <span style="margin-left: 10px; vertical-align: middle; font-weight: 600;">Activer l'absence globale (stop emails)</span>
-1616:             </div>
-1617:             <div class="small-text" style="margin-bottom: 10px;">
-1618:               Lorsque activé, <strong>aucun email</strong> ne sera envoyé (ni DESABO ni Média Solution, urgent ou non) pour les jours sélectionnés ci-dessous.
-1619:             </div>
-1620:             <div class="form-group">
-1621:               <label>Jours d'absence (aucun email envoyé)</label>
-1622:               <div id="absencePauseDaysGroup" class="inline-group" style="flex-wrap: wrap; gap: 12px; margin-top: 6px;">
-1623:                 <label><input type="checkbox" name="absencePauseDay" value="monday"> Lundi</label>
-1624:                 <label><input type="checkbox" name="absencePauseDay" value="tuesday"> Mardi</label>
-1625:                 <label><input type="checkbox" name="absencePauseDay" value="wednesday"> Mercredi</label>
-1626:                 <label><input type="checkbox" name="absencePauseDay" value="thursday"> Jeudi</label>
-1627:                 <label><input type="checkbox" name="absencePauseDay" value="friday"> Vendredi</label>
-1628:                 <label><input type="checkbox" name="absencePauseDay" value="saturday"> Samedi</label>
-1629:                 <label><input type="checkbox" name="absencePauseDay" value="sunday"> Dimanche</label>
-1630:               </div>
-1631:               <div class="small-text">Sélectionnez au moins un jour si vous activez l'absence.</div>
-1632:             </div>
-1633:             <div class="panel-actions">
-1634:               <button class="panel-save-btn" data-panel="absence">💾 Enregistrer</button>
-1635:               <span class="panel-indicator" id="absence-indicator">Dernière sauvegarde: —</span>
-1636:             </div>
-1637:             <div id="absence-msg" class="status-msg"></div>
-1638:           </div>
-1639:         </div>
-1640: 
-1641:         <!-- Panneau 3: Fenêtre Horaire -->
-1642:         <div class="collapsible-panel" data-panel="time-window">
-1643:           <div class="panel-header">
-1644:             <div class="panel-title">
-1645:               <span>🕐</span>
-1646:               <span>Fenêtre Horaire</span>
-1647:             </div>
-1648:             <div class="panel-toggle">
-1649:               <span class="panel-status" id="time-window-status">Sauvegarde requise</span>
-1650:               <span class="toggle-icon">▼</span>
-1651:             </div>
-1652:           </div>
-1653:           <div class="panel-content">
-1654:             <div style="margin-bottom: 20px;">
-1655:               <h4 style="margin: 0 0 10px 0; color: var(--cork-text-primary);">Fenêtre Horaire Globale</h4>
-1656:               <div class="form-group">
-1657:                 <label for="webhooksTimeStart">Heure de début</label>
-1658:                 <select id="webhooksTimeStart" style="width: 100%; max-width: 120px;">
-1659:                   <option value="">Sélectionner...</option>
-1660:                 </select>
-1661:               </div>
-1662:               <div class="form-group">
-1663:                 <label for="webhooksTimeEnd">Heure de fin</label>
-1664:                 <select id="webhooksTimeEnd" style="width: 100%; max-width: 120px;">
-1665:                   <option value="">Sélectionner...</option>
-1666:                 </select>
-1667:               </div>
-1668:               <div id="timeWindowMsg" class="status-msg"></div>
-1669:               <div id="timeWindowDisplay" class="small-text"></div>
-1670:               <div class="small-text">Laissez les deux champs vides pour désactiver la contrainte horaire.</div>
-1671:               <div style="margin-top: 12px;">
-1672:                 <button id="saveTimeWindowBtn" class="btn btn-primary btn-small">💾 Enregistrer Fenêtre Globale</button>
-1673:               </div>
-1674:             </div>
-1675:             
-1676:             <div style="padding: 12px; background: rgba(67, 97, 238, 0.1); border-radius: 6px; border-left: 3px solid var(--cork-primary-accent);">
-1677:               <h4 style="margin: 0 0 10px 0; color: var(--cork-text-primary);">Fenêtre Horaire Webhooks</h4>
-1678:               <div class="form-group" style="margin-bottom: 10px;">
-1679:                 <label for="globalWebhookTimeStart">Heure de début</label>
-1680:                 <select id="globalWebhookTimeStart" style="width: 100%; max-width: 100px;">
-1681:                   <option value="">Sélectionner...</option>
-1682:                 </select>
-1683:               </div>
-1684:               <div class="form-group" style="margin-bottom: 10px;">
-1685:                 <label for="globalWebhookTimeEnd">Heure de fin</label>
-1686:                 <select id="globalWebhookTimeEnd" style="width: 100%; max-width: 100px;">
-1687:                   <option value="">Sélectionner...</option>
-1688:                 </select>
-1689:               </div>
-1690:               <div id="globalWebhookTimeMsg" class="status-msg" style="margin-top: 8px;"></div>
-1691:               <div class="small-text">Définissez quand les webhooks peuvent être envoyés (laissez vide pour désactiver).</div>
-1692:               <div style="margin-top: 12px;">
-1693:                 <button id="saveGlobalWebhookTimeBtn" class="btn btn-primary btn-small">💾 Enregistrer Fenêtre Webhook</button>
-1694:               </div>
-1695:             </div>
-1696:             
-1697:             <div class="panel-actions">
-1698:               <span class="panel-indicator" id="time-window-indicator">Dernière sauvegarde: —</span>
-1699:             </div>
-1700:           </div>
-1701:         </div>
-1702:       <!-- Panneau 4: Routage Dynamique -->
-1703:       <div class="collapsible-panel" data-panel="routing-rules">
-1704:         <div class="panel-header">
-1705:           <div class="panel-title">
-1706:             <span>🧭</span>
-1707:             <span>Routage Dynamique</span>
-1708:             <button id="routing-rules-lock-btn" class="lock-btn" type="button" title="Verrouiller/Déverrouiller l'édition des règles">
-1709:               <span class="lock-icon" id="routing-rules-lock-icon">🔒</span>
-1710:             </button>
-1711:           </div>
-1712:           <div class="panel-toggle">
-1713:             <span class="panel-status" id="routing-rules-status">Sauvegarde requise</span>
-1714:             <span class="toggle-icon">▼</span>
-1715:           </div>
-1716:         </div>
-1717:         <div class="panel-content">
-1718:           <div class="small-text" style="margin-bottom: 10px;">
-1719:             Définissez des règles conditionnelles pour router les emails vers des webhooks dédiés.
-1720:             Les règles sont évaluées dans l'ordre affiché.
-1721:           </div>
-1722:           <div class="inline-group" style="margin-bottom: 12px;">
-1723:             <button id="addRoutingRuleBtn" type="button" class="btn btn-primary btn-small">➕ Ajouter une règle</button>
-1724:             <button id="reloadRoutingRulesBtn" type="button" class="btn btn-secondary btn-small">🔄 Recharger</button>
-1725:           </div>
-1726:           <div id="routingRulesList" class="routing-rules-list"></div>
-1727:           <div class="panel-actions">
-1728:             <span class="panel-indicator" id="routing-rules-indicator">Dernière sauvegarde: —</span>
-1729:           </div>
-1730:           <div id="routing-rules-msg" class="status-msg"></div>
-1731:           <div id="routingRulesRedisInspectMsg" class="status-msg" style="margin-top: 12px;"></div>
-1732:           <pre id="routingRulesRedisInspectLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-1733:         </div>
-1734:       </div>
-1735:       </div>
-1736: 
-1737:       <!-- Section: Préférences Email (expéditeurs, dédup) -->
-1738:       <div id="sec-email" class="section-panel">
-1739:         <div class="card">
-1740:           <div class="card-title">🧩 Préférences Email (expéditeurs, dédup)</div>
-1741:           <div class="inline-group" style="margin: 8px 0 12px 0;">
-1742:             <label class="toggle-switch">
-1743:               <input type="checkbox" id="pollingToggle">
-1744:               <span class="toggle-slider"></span>
-1745:             </label>
-1746:             <span id="pollingStatusText" style="margin-left: 10px;">—</span>
-1747:           </div>
-1748:           <div id="pollingMsg" class="status-msg" style="margin-top: 6px;"></div>
-1749:           <div class="form-group">
-1750:             <label>SENDER_OF_INTEREST_FOR_POLLING</label>
-1751:             <div id="senderOfInterestContainer" class="stack" style="gap:8px;"></div>
-1752:             <button id="addSenderBtn" type="button" class="btn btn-secondary" style="margin-top:8px;">➕ Ajouter Email</button>
-1753:             <div class="small-text">Ajouter / modifier / supprimer des emails individuellement. Ils seront validés et normalisés (minuscules).</div>
-1754:           </div>
-1755:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-1756:             <div class="form-group">
-1757:               <label for="pollingStartHour">POLLING_ACTIVE_START_HOUR (0-23)</label>
-1758:               <select id="pollingStartHour" style="width: 100%; max-width: 100px;">
-1759:                 <option value="">Sélectionner...</option>
-1760:               </select>
-1761:             </div>
-1762:             <div class="form-group">
-1763:               <label for="pollingEndHour">POLLING_ACTIVE_END_HOUR (0-23)</label>
-1764:               <select id="pollingEndHour" style="width: 100%; max-width: 100px;">
-1765:                 <option value="">Sélectionner...</option>
-1766:               </select>
-1767:             </div>
-1768:           </div>
-1769:           <div class="form-group" style="margin-top: 10px;">
-1770:             <label>Jours actifs (POLLING_ACTIVE_DAYS)</label>
-1771:             <div id="pollingActiveDaysGroup" class="inline-group" style="flex-wrap: wrap; gap: 12px; margin-top: 6px;">
-1772:               <label><input type="checkbox" name="pollingDay" value="0"> Lun</label>
-1773:               <label><input type="checkbox" name="pollingDay" value="1"> Mar</label>
-1774:               <label><input type="checkbox" name="pollingDay" value="2"> Mer</label>
-1775:               <label><input type="checkbox" name="pollingDay" value="3"> Jeu</label>
-1776:               <label><input type="checkbox" name="pollingDay" value="4"> Ven</label>
-1777:               <label><input type="checkbox" name="pollingDay" value="5"> Sam</label>
-1778:               <label><input type="checkbox" name="pollingDay" value="6"> Dim</label>
-1779:             </div>
-1780:             <div class="small-text">0=Lundi ... 6=Dimanche. Sélectionnez au moins un jour.</div>
-1781:           </div>
-1782:           <div class="inline-group" style="margin: 8px 0 12px 0;">
-1783:             <label class="toggle-switch">
-1784:               <input type="checkbox" id="enableSubjectGroupDedup">
-1785:               <span class="toggle-slider"></span>
-1786:             </label>
-1787:             <span style="margin-left: 10px;">ENABLE_SUBJECT_GROUP_DEDUP</span>
-1788:           </div>
-1789:           <button id="saveEmailPrefsBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer les préférences</button>
-1790:           <div id="emailPrefsSaveStatus" class="status-msg" style="margin-top: 10px;"></div>
-1791:           <!-- Fallback status container (legacy ID used by JS as a fallback) -->
-1792:           <div id="pollingCfgMsg" class="status-msg" style="margin-top: 6px;"></div>
-1793:         </div>
-1794:         
-1795:       </div>
-1796: 
-1797:       <!-- Section: Préférences (filtres + fiabilité) -->
-1798:       <div id="sec-preferences" class="section-panel">
-1799:         <div class="card">
-1800:           <div class="card-title">🔍 Filtres Email Avancés</div>
-1801:           <div class="form-group">
-1802:             <label for="excludeKeywordsRecadrage">Mots-clés à exclure (Recadrage) — un par ligne</label>
-1803:             <textarea id="excludeKeywordsRecadrage" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-1804:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `RECADRAGE_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
-1805:           </div>
-1806:           <div class="form-group">
-1807:             <label for="excludeKeywordsAutorepondeur">Mots-clés à exclure (Autorépondeur) — un par ligne</label>
-1808:             <textarea id="excludeKeywordsAutorepondeur" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-1809:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `AUTOREPONDEUR_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
-1810:           </div>
-1811:           <div class="form-group">
-1812:             <label for="excludeKeywords">Mots-clés à exclure (global, compatibilité) — un par ligne</label>
-1813:             <textarea id="excludeKeywords" rows="3" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-1814:             <div class="small-text">Liste globale (héritage). S'applique avant toute logique et avant les listes spécifiques.</div>
-1815:           </div>
-1816:           <div class="form-group">
-1817:             <label for="attachmentDetectionToggle">Détection de pièces jointes requise</label>
-1818:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
-1819:               <input type="checkbox" id="attachmentDetectionToggle">
-1820:               <span class="toggle-slider"></span>
-1821:             </label>
-1822:           </div>
-1823:           <div class="form-group">
-1824:             <label for="maxEmailSizeMB">Taille maximale des emails à traiter (Mo)</label>
-1825:             <input id="maxEmailSizeMB" type="number" min="1" max="100" placeholder="ex: 25">
-1826:           </div>
-1827:           <div class="form-group">
-1828:             <label for="senderPriority">Priorité des expéditeurs (JSON simple)</label>
-1829:             <textarea id="senderPriority" rows="3" placeholder='{"vip@example.com":"high","team@example.com":"medium"}' style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-1830:             <div class="small-text">Format: { "email": "high|medium|low", ... } — Validé côté client uniquement pour l'instant.</div>
-1831:           </div>
-1832:         </div>
-1833:         <div class="card" style="margin-top: 20px;">
-1834:           <div class="card-title">⚡ Paramètres de Fiabilité</div>
-1835:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
-1836:             <div class="form-group">
-1837:               <label for="retryCount">Nombre de tentatives (retries)</label>
-1838:               <input id="retryCount" type="number" min="0" max="10" placeholder="ex: 3">
-1839:             </div>
-1840:             <div class="form-group">
-1841:               <label for="retryDelaySec">Délai entre retries (secondes)</label>
-1842:               <input id="retryDelaySec" type="number" min="0" max="600" placeholder="ex: 10">
-1843:             </div>
-1844:             <div class="form-group">
-1845:               <label for="webhookTimeoutSec">Timeout Webhook (secondes)</label>
-1846:               <input id="webhookTimeoutSec" type="number" min="1" max="120" placeholder="ex: 30">
-1847:             </div>
-1848:             <div class="form-group">
-1849:               <label for="rateLimitPerHour">Limite d'envoi (webhooks/heure)</label>
-1850:               <input id="rateLimitPerHour" type="number" min="1" max="10000" placeholder="ex: 300">
-1851:             </div>
-1852:           </div>
-1853:           <div style="margin-top: 8px;">
-1854:             <label class="toggle-switch" style="vertical-align: middle;">
-1855:               <input type="checkbox" id="notifyOnFailureToggle">
-1856:               <span class="toggle-slider"></span>
-1857:             </label>
-1858:             <span style="margin-left: 10px; vertical-align: middle;">Notifications d'échec par email (UI-only)</span>
-1859:           </div>
-1860:           <div style="margin-top: 12px;">
-1861:             <button id="processingPrefsSaveBtn" class="btn btn-primary">💾 Enregistrer Préférences de Traitement</button>
-1862:             <div id="processingPrefsMsg" class="status-msg"></div>
-1863:           </div>
-1864:         </div>
-1865:       </div>
-1866: 
-1867:       <!-- Section: Vue d'ensemble (métriques + logs) -->
-1868:       <div id="sec-overview" class="section-panel monitoring active">
-1869:         <div class="card">
-1870:           <div class="card-title">📊 Monitoring & Métriques (24h)</div>
-1871:           <div class="inline-group" style="margin-bottom: 10px;">
-1872:             <label class="toggle-switch">
-1873:               <input type="checkbox" id="enableMetricsToggle" checked>
-1874:               <span class="toggle-slider"></span>
-1875:             </label>
-1876:             <span style="margin-left: 10px;">Activer le calcul de métriques locales</span>
-1877:           </div>
-1878:           <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
-1879:             <div class="form-group"><label>Emails traités</label><div id="metricEmailsProcessed" class="small-text">—</div></div>
-1880:             <div class="form-group"><label>Webhooks envoyés</label><div id="metricWebhooksSent" class="small-text">—</div></div>
-1881:             <div class="form-group"><label>Erreurs</label><div id="metricErrors" class="small-text">—</div></div>
-1882:             <div class="form-group"><label>Taux de succès (%)</label><div id="metricSuccessRate" class="small-text">—</div></div>
-1883:           </div>
-1884:           <div id="metricsMiniChart" style="height: 60px; background: rgba(255,255,255,0.05); border:1px solid var(--cork-border-color); border-radius:4px; margin-top:10px; position: relative; overflow:hidden;"></div>
-1885:           <div class="small-text">Graphique simplifié généré côté client à partir de `/api/webhook_logs`.</div>
-1886:         </div>
-1887:         <div class="logs-container">
-1888:           <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
-1889:           <div style="margin-bottom: 15px;">
-1890:             <button id="refreshLogsBtn" class="btn btn-primary">🔄 Actualiser</button>
-1891:           </div>
-1892:           <div id="webhookLogs">
-1893:             <div class="log-empty">Chargement des logs...</div>
-1894:           </div>
-1895:         </div>
-1896:       </div>
-1897: 
-1898:       <!-- Section: Outils (config mgmt + outils de test) -->
-1899:       <div id="sec-tools" class="section-panel">
-1900:         <div class="card">
-1901:           <div class="card-title">💾 Gestion des Configurations</div>
-1902:           <div class="inline-group" style="margin-bottom: 10px;">
-1903:             <button id="exportConfigBtn" class="btn btn-primary">⬇️ Exporter</button>
-1904:             <input id="importConfigFile" type="file" accept="application/json" style="display:none;"/>
-1905:             <button id="importConfigBtn" class="btn btn-primary">⬆️ Importer</button>
-1906:           </div>
-1907:           <div id="configMgmtMsg" class="status-msg"></div>
-1908:           <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
-1909:         </div>
-1910:         <div class="card" style="margin-top: 20px;">
-1911:           <div class="card-title">🚀 Déploiement de l'application</div>
-1912:           <div class="form-group">
-1913:             <p class="small-text">Certaines modifications (ex: paramètres applicatifs, configuration reverse proxy) nécessitent un déploiement pour être pleinement appliquées.</p>
-1914:           </div>
-1915:           <div class="inline-group" style="margin-bottom: 10px;">
-1916:             <button id="restartServerBtn" class="btn btn-success">🚀 Déployer l'application</button>
-1917:           </div>
-1918:           <div id="restartMsg" class="status-msg"></div>
-1919:           <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
-1920:         </div>
-1921:         <div class="card" style="margin-top: 20px;">
-1922:           <div class="card-title">🗂️ Migration configs → Redis</div>
-1923:           <p>Rejouez le script <code>migrate_configs_to_redis.py</code> directement sur le serveur Render avec toutes les variables d'environnement de production.</p>
-1924:           <div class="inline-group" style="margin-bottom: 10px;">
-1925:             <button id="migrateConfigsBtn" class="btn btn-warning">📦 Migrer les configurations</button>
-1926:           </div>
-1927:           <div id="migrateConfigsMsg" class="status-msg"></div>
-1928:           <pre id="migrateConfigsLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-1929:           <hr style="margin: 18px 0; border-color: rgba(255,255,255,0.1);">
-1930:           <p style="margin-bottom:10px;">Vérifiez l'état des données persistées dans Redis (structures JSON, attributs requis, dates de mise à jour).</p>
-1931:           <div class="inline-group" style="margin-bottom: 10px;">
-1932:             <button id="verifyConfigStoreBtn" class="btn btn-info">🔍 Vérifier les données en Redis</button>
-1933:           </div>
-1934:           <label for="verifyConfigStoreRawToggle" class="small-text" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-1935:             <input type="checkbox" id="verifyConfigStoreRawToggle">
-1936:             <span>Inclure le JSON complet dans le log pour faciliter le debug.</span>
-1937:           </label>
-1938:           <div id="verifyConfigStoreMsg" class="status-msg"></div>
-1939:           <pre id="verifyConfigStoreLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-1940:         </div>
-1941:         <div class="card" style="margin-top: 20px;">
-1942:           <div class="card-title">🔐 Accès Magic Link</div>
-1943:           <p>Générez un lien pré-authentifié à usage unique pour ouvrir rapidement le dashboard sans retaper vos identifiants. Le lien est automatiquement copié.</p>
-1944:           <div class="inline-group" style="margin-bottom: 12px;">
-1945:             <label class="toggle-switch">
-1946:               <input type="checkbox" id="magicLinkUnlimitedToggle">
-1947:               <span class="toggle-slider"></span>
-1948:             </label>
-1949:             <span style="margin-left: 10px;">
-1950:               Mode illimité (désactivé = lien one-shot avec expiration)
-1951:             </span>
-1952:           </div>
-1953:           <button id="generateMagicLinkBtn" class="btn btn-primary">✨ Générer un magic link</button>
-1954:           <div id="magicLinkOutput" class="status-msg" style="margin-top: 12px;"></div>
-1955:           <div class="small-text">
-1956:             Important : partagez ce lien uniquement avec des personnes autorisées.
-1957:             En mode one-shot, il expire après quelques minutes et s'invalide dès qu'il est utilisé.
-1958:             En mode illimité, aucun délai mais vous devez révoquer manuellement en cas de fuite.
-1959:           </div>
-1960:         </div>
-1961:         <div class="card" style="margin-top: 20px;">
-1962:           <div class="card-title">🧪 Outils de Test</div>
-1963:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
-1964:             <div class="form-group">
-1965:               <label for="testWebhookUrl">Valider une URL de webhook</label>
-1966:               <input id="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
-1967:               <button id="validateWebhookUrlBtn" class="btn btn-primary" style="margin-top: 8px;">Valider</button>
-1968:               <div id="webhookUrlValidationMsg" class="status-msg"></div>
-1969:             </div>
-1970:             <div class="form-group">
-1971:               <label>Prévisualiser un payload</label>
-1972:               <input id="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
-1973:               <input id="previewSender" type="email" placeholder="Expéditeur (ex: media@solution.fr)" style="margin-top: 6px;">
-1974:               <textarea id="previewBody" rows="4" placeholder="Corps de l'email (coller du texte)" style="margin-top: 6px; width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-1975:               <button id="buildPayloadPreviewBtn" class="btn btn-primary" style="margin-top: 8px;">Générer</button>
-1976:               <pre id="payloadPreview" style="margin-top:8px; background: rgba(0,0,0,0.2); border:1px solid var(--cork-border-color); padding:10px; border-radius:4px; max-height:200px; overflow:auto; color: var(--cork-text-primary);"></pre>
-1977:             </div>
-1978:           </div>
-1979:           <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
-1980:         </div>
-1981:         <div class="card" style="margin-top: 20px;">
-1982:           <div class="card-title">🔗 Ouvrir une page de téléchargement</div>
-1983:           <div class="form-group">
-1984:             <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
-1985:             <input id="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
-1986:             <button id="openDownloadPageBtn" class="btn btn-primary" style="margin-top: 8px;">Ouvrir la page</button>
-1987:             <div id="openDownloadMsg" class="status-msg"></div>
-1988:             <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
-1989:           </div>
-1990:         </div>
-1991:         <div class="card" style="margin-top: 20px;">
-1992:           <div class="card-title"> Flags Runtime (Debug)</div>
-1993:           <div class="form-group">
-1994:             <label>Bypass déduplication par ID d’email (debug)</label>
-1995:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
-1996:               <input type="checkbox" id="disableEmailIdDedupToggle">
-1997:               <span class="toggle-slider"></span>
-1998:             </label>
-1999:             <div class="small-text">Quand activé, ignore la déduplication par ID d'email. À utiliser uniquement pour des tests.
-2000:             </div>
-2001:           </div>
-2002:           <div class="form-group" style="margin-top: 10px;">
-2003:             <label>Autoriser envoi CUSTOM sans liens de livraison</label>
-2004:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
-2005:               <input type="checkbox" id="allowCustomWithoutLinksToggle">
-2006:               <span class="toggle-slider"></span>
-2007:             </label>
-2008:             <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu’aucun lien (Dropbox/FromSmash/SwissTransfer) n’est détecté, pour éviter les 422.</div>
-2009:           </div>
-2010:           <div style="margin-top: 12px;">
-2011:             <button id="runtimeFlagsSaveBtn" class="btn btn-primary"> Enregistrer Flags Runtime</button>
-2012:             <div id="runtimeFlagsMsg" class="status-msg"></div>
-2013:           </div>
-2014:         </div>
-2015:       </div>
-2016:     </div>
-2017:     <!-- Chargement des modules JavaScript -->
-2018:     <script type="module" src="{{ url_for('static', filename='utils/MessageHelper.js') }}"></script>
-2019:     <script type="module" src="{{ url_for('static', filename='services/ApiService.js') }}"></script>
-2020:     <script type="module" src="{{ url_for('static', filename='services/WebhookService.js') }}"></script>
-2021:     <script type="module" src="{{ url_for('static', filename='services/LogService.js') }}"></script>
-2022:     <script type="module" src="{{ url_for('static', filename='components/TabManager.js') }}"></script>
-2023:     <script type="module" src="{{ url_for('static', filename='dashboard.js') }}?v=20260118-modular"></script>
-2024:   </body>
-2025: </html>
+  1: <!DOCTYPE html>
+  2: <html lang="fr">
+  3:   <head>
+  4:     <meta charset="UTF-8">
+  5:     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  6:     <link rel="icon" type="image/x-icon" href="data:image/x-icon;base64,AAABAAEAEBAAAAEAIABoBAAAFgAAACgA...">
+  7:     <title>📊 Dashboard Webhooks - Contrôle</title>
+  8:     <link href="https://fonts.googleapis.com/css?family=Nunito:400,600,700" rel="stylesheet">
+  9:     <!-- CSS Modular -->
+ 10:     <link rel="stylesheet" href="{{ url_for('static', filename='css/variables.css') }}">
+ 11:     <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+ 12:     <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}">
+ 13:     <link rel="stylesheet" href="{{ url_for('static', filename='css/modules.css') }}">
+ 14:   </head>
+ 15:   <body>
+ 16:     <div class="container">
+ 17:       <div class="header">
+ 18:         <h1>
+ 19:           <span class="emoji">📊</span>Dashboard Webhooks
+ 20:         </h1>
+ 21:         <a href="/logout" class="logout-link">Déconnexion</a>
+ 22:       </div>
+ 23:       
+ 24:       <!-- Bandeau Statut Global -->
+ 25:       <div id="globalStatusBanner" class="global-status-banner">
+ 26:         <div class="status-header">
+ 27:           <div class="status-title">
+ 28:             <span class="status-icon" id="globalStatusIcon">🟢</span>
+ 29:             <span class="status-text">Statut Global</span>
+ 30:           </div>
+ 31:           <div class="status-refresh">
+ 32:             <button id="refreshStatusBtn" class="btn btn-small btn-secondary">🔄</button>
+ 33:           </div>
+ 34:         </div>
+ 35:         <div class="status-content">
+ 36:           <div class="status-item">
+ 37:             <div class="status-label">Dernière exécution</div>
+ 38:             <div class="status-value" id="lastExecutionTime">—</div>
+ 39:           </div>
+ 40:           <div class="status-item">
+ 41:             <div class="status-label">Incidents récents</div>
+ 42:             <div class="status-value" id="recentIncidents">—</div>
+ 43:           </div>
+ 44:           <div class="status-item">
+ 45:             <div class="status-label">Erreurs critiques</div>
+ 46:             <div class="status-value" id="criticalErrors">—</div>
+ 47:           </div>
+ 48:           <div class="status-item">
+ 49:             <div class="status-label">Webhooks actifs</div>
+ 50:             <div class="status-value" id="activeWebhooks">—</div>
+ 51:           </div>
+ 52:         </div>
+ 53: 
+ 54:       </div>
+ 55:       
+ 56:       <!-- Navigation principale -->
+ 57:       <div class="nav-tabs" role="tablist">
+ 58:         <button class="tab-btn active" data-target="#sec-overview" type="button">Vue d’ensemble</button>
+ 59:         <button class="tab-btn" data-target="#sec-webhooks" type="button">Webhooks</button>
+ 60:         <button class="tab-btn" data-target="#sec-email" type="button">Email</button>
+ 61:         <button class="tab-btn" data-target="#sec-preferences" type="button">Préférences</button>
+ 62:         <button class="tab-btn" data-target="#sec-tools" type="button">Outils</button>
+ 63:       </div>
+ 64: 
+ 65:       <!-- Section: Webhooks (panneaux pliables) -->
+ 66:       <div id="sec-webhooks" class="section-panel config">
+ 67:         <!-- Panneau 1: URLs & SSL -->
+ 68:         <div class="collapsible-panel" data-panel="urls-ssl">
+ 69:           <div class="panel-header">
+ 70:             <div class="panel-title">
+ 71:               <span>🔗</span>
+ 72:               <span>URLs & SSL</span>
+ 73:             </div>
+ 74:             <div class="panel-toggle">
+ 75:               <span class="panel-status" id="urls-ssl-status">Sauvegarde requise</span>
+ 76:               <span class="toggle-icon">▼</span>
+ 77:             </div>
+ 78:           </div>
+ 79:           <div class="panel-content">
+ 80:             <div class="form-group">
+ 81:               <label for="webhookUrl">Webhook Personnalisé (WEBHOOK_URL)</label>
+ 82:               <input id="webhookUrl" type="text" placeholder="https://...">
+ 83:             </div>
+ 84:             <div style="margin-top: 15px;">
+ 85:               <label class="toggle-switch" style="vertical-align: middle;">
+ 86:                 <input type="checkbox" id="sslVerifyToggle">
+ 87:                 <span class="toggle-slider"></span>
+ 88:               </label>
+ 89:               <span style="margin-left: 10px; vertical-align: middle;">Vérification SSL (WEBHOOK_SSL_VERIFY)</span>
+ 90:             </div>
+ 91:             <div style="margin-top: 12px;">
+ 92:               <label class="toggle-switch" style="vertical-align: middle;">
+ 93:                 <input type="checkbox" id="webhookSendingToggle">
+ 94:                 <span class="toggle-slider"></span>
+ 95:               </label>
+ 96:               <span style="margin-left: 10px; vertical-align: middle;">Activer l'envoi des webhooks (global)</span>
+ 97:             </div>
+ 98:             <div class="panel-actions">
+ 99:               <button class="panel-save-btn" data-panel="urls-ssl">💾 Enregistrer</button>
+100:               <span class="panel-indicator" id="urls-ssl-indicator">Dernière sauvegarde: —</span>
+101:             </div>
+102:             <div id="urls-ssl-msg" class="status-msg"></div>
+103:           </div>
+104:         </div>
+105: 
+106:         <!-- Panneau 2: Absence Globale -->
+107:         <div class="collapsible-panel" data-panel="absence">
+108:           <div class="panel-header">
+109:             <div class="panel-title">
+110:               <span>🚫</span>
+111:               <span>Absence Globale</span>
+112:             </div>
+113:             <div class="panel-toggle">
+114:               <span class="panel-status" id="absence-status">Sauvegarde requise</span>
+115:               <span class="toggle-icon">▼</span>
+116:             </div>
+117:           </div>
+118:           <div class="panel-content">
+119:             <div style="margin-bottom: 12px;">
+120:               <label class="toggle-switch" style="vertical-align: middle;">
+121:                 <input type="checkbox" id="absencePauseToggle">
+122:                 <span class="toggle-slider"></span>
+123:               </label>
+124:               <span style="margin-left: 10px; vertical-align: middle; font-weight: 600;">Activer l'absence globale (stop emails)</span>
+125:             </div>
+126:             <div class="small-text" style="margin-bottom: 10px;">
+127:               Lorsque activé, <strong>aucun email</strong> ne sera envoyé (ni DESABO ni Média Solution, urgent ou non) pour les jours sélectionnés ci-dessous.
+128:             </div>
+129:             <div class="form-group">
+130:               <label>Jours d'absence (aucun email envoyé)</label>
+131:               <div id="absencePauseDaysGroup" class="inline-group" style="flex-wrap: wrap; gap: 12px; margin-top: 6px;">
+132:                 <label><input type="checkbox" name="absencePauseDay" value="monday"> Lundi</label>
+133:                 <label><input type="checkbox" name="absencePauseDay" value="tuesday"> Mardi</label>
+134:                 <label><input type="checkbox" name="absencePauseDay" value="wednesday"> Mercredi</label>
+135:                 <label><input type="checkbox" name="absencePauseDay" value="thursday"> Jeudi</label>
+136:                 <label><input type="checkbox" name="absencePauseDay" value="friday"> Vendredi</label>
+137:                 <label><input type="checkbox" name="absencePauseDay" value="saturday"> Samedi</label>
+138:                 <label><input type="checkbox" name="absencePauseDay" value="sunday"> Dimanche</label>
+139:               </div>
+140:               <div class="small-text">Sélectionnez au moins un jour si vous activez l'absence.</div>
+141:             </div>
+142:             <div class="panel-actions">
+143:               <button class="panel-save-btn" data-panel="absence">💾 Enregistrer</button>
+144:               <span class="panel-indicator" id="absence-indicator">Dernière sauvegarde: —</span>
+145:             </div>
+146:             <div id="absence-msg" class="status-msg"></div>
+147:           </div>
+148:         </div>
+149: 
+150:         <!-- Panneau 3: Fenêtre Horaire -->
+151:         <div class="collapsible-panel" data-panel="time-window">
+152:           <div class="panel-header">
+153:             <div class="panel-title">
+154:               <span>🕐</span>
+155:               <span>Fenêtre Horaire</span>
+156:             </div>
+157:             <div class="panel-toggle">
+158:               <span class="panel-status" id="time-window-status">Sauvegarde requise</span>
+159:               <span class="toggle-icon">▼</span>
+160:             </div>
+161:           </div>
+162:           <div class="panel-content">
+163:             <div style="margin-bottom: 20px;">
+164:               <h4 style="margin: 0 0 10px 0; color: var(--cork-text-primary);">Fenêtre Horaire Globale</h4>
+165:               <div class="form-group">
+166:                 <label for="webhooksTimeStart">Heure de début</label>
+167:                 <select id="webhooksTimeStart" style="width: 100%; max-width: 120px;">
+168:                   <option value="">Sélectionner...</option>
+169:                 </select>
+170:               </div>
+171:               <div class="form-group">
+172:                 <label for="webhooksTimeEnd">Heure de fin</label>
+173:                 <select id="webhooksTimeEnd" style="width: 100%; max-width: 120px;">
+174:                   <option value="">Sélectionner...</option>
+175:                 </select>
+176:               </div>
+177:               <div id="timeWindowMsg" class="status-msg"></div>
+178:               <div id="timeWindowDisplay" class="small-text"></div>
+179:               <div class="small-text">Laissez les deux champs vides pour désactiver la contrainte horaire.</div>
+180:               <div style="margin-top: 12px;">
+181:                 <button id="saveTimeWindowBtn" class="btn btn-primary btn-small">💾 Enregistrer Fenêtre Globale</button>
+182:               </div>
+183:             </div>
+184:             
+185:             <div style="padding: 12px; background: rgba(67, 97, 238, 0.1); border-radius: 6px; border-left: 3px solid var(--cork-primary-accent);">
+186:               <h4 style="margin: 0 0 10px 0; color: var(--cork-text-primary);">Fenêtre Horaire Webhooks</h4>
+187:               <div class="form-group" style="margin-bottom: 10px;">
+188:                 <label for="globalWebhookTimeStart">Heure de début</label>
+189:                 <select id="globalWebhookTimeStart" style="width: 100%; max-width: 100px;">
+190:                   <option value="">Sélectionner...</option>
+191:                 </select>
+192:               </div>
+193:               <div class="form-group" style="margin-bottom: 10px;">
+194:                 <label for="globalWebhookTimeEnd">Heure de fin</label>
+195:                 <select id="globalWebhookTimeEnd" style="width: 100%; max-width: 100px;">
+196:                   <option value="">Sélectionner...</option>
+197:                 </select>
+198:               </div>
+199:               <div id="globalWebhookTimeMsg" class="status-msg" style="margin-top: 8px;"></div>
+200:               <div class="small-text">Définissez quand les webhooks peuvent être envoyés (laissez vide pour désactiver).</div>
+201:               <div style="margin-top: 12px;">
+202:                 <button id="saveGlobalWebhookTimeBtn" class="btn btn-primary btn-small">💾 Enregistrer Fenêtre Webhook</button>
+203:               </div>
+204:             </div>
+205:             
+206:             <div class="panel-actions">
+207:               <span class="panel-indicator" id="time-window-indicator">Dernière sauvegarde: —</span>
+208:             </div>
+209:           </div>
+210:         </div>
+211:       <!-- Panneau 4: Routage Dynamique -->
+212:       <div class="collapsible-panel" data-panel="routing-rules">
+213:         <div class="panel-header">
+214:           <div class="panel-title">
+215:             <span>🧭</span>
+216:             <span>Routage Dynamique</span>
+217:             <button id="routing-rules-lock-btn" class="lock-btn" type="button" title="Verrouiller/Déverrouiller l'édition des règles">
+218:               <span class="lock-icon" id="routing-rules-lock-icon">🔒</span>
+219:             </button>
+220:           </div>
+221:           <div class="panel-toggle">
+222:             <span class="panel-status" id="routing-rules-status">Sauvegarde requise</span>
+223:             <span class="toggle-icon">▼</span>
+224:           </div>
+225:         </div>
+226:         <div class="panel-content">
+227:           <div class="small-text" style="margin-bottom: 10px;">
+228:             Définissez des règles conditionnelles pour router les emails vers des webhooks dédiés.
+229:             Les règles sont évaluées dans l'ordre affiché.
+230:           </div>
+231:           <div class="inline-group" style="margin-bottom: 12px;">
+232:             <button id="addRoutingRuleBtn" type="button" class="btn btn-primary btn-small">➕ Ajouter une règle</button>
+233:             <button id="reloadRoutingRulesBtn" type="button" class="btn btn-secondary btn-small">🔄 Recharger</button>
+234:           </div>
+235:           <div id="routingRulesList" class="routing-rules-list"></div>
+236:           <div class="panel-actions">
+237:             <span class="panel-indicator" id="routing-rules-indicator">Dernière sauvegarde: —</span>
+238:           </div>
+239:           <div id="routing-rules-msg" class="status-msg"></div>
+240:           <div id="routingRulesRedisInspectMsg" class="status-msg" style="margin-top: 12px;"></div>
+241:           <pre id="routingRulesRedisInspectLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
+242:         </div>
+243:       </div>
+244:       </div>
+245: 
+246:       <!-- Section: Préférences Email (expéditeurs, dédup) -->
+247:       <div id="sec-email" class="section-panel">
+248:         <div class="card">
+249:           <div class="card-title">🧩 Préférences Email (expéditeurs, dédup)</div>
+250:           <div class="inline-group" style="margin: 8px 0 12px 0;">
+251:             <label class="toggle-switch">
+252:               <input type="checkbox" id="pollingToggle">
+253:               <span class="toggle-slider"></span>
+254:             </label>
+255:             <span id="pollingStatusText" style="margin-left: 10px;">—</span>
+256:           </div>
+257:           <div id="pollingMsg" class="status-msg" style="margin-top: 6px;"></div>
+258:           <div class="form-group">
+259:             <label>SENDER_OF_INTEREST_FOR_POLLING</label>
+260:             <div id="senderOfInterestContainer" class="stack" style="gap:8px;"></div>
+261:             <button id="addSenderBtn" type="button" class="btn btn-secondary" style="margin-top:8px;">➕ Ajouter Email</button>
+262:             <div class="small-text">Ajouter / modifier / supprimer des emails individuellement. Ils seront validés et normalisés (minuscules).</div>
+263:           </div>
+264:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+265:             <div class="form-group">
+266:               <label for="pollingStartHour">POLLING_ACTIVE_START_HOUR (0-23)</label>
+267:               <select id="pollingStartHour" style="width: 100%; max-width: 100px;">
+268:                 <option value="">Sélectionner...</option>
+269:               </select>
+270:             </div>
+271:             <div class="form-group">
+272:               <label for="pollingEndHour">POLLING_ACTIVE_END_HOUR (0-23)</label>
+273:               <select id="pollingEndHour" style="width: 100%; max-width: 100px;">
+274:                 <option value="">Sélectionner...</option>
+275:               </select>
+276:             </div>
+277:           </div>
+278:           <div class="form-group" style="margin-top: 10px;">
+279:             <label>Jours actifs (POLLING_ACTIVE_DAYS)</label>
+280:             <div id="pollingActiveDaysGroup" class="inline-group" style="flex-wrap: wrap; gap: 12px; margin-top: 6px;">
+281:               <label><input type="checkbox" name="pollingDay" value="0"> Lun</label>
+282:               <label><input type="checkbox" name="pollingDay" value="1"> Mar</label>
+283:               <label><input type="checkbox" name="pollingDay" value="2"> Mer</label>
+284:               <label><input type="checkbox" name="pollingDay" value="3"> Jeu</label>
+285:               <label><input type="checkbox" name="pollingDay" value="4"> Ven</label>
+286:               <label><input type="checkbox" name="pollingDay" value="5"> Sam</label>
+287:               <label><input type="checkbox" name="pollingDay" value="6"> Dim</label>
+288:             </div>
+289:             <div class="small-text">0=Lundi ... 6=Dimanche. Sélectionnez au moins un jour.</div>
+290:           </div>
+291:           <div class="inline-group" style="margin: 8px 0 12px 0;">
+292:             <label class="toggle-switch">
+293:               <input type="checkbox" id="enableSubjectGroupDedup">
+294:               <span class="toggle-slider"></span>
+295:             </label>
+296:             <span style="margin-left: 10px;">ENABLE_SUBJECT_GROUP_DEDUP</span>
+297:           </div>
+298:           <button id="saveEmailPrefsBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer les préférences</button>
+299:           <div id="emailPrefsSaveStatus" class="status-msg" style="margin-top: 10px;"></div>
+300:           <!-- Fallback status container (legacy ID used by JS as a fallback) -->
+301:           <div id="pollingCfgMsg" class="status-msg" style="margin-top: 6px;"></div>
+302:         </div>
+303:         
+304:       </div>
+305: 
+306:       <!-- Section: Préférences (filtres + fiabilité) -->
+307:       <div id="sec-preferences" class="section-panel">
+308:         <div class="card">
+309:           <div class="card-title">🔍 Filtres Email Avancés</div>
+310:           <div class="form-group">
+311:             <label for="excludeKeywordsRecadrage">Mots-clés à exclure (Recadrage) — un par ligne</label>
+312:             <textarea id="excludeKeywordsRecadrage" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+313:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `RECADRAGE_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
+314:           </div>
+315:           <div class="form-group">
+316:             <label for="excludeKeywordsAutorepondeur">Mots-clés à exclure (Autorépondeur) — un par ligne</label>
+317:             <textarea id="excludeKeywordsAutorepondeur" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+318:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `AUTOREPONDEUR_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
+319:           </div>
+320:           <div class="form-group">
+321:             <label for="excludeKeywords">Mots-clés à exclure (global, compatibilité) — un par ligne</label>
+322:             <textarea id="excludeKeywords" rows="3" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+323:             <div class="small-text">Liste globale (héritage). S'applique avant toute logique et avant les listes spécifiques.</div>
+324:           </div>
+325:           <div class="form-group">
+326:             <label for="attachmentDetectionToggle">Détection de pièces jointes requise</label>
+327:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+328:               <input type="checkbox" id="attachmentDetectionToggle">
+329:               <span class="toggle-slider"></span>
+330:             </label>
+331:           </div>
+332:           <div class="form-group">
+333:             <label for="maxEmailSizeMB">Taille maximale des emails à traiter (Mo)</label>
+334:             <input id="maxEmailSizeMB" type="number" min="1" max="100" placeholder="ex: 25">
+335:           </div>
+336:           <div class="form-group">
+337:             <label for="senderPriority">Priorité des expéditeurs (JSON simple)</label>
+338:             <textarea id="senderPriority" rows="3" placeholder='{"vip@example.com":"high","team@example.com":"medium"}' style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+339:             <div class="small-text">Format: { "email": "high|medium|low", ... } — Validé côté client uniquement pour l'instant.</div>
+340:           </div>
+341:         </div>
+342:         <div class="card" style="margin-top: 20px;">
+343:           <div class="card-title">⚡ Paramètres de Fiabilité</div>
+344:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+345:             <div class="form-group">
+346:               <label for="retryCount">Nombre de tentatives (retries)</label>
+347:               <input id="retryCount" type="number" min="0" max="10" placeholder="ex: 3">
+348:             </div>
+349:             <div class="form-group">
+350:               <label for="retryDelaySec">Délai entre retries (secondes)</label>
+351:               <input id="retryDelaySec" type="number" min="0" max="600" placeholder="ex: 10">
+352:             </div>
+353:             <div class="form-group">
+354:               <label for="webhookTimeoutSec">Timeout Webhook (secondes)</label>
+355:               <input id="webhookTimeoutSec" type="number" min="1" max="120" placeholder="ex: 30">
+356:             </div>
+357:             <div class="form-group">
+358:               <label for="rateLimitPerHour">Limite d'envoi (webhooks/heure)</label>
+359:               <input id="rateLimitPerHour" type="number" min="1" max="10000" placeholder="ex: 300">
+360:             </div>
+361:           </div>
+362:           <div style="margin-top: 8px;">
+363:             <label class="toggle-switch" style="vertical-align: middle;">
+364:               <input type="checkbox" id="notifyOnFailureToggle">
+365:               <span class="toggle-slider"></span>
+366:             </label>
+367:             <span style="margin-left: 10px; vertical-align: middle;">Notifications d'échec par email (UI-only)</span>
+368:           </div>
+369:           <div style="margin-top: 12px;">
+370:             <button id="processingPrefsSaveBtn" class="btn btn-primary">💾 Enregistrer Préférences de Traitement</button>
+371:             <div id="processingPrefsMsg" class="status-msg"></div>
+372:           </div>
+373:         </div>
+374:       </div>
+375: 
+376:       <!-- Section: Vue d'ensemble (métriques + logs) -->
+377:       <div id="sec-overview" class="section-panel monitoring active">
+378:         <div class="card">
+379:           <div class="card-title">📊 Monitoring & Métriques (24h)</div>
+380:           <div class="inline-group" style="margin-bottom: 10px;">
+381:             <label class="toggle-switch">
+382:               <input type="checkbox" id="enableMetricsToggle" checked>
+383:               <span class="toggle-slider"></span>
+384:             </label>
+385:             <span style="margin-left: 10px;">Activer le calcul de métriques locales</span>
+386:           </div>
+387:           <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
+388:             <div class="form-group"><label>Emails traités</label><div id="metricEmailsProcessed" class="small-text">—</div></div>
+389:             <div class="form-group"><label>Webhooks envoyés</label><div id="metricWebhooksSent" class="small-text">—</div></div>
+390:             <div class="form-group"><label>Erreurs</label><div id="metricErrors" class="small-text">—</div></div>
+391:             <div class="form-group"><label>Taux de succès (%)</label><div id="metricSuccessRate" class="small-text">—</div></div>
+392:           </div>
+393:           <div id="metricsMiniChart" style="height: 60px; background: rgba(255,255,255,0.05); border:1px solid var(--cork-border-color); border-radius:4px; margin-top:10px; position: relative; overflow:hidden;"></div>
+394:           <div class="small-text">Graphique simplifié généré côté client à partir de `/api/webhook_logs`.</div>
+395:         </div>
+396:         <div class="logs-container">
+397:           <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
+398:           <div style="margin-bottom: 15px;">
+399:             <button id="refreshLogsBtn" class="btn btn-primary">🔄 Actualiser</button>
+400:           </div>
+401:           <div id="webhookLogs">
+402:             <div class="log-empty">Chargement des logs...</div>
+403:           </div>
+404:         </div>
+405:       </div>
+406: 
+407:       <!-- Section: Outils (config mgmt + outils de test) -->
+408:       <div id="sec-tools" class="section-panel">
+409:         <div class="card">
+410:           <div class="card-title">💾 Gestion des Configurations</div>
+411:           <div class="inline-group" style="margin-bottom: 10px;">
+412:             <button id="exportConfigBtn" class="btn btn-primary">⬇️ Exporter</button>
+413:             <input id="importConfigFile" type="file" accept="application/json" style="display:none;"/>
+414:             <button id="importConfigBtn" class="btn btn-primary">⬆️ Importer</button>
+415:           </div>
+416:           <div id="configMgmtMsg" class="status-msg"></div>
+417:           <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
+418:         </div>
+419:         <div class="card" style="margin-top: 20px;">
+420:           <div class="card-title">🚀 Déploiement de l'application</div>
+421:           <div class="form-group">
+422:             <p class="small-text">Certaines modifications (ex: paramètres applicatifs, configuration reverse proxy) nécessitent un déploiement pour être pleinement appliquées.</p>
+423:           </div>
+424:           <div class="inline-group" style="margin-bottom: 10px;">
+425:             <button id="restartServerBtn" class="btn btn-success">🚀 Déployer l'application</button>
+426:           </div>
+427:           <div id="restartMsg" class="status-msg"></div>
+428:           <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
+429:         </div>
+430:         <div class="card" style="margin-top: 20px;">
+431:           <div class="card-title">🗂️ Migration configs → Redis</div>
+432:           <p>Rejouez le script <code>migrate_configs_to_redis.py</code> directement sur le serveur Render avec toutes les variables d'environnement de production.</p>
+433:           <div class="inline-group" style="margin-bottom: 10px;">
+434:             <button id="migrateConfigsBtn" class="btn btn-warning">📦 Migrer les configurations</button>
+435:           </div>
+436:           <div id="migrateConfigsMsg" class="status-msg"></div>
+437:           <pre id="migrateConfigsLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
+438:           <hr style="margin: 18px 0; border-color: rgba(255,255,255,0.1);">
+439:           <p style="margin-bottom:10px;">Vérifiez l'état des données persistées dans Redis (structures JSON, attributs requis, dates de mise à jour).</p>
+440:           <div class="inline-group" style="margin-bottom: 10px;">
+441:             <button id="verifyConfigStoreBtn" class="btn btn-info">🔍 Vérifier les données en Redis</button>
+442:           </div>
+443:           <label for="verifyConfigStoreRawToggle" class="small-text" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+444:             <input type="checkbox" id="verifyConfigStoreRawToggle">
+445:             <span>Inclure le JSON complet dans le log pour faciliter le debug.</span>
+446:           </label>
+447:           <div id="verifyConfigStoreMsg" class="status-msg"></div>
+448:           <pre id="verifyConfigStoreLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
+449:         </div>
+450:         <div class="card" style="margin-top: 20px;">
+451:           <div class="card-title">🔐 Accès Magic Link</div>
+452:           <p>Générez un lien pré-authentifié à usage unique pour ouvrir rapidement le dashboard sans retaper vos identifiants. Le lien est automatiquement copié.</p>
+453:           <div class="inline-group" style="margin-bottom: 12px;">
+454:             <label class="toggle-switch">
+455:               <input type="checkbox" id="magicLinkUnlimitedToggle">
+456:               <span class="toggle-slider"></span>
+457:             </label>
+458:             <span style="margin-left: 10px;">
+459:               Mode illimité (désactivé = lien one-shot avec expiration)
+460:             </span>
+461:           </div>
+462:           <button id="generateMagicLinkBtn" class="btn btn-primary">✨ Générer un magic link</button>
+463:           <div id="magicLinkOutput" class="status-msg" style="margin-top: 12px;"></div>
+464:           <div class="small-text">
+465:             Important : partagez ce lien uniquement avec des personnes autorisées.
+466:             En mode one-shot, il expire après quelques minutes et s'invalide dès qu'il est utilisé.
+467:             En mode illimité, aucun délai mais vous devez révoquer manuellement en cas de fuite.
+468:           </div>
+469:         </div>
+470:         <div class="card" style="margin-top: 20px;">
+471:           <div class="card-title">🧪 Outils de Test</div>
+472:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+473:             <div class="form-group">
+474:               <label for="testWebhookUrl">Valider une URL de webhook</label>
+475:               <input id="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
+476:               <button id="validateWebhookUrlBtn" class="btn btn-primary" style="margin-top: 8px;">Valider</button>
+477:               <div id="webhookUrlValidationMsg" class="status-msg"></div>
+478:             </div>
+479:             <div class="form-group">
+480:               <label>Prévisualiser un payload</label>
+481:               <input id="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
+482:               <input id="previewSender" type="email" placeholder="Expéditeur (ex: media@solution.fr)" style="margin-top: 6px;">
+483:               <textarea id="previewBody" rows="4" placeholder="Corps de l'email (coller du texte)" style="margin-top: 6px; width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+484:               <button id="buildPayloadPreviewBtn" class="btn btn-primary" style="margin-top: 8px;">Générer</button>
+485:               <pre id="payloadPreview" style="margin-top:8px; background: rgba(0,0,0,0.2); border:1px solid var(--cork-border-color); padding:10px; border-radius:4px; max-height:200px; overflow:auto; color: var(--cork-text-primary);"></pre>
+486:             </div>
+487:           </div>
+488:           <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
+489:         </div>
+490:         <div class="card" style="margin-top: 20px;">
+491:           <div class="card-title">🔗 Ouvrir une page de téléchargement</div>
+492:           <div class="form-group">
+493:             <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
+494:             <input id="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
+495:             <button id="openDownloadPageBtn" class="btn btn-primary" style="margin-top: 8px;">Ouvrir la page</button>
+496:             <div id="openDownloadMsg" class="status-msg"></div>
+497:             <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
+498:           </div>
+499:         </div>
+500:         <div class="card" style="margin-top: 20px;">
+501:           <div class="card-title"> Flags Runtime (Debug)</div>
+502:           <div class="form-group">
+503:             <label>Bypass déduplication par ID d’email (debug)</label>
+504:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+505:               <input type="checkbox" id="disableEmailIdDedupToggle">
+506:               <span class="toggle-slider"></span>
+507:             </label>
+508:             <div class="small-text">Quand activé, ignore la déduplication par ID d'email. À utiliser uniquement pour des tests.
+509:             </div>
+510:           </div>
+511:           <div class="form-group" style="margin-top: 10px;">
+512:             <label>Autoriser envoi CUSTOM sans liens de livraison</label>
+513:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+514:               <input type="checkbox" id="allowCustomWithoutLinksToggle">
+515:               <span class="toggle-slider"></span>
+516:             </label>
+517:             <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu’aucun lien (Dropbox/FromSmash/SwissTransfer) n’est détecté, pour éviter les 422.</div>
+518:           </div>
+519:           <div style="margin-top: 12px;">
+520:             <button id="runtimeFlagsSaveBtn" class="btn btn-primary"> Enregistrer Flags Runtime</button>
+521:             <div id="runtimeFlagsMsg" class="status-msg"></div>
+522:           </div>
+523:         </div>
+524:       </div>
+525:     </div>
+526:     <!-- Chargement des modules JavaScript -->
+527:     <script type="module" src="{{ url_for('static', filename='utils/MessageHelper.js') }}"></script>
+528:     <script type="module" src="{{ url_for('static', filename='services/ApiService.js') }}"></script>
+529:     <script type="module" src="{{ url_for('static', filename='services/WebhookService.js') }}"></script>
+530:     <script type="module" src="{{ url_for('static', filename='services/LogService.js') }}"></script>
+531:     <script type="module" src="{{ url_for('static', filename='components/TabManager.js') }}"></script>
+532:     <script type="module" src="{{ url_for('static', filename='dashboard.js') }}?v=20260118-modular"></script>
+533:   </body>
+534: </html>
 ````
 
 ## File: static/dashboard.js

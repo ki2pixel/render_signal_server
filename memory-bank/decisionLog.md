@@ -7,6 +7,20 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 
 ## Décisions 2026
 
+[2026-01-29 14:45:00] - **Modularisation CSS Dashboard**
+- **Décision** : Refactoriser le CSS inline de `dashboard.html` (1500+ lignes) en 4 fichiers CSS modulaires dans `static/css/` pour améliorer la maintenabilité et l'organisation.
+- **Raisonnement** : Le bloc CSS inline monolithique rendait le code difficile à maintenir, à déboguer et à faire évoluer. Une architecture modulaire permet une meilleure séparation des responsabilités et optimise le chargement.
+- **Implémentation** :
+  1. **variables.css** : Variables CSS `:root`, thème Cork, durées, espacements, ombres
+  2. **base.css** : Reset, layout, typographie, navigation, responsive, accessibility
+  3. **components.css** : Cartes, formulaires, boutons, toggles, messages de statut
+  4. **modules.css** : Widgets spécifiques (timeline, panneaux pliables, routing rules, banner)
+  5. **dashboard.html** : Remplacement du `<style>` par 4 liens CSS ordonnés avec `{{ url_for() }}`
+- **Alternatives considérées** : Conserver le CSS inline (rejeté pour maintenabilité), utiliser CSS-in-JS (rejeté pour complexité inutile), utiliser un préprocesseur SASS (rejeté pour dépendance additionnelle).
+- **Impact** : Architecture CSS maintenable, séparation claire des responsabilités, zéro régression visuelle, chargement optimisé, meilleure expérience développeur.
+- **Fichiers créés** : `static/css/variables.css`, `static/css/base.css`, `static/css/components.css`, `static/css/modules.css`
+- **Fichiers modifiés** : `dashboard.html` (suppression `<style>`, ajout liens CSS)
+
 [2026-01-29 13:30:00] - **Implémentation Dropdowns Fenêtres Horaires et Préférences Email**
 - **Décision** : Remplacer les champs texte par des dropdowns pour améliorer l'UX et réduire les erreurs de saisie dans le dashboard.
 - **Raisonnement** : Les utilisateurs faisaient des erreurs de format (ex: "9h" au lieu de "09:00") et l'interface textuelle était propice aux fautes de frappe. Les dropdowns garantissent un format correct et simplifient la sélection.

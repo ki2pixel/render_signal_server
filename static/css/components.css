@@ -261,6 +261,109 @@ input:checked + .toggle-slider:before {
   display: block;
 }
 
+/* JSON Viewer */
+.json-viewer-container {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--cork-border-color);
+  max-height: 380px;
+  overflow: auto;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.9em;
+}
+
+.json-viewer-wrapper {
+  color: var(--cork-text-primary);
+}
+
+.json-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.json-node {
+  border-left: 2px solid rgba(255, 255, 255, 0.08);
+  padding-left: 10px;
+}
+
+.json-node-summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--cork-text-primary);
+  transition: color var(--transition-fast) ease;
+}
+
+.json-node-summary::-webkit-details-marker {
+  display: none;
+}
+
+.json-node-summary::before {
+  content: '\25BC';
+  font-size: 0.7em;
+  display: inline-block;
+  transform: rotate(-90deg);
+  transition: transform var(--transition-fast) ease;
+  color: var(--cork-secondary-accent);
+}
+
+.json-node[open] > .json-node-summary::before {
+  transform: rotate(0deg);
+}
+
+.json-key {
+  font-weight: 600;
+  color: var(--cork-secondary-accent);
+}
+
+.json-meta {
+  font-size: 0.8em;
+  color: var(--cork-text-secondary);
+}
+
+.json-children {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.json-leaf {
+  display: flex;
+  gap: 6px;
+  border-left: 2px solid rgba(67, 97, 238, 0.3);
+  padding-left: 10px;
+}
+
+.json-value {
+  color: var(--cork-text-primary);
+}
+
+.json-value--string {
+  color: #50fa7b;
+}
+
+.json-value--number {
+  color: #8be9fd;
+}
+
+.json-value--boolean {
+  color: #ffb86c;
+}
+
+.json-value--null {
+  color: #ff79c6;
+}
+
+.json-value--undefined {
+  color: #bd93f9;
+}
+
 /* Pills/Badges */
 .pill {
   font-size: 0.7rem;

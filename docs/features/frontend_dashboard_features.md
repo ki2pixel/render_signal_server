@@ -154,31 +154,6 @@ static/
 
 **Impact UX :** Configuration flexible sans redéploiement, -50% temps d'ajout de nouveaux flux
 
-### 5. Auto-sauvegarde Intelligente
-
-**Objectif** : Réduire les erreurs de saisie et améliorer l'expérience utilisateur
-
-**Fonctionnalités :**
-- **Debounce 2-3s** : Attente automatique avant la sauvegarde
-- **Indicateurs visuels** : Sections modifiées clairement identifiées
-- **Feedback immédiat** : Notifications de succès/échec
-- **Sauvegarde sélective** : Seules les préférences non-critiques sont auto-sauvegardées
-
-**Implémentation technique :**
-- `initializeAutoSave()` : Configuration des écouteurs d'événements avec debounce
-- `handleAutoSaveChange()` : Gestion des changements et déclenchement de la sauvegarde
-- `collectPreferencesData()` : Collecte et formatage des données de préférences
-- `markSectionAsModified()` / `markSectionAsSaved()` : Gestion des indicateurs visuels
-- `showAutoSaveFeedback()` : Affichage des notifications de résultat
-
-**Champs auto-sauvegardés :**
-- Préférences de filtres (excludeKeywords, excludeKeywordsRecadrage, excludeKeywordsAutorepondeur)
-- Paramètres de fiabilité (retryCount, retryDelaySec, webhookTimeoutSec, rateLimitPerHour)
-- Toggle de notification d'échec (notifyOnFailureToggle)
-- Priorité des expéditeurs (senderPriority en JSON)
-
-**Impact UX :** Réduction erreurs, feedback immédiat, expérience fluide
-
 ### 5. Dropdowns de configuration
 
 **Objectif** : Éliminer les erreurs de formatage et améliorer l'UX
@@ -217,7 +192,32 @@ static/
 
 **Impact UX :** +30% satisfaction perçue
 
-### 8. Optimisation Mobile
+### 8. Auto-sauvegarde Intelligente
+
+**Objectif** : Réduire les erreurs de saisie et améliorer l'expérience utilisateur
+
+**Fonctionnalités :**
+- **Debounce 2-3s** : Attente automatique avant la sauvegarde
+- **Indicateurs visuels** : Sections modifiées clairement identifiées
+- **Feedback immédiat** : Notifications de succès/échec
+- **Sauvegarde sélective** : Seules les préférences non-critiques sont auto-sauvegardées
+
+**Implémentation technique :**
+- `initializeAutoSave()` : Configuration des écouteurs d'événements avec debounce
+- `handleAutoSaveChange()` : Gestion des changements et déclenchement de la sauvegarde
+- `collectPreferencesData()` : Collecte et formatage des données de préférences
+- `markSectionAsModified()` / `markSectionAsSaved()` : Gestion des indicateurs visuels
+- `showAutoSaveFeedback()` : Affichage des notifications de résultat
+
+**Champs auto-sauvegardés :**
+- Préférences de filtres (excludeKeywords, excludeKeywordsRecadrage, excludeKeywordsAutorepondeur)
+- Paramètres de fiabilité (retryCount, retryDelaySec, webhookTimeoutSec, rateLimitPerHour)
+- Toggle de notification d'échec (notifyOnFailureToggle)
+- Priorité des expéditeurs (senderPriority en JSON)
+
+**Impact UX :** Réduction erreurs, feedback immédiat, expérience fluide
+
+### 9. Optimisation Mobile
 
 **Objectif** : Assurer une expérience parfaite sur mobile
 
@@ -228,6 +228,24 @@ static/
 - **Responsive design** : Breakpoints à 768px et 480px
 
 **Impact UX :** +35% usage mobile
+
+### 10. Modularisation CSS
+
+**Objectif** : Améliorer la maintenabilité et l'organisation du code CSS
+
+**Fonctionnalités :**
+- **4 fichiers modulaires** : `variables.css`, `base.css`, `components.css`, `modules.css`
+- **Séparation des responsabilités** : Chaque fichier a une fonction thématique claire
+- **Cascade optimisée** : Ordre de chargement respecté pour la cascade CSS
+- **Maintenance facilitée** : Modifications ciblées sans risque de régression
+
+**Architecture :**
+- `variables.css` : Variables CSS thématiques (couleurs, animations, espacements)
+- `base.css` : Reset, layout global, typographie, navigation responsive
+- `components.css` : Cartes, formulaires, boutons, messages de statut
+- `modules.css` : Widgets spécifiques (timeline, panneaux pliables, routing)
+
+**Impact technique :** -1500 lignes CSS inline, chargement optimisé, maintenance améliorée
 
 ## Accessibilité (WCAG AA)
 

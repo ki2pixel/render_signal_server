@@ -4,6 +4,7 @@ import { LogService } from './services/LogService.js';
 import { MessageHelper } from './utils/MessageHelper.js';
 import { TabManager } from './components/TabManager.js';
 import { RoutingRulesService } from './services/RoutingRulesService.js?v=20260125-routing-fallback';
+import { JsonViewer } from './components/JsonViewer.js';
 
 window.DASHBOARD_BUILD = 'modular-2026-01-19a';
 
@@ -86,8 +87,10 @@ async function handleConfigVerification() {
     const button = document.getElementById('verifyConfigStoreBtn');
     const messageId = 'verifyConfigStoreMsg';
     const logEl = document.getElementById('verifyConfigStoreLog');
+    const logViewer = document.getElementById('verifyConfigStoreViewer');
     const routingRulesMsgEl = document.getElementById('routingRulesRedisInspectMsg');
     const routingRulesLogEl = document.getElementById('routingRulesRedisInspectLog');
+    const routingRulesViewer = document.getElementById('routingRulesRedisInspectViewer');
     const rawToggle = document.getElementById('verifyConfigStoreRawToggle');
     const includeRaw = Boolean(rawToggle?.checked);
 
@@ -110,6 +113,10 @@ async function handleConfigVerification() {
         routingRulesLogEl.style.display = 'none';
         routingRulesLogEl.textContent = '';
     }
+    if (routingRulesViewer) {
+        routingRulesViewer.style.display = 'none';
+        routingRulesViewer.textContent = '';
+    }
 
     try {
         const response = await ApiService.post('/api/verify_config_store', { raw: includeRaw });
@@ -126,16 +133,15 @@ async function handleConfigVerification() {
             const lines = (response?.results || []).map((entry) => {
                 const status = entry.valid ? 'OK' : `INVALID (${entry.message})`;
                 const summary = entry.summary || '';
-                const payload =
-                    includeRaw && entry.payload
-                        ? `Payload:\n${JSON.stringify(entry.payload, null, 2)}`
-                        : null;
-                return [ `${entry.key}: ${status}`, summary, payload ]
-                    .filter(Boolean)
-                    .join('\n');
+                return [ `${entry.key}: ${status}`, summary ].filter(Boolean).join('\n');
             });
             logEl.textContent = lines.length ? lines.join('\n\n') : 'Aucun résultat renvoyé.';
             logEl.style.display = 'block';
+        }
+
+        if (logViewer && includeRaw) {
+            JsonViewer.render(logViewer, response?.results || [], { collapseDepth: 1 });
+            logViewer.style.display = 'block';
         }
 
         const routingEntry = (response?.results || []).find(
@@ -166,15 +172,18 @@ async function handleConfigVerification() {
                 routingRulesLogEl.textContent = '';
                 routingRulesLogEl.style.display = 'none';
             } else {
-                const routingSummary = routingEntry.summary || '';
-                const routingPayload =
-                    includeRaw && routingEntry.payload
-                        ? JSON.stringify(routingEntry.payload, null, 2)
-                        : null;
-
-                const blocks = [routingSummary, routingPayload].filter(Boolean);
-                routingRulesLogEl.textContent = blocks.length ? blocks.join('\n\n') : '<vide>';
+                routingRulesLogEl.textContent = routingEntry.summary || '<vide>';
                 routingRulesLogEl.style.display = 'block';
+            }
+        }
+
+        if (routingRulesViewer) {
+            if (!routingEntry || !includeRaw || !routingEntry.payload) {
+                routingRulesViewer.textContent = '';
+                routingRulesViewer.style.display = 'none';
+            } else {
+                JsonViewer.render(routingRulesViewer, routingEntry.payload, { collapseDepth: 1 });
+                routingRulesViewer.style.display = 'block';
             }
         }
     } catch (error) {

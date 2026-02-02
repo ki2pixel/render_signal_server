@@ -35,12 +35,12 @@
 > Ces surveillances garantissent que les sections « Services dédiés » ci-dessous restent alignées avec l’état réel du code; toute réduction de complexité doit être documentée ici.
 
 ### Métriques de documentation
-- **Volume** : 7 388 lignes de contenu réparties dans 54 fichiers actifs (+5 nouveaux)
+- **Volume** : 7 388 lignes de contenu réparties dans 54 fichiers actifs (+6 nouveaux)
 - **Code source** : 388k lignes Python (1668 fichiers) + 62k lignes JavaScript (302 fichiers)
 - **Complexité moyenne** : D (24.9) avec 44 blocs analysés par radon
 - **Densité** : Justifie le découpage modulaire pour maintenir la lisibilité
 - **Exclusions** : `archive/` et `audits/` maintenus séparément pour éviter le bruit
-- **Nouveautés** : Documentation dropdowns, métriques, Redis logs, verrouillage routing
+- **Nouveautés** : Documentation dropdowns, métriques, Redis logs, verrouillage routing, scroll UI, CSS modulaire
 
 ---
 
@@ -53,7 +53,7 @@ Cette application fournit une télécommande web sécurisée (Flask + Flask-Logi
 - **Routes Flask** : organisées en blueprints dans `routes/` (API config, admin, logs, webhooks, test, utilitaires, dashboard, health), consommant directement les services.
 - **Configuration et stockage** : centralisés dans `config/` et `config/app_config_store.py` avec backend JSON externe + fallback fichiers (`debug/*.json`). Voir `docs/configuration.md` et `docs/storage.md`.
 - **Aspects transverses** :
-  - UI Dashboard Webhooks : `docs/ui.md`
+  - UI Dashboard Webhooks : `docs/features/frontend_dashboard_features.md` (architecture ES6 modulaire, CSS modulaire, UX avancée)
   - Sécurité : `docs/securite.md`
   - Exploitation Render / monitoring : `docs/operational-guide.md`
   - Stratégie de tests : `docs/testing.md`

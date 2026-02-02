@@ -1,23 +1,23 @@
 <?php
 /**
  * Email Configuration
- * Configuration for IMAP connection to inbox.lt
+ * Configuration for IMAP connection to mail.kidpixel.fr
  */
 
 return [
     'imap' => [
-        'host' => 'mail.inbox.lt',
+        'host' => 'mail.kidpixel.fr',
         'port' => 993,
         'encryption' => 'ssl',
-        'username' => 'kidpixel@inbox.lt',
-        'password' => 'YvP3Zw66Xx',  // Special IMAP/SMTP password for inbox.lt
+        'username' => 'webhook@kidpixel.fr',
+        'password' => 'z5NjmmWzJg5UBSmvBpZE',  // IMAP/SMTP password for kidpixel.fr
         'folder' => 'INBOX'
     ],
     'smtp' => [
-        'host' => 'mail.inbox.lt',
+        'host' => 'mail.kidpixel.fr',
         'port' => 587,
         'encryption' => 'tls',
-        'username' => 'kidpixel@inbox.lt',
-        'password' => 'YvP3Zw66Xx'  // Special IMAP/SMTP password for inbox.lt
+        'username' => 'webhook@kidpixel.fr',
+        'password' => 'z5NjmmWzJg5UBSmvBpZE'  // IMAP/SMTP password for kidpixel.fr
     ]
 ];

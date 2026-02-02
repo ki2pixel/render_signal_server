@@ -18,6 +18,26 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ---
 
+## Terminé
+
+[2026-01-29 14:45:00] - Modularisation CSS Dashboard Terminée
+- **Objectif** : Refactoriser le CSS inline de `dashboard.html` en 4 fichiers CSS modulaires dans `static/css/` pour améliorer la maintenabilité et l'organisation sans régressions.
+- **Actions réalisées** :
+  1. **Extraction et catégorisation** : Analyse complète du bloc `<style>` inline (1500+ lignes) et extraction en 4 fichiers logiques :
+     - `variables.css` : Variables CSS `:root`, couleurs thème Cork, durées d'animation, espacements, ombres
+     - `base.css` : Reset, layout global, typographie, navigation, grille responsive, scrollbar, accessibility
+     - `components.css` : Cartes, formulaires, boutons, toggles, messages de statut, pills, logout link
+     - `modules.css` : Widgets spécifiques (timeline logs, panneaux pliables, routing rules, banner global)
+  2. **Organisation par responsabilité** : Respect des dépendances (variables en premier), regroupement thématique, commentaires descriptifs
+  3. **Mise à jour dashboard.html** : Remplacement du bloc `<style>` par 4 liens CSS avec `{{ url_for() }}` dans l'ordre correct
+  4. **Préservation fonctionnelle** : Maintien complet du design responsive (768px/480px), accessibilité (`prefers-reduced-motion`), animations, micro-interactions, thème Cork
+  5. **Validation** : Vérification que le bloc `<style>` inline a été supprimé et que les liens CSS sont correctement ordonnés
+- **Résultat** : Architecture CSS modulaire et maintenable, séparation claire des responsabilités, zéro régression visuelle ou fonctionnelle, chargement optimisé des styles.
+- **Fichiers créés** : `static/css/variables.css`, `static/css/base.css`, `static/css/components.css`, `static/css/modules.css`
+- **Fichiers modifiés** : `dashboard.html` (suppression `<style>`, ajout des 4 liens CSS)
+- **Statut** : Terminé avec succès, modularisation CSS complète et prête pour production.
+
+
 [2026-01-29 13:30:00] - Implémentation Dropdowns Fenêtres Horaires et Préférences Email Terminée
 - **Objectif** : Remplacer les champs texte par des dropdowns pour améliorer l'UX et réduire les erreurs de saisie dans le dashboard.
 - **Actions réalisées** :
@@ -49,8 +69,6 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 - **Résultat** : Documentation entièrement synchronisée avec l'état actuel du code, cohérence maintenue entre évolutions récentes et documentation, référence unique pour les développeurs et ops.
 - **Fichiers modifiés** : 5 nouveaux fichiers créés, 2 fichiers mis à jour, Memory Bank synchronisée.
 - **Statut** : Workflow docs-updater terminé avec succès, documentation à jour et complète.
-
-## Terminé
 
 [2026-01-29 13:10:00] - Activation par défaut du calcul de métriques locales Terminée
 - **Objectif** : Activer par défaut le toggle "Activer le calcul de métriques locales" dans la section "📊 Monitoring & Métriques (24h)" du dashboard pour que les métriques se calculent automatiquement au premier chargement.
