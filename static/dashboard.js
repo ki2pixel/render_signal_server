@@ -4,9 +4,9 @@ import { LogService } from './services/LogService.js';
 import { MessageHelper } from './utils/MessageHelper.js';
 import { TabManager } from './components/TabManager.js';
 import { RoutingRulesService } from './services/RoutingRulesService.js?v=20260125-routing-fallback';
-import { JsonViewer } from './components/JsonViewer.js';
+import { JsonViewer } from './components/JsonViewer.js?v=20260202-json-viewer';
 
-window.DASHBOARD_BUILD = 'modular-2026-01-19a';
+window.DASHBOARD_BUILD = 'modular-2026-02-02-json-viewer';
 
 let tabManager = null;
 let routingRulesService = null;
@@ -105,6 +105,10 @@ async function handleConfigVerification() {
         logEl.style.display = 'none';
         logEl.textContent = '';
     }
+    if (logViewer) {
+        logViewer.style.display = 'none';
+        logViewer.textContent = '';
+    }
     if (routingRulesMsgEl) {
         routingRulesMsgEl.textContent = '';
         routingRulesMsgEl.className = 'status-msg';
@@ -129,7 +133,7 @@ async function handleConfigVerification() {
             );
         }
 
-        if (logEl) {
+        if (logEl && !includeRaw) {
             const lines = (response?.results || []).map((entry) => {
                 const status = entry.valid ? 'OK' : `INVALID (${entry.message})`;
                 const summary = entry.summary || '';
@@ -167,7 +171,7 @@ async function handleConfigVerification() {
             }
         }
 
-        if (routingRulesLogEl) {
+        if (routingRulesLogEl && !includeRaw) {
             if (!routingEntry) {
                 routingRulesLogEl.textContent = '';
                 routingRulesLogEl.style.display = 'none';

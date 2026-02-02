@@ -9,7 +9,7 @@
     <!-- CSS Modular -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/variables.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}?v=20260202-json-viewer">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/modules.css') }}">
   </head>
   <body>
@@ -531,6 +531,6 @@
     <script type="module" src="{{ url_for('static', filename='services/WebhookService.js') }}"></script>
     <script type="module" src="{{ url_for('static', filename='services/LogService.js') }}"></script>
     <script type="module" src="{{ url_for('static', filename='components/TabManager.js') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='dashboard.js') }}?v=20260118-modular"></script>
+    <script type="module" src="{{ url_for('static', filename='dashboard.js') }}?v=20260202-json-viewer"></script>
   </body>
 </html>
