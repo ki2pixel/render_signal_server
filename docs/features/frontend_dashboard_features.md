@@ -15,7 +15,8 @@ static/
 │   ├── WebhookService.js (configuration + logs webhooks)
 │   └── LogService.js (logs + timer polling intelligent)
 ├── components/
-│   └── TabManager.js (gestion onglets + accessibilité ARIA complète)
+│   ├── TabManager.js (gestion onglets + accessibilité ARIA complète)
+│   └── JsonViewer.js (visualiseur JSON interactif)
 ├── utils/
 │   └── MessageHelper.js (utilitaires UI unifiés)
 └── dashboard.js (orchestrateur modulaire ~600 lignes)
@@ -62,6 +63,12 @@ static/
 - Utilitaires UI unifiés (messages, loading, validation)
 - Formatage des messages d'erreur et de succès
 - Validation des formats de temps et des entrées utilisateur
+
+#### JsonViewer
+- Visualiseur JSON interactif avec coloration syntaxique
+- Support du repli/dépli des structures imbriquées
+- Intégration dans les panneaux de configuration et de debug
+- Utilisé pour l'affichage des payloads complexes et des réponses API
 
 #### RoutingRulesService
 - Builder visuel de règles de routage avec drag-and-drop

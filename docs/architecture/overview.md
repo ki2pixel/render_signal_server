@@ -31,6 +31,7 @@
 | Routing Rules Service | `services/routing_rules_service.py::_normalize_rules` | D | ✅ **Service stable** : Validation et normalisation centralisées |
 | Pattern Matching DESABO | `email_processing/pattern_matching.py::check_media_solution_pattern` | E | ⚠️ **Nouveau point chaud** : Complexité élevée due aux multiples branches de détection |
 | Magic Link Service | `services/magic_link_service.py::consume_token` | C | ✅ **Service stabilisé** : Logique de consommation et validation bien structurée |
+| Gmail Ingress API | `routes/api_ingress.py::ingest_gmail` | F | ✅ **Nouveau endpoint** : Auth Bearer, validation payload, orchestration complète via `send_custom_webhook_flow` |
 
 > Ces surveillances garantissent que les sections « Services dédiés » ci-dessous restent alignées avec l’état réel du code; toute réduction de complexité doit être documentée ici.
 
@@ -49,7 +50,7 @@ Cette application fournit une télécommande web sécurisée (Flask + Flask-Logi
 ## Vue d'ensemble
 
 - **Backend orienté services** : les responsabilités de configuration, d'authentification, de flags runtime, de webhooks et de déduplication sont encapsulées dans des services dédiés (voir ci‑dessous et `services/`).
-- **Traitement des e‑mails** : orchestré par `email_processing/orchestrator.py` (polling IMAP, déduplication, détection des motifs, envoi des webhooks). Les détails métier sont approfondis dans `docs/email_polling.md` et `docs/webhooks.md`.
+- **Traitement des e‑mails** : orchestré par `email_processing/orchestrator.py` (polling IMAP, déduplication, détection des motifs, envoi des webhooks). Les détails métier sont approfondis dans `docs/email_polling.md` et `docs/webhooks.md`. **Ingress Gmail** : endpoint `POST /api/ingress/gmail` pour push Apps Script (voir `docs/features/gmail_push_ingress.md`).
 - **Routes Flask** : organisées en blueprints dans `routes/` (API config, admin, logs, webhooks, test, utilitaires, dashboard, health), consommant directement les services.
 - **Configuration et stockage** : centralisés dans `config/` et `config/app_config_store.py` avec backend JSON externe + fallback fichiers (`debug/*.json`). Voir `docs/configuration.md` et `docs/storage.md`.
 - **Aspects transverses** :

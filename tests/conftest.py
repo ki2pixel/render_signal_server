@@ -7,7 +7,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import fakeredis
 import pytest
 
 # Ajouter le répertoire parent au path pour les imports
@@ -30,6 +29,10 @@ os.environ.setdefault("MAKECOM_API_KEY", "test-makecom-api-key")
 @pytest.fixture
 def mock_redis():
     """Fixture pour un client Redis mocké avec fakeredis."""
+    try:
+        import fakeredis  # type: ignore
+    except Exception:
+        pytest.skip("fakeredis not installed")
     return fakeredis.FakeRedis(decode_responses=True)
 
 

@@ -14,3 +14,4 @@ from .api_config import bp as api_config_bp  # noqa: F401
 from .api_make import bp as api_make_bp  # noqa: F401
 from .api_auth import bp as api_auth_bp  # noqa: F401
 from .api_routing_rules import bp as api_routing_rules_bp  # noqa: F401
+from .api_ingress import bp as api_ingress_bp  # noqa: F401

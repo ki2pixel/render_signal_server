@@ -105,6 +105,7 @@ services/
   webhook_config_service.py
 static/
   components/
+    JsonViewer.js
     TabManager.js
   css/
     base.css
@@ -2222,6 +2223,156 @@ requirements.txt
 319:         return True, "ok", normalized
 ````
 
+## File: static/components/JsonViewer.js
+````javascript
+  1: const OPEN_DEPTH_DEFAULT = 1;
+  2: 
+  3: function isComplexValue(value) {
+  4:     return value !== null && typeof value === 'object';
+  5: }
+  6: 
+  7: function formatPrimitive(value) {
+  8:     if (value === null) {
+  9:         return 'null';
+ 10:     }
+ 11: 
+ 12:     if (typeof value === 'string') {
+ 13:         return `"${value}"`;
+ 14:     }
+ 15: 
+ 16:     if (typeof value === 'undefined') {
+ 17:         return 'undefined';
+ 18:     }
+ 19: 
+ 20:     return String(value);
+ 21: }
+ 22: 
+ 23: function describeCollection(value) {
+ 24:     if (Array.isArray(value)) {
+ 25:         return `[${value.length}]`;
+ 26:     }
+ 27: 
+ 28:     return `{${Object.keys(value).length}}`;
+ 29: }
+ 30: 
+ 31: function getValueType(value) {
+ 32:     if (value === null) {
+ 33:         return 'null';
+ 34:     }
+ 35: 
+ 36:     if (Array.isArray(value)) {
+ 37:         return 'array';
+ 38:     }
+ 39: 
+ 40:     return typeof value;
+ 41: }
+ 42: 
+ 43: function createLeafNode(key, value) {
+ 44:     const row = document.createElement('div');
+ 45:     row.className = 'json-leaf';
+ 46: 
+ 47:     const keyEl = document.createElement('span');
+ 48:     keyEl.className = 'json-key';
+ 49:     keyEl.textContent = key ?? 'valeur';
+ 50: 
+ 51:     const valueEl = document.createElement('span');
+ 52:     const type = getValueType(value);
+ 53:     valueEl.className = `json-value json-value--${type}`;
+ 54:     valueEl.textContent = formatPrimitive(value);
+ 55: 
+ 56:     row.append(keyEl, valueEl);
+ 57:     return row;
+ 58: }
+ 59: 
+ 60: function createBranchNode(key, value, depth, options) {
+ 61:     const node = document.createElement('details');
+ 62:     node.className = 'json-node';
+ 63:     if (depth < (options.collapseDepth ?? OPEN_DEPTH_DEFAULT)) {
+ 64:         node.open = true;
+ 65:     }
+ 66: 
+ 67:     const summary = document.createElement('summary');
+ 68:     summary.className = 'json-node-summary';
+ 69: 
+ 70:     const keyEl = document.createElement('span');
+ 71:     keyEl.className = 'json-key';
+ 72:     keyEl.textContent = key ?? '(clé)';
+ 73: 
+ 74:     const metaEl = document.createElement('span');
+ 75:     metaEl.className = 'json-meta';
+ 76:     metaEl.textContent = describeCollection(value);
+ 77: 
+ 78:     summary.append(keyEl, metaEl);
+ 79:     node.appendChild(summary);
+ 80: 
+ 81:     const childrenContainer = document.createElement('div');
+ 82:     childrenContainer.className = 'json-children';
+ 83: 
+ 84:     if (Array.isArray(value)) {
+ 85:         value.forEach((childValue, index) => {
+ 86:             if (isComplexValue(childValue)) {
+ 87:                 childrenContainer.appendChild(
+ 88:                     createBranchNode(`[${index}]`, childValue, depth + 1, options)
+ 89:                 );
+ 90:             } else {
+ 91:                 childrenContainer.appendChild(createLeafNode(`[${index}]`, childValue));
+ 92:             }
+ 93:         });
+ 94:     } else {
+ 95:         Object.keys(value).forEach((childKey) => {
+ 96:             const childValue = value[childKey];
+ 97:             if (isComplexValue(childValue)) {
+ 98:                 childrenContainer.appendChild(
+ 99:                     createBranchNode(childKey, childValue, depth + 1, options)
+100:                 );
+101:             } else {
+102:                 childrenContainer.appendChild(createLeafNode(childKey, childValue));
+103:             }
+104:         });
+105:     }
+106: 
+107:     node.appendChild(childrenContainer);
+108:     return node;
+109: }
+110: 
+111: export class JsonViewer {
+112:     static render(container, data, options = {}) {
+113:         if (!container) {
+114:             return;
+115:         }
+116: 
+117:         container.classList.add('json-viewer-wrapper');
+118:         container.replaceChildren();
+119: 
+120:         const root = document.createElement('div');
+121:         root.className = 'json-viewer';
+122: 
+123:         if (Array.isArray(data)) {
+124:             data.forEach((value, index) => {
+125:                 if (isComplexValue(value)) {
+126:                     root.appendChild(createBranchNode(`[${index}]`, value, 0, options));
+127:                 } else {
+128:                     root.appendChild(createLeafNode(`[${index}]`, value));
+129:                 }
+130:             });
+131:         } else if (isComplexValue(data)) {
+132:             Object.keys(data).forEach((key) => {
+133:                 const value = data[key];
+134:                 if (isComplexValue(value)) {
+135:                     root.appendChild(createBranchNode(key, value, 0, options));
+136:                 } else {
+137:                     root.appendChild(createLeafNode(key, value));
+138:                 }
+139:             });
+140:         } else {
+141:             root.appendChild(createLeafNode(options.rootLabel ?? 'valeur', data));
+142:         }
+143: 
+144:         container.appendChild(root);
+145:     }
+146: }
+````
+
 ## File: static/css/base.css
 ````css
   1: /* static/css/base.css - Reset, layout global, typographie, responsive */
@@ -2453,352 +2604,6 @@ requirements.txt
 227:     margin-bottom: 10px;
 228:   }
 229: }
-````
-
-## File: static/css/components.css
-````css
-  1: /* static/css/components.css - Boutons, formulaires, cartes, onglets, toggles */
-  2: 
-  3: /* Cards */
-  4: .card {
-  5:   background-color: var(--cork-card-bg);
-  6:   padding: 20px;
-  7:   border-radius: var(--radius-lg);
-  8:   border: 1px solid var(--cork-border-color);
-  9:   transition: transform var(--transition-normal) ease, box-shadow var(--transition-normal) ease;
- 10: }
- 11: 
- 12: .card:hover {
- 13:   transform: translateY(-2px);
- 14:   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
- 15: }
- 16: 
- 17: .card-title {
- 18:   font-weight: 600;
- 19:   color: var(--cork-secondary-accent);
- 20:   font-size: 1.1em;
- 21:   margin-bottom: 15px;
- 22:   padding-bottom: 10px;
- 23:   border-bottom: 1px solid var(--cork-border-color);
- 24: }
- 25: 
- 26: /* Form Elements */
- 27: .form-group {
- 28:   margin-bottom: 15px;
- 29: }
- 30: 
- 31: .form-group label {
- 32:   display: block;
- 33:   margin-bottom: 5px;
- 34:   font-size: 0.9em;
- 35:   color: var(--cork-text-secondary);
- 36: }
- 37: 
- 38: .form-group input,
- 39: .form-group select,
- 40: .form-group textarea {
- 41:   width: 100%;
- 42:   padding: 10px;
- 43:   border-radius: var(--radius-sm);
- 44:   border: 1px solid var(--cork-border-color);
- 45:   background: rgba(0, 0, 0, 0.2);
- 46:   color: var(--cork-text-primary);
- 47:   font-size: 0.95em;
- 48:   box-sizing: border-box;
- 49:   transition: border-color var(--transition-normal) ease, background var(--transition-normal) ease, transform var(--transition-normal) ease, box-shadow var(--transition-normal) ease;
- 50: }
- 51: 
- 52: .form-group input:focus,
- 53: .form-group select:focus,
- 54: .form-group textarea:focus {
- 55:   outline: none;
- 56:   border-color: var(--cork-primary-accent);
- 57:   background: rgba(67, 97, 238, 0.05);
- 58:   box-shadow: var(--focus-ring);
- 59:   transform: translateY(-1px);
- 60: }
- 61: 
- 62: .form-group input:hover,
- 63: .form-group select:hover,
- 64: .form-group textarea:hover {
- 65:   border-color: rgba(67, 97, 238, 0.3);
- 66: }
- 67: 
- 68: /* Select Styling */
- 69: .form-group select {
- 70:   appearance: none;
- 71:   background-image: linear-gradient(45deg, transparent 50%, var(--cork-text-secondary) 50%),
- 72:     linear-gradient(135deg, var(--cork-text-secondary) 50%, transparent 50%);
- 73:   background-position: calc(100% - 18px) calc(50% - 3px), calc(100% - 12px) calc(50% - 3px);
- 74:   background-size: 6px 6px, 6px 6px;
- 75:   background-repeat: no-repeat;
- 76:   padding-right: 32px;
- 77: }
- 78: 
- 79: select option,
- 80: select optgroup {
- 81:   background-color: var(--cork-card-bg);
- 82:   color: var(--cork-text-primary);
- 83: }
- 84: 
- 85: select option:checked,
- 86: select option:hover {
- 87:   background-color: var(--cork-primary-accent);
- 88:   color: #ffffff;
- 89: }
- 90: 
- 91: /* Buttons */
- 92: .btn {
- 93:   padding: 10px 20px;
- 94:   font-weight: 600;
- 95:   cursor: pointer;
- 96:   color: white;
- 97:   border: none;
- 98:   border-radius: var(--radius-md);
- 99:   font-size: 0.95em;
-100:   transition: all var(--transition-normal) ease;
-101: }
-102: 
-103: .btn-primary {
-104:   background: linear-gradient(to right, var(--cork-primary-accent) 0%, #5470f1 100%);
-105:   position: relative;
-106:   overflow: hidden;
-107:   transition: transform var(--transition-normal) ease, box-shadow var(--transition-normal) ease;
-108: }
-109: 
-110: .btn-primary:hover {
-111:   transform: translateY(-1px);
-112:   box-shadow: var(--shadow-button);
-113: }
-114: 
-115: .btn-primary:active {
-116:   transform: translateY(0);
-117: }
-118: 
-119: .btn-primary::before {
-120:   content: '';
-121:   position: absolute;
-122:   top: 50%;
-123:   left: 50%;
-124:   width: 0;
-125:   height: 0;
-126:   border-radius: 50%;
-127:   background: rgba(255, 255, 255, 0.3);
-128:   transform: translate(-50%, -50%);
-129:   transition: width var(--transition-ripple) ease, height var(--transition-ripple) ease;
-130:   pointer-events: none;
-131: }
-132: 
-133: .btn-primary:active::before {
-134:   width: 300px;
-135:   height: 300px;
-136: }
-137: 
-138: .btn-success {
-139:   background: linear-gradient(to right, var(--cork-success) 0%, #22c98f 100%);
-140: }
-141: 
-142: .btn-success:hover {
-143:   transform: translateY(-1px);
-144:   box-shadow: var(--shadow-button-success);
-145: }
-146: 
-147: .btn-secondary {
-148:   background: linear-gradient(to right, rgba(13, 25, 48, 0.95) 0%, rgba(28, 41, 72, 0.95) 100%);
-149:   border: 1px solid rgba(255, 255, 255, 0.08);
-150: }
-151: 
-152: .btn-secondary:hover {
-153:   transform: translateY(-1px);
-154:   box-shadow: var(--shadow-button-secondary);
-155:   border-color: rgba(255, 255, 255, 0.2);
-156: }
-157: 
-158: .btn-warning {
-159:   background: linear-gradient(to right, var(--cork-warning) 0%, #f4b86d 100%);
-160:   color: #1e1e2f;
-161: }
-162: 
-163: .btn-warning:hover {
-164:   transform: translateY(-1px);
-165:   box-shadow: var(--shadow-button-warning);
-166: }
-167: 
-168: .btn-info {
-169:   background: linear-gradient(to right, var(--cork-info) 0%, #5ac2ff 100%);
-170: }
-171: 
-172: .btn-info:hover {
-173:   transform: translateY(-1px);
-174:   box-shadow: var(--shadow-button-info);
-175: }
-176: 
-177: .btn:disabled {
-178:   background: #555e72;
-179:   color: var(--cork-text-secondary);
-180:   cursor: not-allowed;
-181:   transform: none;
-182: }
-183: 
-184: /* Toggle Switch */
-185: .toggle-switch {
-186:   position: relative;
-187:   display: inline-block;
-188:   width: 50px;
-189:   height: 24px;
-190: }
-191: 
-192: .toggle-switch input {
-193:   opacity: 0;
-194:   width: 0;
-195:   height: 0;
-196: }
-197: 
-198: .toggle-slider {
-199:   position: absolute;
-200:   cursor: pointer;
-201:   top: 0;
-202:   left: 0;
-203:   right: 0;
-204:   bottom: 0;
-205:   background-color: #555e72;
-206:   transition: var(--transition-slow);
-207:   border-radius: 24px;
-208: }
-209: 
-210: .toggle-slider:before {
-211:   position: absolute;
-212:   content: "";
-213:   height: 18px;
-214:   width: 18px;
-215:   left: 3px;
-216:   bottom: 3px;
-217:   background-color: white;
-218:   transition: var(--transition-slow);
-219:   border-radius: 50%;
-220: }
-221: 
-222: input:checked + .toggle-slider {
-223:   background-color: var(--cork-success);
-224: }
-225: 
-226: input:checked + .toggle-slider:before {
-227:   transform: translateX(26px);
-228: }
-229: 
-230: .toggle-switch input:focus-visible + .toggle-slider {
-231:   box-shadow: 0 0 0 3px rgba(255,255,255,0.25);
-232: }
-233: 
-234: /* Status Messages */
-235: .status-msg {
-236:   margin-top: 10px;
-237:   padding: 10px;
-238:   border-radius: var(--radius-sm);
-239:   font-size: 0.9em;
-240:   display: none;
-241: }
-242: 
-243: .status-msg.success {
-244:   background: rgba(26, 188, 156, 0.2);
-245:   color: var(--cork-success);
-246:   border: 1px solid var(--cork-success);
-247:   display: block;
-248: }
-249: 
-250: .status-msg.error {
-251:   background: rgba(231, 81, 90, 0.2);
-252:   color: var(--cork-danger);
-253:   border: 1px solid var(--cork-danger);
-254:   display: block;
-255: }
-256: 
-257: .status-msg.info {
-258:   background: rgba(33, 150, 243, 0.2);
-259:   color: var(--cork-info);
-260:   border: 1px solid var(--cork-info);
-261:   display: block;
-262: }
-263: 
-264: /* Pills/Badges */
-265: .pill {
-266:   font-size: 0.7rem;
-267:   text-transform: uppercase;
-268:   border-radius: var(--radius-full);
-269:   padding: 3px 8px;
-270:   margin-left: 8px;
-271: }
-272: 
-273: .pill-manual {
-274:   background: rgba(226,160,63,0.15);
-275:   color: #e2a03f;
-276: }
-277: 
-278: /* Logout Link */
-279: .logout-link {
-280:   text-decoration: none;
-281:   font-size: 0.9em;
-282:   font-weight: 600;
-283:   background-color: var(--cork-danger);
-284:   color: white;
-285:   padding: 8px 16px;
-286:   border-radius: var(--radius-sm);
-287:   transition: background-color var(--transition-normal) ease;
-288: }
-289: 
-290: .logout-link:hover {
-291:   background-color: #c93e47;
-292: }
-293: 
-294: /* Email Remove Button */
-295: .email-remove-btn {
-296:   background-color: var(--cork-card-bg);
-297:   border: 1px solid var(--cork-border-color);
-298:   color: var(--cork-text-primary);
-299:   border-radius: var(--radius-sm);
-300:   cursor: pointer;
-301:   padding: 2px 8px;
-302:   margin-left: 5px;
-303: }
-304: 
-305: .email-remove-btn:hover {
-306:   background-color: var(--cork-danger);
-307:   color: white;
-308: }
-309: 
-310: #addSenderBtn {
-311:   background-color: var(--cork-card-bg);
-312:   color: var(--cork-text-primary);
-313:   border: 1px solid var(--cork-border-color);
-314: }
-315: 
-316: #addSenderBtn:hover {
-317:   background-color: var(--cork-primary-accent);
-318:   color: white;
-319: }
-320: 
-321: /* Responsive Adjustments */
-322: @media (max-width: 480px) {
-323:   .toggle-switch {
-324:     width: 45px;
-325:     height: 22px;
-326:   }
-327: 
-328:   .toggle-slider:before {
-329:     width: 16px;
-330:     height: 16px;
-331:     left: 3px;
-332:     bottom: 3px;
-333:   }
-334: 
-335:   input:checked + .toggle-slider:before {
-336:     transform: translateX(23px);
-337:   }
-338: 
-339:   .card {
-340:     padding: 15px;
-341:   }
-342: }
 ````
 
 ## File: static/css/modules.css
@@ -7954,6 +7759,455 @@ requirements.txt
 297:         return f"<RuntimeFlagsService(file={self._file_path.name}, cache={cache_status})>"
 ````
 
+## File: static/css/components.css
+````css
+  1: /* static/css/components.css - Boutons, formulaires, cartes, onglets, toggles */
+  2: 
+  3: /* Cards */
+  4: .card {
+  5:   background-color: var(--cork-card-bg);
+  6:   padding: 20px;
+  7:   border-radius: var(--radius-lg);
+  8:   border: 1px solid var(--cork-border-color);
+  9:   transition: transform var(--transition-normal) ease, box-shadow var(--transition-normal) ease;
+ 10: }
+ 11: 
+ 12: .card:hover {
+ 13:   transform: translateY(-2px);
+ 14:   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+ 15: }
+ 16: 
+ 17: .card-title {
+ 18:   font-weight: 600;
+ 19:   color: var(--cork-secondary-accent);
+ 20:   font-size: 1.1em;
+ 21:   margin-bottom: 15px;
+ 22:   padding-bottom: 10px;
+ 23:   border-bottom: 1px solid var(--cork-border-color);
+ 24: }
+ 25: 
+ 26: /* Form Elements */
+ 27: .form-group {
+ 28:   margin-bottom: 15px;
+ 29: }
+ 30: 
+ 31: .form-group label {
+ 32:   display: block;
+ 33:   margin-bottom: 5px;
+ 34:   font-size: 0.9em;
+ 35:   color: var(--cork-text-secondary);
+ 36: }
+ 37: 
+ 38: .form-group input,
+ 39: .form-group select,
+ 40: .form-group textarea {
+ 41:   width: 100%;
+ 42:   padding: 10px;
+ 43:   border-radius: var(--radius-sm);
+ 44:   border: 1px solid var(--cork-border-color);
+ 45:   background: rgba(0, 0, 0, 0.2);
+ 46:   color: var(--cork-text-primary);
+ 47:   font-size: 0.95em;
+ 48:   box-sizing: border-box;
+ 49:   transition: border-color var(--transition-normal) ease, background var(--transition-normal) ease, transform var(--transition-normal) ease, box-shadow var(--transition-normal) ease;
+ 50: }
+ 51: 
+ 52: .form-group input:focus,
+ 53: .form-group select:focus,
+ 54: .form-group textarea:focus {
+ 55:   outline: none;
+ 56:   border-color: var(--cork-primary-accent);
+ 57:   background: rgba(67, 97, 238, 0.05);
+ 58:   box-shadow: var(--focus-ring);
+ 59:   transform: translateY(-1px);
+ 60: }
+ 61: 
+ 62: .form-group input:hover,
+ 63: .form-group select:hover,
+ 64: .form-group textarea:hover {
+ 65:   border-color: rgba(67, 97, 238, 0.3);
+ 66: }
+ 67: 
+ 68: /* Select Styling */
+ 69: .form-group select {
+ 70:   appearance: none;
+ 71:   background-image: linear-gradient(45deg, transparent 50%, var(--cork-text-secondary) 50%),
+ 72:     linear-gradient(135deg, var(--cork-text-secondary) 50%, transparent 50%);
+ 73:   background-position: calc(100% - 18px) calc(50% - 3px), calc(100% - 12px) calc(50% - 3px);
+ 74:   background-size: 6px 6px, 6px 6px;
+ 75:   background-repeat: no-repeat;
+ 76:   padding-right: 32px;
+ 77: }
+ 78: 
+ 79: select option,
+ 80: select optgroup {
+ 81:   background-color: var(--cork-card-bg);
+ 82:   color: var(--cork-text-primary);
+ 83: }
+ 84: 
+ 85: select option:checked,
+ 86: select option:hover {
+ 87:   background-color: var(--cork-primary-accent);
+ 88:   color: #ffffff;
+ 89: }
+ 90: 
+ 91: /* Buttons */
+ 92: .btn {
+ 93:   padding: 10px 20px;
+ 94:   font-weight: 600;
+ 95:   cursor: pointer;
+ 96:   color: white;
+ 97:   border: none;
+ 98:   border-radius: var(--radius-md);
+ 99:   font-size: 0.95em;
+100:   transition: all var(--transition-normal) ease;
+101: }
+102: 
+103: .btn-primary {
+104:   background: linear-gradient(to right, var(--cork-primary-accent) 0%, #5470f1 100%);
+105:   position: relative;
+106:   overflow: hidden;
+107:   transition: transform var(--transition-normal) ease, box-shadow var(--transition-normal) ease;
+108: }
+109: 
+110: .btn-primary:hover {
+111:   transform: translateY(-1px);
+112:   box-shadow: var(--shadow-button);
+113: }
+114: 
+115: .btn-primary:active {
+116:   transform: translateY(0);
+117: }
+118: 
+119: .btn-primary::before {
+120:   content: '';
+121:   position: absolute;
+122:   top: 50%;
+123:   left: 50%;
+124:   width: 0;
+125:   height: 0;
+126:   border-radius: 50%;
+127:   background: rgba(255, 255, 255, 0.3);
+128:   transform: translate(-50%, -50%);
+129:   transition: width var(--transition-ripple) ease, height var(--transition-ripple) ease;
+130:   pointer-events: none;
+131: }
+132: 
+133: .btn-primary:active::before {
+134:   width: 300px;
+135:   height: 300px;
+136: }
+137: 
+138: .btn-success {
+139:   background: linear-gradient(to right, var(--cork-success) 0%, #22c98f 100%);
+140: }
+141: 
+142: .btn-success:hover {
+143:   transform: translateY(-1px);
+144:   box-shadow: var(--shadow-button-success);
+145: }
+146: 
+147: .btn-secondary {
+148:   background: linear-gradient(to right, rgba(13, 25, 48, 0.95) 0%, rgba(28, 41, 72, 0.95) 100%);
+149:   border: 1px solid rgba(255, 255, 255, 0.08);
+150: }
+151: 
+152: .btn-secondary:hover {
+153:   transform: translateY(-1px);
+154:   box-shadow: var(--shadow-button-secondary);
+155:   border-color: rgba(255, 255, 255, 0.2);
+156: }
+157: 
+158: .btn-warning {
+159:   background: linear-gradient(to right, var(--cork-warning) 0%, #f4b86d 100%);
+160:   color: #1e1e2f;
+161: }
+162: 
+163: .btn-warning:hover {
+164:   transform: translateY(-1px);
+165:   box-shadow: var(--shadow-button-warning);
+166: }
+167: 
+168: .btn-info {
+169:   background: linear-gradient(to right, var(--cork-info) 0%, #5ac2ff 100%);
+170: }
+171: 
+172: .btn-info:hover {
+173:   transform: translateY(-1px);
+174:   box-shadow: var(--shadow-button-info);
+175: }
+176: 
+177: .btn:disabled {
+178:   background: #555e72;
+179:   color: var(--cork-text-secondary);
+180:   cursor: not-allowed;
+181:   transform: none;
+182: }
+183: 
+184: /* Toggle Switch */
+185: .toggle-switch {
+186:   position: relative;
+187:   display: inline-block;
+188:   width: 50px;
+189:   height: 24px;
+190: }
+191: 
+192: .toggle-switch input {
+193:   opacity: 0;
+194:   width: 0;
+195:   height: 0;
+196: }
+197: 
+198: .toggle-slider {
+199:   position: absolute;
+200:   cursor: pointer;
+201:   top: 0;
+202:   left: 0;
+203:   right: 0;
+204:   bottom: 0;
+205:   background-color: #555e72;
+206:   transition: var(--transition-slow);
+207:   border-radius: 24px;
+208: }
+209: 
+210: .toggle-slider:before {
+211:   position: absolute;
+212:   content: "";
+213:   height: 18px;
+214:   width: 18px;
+215:   left: 3px;
+216:   bottom: 3px;
+217:   background-color: white;
+218:   transition: var(--transition-slow);
+219:   border-radius: 50%;
+220: }
+221: 
+222: input:checked + .toggle-slider {
+223:   background-color: var(--cork-success);
+224: }
+225: 
+226: input:checked + .toggle-slider:before {
+227:   transform: translateX(26px);
+228: }
+229: 
+230: .toggle-switch input:focus-visible + .toggle-slider {
+231:   box-shadow: 0 0 0 3px rgba(255,255,255,0.25);
+232: }
+233: 
+234: /* Status Messages */
+235: .status-msg {
+236:   margin-top: 10px;
+237:   padding: 10px;
+238:   border-radius: var(--radius-sm);
+239:   font-size: 0.9em;
+240:   display: none;
+241: }
+242: 
+243: .status-msg.success {
+244:   background: rgba(26, 188, 156, 0.2);
+245:   color: var(--cork-success);
+246:   border: 1px solid var(--cork-success);
+247:   display: block;
+248: }
+249: 
+250: .status-msg.error {
+251:   background: rgba(231, 81, 90, 0.2);
+252:   color: var(--cork-danger);
+253:   border: 1px solid var(--cork-danger);
+254:   display: block;
+255: }
+256: 
+257: .status-msg.info {
+258:   background: rgba(33, 150, 243, 0.2);
+259:   color: var(--cork-info);
+260:   border: 1px solid var(--cork-info);
+261:   display: block;
+262: }
+263: 
+264: /* JSON Viewer */
+265: .json-viewer-container {
+266:   margin-top: 12px;
+267:   padding: 12px 14px;
+268:   border-radius: var(--radius-md);
+269:   background: rgba(0, 0, 0, 0.25);
+270:   border: 1px solid var(--cork-border-color);
+271:   max-height: 380px;
+272:   overflow: auto;
+273:   font-family: 'JetBrains Mono', 'Fira Code', monospace;
+274:   font-size: 0.9em;
+275: }
+276: 
+277: .json-viewer-wrapper {
+278:   color: var(--cork-text-primary);
+279: }
+280: 
+281: .json-viewer {
+282:   display: flex;
+283:   flex-direction: column;
+284:   gap: 6px;
+285: }
+286: 
+287: .json-node {
+288:   border-left: 2px solid rgba(255, 255, 255, 0.08);
+289:   padding-left: 10px;
+290: }
+291: 
+292: .json-node-summary {
+293:   cursor: pointer;
+294:   list-style: none;
+295:   display: flex;
+296:   gap: 8px;
+297:   align-items: baseline;
+298:   color: var(--cork-text-primary);
+299:   transition: color var(--transition-fast) ease;
+300: }
+301: 
+302: .json-node-summary::-webkit-details-marker {
+303:   display: none;
+304: }
+305: 
+306: .json-node-summary::before {
+307:   content: '\25BC';
+308:   font-size: 0.7em;
+309:   display: inline-block;
+310:   transform: rotate(-90deg);
+311:   transition: transform var(--transition-fast) ease;
+312:   color: var(--cork-secondary-accent);
+313: }
+314: 
+315: .json-node[open] > .json-node-summary::before {
+316:   transform: rotate(0deg);
+317: }
+318: 
+319: .json-key {
+320:   font-weight: 600;
+321:   color: var(--cork-secondary-accent);
+322: }
+323: 
+324: .json-meta {
+325:   font-size: 0.8em;
+326:   color: var(--cork-text-secondary);
+327: }
+328: 
+329: .json-children {
+330:   margin-top: 6px;
+331:   display: flex;
+332:   flex-direction: column;
+333:   gap: 4px;
+334: }
+335: 
+336: .json-leaf {
+337:   display: flex;
+338:   gap: 6px;
+339:   border-left: 2px solid rgba(67, 97, 238, 0.3);
+340:   padding-left: 10px;
+341: }
+342: 
+343: .json-value {
+344:   color: var(--cork-text-primary);
+345: }
+346: 
+347: .json-value--string {
+348:   color: #50fa7b;
+349: }
+350: 
+351: .json-value--number {
+352:   color: #8be9fd;
+353: }
+354: 
+355: .json-value--boolean {
+356:   color: #ffb86c;
+357: }
+358: 
+359: .json-value--null {
+360:   color: #ff79c6;
+361: }
+362: 
+363: .json-value--undefined {
+364:   color: #bd93f9;
+365: }
+366: 
+367: /* Pills/Badges */
+368: .pill {
+369:   font-size: 0.7rem;
+370:   text-transform: uppercase;
+371:   border-radius: var(--radius-full);
+372:   padding: 3px 8px;
+373:   margin-left: 8px;
+374: }
+375: 
+376: .pill-manual {
+377:   background: rgba(226,160,63,0.15);
+378:   color: #e2a03f;
+379: }
+380: 
+381: /* Logout Link */
+382: .logout-link {
+383:   text-decoration: none;
+384:   font-size: 0.9em;
+385:   font-weight: 600;
+386:   background-color: var(--cork-danger);
+387:   color: white;
+388:   padding: 8px 16px;
+389:   border-radius: var(--radius-sm);
+390:   transition: background-color var(--transition-normal) ease;
+391: }
+392: 
+393: .logout-link:hover {
+394:   background-color: #c93e47;
+395: }
+396: 
+397: /* Email Remove Button */
+398: .email-remove-btn {
+399:   background-color: var(--cork-card-bg);
+400:   border: 1px solid var(--cork-border-color);
+401:   color: var(--cork-text-primary);
+402:   border-radius: var(--radius-sm);
+403:   cursor: pointer;
+404:   padding: 2px 8px;
+405:   margin-left: 5px;
+406: }
+407: 
+408: .email-remove-btn:hover {
+409:   background-color: var(--cork-danger);
+410:   color: white;
+411: }
+412: 
+413: #addSenderBtn {
+414:   background-color: var(--cork-card-bg);
+415:   color: var(--cork-text-primary);
+416:   border: 1px solid var(--cork-border-color);
+417: }
+418: 
+419: #addSenderBtn:hover {
+420:   background-color: var(--cork-primary-accent);
+421:   color: white;
+422: }
+423: 
+424: /* Responsive Adjustments */
+425: @media (max-width: 480px) {
+426:   .toggle-switch {
+427:     width: 45px;
+428:     height: 22px;
+429:   }
+430: 
+431:   .toggle-slider:before {
+432:     width: 16px;
+433:     height: 16px;
+434:     left: 3px;
+435:     bottom: 3px;
+436:   }
+437: 
+438:   input:checked + .toggle-slider:before {
+439:     transform: translateX(23px);
+440:   }
+441: 
+442:   .card {
+443:     padding: 15px;
+444:   }
+445: }
+````
+
 ## File: static/utils/MessageHelper.js
 ````javascript
   1: export class MessageHelper {
@@ -10288,6 +10542,382 @@ requirements.txt
 43: ]
 ````
 
+## File: routes/api_config.py
+````python
+  1: from __future__ import annotations
+  2: 
+  3: import json
+  4: import re
+  5: from datetime import datetime
+  6: from typing import Tuple
+  7: 
+  8: from flask import Blueprint, jsonify, request
+  9: from flask_login import login_required
+ 10: 
+ 11: from config import webhook_time_window, polling_config, settings
+ 12: from config import app_config_store as _store
+ 13: from config.settings import (
+ 14:     RUNTIME_FLAGS_FILE,
+ 15:     DISABLE_EMAIL_ID_DEDUP as DEFAULT_DISABLE_EMAIL_ID_DEDUP,
+ 16:     ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS as DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS,
+ 17:     POLLING_TIMEZONE_STR,
+ 18:     EMAIL_POLLING_INTERVAL_SECONDS,
+ 19:     POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
+ 20:     POLLING_CONFIG_FILE,
+ 21: )
+ 22: from services import RuntimeFlagsService
+ 23: 
+ 24: bp = Blueprint("api_config", __name__, url_prefix="/api")
+ 25: 
+ 26: # Récupérer l'instance RuntimeFlagsService (Singleton)
+ 27: # L'instance est déjà initialisée dans app_render.py
+ 28: try:
+ 29:     _runtime_flags_service = RuntimeFlagsService.get_instance()
+ 30: except ValueError:
+ 31:     # Fallback: initialiser si pas encore fait (cas tests)
+ 32:     _runtime_flags_service = RuntimeFlagsService.get_instance(
+ 33:         file_path=RUNTIME_FLAGS_FILE,
+ 34:         defaults={
+ 35:             "disable_email_id_dedup": bool(DEFAULT_DISABLE_EMAIL_ID_DEDUP),
+ 36:             "allow_custom_webhook_without_links": bool(DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
+ 37:         }
+ 38:     )
+ 39: 
+ 40: 
+ 41: # Wrappers legacy supprimés - Appels directs aux services
+ 42: 
+ 43: 
+ 44: # ---- Time window (session-protected) ----
+ 45: 
+ 46: @bp.route("/get_webhook_time_window", methods=["GET"])
+ 47: @login_required
+ 48: def get_webhook_time_window():
+ 49:     try:
+ 50:         # Best-effort: pull latest values from external store to reflect remote edits
+ 51:         try:
+ 52:             cfg = _store.get_config_json("webhook_config") or {}
+ 53:             gs = (cfg.get("global_time_start") or "").strip()
+ 54:             ge = (cfg.get("global_time_end") or "").strip()
+ 55:             # Only sync when BOTH values are provided (non-empty). Do NOT clear on double-empty here.
+ 56:             if (gs != "" and ge != ""):
+ 57:                 webhook_time_window.update_time_window(gs, ge)
+ 58:         except Exception:
+ 59:             pass
+ 60:         info = webhook_time_window.get_time_window_info()
+ 61:         return (
+ 62:             jsonify(
+ 63:                 {
+ 64:                     "success": True,
+ 65:                     "webhooks_time_start": info.get("start") or None,
+ 66:                     "webhooks_time_end": info.get("end") or None,
+ 67:                     "timezone": POLLING_TIMEZONE_STR,
+ 68:                 }
+ 69:             ),
+ 70:             200,
+ 71:         )
+ 72:     except Exception:
+ 73:         return jsonify({"success": False, "message": "Erreur lors de la récupération de la fenêtre horaire."}), 500
+ 74: 
+ 75: 
+ 76: @bp.route("/set_webhook_time_window", methods=["POST"])
+ 77: @login_required
+ 78: def set_webhook_time_window():
+ 79:     try:
+ 80:         payload = request.get_json(silent=True) or {}
+ 81:         start = payload.get("start", "")
+ 82:         end = payload.get("end", "")
+ 83:         ok, msg = webhook_time_window.update_time_window(start, end)
+ 84:         status = 200 if ok else 400
+ 85:         info = webhook_time_window.get_time_window_info()
+ 86:         # Best-effort: mirror the global time window to external config store under
+ 87:         # webhook_config as global_time_start/global_time_end so that
+ 88:         # https://webhook.kidpixel.fr/data/app_config/webhook_config.json reflects it too.
+ 89:         try:
+ 90:             cfg = _store.get_config_json("webhook_config") or {}
+ 91:             cfg["global_time_start"] = (info.get("start") or "") or None
+ 92:             cfg["global_time_end"] = (info.get("end") or "") or None
+ 93:             # Do not fail the request if external store is unavailable
+ 94:             _store.set_config_json("webhook_config", cfg)
+ 95:         except Exception:
+ 96:             pass
+ 97:         return (
+ 98:             jsonify(
+ 99:                 {
+100:                     "success": ok,
+101:                     "message": msg,
+102:                     "webhooks_time_start": info.get("start") or None,
+103:                     "webhooks_time_end": info.get("end") or None,
+104:                 }
+105:             ),
+106:             status,
+107:         )
+108:     except Exception:
+109:         return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}), 500
+110: 
+111: 
+112: # ---- Runtime flags (session-protected) ----
+113: 
+114: @bp.route("/get_runtime_flags", methods=["GET"])
+115: @login_required
+116: def get_runtime_flags():
+117:     """Récupère les flags runtime.
+118:     
+119:     Appel direct à RuntimeFlagsService (cache intelligent 60s).
+120:     """
+121:     try:
+122:         # Appel direct au service (cache si valide, sinon reload)
+123:         data = _runtime_flags_service.get_all_flags()
+124:         return jsonify({"success": True, "flags": data}), 200
+125:     except Exception:
+126:         return jsonify({"success": False, "message": "Erreur interne"}), 500
+127: 
+128: 
+129: @bp.route("/update_runtime_flags", methods=["POST"])
+130: @login_required
+131: def update_runtime_flags():
+132:     """Met à jour les flags runtime.
+133:     
+134:     Appel direct à RuntimeFlagsService.update_flags() - Atomic update + invalidation cache.
+135:     """
+136:     try:
+137:         payload = request.get_json(silent=True) or {}
+138:         
+139:         # Préparer les mises à jour (validation)
+140:         updates = {}
+141:         if "disable_email_id_dedup" in payload:
+142:             updates["disable_email_id_dedup"] = bool(payload.get("disable_email_id_dedup"))
+143:         if "allow_custom_webhook_without_links" in payload:
+144:             updates["allow_custom_webhook_without_links"] = bool(payload.get("allow_custom_webhook_without_links"))
+145:         
+146:         # Appel direct au service (mise à jour atomique + persiste + invalide cache)
+147:         if not _runtime_flags_service.update_flags(updates):
+148:             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
+149:         
+150:         # Récupérer les flags à jour
+151:         data = _runtime_flags_service.get_all_flags()
+152:         return jsonify({
+153:             "success": True,
+154:             "flags": data,
+155:             "message": "Modifications enregistrées. Un redémarrage peut être nécessaire."
+156:         }), 200
+157:     except Exception:
+158:         return jsonify({"success": False, "message": "Erreur interne"}), 500
+159: 
+160: 
+161: # ---- Polling configuration (session-protected) ----
+162: 
+163: @bp.route("/get_polling_config", methods=["GET"])
+164: @login_required
+165: def get_polling_config():
+166:     try:
+167:         # Read live settings at call time to honor pytest patch.object overrides
+168:         # Prefer values from external store/file if available to reflect persisted UI choices
+169:         persisted = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
+170:         cfg = {
+171:             "active_days": persisted.get("active_days", getattr(polling_config, 'POLLING_ACTIVE_DAYS', settings.POLLING_ACTIVE_DAYS)),
+172:             "active_start_hour": persisted.get("active_start_hour", getattr(polling_config, 'POLLING_ACTIVE_START_HOUR', settings.POLLING_ACTIVE_START_HOUR)),
+173:             "active_end_hour": persisted.get("active_end_hour", getattr(polling_config, 'POLLING_ACTIVE_END_HOUR', settings.POLLING_ACTIVE_END_HOUR)),
+174:             "enable_subject_group_dedup": persisted.get(
+175:                 "enable_subject_group_dedup",
+176:                 getattr(polling_config, 'ENABLE_SUBJECT_GROUP_DEDUP', settings.ENABLE_SUBJECT_GROUP_DEDUP),
+177:             ),
+178:             "timezone": getattr(polling_config, 'POLLING_TIMEZONE_STR', POLLING_TIMEZONE_STR),
+179:             # Still expose persisted sender list if present, else settings default
+180:             "sender_of_interest_for_polling": persisted.get("sender_of_interest_for_polling", getattr(polling_config, 'SENDER_LIST_FOR_POLLING', settings.SENDER_LIST_FOR_POLLING)),
+181:             "vacation_start": persisted.get("vacation_start", polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None),
+182:             "vacation_end": persisted.get("vacation_end", polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None),
+183:             # Global enable toggle: prefer persisted, fallback helper
+184:             "enable_polling": persisted.get("enable_polling", True),
+185:         }
+186:         # Pourquoi : si store vide, retomber sur les settings patchés par pytest
+187:         if not persisted:
+188:             # Utiliser settings importé au niveau fichier (pytest le patche directement)
+189:             cfg = {
+190:                 "active_days": getattr(settings, 'POLLING_ACTIVE_DAYS', settings.POLLING_ACTIVE_DAYS),
+191:                 "active_start_hour": getattr(settings, 'POLLING_ACTIVE_START_HOUR', settings.POLLING_ACTIVE_START_HOUR),
+192:                 "active_end_hour": getattr(settings, 'POLLING_ACTIVE_END_HOUR', settings.POLLING_ACTIVE_END_HOUR),
+193:                 "enable_subject_group_dedup": getattr(settings, 'ENABLE_SUBJECT_GROUP_DEDUP', settings.ENABLE_SUBJECT_GROUP_DEDUP),
+194:                 "timezone": getattr(settings, 'POLLING_TIMEZONE_STR', POLLING_TIMEZONE_STR),
+195:                 "sender_of_interest_for_polling": getattr(settings, 'SENDER_LIST_FOR_POLLING', settings.SENDER_LIST_FOR_POLLING),
+196:                 "vacation_start": polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None,
+197:                 "vacation_end": polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None,
+198:                 "enable_polling": True,
+199:             }
+200:         return jsonify({"success": True, "config": cfg}), 200
+201:     except Exception:
+202:         return jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration polling."}), 500
+203: 
+204: 
+205: @bp.route("/update_polling_config", methods=["POST"])
+206: @login_required
+207: def update_polling_config():
+208:     try:
+209:         payload = request.get_json(silent=True) or {}
+210:         # Charger l'existant depuis le store (fallback fichier)
+211:         existing: dict = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
+212: 
+213:         # Normalisation des champs
+214:         new_days = None
+215:         if 'active_days' in payload:
+216:             days_val = payload['active_days']
+217:             parsed_days: list[int] = []
+218:             if isinstance(days_val, str):
+219:                 parts = [p.strip() for p in days_val.split(',') if p.strip()]
+220:                 for p in parts:
+221:                     if p.isdigit():
+222:                         d = int(p)
+223:                         if 0 <= d <= 6:
+224:                             parsed_days.append(d)
+225:             elif isinstance(days_val, list):
+226:                 for p in days_val:
+227:                     try:
+228:                         d = int(p)
+229:                         if 0 <= d <= 6:
+230:                             parsed_days.append(d)
+231:                     except Exception:
+232:                         continue
+233:             if parsed_days:
+234:                 new_days = sorted(set(parsed_days))
+235:             else:
+236:                 new_days = [0, 1, 2, 3, 4]
+237: 
+238:         new_start = None
+239:         if 'active_start_hour' in payload:
+240:             try:
+241:                 v = int(payload['active_start_hour'])
+242:                 if 0 <= v <= 23:
+243:                     new_start = v
+244:                 else:
+245:                     return jsonify({"success": False, "message": "active_start_hour doit être entre 0 et 23."}), 400
+246:             except Exception:
+247:                 return jsonify({"success": False, "message": "active_start_hour invalide (entier attendu)."}), 400
+248: 
+249:         new_end = None
+250:         if 'active_end_hour' in payload:
+251:             try:
+252:                 v = int(payload['active_end_hour'])
+253:                 if 0 <= v <= 23:
+254:                     new_end = v
+255:                 else:
+256:                     return jsonify({"success": False, "message": "active_end_hour doit être entre 0 et 23."}), 400
+257:             except Exception:
+258:                 return jsonify({"success": False, "message": "active_end_hour invalide (entier attendu)."}), 400
+259: 
+260:         new_dedup = None
+261:         if 'enable_subject_group_dedup' in payload:
+262:             new_dedup = bool(payload['enable_subject_group_dedup'])
+263: 
+264:         new_senders = None
+265:         if 'sender_of_interest_for_polling' in payload:
+266:             candidates = payload['sender_of_interest_for_polling']
+267:             normalized: list[str] = []
+268:             if isinstance(candidates, str):
+269:                 parts = [p.strip() for p in candidates.split(',') if p.strip()]
+270:             elif isinstance(candidates, list):
+271:                 parts = [str(p).strip() for p in candidates if str(p).strip()]
+272:             else:
+273:                 parts = []
+274:             email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+275:             for p in parts:
+276:                 low = p.lower()
+277:                 if email_re.match(low):
+278:                     normalized.append(low)
+279:             seen = set()
+280:             unique_norm = []
+281:             for s in normalized:
+282:                 if s not in seen:
+283:                     seen.add(s)
+284:                     unique_norm.append(s)
+285:             new_senders = unique_norm
+286: 
+287:         # Vacation dates (ISO YYYY-MM-DD)
+288:         new_vac_start = None
+289:         if 'vacation_start' in payload:
+290:             vs = payload['vacation_start']
+291:             if vs in (None, ""):
+292:                 new_vac_start = None
+293:             else:
+294:                 try:
+295:                     new_vac_start = datetime.fromisoformat(str(vs)).date()
+296:                 except Exception:
+297:                     return jsonify({"success": False, "message": "vacation_start invalide (format YYYY-MM-DD)."}), 400
+298: 
+299:         new_vac_end = None
+300:         if 'vacation_end' in payload:
+301:             ve = payload['vacation_end']
+302:             if ve in (None, ""):
+303:                 new_vac_end = None
+304:             else:
+305:                 try:
+306:                     new_vac_end = datetime.fromisoformat(str(ve)).date()
+307:                 except Exception:
+308:                     return jsonify({"success": False, "message": "vacation_end invalide (format YYYY-MM-DD)."}), 400
+309: 
+310:         if new_vac_start is not None and new_vac_end is not None and new_vac_start > new_vac_end:
+311:             return jsonify({"success": False, "message": "vacation_start doit être <= vacation_end."}), 400
+312: 
+313:         # Global enable (boolean)
+314:         new_enable_polling = None
+315:         if 'enable_polling' in payload:
+316:             try:
+317:                 val = payload.get('enable_polling')
+318:                 if isinstance(val, bool):
+319:                     new_enable_polling = val
+320:                 elif isinstance(val, (int, float)):
+321:                     new_enable_polling = bool(val)
+322:                 elif isinstance(val, str):
+323:                     s = val.strip().lower()
+324:                     if s in {"1", "true", "yes", "y", "on"}:
+325:                         new_enable_polling = True
+326:                     elif s in {"0", "false", "no", "n", "off"}:
+327:                         new_enable_polling = False
+328:             except Exception:
+329:                 new_enable_polling = None
+330: 
+331:         # Persistance via store (avec fallback fichier)
+332:         merged = dict(existing)
+333:         if new_days is not None:
+334:             merged['active_days'] = new_days
+335:         if new_start is not None:
+336:             merged['active_start_hour'] = new_start
+337:         if new_end is not None:
+338:             merged['active_end_hour'] = new_end
+339:         if new_dedup is not None:
+340:             merged['enable_subject_group_dedup'] = new_dedup
+341:         if new_senders is not None:
+342:             merged['sender_of_interest_for_polling'] = new_senders
+343:         if 'vacation_start' in payload:
+344:             merged['vacation_start'] = new_vac_start.isoformat() if new_vac_start else None
+345:         if 'vacation_end' in payload:
+346:             merged['vacation_end'] = new_vac_end.isoformat() if new_vac_end else None
+347:         if new_enable_polling is not None:
+348:             merged['enable_polling'] = new_enable_polling
+349: 
+350:         try:
+351:             ok = _store.set_config_json("polling_config", merged, file_fallback=POLLING_CONFIG_FILE)
+352:             if not ok:
+353:                 return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
+354:         except Exception:
+355:             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
+356: 
+357:         return jsonify({
+358:             "success": True,
+359:             "config": {
+360:                 "active_days": merged.get('active_days', settings.POLLING_ACTIVE_DAYS),
+361:                 "active_start_hour": merged.get('active_start_hour', settings.POLLING_ACTIVE_START_HOUR),
+362:                 "active_end_hour": merged.get('active_end_hour', settings.POLLING_ACTIVE_END_HOUR),
+363:                 "enable_subject_group_dedup": merged.get('enable_subject_group_dedup', settings.ENABLE_SUBJECT_GROUP_DEDUP),
+364:                 "sender_of_interest_for_polling": merged.get('sender_of_interest_for_polling', settings.SENDER_LIST_FOR_POLLING),
+365:                 "vacation_start": merged.get('vacation_start'),
+366:                 "vacation_end": merged.get('vacation_end'),
+367:                 "enable_polling": merged.get('enable_polling', polling_config.get_enable_polling(True)),
+368:             },
+369:             "message": "Configuration polling mise à jour. Un redémarrage peut être nécessaire pour prise en compte complète."
+370:         }), 200
+371:     except Exception:
+372:         return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour du polling."}), 500
+````
+
 ## File: services/r2_transfer_service.py
 ````python
   1: """
@@ -12071,382 +12701,6 @@ requirements.txt
 387:         return jsonify({"status": "success", "message": "Vérification en arrière-plan lancée."}), 202
 388:     except Exception as e:
 389:         return jsonify({"status": "error", "message": str(e)}), 500
-````
-
-## File: routes/api_config.py
-````python
-  1: from __future__ import annotations
-  2: 
-  3: import json
-  4: import re
-  5: from datetime import datetime
-  6: from typing import Tuple
-  7: 
-  8: from flask import Blueprint, jsonify, request
-  9: from flask_login import login_required
- 10: 
- 11: from config import webhook_time_window, polling_config, settings
- 12: from config import app_config_store as _store
- 13: from config.settings import (
- 14:     RUNTIME_FLAGS_FILE,
- 15:     DISABLE_EMAIL_ID_DEDUP as DEFAULT_DISABLE_EMAIL_ID_DEDUP,
- 16:     ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS as DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS,
- 17:     POLLING_TIMEZONE_STR,
- 18:     EMAIL_POLLING_INTERVAL_SECONDS,
- 19:     POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
- 20:     POLLING_CONFIG_FILE,
- 21: )
- 22: from services import RuntimeFlagsService
- 23: 
- 24: bp = Blueprint("api_config", __name__, url_prefix="/api")
- 25: 
- 26: # Récupérer l'instance RuntimeFlagsService (Singleton)
- 27: # L'instance est déjà initialisée dans app_render.py
- 28: try:
- 29:     _runtime_flags_service = RuntimeFlagsService.get_instance()
- 30: except ValueError:
- 31:     # Fallback: initialiser si pas encore fait (cas tests)
- 32:     _runtime_flags_service = RuntimeFlagsService.get_instance(
- 33:         file_path=RUNTIME_FLAGS_FILE,
- 34:         defaults={
- 35:             "disable_email_id_dedup": bool(DEFAULT_DISABLE_EMAIL_ID_DEDUP),
- 36:             "allow_custom_webhook_without_links": bool(DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
- 37:         }
- 38:     )
- 39: 
- 40: 
- 41: # Wrappers legacy supprimés - Appels directs aux services
- 42: 
- 43: 
- 44: # ---- Time window (session-protected) ----
- 45: 
- 46: @bp.route("/get_webhook_time_window", methods=["GET"])
- 47: @login_required
- 48: def get_webhook_time_window():
- 49:     try:
- 50:         # Best-effort: pull latest values from external store to reflect remote edits
- 51:         try:
- 52:             cfg = _store.get_config_json("webhook_config") or {}
- 53:             gs = (cfg.get("global_time_start") or "").strip()
- 54:             ge = (cfg.get("global_time_end") or "").strip()
- 55:             # Only sync when BOTH values are provided (non-empty). Do NOT clear on double-empty here.
- 56:             if (gs != "" and ge != ""):
- 57:                 webhook_time_window.update_time_window(gs, ge)
- 58:         except Exception:
- 59:             pass
- 60:         info = webhook_time_window.get_time_window_info()
- 61:         return (
- 62:             jsonify(
- 63:                 {
- 64:                     "success": True,
- 65:                     "webhooks_time_start": info.get("start") or None,
- 66:                     "webhooks_time_end": info.get("end") or None,
- 67:                     "timezone": POLLING_TIMEZONE_STR,
- 68:                 }
- 69:             ),
- 70:             200,
- 71:         )
- 72:     except Exception:
- 73:         return jsonify({"success": False, "message": "Erreur lors de la récupération de la fenêtre horaire."}), 500
- 74: 
- 75: 
- 76: @bp.route("/set_webhook_time_window", methods=["POST"])
- 77: @login_required
- 78: def set_webhook_time_window():
- 79:     try:
- 80:         payload = request.get_json(silent=True) or {}
- 81:         start = payload.get("start", "")
- 82:         end = payload.get("end", "")
- 83:         ok, msg = webhook_time_window.update_time_window(start, end)
- 84:         status = 200 if ok else 400
- 85:         info = webhook_time_window.get_time_window_info()
- 86:         # Best-effort: mirror the global time window to external config store under
- 87:         # webhook_config as global_time_start/global_time_end so that
- 88:         # https://webhook.kidpixel.fr/data/app_config/webhook_config.json reflects it too.
- 89:         try:
- 90:             cfg = _store.get_config_json("webhook_config") or {}
- 91:             cfg["global_time_start"] = (info.get("start") or "") or None
- 92:             cfg["global_time_end"] = (info.get("end") or "") or None
- 93:             # Do not fail the request if external store is unavailable
- 94:             _store.set_config_json("webhook_config", cfg)
- 95:         except Exception:
- 96:             pass
- 97:         return (
- 98:             jsonify(
- 99:                 {
-100:                     "success": ok,
-101:                     "message": msg,
-102:                     "webhooks_time_start": info.get("start") or None,
-103:                     "webhooks_time_end": info.get("end") or None,
-104:                 }
-105:             ),
-106:             status,
-107:         )
-108:     except Exception:
-109:         return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}), 500
-110: 
-111: 
-112: # ---- Runtime flags (session-protected) ----
-113: 
-114: @bp.route("/get_runtime_flags", methods=["GET"])
-115: @login_required
-116: def get_runtime_flags():
-117:     """Récupère les flags runtime.
-118:     
-119:     Appel direct à RuntimeFlagsService (cache intelligent 60s).
-120:     """
-121:     try:
-122:         # Appel direct au service (cache si valide, sinon reload)
-123:         data = _runtime_flags_service.get_all_flags()
-124:         return jsonify({"success": True, "flags": data}), 200
-125:     except Exception:
-126:         return jsonify({"success": False, "message": "Erreur interne"}), 500
-127: 
-128: 
-129: @bp.route("/update_runtime_flags", methods=["POST"])
-130: @login_required
-131: def update_runtime_flags():
-132:     """Met à jour les flags runtime.
-133:     
-134:     Appel direct à RuntimeFlagsService.update_flags() - Atomic update + invalidation cache.
-135:     """
-136:     try:
-137:         payload = request.get_json(silent=True) or {}
-138:         
-139:         # Préparer les mises à jour (validation)
-140:         updates = {}
-141:         if "disable_email_id_dedup" in payload:
-142:             updates["disable_email_id_dedup"] = bool(payload.get("disable_email_id_dedup"))
-143:         if "allow_custom_webhook_without_links" in payload:
-144:             updates["allow_custom_webhook_without_links"] = bool(payload.get("allow_custom_webhook_without_links"))
-145:         
-146:         # Appel direct au service (mise à jour atomique + persiste + invalide cache)
-147:         if not _runtime_flags_service.update_flags(updates):
-148:             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
-149:         
-150:         # Récupérer les flags à jour
-151:         data = _runtime_flags_service.get_all_flags()
-152:         return jsonify({
-153:             "success": True,
-154:             "flags": data,
-155:             "message": "Modifications enregistrées. Un redémarrage peut être nécessaire."
-156:         }), 200
-157:     except Exception:
-158:         return jsonify({"success": False, "message": "Erreur interne"}), 500
-159: 
-160: 
-161: # ---- Polling configuration (session-protected) ----
-162: 
-163: @bp.route("/get_polling_config", methods=["GET"])
-164: @login_required
-165: def get_polling_config():
-166:     try:
-167:         # Read live settings at call time to honor pytest patch.object overrides
-168:         # Prefer values from external store/file if available to reflect persisted UI choices
-169:         persisted = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
-170:         cfg = {
-171:             "active_days": persisted.get("active_days", getattr(polling_config, 'POLLING_ACTIVE_DAYS', settings.POLLING_ACTIVE_DAYS)),
-172:             "active_start_hour": persisted.get("active_start_hour", getattr(polling_config, 'POLLING_ACTIVE_START_HOUR', settings.POLLING_ACTIVE_START_HOUR)),
-173:             "active_end_hour": persisted.get("active_end_hour", getattr(polling_config, 'POLLING_ACTIVE_END_HOUR', settings.POLLING_ACTIVE_END_HOUR)),
-174:             "enable_subject_group_dedup": persisted.get(
-175:                 "enable_subject_group_dedup",
-176:                 getattr(polling_config, 'ENABLE_SUBJECT_GROUP_DEDUP', settings.ENABLE_SUBJECT_GROUP_DEDUP),
-177:             ),
-178:             "timezone": getattr(polling_config, 'POLLING_TIMEZONE_STR', POLLING_TIMEZONE_STR),
-179:             # Still expose persisted sender list if present, else settings default
-180:             "sender_of_interest_for_polling": persisted.get("sender_of_interest_for_polling", getattr(polling_config, 'SENDER_LIST_FOR_POLLING', settings.SENDER_LIST_FOR_POLLING)),
-181:             "vacation_start": persisted.get("vacation_start", polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None),
-182:             "vacation_end": persisted.get("vacation_end", polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None),
-183:             # Global enable toggle: prefer persisted, fallback helper
-184:             "enable_polling": persisted.get("enable_polling", True),
-185:         }
-186:         # Pourquoi : si store vide, retomber sur les settings patchés par pytest
-187:         if not persisted:
-188:             # Utiliser settings importé au niveau fichier (pytest le patche directement)
-189:             cfg = {
-190:                 "active_days": getattr(settings, 'POLLING_ACTIVE_DAYS', settings.POLLING_ACTIVE_DAYS),
-191:                 "active_start_hour": getattr(settings, 'POLLING_ACTIVE_START_HOUR', settings.POLLING_ACTIVE_START_HOUR),
-192:                 "active_end_hour": getattr(settings, 'POLLING_ACTIVE_END_HOUR', settings.POLLING_ACTIVE_END_HOUR),
-193:                 "enable_subject_group_dedup": getattr(settings, 'ENABLE_SUBJECT_GROUP_DEDUP', settings.ENABLE_SUBJECT_GROUP_DEDUP),
-194:                 "timezone": getattr(settings, 'POLLING_TIMEZONE_STR', POLLING_TIMEZONE_STR),
-195:                 "sender_of_interest_for_polling": getattr(settings, 'SENDER_LIST_FOR_POLLING', settings.SENDER_LIST_FOR_POLLING),
-196:                 "vacation_start": polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None,
-197:                 "vacation_end": polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None,
-198:                 "enable_polling": True,
-199:             }
-200:         return jsonify({"success": True, "config": cfg}), 200
-201:     except Exception:
-202:         return jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration polling."}), 500
-203: 
-204: 
-205: @bp.route("/update_polling_config", methods=["POST"])
-206: @login_required
-207: def update_polling_config():
-208:     try:
-209:         payload = request.get_json(silent=True) or {}
-210:         # Charger l'existant depuis le store (fallback fichier)
-211:         existing: dict = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
-212: 
-213:         # Normalisation des champs
-214:         new_days = None
-215:         if 'active_days' in payload:
-216:             days_val = payload['active_days']
-217:             parsed_days: list[int] = []
-218:             if isinstance(days_val, str):
-219:                 parts = [p.strip() for p in days_val.split(',') if p.strip()]
-220:                 for p in parts:
-221:                     if p.isdigit():
-222:                         d = int(p)
-223:                         if 0 <= d <= 6:
-224:                             parsed_days.append(d)
-225:             elif isinstance(days_val, list):
-226:                 for p in days_val:
-227:                     try:
-228:                         d = int(p)
-229:                         if 0 <= d <= 6:
-230:                             parsed_days.append(d)
-231:                     except Exception:
-232:                         continue
-233:             if parsed_days:
-234:                 new_days = sorted(set(parsed_days))
-235:             else:
-236:                 new_days = [0, 1, 2, 3, 4]
-237: 
-238:         new_start = None
-239:         if 'active_start_hour' in payload:
-240:             try:
-241:                 v = int(payload['active_start_hour'])
-242:                 if 0 <= v <= 23:
-243:                     new_start = v
-244:                 else:
-245:                     return jsonify({"success": False, "message": "active_start_hour doit être entre 0 et 23."}), 400
-246:             except Exception:
-247:                 return jsonify({"success": False, "message": "active_start_hour invalide (entier attendu)."}), 400
-248: 
-249:         new_end = None
-250:         if 'active_end_hour' in payload:
-251:             try:
-252:                 v = int(payload['active_end_hour'])
-253:                 if 0 <= v <= 23:
-254:                     new_end = v
-255:                 else:
-256:                     return jsonify({"success": False, "message": "active_end_hour doit être entre 0 et 23."}), 400
-257:             except Exception:
-258:                 return jsonify({"success": False, "message": "active_end_hour invalide (entier attendu)."}), 400
-259: 
-260:         new_dedup = None
-261:         if 'enable_subject_group_dedup' in payload:
-262:             new_dedup = bool(payload['enable_subject_group_dedup'])
-263: 
-264:         new_senders = None
-265:         if 'sender_of_interest_for_polling' in payload:
-266:             candidates = payload['sender_of_interest_for_polling']
-267:             normalized: list[str] = []
-268:             if isinstance(candidates, str):
-269:                 parts = [p.strip() for p in candidates.split(',') if p.strip()]
-270:             elif isinstance(candidates, list):
-271:                 parts = [str(p).strip() for p in candidates if str(p).strip()]
-272:             else:
-273:                 parts = []
-274:             email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-275:             for p in parts:
-276:                 low = p.lower()
-277:                 if email_re.match(low):
-278:                     normalized.append(low)
-279:             seen = set()
-280:             unique_norm = []
-281:             for s in normalized:
-282:                 if s not in seen:
-283:                     seen.add(s)
-284:                     unique_norm.append(s)
-285:             new_senders = unique_norm
-286: 
-287:         # Vacation dates (ISO YYYY-MM-DD)
-288:         new_vac_start = None
-289:         if 'vacation_start' in payload:
-290:             vs = payload['vacation_start']
-291:             if vs in (None, ""):
-292:                 new_vac_start = None
-293:             else:
-294:                 try:
-295:                     new_vac_start = datetime.fromisoformat(str(vs)).date()
-296:                 except Exception:
-297:                     return jsonify({"success": False, "message": "vacation_start invalide (format YYYY-MM-DD)."}), 400
-298: 
-299:         new_vac_end = None
-300:         if 'vacation_end' in payload:
-301:             ve = payload['vacation_end']
-302:             if ve in (None, ""):
-303:                 new_vac_end = None
-304:             else:
-305:                 try:
-306:                     new_vac_end = datetime.fromisoformat(str(ve)).date()
-307:                 except Exception:
-308:                     return jsonify({"success": False, "message": "vacation_end invalide (format YYYY-MM-DD)."}), 400
-309: 
-310:         if new_vac_start is not None and new_vac_end is not None and new_vac_start > new_vac_end:
-311:             return jsonify({"success": False, "message": "vacation_start doit être <= vacation_end."}), 400
-312: 
-313:         # Global enable (boolean)
-314:         new_enable_polling = None
-315:         if 'enable_polling' in payload:
-316:             try:
-317:                 val = payload.get('enable_polling')
-318:                 if isinstance(val, bool):
-319:                     new_enable_polling = val
-320:                 elif isinstance(val, (int, float)):
-321:                     new_enable_polling = bool(val)
-322:                 elif isinstance(val, str):
-323:                     s = val.strip().lower()
-324:                     if s in {"1", "true", "yes", "y", "on"}:
-325:                         new_enable_polling = True
-326:                     elif s in {"0", "false", "no", "n", "off"}:
-327:                         new_enable_polling = False
-328:             except Exception:
-329:                 new_enable_polling = None
-330: 
-331:         # Persistance via store (avec fallback fichier)
-332:         merged = dict(existing)
-333:         if new_days is not None:
-334:             merged['active_days'] = new_days
-335:         if new_start is not None:
-336:             merged['active_start_hour'] = new_start
-337:         if new_end is not None:
-338:             merged['active_end_hour'] = new_end
-339:         if new_dedup is not None:
-340:             merged['enable_subject_group_dedup'] = new_dedup
-341:         if new_senders is not None:
-342:             merged['sender_of_interest_for_polling'] = new_senders
-343:         if 'vacation_start' in payload:
-344:             merged['vacation_start'] = new_vac_start.isoformat() if new_vac_start else None
-345:         if 'vacation_end' in payload:
-346:             merged['vacation_end'] = new_vac_end.isoformat() if new_vac_end else None
-347:         if new_enable_polling is not None:
-348:             merged['enable_polling'] = new_enable_polling
-349: 
-350:         try:
-351:             ok = _store.set_config_json("polling_config", merged, file_fallback=POLLING_CONFIG_FILE)
-352:             if not ok:
-353:                 return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
-354:         except Exception:
-355:             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
-356: 
-357:         return jsonify({
-358:             "success": True,
-359:             "config": {
-360:                 "active_days": merged.get('active_days', settings.POLLING_ACTIVE_DAYS),
-361:                 "active_start_hour": merged.get('active_start_hour', settings.POLLING_ACTIVE_START_HOUR),
-362:                 "active_end_hour": merged.get('active_end_hour', settings.POLLING_ACTIVE_END_HOUR),
-363:                 "enable_subject_group_dedup": merged.get('enable_subject_group_dedup', settings.ENABLE_SUBJECT_GROUP_DEDUP),
-364:                 "sender_of_interest_for_polling": merged.get('sender_of_interest_for_polling', settings.SENDER_LIST_FOR_POLLING),
-365:                 "vacation_start": merged.get('vacation_start'),
-366:                 "vacation_end": merged.get('vacation_end'),
-367:                 "enable_polling": merged.get('enable_polling', polling_config.get_enable_polling(True)),
-368:             },
-369:             "message": "Configuration polling mise à jour. Un redémarrage peut être nécessaire pour prise en compte complète."
-370:         }), 200
-371:     except Exception:
-372:         return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour du polling."}), 500
 ````
 
 ## File: routes/api_routing_rules.py
@@ -17599,7 +17853,7 @@ requirements.txt
   9:     <!-- CSS Modular -->
  10:     <link rel="stylesheet" href="{{ url_for('static', filename='css/variables.css') }}">
  11:     <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
- 12:     <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}">
+ 12:     <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}?v=20260202-json-viewer">
  13:     <link rel="stylesheet" href="{{ url_for('static', filename='css/modules.css') }}">
  14:   </head>
  15:   <body>
@@ -17829,299 +18083,301 @@ requirements.txt
 239:           <div id="routing-rules-msg" class="status-msg"></div>
 240:           <div id="routingRulesRedisInspectMsg" class="status-msg" style="margin-top: 12px;"></div>
 241:           <pre id="routingRulesRedisInspectLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-242:         </div>
-243:       </div>
+242:           <div id="routingRulesRedisInspectViewer" class="json-viewer-container" style="display:none;"></div>
+243:         </div>
 244:       </div>
-245: 
-246:       <!-- Section: Préférences Email (expéditeurs, dédup) -->
-247:       <div id="sec-email" class="section-panel">
-248:         <div class="card">
-249:           <div class="card-title">🧩 Préférences Email (expéditeurs, dédup)</div>
-250:           <div class="inline-group" style="margin: 8px 0 12px 0;">
-251:             <label class="toggle-switch">
-252:               <input type="checkbox" id="pollingToggle">
-253:               <span class="toggle-slider"></span>
-254:             </label>
-255:             <span id="pollingStatusText" style="margin-left: 10px;">—</span>
-256:           </div>
-257:           <div id="pollingMsg" class="status-msg" style="margin-top: 6px;"></div>
-258:           <div class="form-group">
-259:             <label>SENDER_OF_INTEREST_FOR_POLLING</label>
-260:             <div id="senderOfInterestContainer" class="stack" style="gap:8px;"></div>
-261:             <button id="addSenderBtn" type="button" class="btn btn-secondary" style="margin-top:8px;">➕ Ajouter Email</button>
-262:             <div class="small-text">Ajouter / modifier / supprimer des emails individuellement. Ils seront validés et normalisés (minuscules).</div>
-263:           </div>
-264:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-265:             <div class="form-group">
-266:               <label for="pollingStartHour">POLLING_ACTIVE_START_HOUR (0-23)</label>
-267:               <select id="pollingStartHour" style="width: 100%; max-width: 100px;">
-268:                 <option value="">Sélectionner...</option>
-269:               </select>
-270:             </div>
-271:             <div class="form-group">
-272:               <label for="pollingEndHour">POLLING_ACTIVE_END_HOUR (0-23)</label>
-273:               <select id="pollingEndHour" style="width: 100%; max-width: 100px;">
-274:                 <option value="">Sélectionner...</option>
-275:               </select>
-276:             </div>
-277:           </div>
-278:           <div class="form-group" style="margin-top: 10px;">
-279:             <label>Jours actifs (POLLING_ACTIVE_DAYS)</label>
-280:             <div id="pollingActiveDaysGroup" class="inline-group" style="flex-wrap: wrap; gap: 12px; margin-top: 6px;">
-281:               <label><input type="checkbox" name="pollingDay" value="0"> Lun</label>
-282:               <label><input type="checkbox" name="pollingDay" value="1"> Mar</label>
-283:               <label><input type="checkbox" name="pollingDay" value="2"> Mer</label>
-284:               <label><input type="checkbox" name="pollingDay" value="3"> Jeu</label>
-285:               <label><input type="checkbox" name="pollingDay" value="4"> Ven</label>
-286:               <label><input type="checkbox" name="pollingDay" value="5"> Sam</label>
-287:               <label><input type="checkbox" name="pollingDay" value="6"> Dim</label>
-288:             </div>
-289:             <div class="small-text">0=Lundi ... 6=Dimanche. Sélectionnez au moins un jour.</div>
-290:           </div>
-291:           <div class="inline-group" style="margin: 8px 0 12px 0;">
-292:             <label class="toggle-switch">
-293:               <input type="checkbox" id="enableSubjectGroupDedup">
-294:               <span class="toggle-slider"></span>
-295:             </label>
-296:             <span style="margin-left: 10px;">ENABLE_SUBJECT_GROUP_DEDUP</span>
-297:           </div>
-298:           <button id="saveEmailPrefsBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer les préférences</button>
-299:           <div id="emailPrefsSaveStatus" class="status-msg" style="margin-top: 10px;"></div>
-300:           <!-- Fallback status container (legacy ID used by JS as a fallback) -->
-301:           <div id="pollingCfgMsg" class="status-msg" style="margin-top: 6px;"></div>
-302:         </div>
-303:         
-304:       </div>
-305: 
-306:       <!-- Section: Préférences (filtres + fiabilité) -->
-307:       <div id="sec-preferences" class="section-panel">
-308:         <div class="card">
-309:           <div class="card-title">🔍 Filtres Email Avancés</div>
-310:           <div class="form-group">
-311:             <label for="excludeKeywordsRecadrage">Mots-clés à exclure (Recadrage) — un par ligne</label>
-312:             <textarea id="excludeKeywordsRecadrage" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-313:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `RECADRAGE_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
-314:           </div>
-315:           <div class="form-group">
-316:             <label for="excludeKeywordsAutorepondeur">Mots-clés à exclure (Autorépondeur) — un par ligne</label>
-317:             <textarea id="excludeKeywordsAutorepondeur" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-318:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `AUTOREPONDEUR_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
-319:           </div>
-320:           <div class="form-group">
-321:             <label for="excludeKeywords">Mots-clés à exclure (global, compatibilité) — un par ligne</label>
-322:             <textarea id="excludeKeywords" rows="3" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-323:             <div class="small-text">Liste globale (héritage). S'applique avant toute logique et avant les listes spécifiques.</div>
-324:           </div>
-325:           <div class="form-group">
-326:             <label for="attachmentDetectionToggle">Détection de pièces jointes requise</label>
-327:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
-328:               <input type="checkbox" id="attachmentDetectionToggle">
-329:               <span class="toggle-slider"></span>
-330:             </label>
-331:           </div>
-332:           <div class="form-group">
-333:             <label for="maxEmailSizeMB">Taille maximale des emails à traiter (Mo)</label>
-334:             <input id="maxEmailSizeMB" type="number" min="1" max="100" placeholder="ex: 25">
-335:           </div>
-336:           <div class="form-group">
-337:             <label for="senderPriority">Priorité des expéditeurs (JSON simple)</label>
-338:             <textarea id="senderPriority" rows="3" placeholder='{"vip@example.com":"high","team@example.com":"medium"}' style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-339:             <div class="small-text">Format: { "email": "high|medium|low", ... } — Validé côté client uniquement pour l'instant.</div>
-340:           </div>
-341:         </div>
-342:         <div class="card" style="margin-top: 20px;">
-343:           <div class="card-title">⚡ Paramètres de Fiabilité</div>
-344:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
-345:             <div class="form-group">
-346:               <label for="retryCount">Nombre de tentatives (retries)</label>
-347:               <input id="retryCount" type="number" min="0" max="10" placeholder="ex: 3">
-348:             </div>
-349:             <div class="form-group">
-350:               <label for="retryDelaySec">Délai entre retries (secondes)</label>
-351:               <input id="retryDelaySec" type="number" min="0" max="600" placeholder="ex: 10">
-352:             </div>
-353:             <div class="form-group">
-354:               <label for="webhookTimeoutSec">Timeout Webhook (secondes)</label>
-355:               <input id="webhookTimeoutSec" type="number" min="1" max="120" placeholder="ex: 30">
-356:             </div>
-357:             <div class="form-group">
-358:               <label for="rateLimitPerHour">Limite d'envoi (webhooks/heure)</label>
-359:               <input id="rateLimitPerHour" type="number" min="1" max="10000" placeholder="ex: 300">
-360:             </div>
-361:           </div>
-362:           <div style="margin-top: 8px;">
-363:             <label class="toggle-switch" style="vertical-align: middle;">
-364:               <input type="checkbox" id="notifyOnFailureToggle">
-365:               <span class="toggle-slider"></span>
-366:             </label>
-367:             <span style="margin-left: 10px; vertical-align: middle;">Notifications d'échec par email (UI-only)</span>
-368:           </div>
-369:           <div style="margin-top: 12px;">
-370:             <button id="processingPrefsSaveBtn" class="btn btn-primary">💾 Enregistrer Préférences de Traitement</button>
-371:             <div id="processingPrefsMsg" class="status-msg"></div>
-372:           </div>
-373:         </div>
-374:       </div>
-375: 
-376:       <!-- Section: Vue d'ensemble (métriques + logs) -->
-377:       <div id="sec-overview" class="section-panel monitoring active">
-378:         <div class="card">
-379:           <div class="card-title">📊 Monitoring & Métriques (24h)</div>
-380:           <div class="inline-group" style="margin-bottom: 10px;">
-381:             <label class="toggle-switch">
-382:               <input type="checkbox" id="enableMetricsToggle" checked>
-383:               <span class="toggle-slider"></span>
-384:             </label>
-385:             <span style="margin-left: 10px;">Activer le calcul de métriques locales</span>
-386:           </div>
-387:           <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
-388:             <div class="form-group"><label>Emails traités</label><div id="metricEmailsProcessed" class="small-text">—</div></div>
-389:             <div class="form-group"><label>Webhooks envoyés</label><div id="metricWebhooksSent" class="small-text">—</div></div>
-390:             <div class="form-group"><label>Erreurs</label><div id="metricErrors" class="small-text">—</div></div>
-391:             <div class="form-group"><label>Taux de succès (%)</label><div id="metricSuccessRate" class="small-text">—</div></div>
-392:           </div>
-393:           <div id="metricsMiniChart" style="height: 60px; background: rgba(255,255,255,0.05); border:1px solid var(--cork-border-color); border-radius:4px; margin-top:10px; position: relative; overflow:hidden;"></div>
-394:           <div class="small-text">Graphique simplifié généré côté client à partir de `/api/webhook_logs`.</div>
-395:         </div>
-396:         <div class="logs-container">
-397:           <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
-398:           <div style="margin-bottom: 15px;">
-399:             <button id="refreshLogsBtn" class="btn btn-primary">🔄 Actualiser</button>
-400:           </div>
-401:           <div id="webhookLogs">
-402:             <div class="log-empty">Chargement des logs...</div>
-403:           </div>
-404:         </div>
-405:       </div>
-406: 
-407:       <!-- Section: Outils (config mgmt + outils de test) -->
-408:       <div id="sec-tools" class="section-panel">
-409:         <div class="card">
-410:           <div class="card-title">💾 Gestion des Configurations</div>
-411:           <div class="inline-group" style="margin-bottom: 10px;">
-412:             <button id="exportConfigBtn" class="btn btn-primary">⬇️ Exporter</button>
-413:             <input id="importConfigFile" type="file" accept="application/json" style="display:none;"/>
-414:             <button id="importConfigBtn" class="btn btn-primary">⬆️ Importer</button>
-415:           </div>
-416:           <div id="configMgmtMsg" class="status-msg"></div>
-417:           <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
-418:         </div>
-419:         <div class="card" style="margin-top: 20px;">
-420:           <div class="card-title">🚀 Déploiement de l'application</div>
-421:           <div class="form-group">
-422:             <p class="small-text">Certaines modifications (ex: paramètres applicatifs, configuration reverse proxy) nécessitent un déploiement pour être pleinement appliquées.</p>
-423:           </div>
-424:           <div class="inline-group" style="margin-bottom: 10px;">
-425:             <button id="restartServerBtn" class="btn btn-success">🚀 Déployer l'application</button>
-426:           </div>
-427:           <div id="restartMsg" class="status-msg"></div>
-428:           <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
-429:         </div>
-430:         <div class="card" style="margin-top: 20px;">
-431:           <div class="card-title">🗂️ Migration configs → Redis</div>
-432:           <p>Rejouez le script <code>migrate_configs_to_redis.py</code> directement sur le serveur Render avec toutes les variables d'environnement de production.</p>
-433:           <div class="inline-group" style="margin-bottom: 10px;">
-434:             <button id="migrateConfigsBtn" class="btn btn-warning">📦 Migrer les configurations</button>
-435:           </div>
-436:           <div id="migrateConfigsMsg" class="status-msg"></div>
-437:           <pre id="migrateConfigsLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-438:           <hr style="margin: 18px 0; border-color: rgba(255,255,255,0.1);">
-439:           <p style="margin-bottom:10px;">Vérifiez l'état des données persistées dans Redis (structures JSON, attributs requis, dates de mise à jour).</p>
-440:           <div class="inline-group" style="margin-bottom: 10px;">
-441:             <button id="verifyConfigStoreBtn" class="btn btn-info">🔍 Vérifier les données en Redis</button>
-442:           </div>
-443:           <label for="verifyConfigStoreRawToggle" class="small-text" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-444:             <input type="checkbox" id="verifyConfigStoreRawToggle">
-445:             <span>Inclure le JSON complet dans le log pour faciliter le debug.</span>
-446:           </label>
-447:           <div id="verifyConfigStoreMsg" class="status-msg"></div>
-448:           <pre id="verifyConfigStoreLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-449:         </div>
-450:         <div class="card" style="margin-top: 20px;">
-451:           <div class="card-title">🔐 Accès Magic Link</div>
-452:           <p>Générez un lien pré-authentifié à usage unique pour ouvrir rapidement le dashboard sans retaper vos identifiants. Le lien est automatiquement copié.</p>
-453:           <div class="inline-group" style="margin-bottom: 12px;">
-454:             <label class="toggle-switch">
-455:               <input type="checkbox" id="magicLinkUnlimitedToggle">
-456:               <span class="toggle-slider"></span>
-457:             </label>
-458:             <span style="margin-left: 10px;">
-459:               Mode illimité (désactivé = lien one-shot avec expiration)
-460:             </span>
-461:           </div>
-462:           <button id="generateMagicLinkBtn" class="btn btn-primary">✨ Générer un magic link</button>
-463:           <div id="magicLinkOutput" class="status-msg" style="margin-top: 12px;"></div>
-464:           <div class="small-text">
-465:             Important : partagez ce lien uniquement avec des personnes autorisées.
-466:             En mode one-shot, il expire après quelques minutes et s'invalide dès qu'il est utilisé.
-467:             En mode illimité, aucun délai mais vous devez révoquer manuellement en cas de fuite.
-468:           </div>
-469:         </div>
-470:         <div class="card" style="margin-top: 20px;">
-471:           <div class="card-title">🧪 Outils de Test</div>
-472:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
-473:             <div class="form-group">
-474:               <label for="testWebhookUrl">Valider une URL de webhook</label>
-475:               <input id="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
-476:               <button id="validateWebhookUrlBtn" class="btn btn-primary" style="margin-top: 8px;">Valider</button>
-477:               <div id="webhookUrlValidationMsg" class="status-msg"></div>
-478:             </div>
-479:             <div class="form-group">
-480:               <label>Prévisualiser un payload</label>
-481:               <input id="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
-482:               <input id="previewSender" type="email" placeholder="Expéditeur (ex: media@solution.fr)" style="margin-top: 6px;">
-483:               <textarea id="previewBody" rows="4" placeholder="Corps de l'email (coller du texte)" style="margin-top: 6px; width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-484:               <button id="buildPayloadPreviewBtn" class="btn btn-primary" style="margin-top: 8px;">Générer</button>
-485:               <pre id="payloadPreview" style="margin-top:8px; background: rgba(0,0,0,0.2); border:1px solid var(--cork-border-color); padding:10px; border-radius:4px; max-height:200px; overflow:auto; color: var(--cork-text-primary);"></pre>
-486:             </div>
-487:           </div>
-488:           <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
-489:         </div>
-490:         <div class="card" style="margin-top: 20px;">
-491:           <div class="card-title">🔗 Ouvrir une page de téléchargement</div>
-492:           <div class="form-group">
-493:             <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
-494:             <input id="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
-495:             <button id="openDownloadPageBtn" class="btn btn-primary" style="margin-top: 8px;">Ouvrir la page</button>
-496:             <div id="openDownloadMsg" class="status-msg"></div>
-497:             <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
-498:           </div>
-499:         </div>
-500:         <div class="card" style="margin-top: 20px;">
-501:           <div class="card-title"> Flags Runtime (Debug)</div>
-502:           <div class="form-group">
-503:             <label>Bypass déduplication par ID d’email (debug)</label>
-504:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
-505:               <input type="checkbox" id="disableEmailIdDedupToggle">
-506:               <span class="toggle-slider"></span>
-507:             </label>
-508:             <div class="small-text">Quand activé, ignore la déduplication par ID d'email. À utiliser uniquement pour des tests.
-509:             </div>
-510:           </div>
-511:           <div class="form-group" style="margin-top: 10px;">
-512:             <label>Autoriser envoi CUSTOM sans liens de livraison</label>
-513:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
-514:               <input type="checkbox" id="allowCustomWithoutLinksToggle">
-515:               <span class="toggle-slider"></span>
-516:             </label>
-517:             <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu’aucun lien (Dropbox/FromSmash/SwissTransfer) n’est détecté, pour éviter les 422.</div>
-518:           </div>
-519:           <div style="margin-top: 12px;">
-520:             <button id="runtimeFlagsSaveBtn" class="btn btn-primary"> Enregistrer Flags Runtime</button>
-521:             <div id="runtimeFlagsMsg" class="status-msg"></div>
-522:           </div>
-523:         </div>
-524:       </div>
-525:     </div>
-526:     <!-- Chargement des modules JavaScript -->
-527:     <script type="module" src="{{ url_for('static', filename='utils/MessageHelper.js') }}"></script>
-528:     <script type="module" src="{{ url_for('static', filename='services/ApiService.js') }}"></script>
-529:     <script type="module" src="{{ url_for('static', filename='services/WebhookService.js') }}"></script>
-530:     <script type="module" src="{{ url_for('static', filename='services/LogService.js') }}"></script>
-531:     <script type="module" src="{{ url_for('static', filename='components/TabManager.js') }}"></script>
-532:     <script type="module" src="{{ url_for('static', filename='dashboard.js') }}?v=20260118-modular"></script>
-533:   </body>
-534: </html>
+245:       </div>
+246: 
+247:       <!-- Section: Préférences Email (expéditeurs, dédup) -->
+248:       <div id="sec-email" class="section-panel">
+249:         <div class="card">
+250:           <div class="card-title">🧩 Préférences Email (expéditeurs, dédup)</div>
+251:           <div class="inline-group" style="margin: 8px 0 12px 0;">
+252:             <label class="toggle-switch">
+253:               <input type="checkbox" id="pollingToggle">
+254:               <span class="toggle-slider"></span>
+255:             </label>
+256:             <span id="pollingStatusText" style="margin-left: 10px;">—</span>
+257:           </div>
+258:           <div id="pollingMsg" class="status-msg" style="margin-top: 6px;"></div>
+259:           <div class="form-group">
+260:             <label>SENDER_OF_INTEREST_FOR_POLLING</label>
+261:             <div id="senderOfInterestContainer" class="stack" style="gap:8px;"></div>
+262:             <button id="addSenderBtn" type="button" class="btn btn-secondary" style="margin-top:8px;">➕ Ajouter Email</button>
+263:             <div class="small-text">Ajouter / modifier / supprimer des emails individuellement. Ils seront validés et normalisés (minuscules).</div>
+264:           </div>
+265:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+266:             <div class="form-group">
+267:               <label for="pollingStartHour">POLLING_ACTIVE_START_HOUR (0-23)</label>
+268:               <select id="pollingStartHour" style="width: 100%; max-width: 100px;">
+269:                 <option value="">Sélectionner...</option>
+270:               </select>
+271:             </div>
+272:             <div class="form-group">
+273:               <label for="pollingEndHour">POLLING_ACTIVE_END_HOUR (0-23)</label>
+274:               <select id="pollingEndHour" style="width: 100%; max-width: 100px;">
+275:                 <option value="">Sélectionner...</option>
+276:               </select>
+277:             </div>
+278:           </div>
+279:           <div class="form-group" style="margin-top: 10px;">
+280:             <label>Jours actifs (POLLING_ACTIVE_DAYS)</label>
+281:             <div id="pollingActiveDaysGroup" class="inline-group" style="flex-wrap: wrap; gap: 12px; margin-top: 6px;">
+282:               <label><input type="checkbox" name="pollingDay" value="0"> Lun</label>
+283:               <label><input type="checkbox" name="pollingDay" value="1"> Mar</label>
+284:               <label><input type="checkbox" name="pollingDay" value="2"> Mer</label>
+285:               <label><input type="checkbox" name="pollingDay" value="3"> Jeu</label>
+286:               <label><input type="checkbox" name="pollingDay" value="4"> Ven</label>
+287:               <label><input type="checkbox" name="pollingDay" value="5"> Sam</label>
+288:               <label><input type="checkbox" name="pollingDay" value="6"> Dim</label>
+289:             </div>
+290:             <div class="small-text">0=Lundi ... 6=Dimanche. Sélectionnez au moins un jour.</div>
+291:           </div>
+292:           <div class="inline-group" style="margin: 8px 0 12px 0;">
+293:             <label class="toggle-switch">
+294:               <input type="checkbox" id="enableSubjectGroupDedup">
+295:               <span class="toggle-slider"></span>
+296:             </label>
+297:             <span style="margin-left: 10px;">ENABLE_SUBJECT_GROUP_DEDUP</span>
+298:           </div>
+299:           <button id="saveEmailPrefsBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer les préférences</button>
+300:           <div id="emailPrefsSaveStatus" class="status-msg" style="margin-top: 10px;"></div>
+301:           <!-- Fallback status container (legacy ID used by JS as a fallback) -->
+302:           <div id="pollingCfgMsg" class="status-msg" style="margin-top: 6px;"></div>
+303:         </div>
+304:         
+305:       </div>
+306: 
+307:       <!-- Section: Préférences (filtres + fiabilité) -->
+308:       <div id="sec-preferences" class="section-panel">
+309:         <div class="card">
+310:           <div class="card-title">🔍 Filtres Email Avancés</div>
+311:           <div class="form-group">
+312:             <label for="excludeKeywordsRecadrage">Mots-clés à exclure (Recadrage) — un par ligne</label>
+313:             <textarea id="excludeKeywordsRecadrage" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+314:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `RECADRAGE_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
+315:           </div>
+316:           <div class="form-group">
+317:             <label for="excludeKeywordsAutorepondeur">Mots-clés à exclure (Autorépondeur) — un par ligne</label>
+318:             <textarea id="excludeKeywordsAutorepondeur" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+319:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `AUTOREPONDEUR_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
+320:           </div>
+321:           <div class="form-group">
+322:             <label for="excludeKeywords">Mots-clés à exclure (global, compatibilité) — un par ligne</label>
+323:             <textarea id="excludeKeywords" rows="3" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+324:             <div class="small-text">Liste globale (héritage). S'applique avant toute logique et avant les listes spécifiques.</div>
+325:           </div>
+326:           <div class="form-group">
+327:             <label for="attachmentDetectionToggle">Détection de pièces jointes requise</label>
+328:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+329:               <input type="checkbox" id="attachmentDetectionToggle">
+330:               <span class="toggle-slider"></span>
+331:             </label>
+332:           </div>
+333:           <div class="form-group">
+334:             <label for="maxEmailSizeMB">Taille maximale des emails à traiter (Mo)</label>
+335:             <input id="maxEmailSizeMB" type="number" min="1" max="100" placeholder="ex: 25">
+336:           </div>
+337:           <div class="form-group">
+338:             <label for="senderPriority">Priorité des expéditeurs (JSON simple)</label>
+339:             <textarea id="senderPriority" rows="3" placeholder='{"vip@example.com":"high","team@example.com":"medium"}' style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+340:             <div class="small-text">Format: { "email": "high|medium|low", ... } — Validé côté client uniquement pour l'instant.</div>
+341:           </div>
+342:         </div>
+343:         <div class="card" style="margin-top: 20px;">
+344:           <div class="card-title">⚡ Paramètres de Fiabilité</div>
+345:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+346:             <div class="form-group">
+347:               <label for="retryCount">Nombre de tentatives (retries)</label>
+348:               <input id="retryCount" type="number" min="0" max="10" placeholder="ex: 3">
+349:             </div>
+350:             <div class="form-group">
+351:               <label for="retryDelaySec">Délai entre retries (secondes)</label>
+352:               <input id="retryDelaySec" type="number" min="0" max="600" placeholder="ex: 10">
+353:             </div>
+354:             <div class="form-group">
+355:               <label for="webhookTimeoutSec">Timeout Webhook (secondes)</label>
+356:               <input id="webhookTimeoutSec" type="number" min="1" max="120" placeholder="ex: 30">
+357:             </div>
+358:             <div class="form-group">
+359:               <label for="rateLimitPerHour">Limite d'envoi (webhooks/heure)</label>
+360:               <input id="rateLimitPerHour" type="number" min="1" max="10000" placeholder="ex: 300">
+361:             </div>
+362:           </div>
+363:           <div style="margin-top: 8px;">
+364:             <label class="toggle-switch" style="vertical-align: middle;">
+365:               <input type="checkbox" id="notifyOnFailureToggle">
+366:               <span class="toggle-slider"></span>
+367:             </label>
+368:             <span style="margin-left: 10px; vertical-align: middle;">Notifications d'échec par email (UI-only)</span>
+369:           </div>
+370:           <div style="margin-top: 12px;">
+371:             <button id="processingPrefsSaveBtn" class="btn btn-primary">💾 Enregistrer Préférences de Traitement</button>
+372:             <div id="processingPrefsMsg" class="status-msg"></div>
+373:           </div>
+374:         </div>
+375:       </div>
+376: 
+377:       <!-- Section: Vue d'ensemble (métriques + logs) -->
+378:       <div id="sec-overview" class="section-panel monitoring active">
+379:         <div class="card">
+380:           <div class="card-title">📊 Monitoring & Métriques (24h)</div>
+381:           <div class="inline-group" style="margin-bottom: 10px;">
+382:             <label class="toggle-switch">
+383:               <input type="checkbox" id="enableMetricsToggle" checked>
+384:               <span class="toggle-slider"></span>
+385:             </label>
+386:             <span style="margin-left: 10px;">Activer le calcul de métriques locales</span>
+387:           </div>
+388:           <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
+389:             <div class="form-group"><label>Emails traités</label><div id="metricEmailsProcessed" class="small-text">—</div></div>
+390:             <div class="form-group"><label>Webhooks envoyés</label><div id="metricWebhooksSent" class="small-text">—</div></div>
+391:             <div class="form-group"><label>Erreurs</label><div id="metricErrors" class="small-text">—</div></div>
+392:             <div class="form-group"><label>Taux de succès (%)</label><div id="metricSuccessRate" class="small-text">—</div></div>
+393:           </div>
+394:           <div id="metricsMiniChart" style="height: 60px; background: rgba(255,255,255,0.05); border:1px solid var(--cork-border-color); border-radius:4px; margin-top:10px; position: relative; overflow:hidden;"></div>
+395:           <div class="small-text">Graphique simplifié généré côté client à partir de `/api/webhook_logs`.</div>
+396:         </div>
+397:         <div class="logs-container">
+398:           <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
+399:           <div style="margin-bottom: 15px;">
+400:             <button id="refreshLogsBtn" class="btn btn-primary">🔄 Actualiser</button>
+401:           </div>
+402:           <div id="webhookLogs">
+403:             <div class="log-empty">Chargement des logs...</div>
+404:           </div>
+405:         </div>
+406:       </div>
+407: 
+408:       <!-- Section: Outils (config mgmt + outils de test) -->
+409:       <div id="sec-tools" class="section-panel">
+410:         <div class="card">
+411:           <div class="card-title">💾 Gestion des Configurations</div>
+412:           <div class="inline-group" style="margin-bottom: 10px;">
+413:             <button id="exportConfigBtn" class="btn btn-primary">⬇️ Exporter</button>
+414:             <input id="importConfigFile" type="file" accept="application/json" style="display:none;"/>
+415:             <button id="importConfigBtn" class="btn btn-primary">⬆️ Importer</button>
+416:           </div>
+417:           <div id="configMgmtMsg" class="status-msg"></div>
+418:           <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
+419:         </div>
+420:         <div class="card" style="margin-top: 20px;">
+421:           <div class="card-title">🚀 Déploiement de l'application</div>
+422:           <div class="form-group">
+423:             <p class="small-text">Certaines modifications (ex: paramètres applicatifs, configuration reverse proxy) nécessitent un déploiement pour être pleinement appliquées.</p>
+424:           </div>
+425:           <div class="inline-group" style="margin-bottom: 10px;">
+426:             <button id="restartServerBtn" class="btn btn-success">🚀 Déployer l'application</button>
+427:           </div>
+428:           <div id="restartMsg" class="status-msg"></div>
+429:           <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
+430:         </div>
+431:         <div class="card" style="margin-top: 20px;">
+432:           <div class="card-title">🗂️ Migration configs → Redis</div>
+433:           <p>Rejouez le script <code>migrate_configs_to_redis.py</code> directement sur le serveur Render avec toutes les variables d'environnement de production.</p>
+434:           <div class="inline-group" style="margin-bottom: 10px;">
+435:             <button id="migrateConfigsBtn" class="btn btn-warning">📦 Migrer les configurations</button>
+436:           </div>
+437:           <div id="migrateConfigsMsg" class="status-msg"></div>
+438:           <pre id="migrateConfigsLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
+439:           <hr style="margin: 18px 0; border-color: rgba(255,255,255,0.1);">
+440:           <p style="margin-bottom:10px;">Vérifiez l'état des données persistées dans Redis (structures JSON, attributs requis, dates de mise à jour).</p>
+441:           <div class="inline-group" style="margin-bottom: 10px;">
+442:             <button id="verifyConfigStoreBtn" class="btn btn-info">🔍 Vérifier les données en Redis</button>
+443:           </div>
+444:           <label for="verifyConfigStoreRawToggle" class="small-text" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+445:             <input type="checkbox" id="verifyConfigStoreRawToggle">
+446:             <span>Inclure le JSON complet dans le log pour faciliter le debug.</span>
+447:           </label>
+448:           <div id="verifyConfigStoreMsg" class="status-msg"></div>
+449:           <pre id="verifyConfigStoreLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
+450:           <div id="verifyConfigStoreViewer" class="json-viewer-container" style="display:none;"></div>
+451:         </div>
+452:         <div class="card" style="margin-top: 20px;">
+453:           <div class="card-title">🔐 Accès Magic Link</div>
+454:           <p>Générez un lien pré-authentifié à usage unique pour ouvrir rapidement le dashboard sans retaper vos identifiants. Le lien est automatiquement copié.</p>
+455:           <div class="inline-group" style="margin-bottom: 12px;">
+456:             <label class="toggle-switch">
+457:               <input type="checkbox" id="magicLinkUnlimitedToggle">
+458:               <span class="toggle-slider"></span>
+459:             </label>
+460:             <span style="margin-left: 10px;">
+461:               Mode illimité (désactivé = lien one-shot avec expiration)
+462:             </span>
+463:           </div>
+464:           <button id="generateMagicLinkBtn" class="btn btn-primary">✨ Générer un magic link</button>
+465:           <div id="magicLinkOutput" class="status-msg" style="margin-top: 12px;"></div>
+466:           <div class="small-text">
+467:             Important : partagez ce lien uniquement avec des personnes autorisées.
+468:             En mode one-shot, il expire après quelques minutes et s'invalide dès qu'il est utilisé.
+469:             En mode illimité, aucun délai mais vous devez révoquer manuellement en cas de fuite.
+470:           </div>
+471:         </div>
+472:         <div class="card" style="margin-top: 20px;">
+473:           <div class="card-title">🧪 Outils de Test</div>
+474:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+475:             <div class="form-group">
+476:               <label for="testWebhookUrl">Valider une URL de webhook</label>
+477:               <input id="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
+478:               <button id="validateWebhookUrlBtn" class="btn btn-primary" style="margin-top: 8px;">Valider</button>
+479:               <div id="webhookUrlValidationMsg" class="status-msg"></div>
+480:             </div>
+481:             <div class="form-group">
+482:               <label>Prévisualiser un payload</label>
+483:               <input id="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
+484:               <input id="previewSender" type="email" placeholder="Expéditeur (ex: media@solution.fr)" style="margin-top: 6px;">
+485:               <textarea id="previewBody" rows="4" placeholder="Corps de l'email (coller du texte)" style="margin-top: 6px; width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+486:               <button id="buildPayloadPreviewBtn" class="btn btn-primary" style="margin-top: 8px;">Générer</button>
+487:               <pre id="payloadPreview" style="margin-top:8px; background: rgba(0,0,0,0.2); border:1px solid var(--cork-border-color); padding:10px; border-radius:4px; max-height:200px; overflow:auto; color: var(--cork-text-primary);"></pre>
+488:             </div>
+489:           </div>
+490:           <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
+491:         </div>
+492:         <div class="card" style="margin-top: 20px;">
+493:           <div class="card-title">🔗 Ouvrir une page de téléchargement</div>
+494:           <div class="form-group">
+495:             <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
+496:             <input id="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
+497:             <button id="openDownloadPageBtn" class="btn btn-primary" style="margin-top: 8px;">Ouvrir la page</button>
+498:             <div id="openDownloadMsg" class="status-msg"></div>
+499:             <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
+500:           </div>
+501:         </div>
+502:         <div class="card" style="margin-top: 20px;">
+503:           <div class="card-title"> Flags Runtime (Debug)</div>
+504:           <div class="form-group">
+505:             <label>Bypass déduplication par ID d’email (debug)</label>
+506:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+507:               <input type="checkbox" id="disableEmailIdDedupToggle">
+508:               <span class="toggle-slider"></span>
+509:             </label>
+510:             <div class="small-text">Quand activé, ignore la déduplication par ID d'email. À utiliser uniquement pour des tests.
+511:             </div>
+512:           </div>
+513:           <div class="form-group" style="margin-top: 10px;">
+514:             <label>Autoriser envoi CUSTOM sans liens de livraison</label>
+515:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+516:               <input type="checkbox" id="allowCustomWithoutLinksToggle">
+517:               <span class="toggle-slider"></span>
+518:             </label>
+519:             <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu’aucun lien (Dropbox/FromSmash/SwissTransfer) n’est détecté, pour éviter les 422.</div>
+520:           </div>
+521:           <div style="margin-top: 12px;">
+522:             <button id="runtimeFlagsSaveBtn" class="btn btn-primary"> Enregistrer Flags Runtime</button>
+523:             <div id="runtimeFlagsMsg" class="status-msg"></div>
+524:           </div>
+525:         </div>
+526:       </div>
+527:     </div>
+528:     <!-- Chargement des modules JavaScript -->
+529:     <script type="module" src="{{ url_for('static', filename='utils/MessageHelper.js') }}"></script>
+530:     <script type="module" src="{{ url_for('static', filename='services/ApiService.js') }}"></script>
+531:     <script type="module" src="{{ url_for('static', filename='services/WebhookService.js') }}"></script>
+532:     <script type="module" src="{{ url_for('static', filename='services/LogService.js') }}"></script>
+533:     <script type="module" src="{{ url_for('static', filename='components/TabManager.js') }}"></script>
+534:     <script type="module" src="{{ url_for('static', filename='dashboard.js') }}?v=20260202-json-viewer"></script>
+535:   </body>
+536: </html>
 ````
 
 ## File: static/dashboard.js
@@ -18132,2064 +18388,2077 @@ requirements.txt
    4: import { MessageHelper } from './utils/MessageHelper.js';
    5: import { TabManager } from './components/TabManager.js';
    6: import { RoutingRulesService } from './services/RoutingRulesService.js?v=20260125-routing-fallback';
-   7: 
-   8: window.DASHBOARD_BUILD = 'modular-2026-01-19a';
-   9: 
-  10: let tabManager = null;
-  11: let routingRulesService = null;
-  12: 
-  13: document.addEventListener('DOMContentLoaded', async () => {
-  14:     try {
-  15:         tabManager = new TabManager();
-  16:         tabManager.init();
-  17:         tabManager.enhanceAccessibility();
-  18:         
-  19:         await initializeServices();
-  20:         
-  21:         bindEvents();
-  22:         
-  23:         initializeCollapsiblePanels();
-  24:         
-  25:         initializeAutoSave();
-  26:         
-  27:         await loadInitialData();
-  28:         
-  29:         if (routingRulesService) {
-  30:             await routingRulesService.init();
-  31:         }
-  32: 
-  33:         LogService.startLogPolling();
-  34:         
-  35:     } catch (e) {
-  36:         console.error('Erreur lors de l\'initialisation du dashboard:', e);
-  37:         MessageHelper.showError('global', 'Erreur lors du chargement du dashboard');
-  38:     }
-  39: });
-  40: 
-  41: async function handleConfigMigration() {
-  42:     const button = document.getElementById('migrateConfigsBtn');
-  43:     const messageId = 'migrateConfigsMsg';
-  44:     const logEl = document.getElementById('migrateConfigsLog');
-  45: 
-  46:     if (!button) {
-  47:         MessageHelper.showError(messageId, 'Bouton de migration introuvable.');
-  48:         return;
-  49:     }
-  50: 
-  51:     const confirmed = window.confirm('Lancer la migration des configurations vers Redis ?');
-  52:     if (!confirmed) {
-  53:         return;
-  54:     }
-  55: 
-  56:     MessageHelper.setButtonLoading(button, true, '⏳ Migration en cours...');
-  57:     MessageHelper.showInfo(messageId, 'Migration en cours...');
-  58:     if (logEl) {
-  59:         logEl.style.display = 'none';
-  60:         logEl.textContent = '';
-  61:     }
-  62: 
-  63:     try {
-  64:         const response = await ApiService.post('/api/migrate_configs_to_redis', {});
-  65:         if (response?.success) {
-  66:             const keysText = (response.keys || []).join(', ') || 'aucune clé';
-  67:             MessageHelper.showSuccess(messageId, `Migration réussie (${keysText}).`);
-  68:         } else {
-  69:             MessageHelper.showError(messageId, response?.message || 'Échec de la migration.');
-  70:         }
-  71: 
-  72:         if (logEl) {
-  73:             const logContent = response?.log ? response.log.trim() : 'Aucun log renvoyé.';
-  74:             logEl.textContent = logContent;
-  75:             logEl.style.display = 'block';
-  76:         }
-  77:     } catch (error) {
-  78:         console.error('Erreur migration configs:', error);
-  79:         MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
-  80:     } finally {
-  81:         MessageHelper.setButtonLoading(button, false);
-  82:     }
-  83: }
-  84: 
-  85: async function handleConfigVerification() {
-  86:     const button = document.getElementById('verifyConfigStoreBtn');
-  87:     const messageId = 'verifyConfigStoreMsg';
-  88:     const logEl = document.getElementById('verifyConfigStoreLog');
-  89:     const routingRulesMsgEl = document.getElementById('routingRulesRedisInspectMsg');
-  90:     const routingRulesLogEl = document.getElementById('routingRulesRedisInspectLog');
-  91:     const rawToggle = document.getElementById('verifyConfigStoreRawToggle');
-  92:     const includeRaw = Boolean(rawToggle?.checked);
-  93: 
-  94:     if (!button) {
-  95:         MessageHelper.showError(messageId, 'Bouton de vérification introuvable.');
-  96:         return;
-  97:     }
-  98: 
-  99:     MessageHelper.setButtonLoading(button, true, '⏳ Vérification en cours...');
- 100:     MessageHelper.showInfo(messageId, 'Vérification des données Redis en cours...');
- 101:     if (logEl) {
- 102:         logEl.style.display = 'none';
- 103:         logEl.textContent = '';
- 104:     }
- 105:     if (routingRulesMsgEl) {
- 106:         routingRulesMsgEl.textContent = '';
- 107:         routingRulesMsgEl.className = 'status-msg';
- 108:     }
- 109:     if (routingRulesLogEl) {
- 110:         routingRulesLogEl.style.display = 'none';
- 111:         routingRulesLogEl.textContent = '';
- 112:     }
- 113: 
- 114:     try {
- 115:         const response = await ApiService.post('/api/verify_config_store', { raw: includeRaw });
- 116:         if (response?.success) {
- 117:             MessageHelper.showSuccess(messageId, 'Toutes les configurations sont conformes.');
- 118:         } else {
- 119:             MessageHelper.showError(
- 120:                 messageId,
- 121:                 response?.message || 'Des incohérences ont été détectées.'
- 122:             );
- 123:         }
+   7: import { JsonViewer } from './components/JsonViewer.js?v=20260202-json-viewer';
+   8: 
+   9: window.DASHBOARD_BUILD = 'modular-2026-02-02-json-viewer';
+  10: 
+  11: let tabManager = null;
+  12: let routingRulesService = null;
+  13: 
+  14: document.addEventListener('DOMContentLoaded', async () => {
+  15:     try {
+  16:         tabManager = new TabManager();
+  17:         tabManager.init();
+  18:         tabManager.enhanceAccessibility();
+  19:         
+  20:         await initializeServices();
+  21:         
+  22:         bindEvents();
+  23:         
+  24:         initializeCollapsiblePanels();
+  25:         
+  26:         initializeAutoSave();
+  27:         
+  28:         await loadInitialData();
+  29:         
+  30:         if (routingRulesService) {
+  31:             await routingRulesService.init();
+  32:         }
+  33: 
+  34:         LogService.startLogPolling();
+  35:         
+  36:     } catch (e) {
+  37:         console.error('Erreur lors de l\'initialisation du dashboard:', e);
+  38:         MessageHelper.showError('global', 'Erreur lors du chargement du dashboard');
+  39:     }
+  40: });
+  41: 
+  42: async function handleConfigMigration() {
+  43:     const button = document.getElementById('migrateConfigsBtn');
+  44:     const messageId = 'migrateConfigsMsg';
+  45:     const logEl = document.getElementById('migrateConfigsLog');
+  46: 
+  47:     if (!button) {
+  48:         MessageHelper.showError(messageId, 'Bouton de migration introuvable.');
+  49:         return;
+  50:     }
+  51: 
+  52:     const confirmed = window.confirm('Lancer la migration des configurations vers Redis ?');
+  53:     if (!confirmed) {
+  54:         return;
+  55:     }
+  56: 
+  57:     MessageHelper.setButtonLoading(button, true, '⏳ Migration en cours...');
+  58:     MessageHelper.showInfo(messageId, 'Migration en cours...');
+  59:     if (logEl) {
+  60:         logEl.style.display = 'none';
+  61:         logEl.textContent = '';
+  62:     }
+  63: 
+  64:     try {
+  65:         const response = await ApiService.post('/api/migrate_configs_to_redis', {});
+  66:         if (response?.success) {
+  67:             const keysText = (response.keys || []).join(', ') || 'aucune clé';
+  68:             MessageHelper.showSuccess(messageId, `Migration réussie (${keysText}).`);
+  69:         } else {
+  70:             MessageHelper.showError(messageId, response?.message || 'Échec de la migration.');
+  71:         }
+  72: 
+  73:         if (logEl) {
+  74:             const logContent = response?.log ? response.log.trim() : 'Aucun log renvoyé.';
+  75:             logEl.textContent = logContent;
+  76:             logEl.style.display = 'block';
+  77:         }
+  78:     } catch (error) {
+  79:         console.error('Erreur migration configs:', error);
+  80:         MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
+  81:     } finally {
+  82:         MessageHelper.setButtonLoading(button, false);
+  83:     }
+  84: }
+  85: 
+  86: async function handleConfigVerification() {
+  87:     const button = document.getElementById('verifyConfigStoreBtn');
+  88:     const messageId = 'verifyConfigStoreMsg';
+  89:     const logEl = document.getElementById('verifyConfigStoreLog');
+  90:     const logViewer = document.getElementById('verifyConfigStoreViewer');
+  91:     const routingRulesMsgEl = document.getElementById('routingRulesRedisInspectMsg');
+  92:     const routingRulesLogEl = document.getElementById('routingRulesRedisInspectLog');
+  93:     const routingRulesViewer = document.getElementById('routingRulesRedisInspectViewer');
+  94:     const rawToggle = document.getElementById('verifyConfigStoreRawToggle');
+  95:     const includeRaw = Boolean(rawToggle?.checked);
+  96: 
+  97:     if (!button) {
+  98:         MessageHelper.showError(messageId, 'Bouton de vérification introuvable.');
+  99:         return;
+ 100:     }
+ 101: 
+ 102:     MessageHelper.setButtonLoading(button, true, '⏳ Vérification en cours...');
+ 103:     MessageHelper.showInfo(messageId, 'Vérification des données Redis en cours...');
+ 104:     if (logEl) {
+ 105:         logEl.style.display = 'none';
+ 106:         logEl.textContent = '';
+ 107:     }
+ 108:     if (logViewer) {
+ 109:         logViewer.style.display = 'none';
+ 110:         logViewer.textContent = '';
+ 111:     }
+ 112:     if (routingRulesMsgEl) {
+ 113:         routingRulesMsgEl.textContent = '';
+ 114:         routingRulesMsgEl.className = 'status-msg';
+ 115:     }
+ 116:     if (routingRulesLogEl) {
+ 117:         routingRulesLogEl.style.display = 'none';
+ 118:         routingRulesLogEl.textContent = '';
+ 119:     }
+ 120:     if (routingRulesViewer) {
+ 121:         routingRulesViewer.style.display = 'none';
+ 122:         routingRulesViewer.textContent = '';
+ 123:     }
  124: 
- 125:         if (logEl) {
- 126:             const lines = (response?.results || []).map((entry) => {
- 127:                 const status = entry.valid ? 'OK' : `INVALID (${entry.message})`;
- 128:                 const summary = entry.summary || '';
- 129:                 const payload =
- 130:                     includeRaw && entry.payload
- 131:                         ? `Payload:\n${JSON.stringify(entry.payload, null, 2)}`
- 132:                         : null;
- 133:                 return [ `${entry.key}: ${status}`, summary, payload ]
- 134:                     .filter(Boolean)
- 135:                     .join('\n');
- 136:             });
- 137:             logEl.textContent = lines.length ? lines.join('\n\n') : 'Aucun résultat renvoyé.';
- 138:             logEl.style.display = 'block';
- 139:         }
- 140: 
- 141:         const routingEntry = (response?.results || []).find(
- 142:             (entry) => entry && entry.key === 'routing_rules'
- 143:         );
- 144: 
- 145:         if (routingRulesMsgEl) {
- 146:             if (!routingEntry) {
- 147:                 MessageHelper.showInfo(
- 148:                     'routingRulesRedisInspectMsg',
- 149:                     'Routage Dynamique: aucune entrée trouvée dans la vérification (clé routing_rules absente).'
- 150:                 );
- 151:             } else if (routingEntry.valid) {
- 152:                 MessageHelper.showSuccess(
- 153:                     'routingRulesRedisInspectMsg',
- 154:                     'Routage Dynamique: configuration persistée OK.'
- 155:                 );
- 156:             } else {
- 157:                 MessageHelper.showError(
+ 125:     try {
+ 126:         const response = await ApiService.post('/api/verify_config_store', { raw: includeRaw });
+ 127:         if (response?.success) {
+ 128:             MessageHelper.showSuccess(messageId, 'Toutes les configurations sont conformes.');
+ 129:         } else {
+ 130:             MessageHelper.showError(
+ 131:                 messageId,
+ 132:                 response?.message || 'Des incohérences ont été détectées.'
+ 133:             );
+ 134:         }
+ 135: 
+ 136:         if (logEl && !includeRaw) {
+ 137:             const lines = (response?.results || []).map((entry) => {
+ 138:                 const status = entry.valid ? 'OK' : `INVALID (${entry.message})`;
+ 139:                 const summary = entry.summary || '';
+ 140:                 return [ `${entry.key}: ${status}`, summary ].filter(Boolean).join('\n');
+ 141:             });
+ 142:             logEl.textContent = lines.length ? lines.join('\n\n') : 'Aucun résultat renvoyé.';
+ 143:             logEl.style.display = 'block';
+ 144:         }
+ 145: 
+ 146:         if (logViewer && includeRaw) {
+ 147:             JsonViewer.render(logViewer, response?.results || [], { collapseDepth: 1 });
+ 148:             logViewer.style.display = 'block';
+ 149:         }
+ 150: 
+ 151:         const routingEntry = (response?.results || []).find(
+ 152:             (entry) => entry && entry.key === 'routing_rules'
+ 153:         );
+ 154: 
+ 155:         if (routingRulesMsgEl) {
+ 156:             if (!routingEntry) {
+ 157:                 MessageHelper.showInfo(
  158:                     'routingRulesRedisInspectMsg',
- 159:                     `Routage Dynamique: INVALID (${routingEntry.message || 'inconnu'}).`
+ 159:                     'Routage Dynamique: aucune entrée trouvée dans la vérification (clé routing_rules absente).'
  160:                 );
- 161:             }
- 162:         }
- 163: 
- 164:         if (routingRulesLogEl) {
- 165:             if (!routingEntry) {
- 166:                 routingRulesLogEl.textContent = '';
- 167:                 routingRulesLogEl.style.display = 'none';
- 168:             } else {
- 169:                 const routingSummary = routingEntry.summary || '';
- 170:                 const routingPayload =
- 171:                     includeRaw && routingEntry.payload
- 172:                         ? JSON.stringify(routingEntry.payload, null, 2)
- 173:                         : null;
- 174: 
- 175:                 const blocks = [routingSummary, routingPayload].filter(Boolean);
- 176:                 routingRulesLogEl.textContent = blocks.length ? blocks.join('\n\n') : '<vide>';
- 177:                 routingRulesLogEl.style.display = 'block';
- 178:             }
- 179:         }
- 180:     } catch (error) {
- 181:         console.error('Erreur vérification config store:', error);
- 182:         MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
+ 161:             } else if (routingEntry.valid) {
+ 162:                 MessageHelper.showSuccess(
+ 163:                     'routingRulesRedisInspectMsg',
+ 164:                     'Routage Dynamique: configuration persistée OK.'
+ 165:                 );
+ 166:             } else {
+ 167:                 MessageHelper.showError(
+ 168:                     'routingRulesRedisInspectMsg',
+ 169:                     `Routage Dynamique: INVALID (${routingEntry.message || 'inconnu'}).`
+ 170:                 );
+ 171:             }
+ 172:         }
+ 173: 
+ 174:         if (routingRulesLogEl && !includeRaw) {
+ 175:             if (!routingEntry) {
+ 176:                 routingRulesLogEl.textContent = '';
+ 177:                 routingRulesLogEl.style.display = 'none';
+ 178:             } else {
+ 179:                 routingRulesLogEl.textContent = routingEntry.summary || '<vide>';
+ 180:                 routingRulesLogEl.style.display = 'block';
+ 181:             }
+ 182:         }
  183: 
- 184:         if (routingRulesMsgEl) {
- 185:             MessageHelper.showError('routingRulesRedisInspectMsg', 'Erreur de communication avec le serveur.');
- 186:         }
- 187:     } finally {
- 188:         MessageHelper.setButtonLoading(button, false);
- 189:     }
- 190: }
- 191: 
- 192: async function initializeServices() {
- 193:     routingRulesService = new RoutingRulesService();
- 194: }
- 195: 
- 196: function bindEvents() {
- 197:     const magicLinkBtn = document.getElementById('generateMagicLinkBtn');
- 198:     if (magicLinkBtn) {
- 199:         magicLinkBtn.addEventListener('click', generateMagicLink);
- 200:     }
- 201:     
- 202:     const saveWebhookBtn = document.getElementById('saveConfigBtn');
- 203:     if (saveWebhookBtn) {
- 204:         saveWebhookBtn.addEventListener('click', () => WebhookService.saveConfig());
- 205:     }
- 206:     
- 207:     const saveEmailPrefsBtn = document.getElementById('saveEmailPrefsBtn');
- 208:     if (saveEmailPrefsBtn) {
- 209:         saveEmailPrefsBtn.addEventListener('click', savePollingConfig);
- 210:     }
- 211:     
- 212:     const clearLogsBtn = document.getElementById('clearLogsBtn');
- 213:     if (clearLogsBtn) {
- 214:         clearLogsBtn.addEventListener('click', () => LogService.clearLogs());
- 215:     }
- 216:     
- 217:     const exportLogsBtn = document.getElementById('exportLogsBtn');
- 218:     if (exportLogsBtn) {
- 219:         exportLogsBtn.addEventListener('click', () => LogService.exportLogs());
- 220:     }
- 221:     
- 222:     const logPeriodSelect = document.getElementById('logPeriodSelect');
- 223:     if (logPeriodSelect) {
- 224:         logPeriodSelect.addEventListener('change', (e) => {
- 225:             LogService.changeLogPeriod(parseInt(e.target.value));
- 226:         });
- 227:     }
- 228:     const pollingToggle = document.getElementById('pollingToggle');
- 229:     if (pollingToggle) {
- 230:         pollingToggle.addEventListener('change', togglePolling);
- 231:     }
- 232:     
- 233:     const saveTimeWindowBtn = document.getElementById('saveTimeWindowBtn');
- 234:     if (saveTimeWindowBtn) {
- 235:         saveTimeWindowBtn.addEventListener('click', saveTimeWindow);
- 236:     }
- 237:     
- 238:     const saveGlobalWebhookTimeBtn = document.getElementById('saveGlobalWebhookTimeBtn');
- 239:     if (saveGlobalWebhookTimeBtn) {
- 240:         saveGlobalWebhookTimeBtn.addEventListener('click', saveGlobalWebhookTimeWindow);
- 241:     }
- 242:     
- 243:     const savePollingConfigBtn = document.getElementById('savePollingCfgBtn');
- 244:     if (savePollingConfigBtn) {
- 245:         savePollingConfigBtn.addEventListener('click', savePollingConfig);
- 246:     }
- 247:     
- 248:     const saveRuntimeFlagsBtn = document.getElementById('runtimeFlagsSaveBtn');
- 249:     if (saveRuntimeFlagsBtn) {
- 250:         saveRuntimeFlagsBtn.addEventListener('click', saveRuntimeFlags);
- 251:     }
- 252:     
- 253:     const saveProcessingPrefsBtn = document.getElementById('processingPrefsSaveBtn');
- 254:     if (saveProcessingPrefsBtn) {
- 255:         saveProcessingPrefsBtn.addEventListener('click', saveProcessingPrefsToServer);
- 256:     }
- 257:     
- 258:     const exportConfigBtn = document.getElementById('exportConfigBtn');
- 259:     if (exportConfigBtn) {
- 260:         exportConfigBtn.addEventListener('click', exportAllConfig);
- 261:     }
- 262:     
- 263:     const importConfigBtn = document.getElementById('importConfigBtn');
- 264:     const importConfigInput = document.getElementById('importConfigFile');
- 265:     if (importConfigBtn && importConfigInput) {
- 266:         importConfigBtn.addEventListener('click', () => importConfigInput.click());
- 267:         importConfigInput.addEventListener('change', handleImportConfigFile);
- 268:     }
- 269:     
- 270:     const testWebhookUrl = document.getElementById('testWebhookUrl');
- 271:     if (testWebhookUrl) {
- 272:         testWebhookUrl.addEventListener('input', validateWebhookUrlFromInput);
- 273:     }
- 274:     
- 275:     const previewInputs = ['previewSubject', 'previewSender', 'previewBody'];
- 276:     previewInputs.forEach(id => {
- 277:         const el = document.getElementById(id);
- 278:         if (el) {
- 279:             el.addEventListener('input', buildPayloadPreview);
- 280:         }
- 281:     });
+ 184:         if (routingRulesViewer) {
+ 185:             if (!routingEntry || !includeRaw || !routingEntry.payload) {
+ 186:                 routingRulesViewer.textContent = '';
+ 187:                 routingRulesViewer.style.display = 'none';
+ 188:             } else {
+ 189:                 JsonViewer.render(routingRulesViewer, routingEntry.payload, { collapseDepth: 1 });
+ 190:                 routingRulesViewer.style.display = 'block';
+ 191:             }
+ 192:         }
+ 193:     } catch (error) {
+ 194:         console.error('Erreur vérification config store:', error);
+ 195:         MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
+ 196: 
+ 197:         if (routingRulesMsgEl) {
+ 198:             MessageHelper.showError('routingRulesRedisInspectMsg', 'Erreur de communication avec le serveur.');
+ 199:         }
+ 200:     } finally {
+ 201:         MessageHelper.setButtonLoading(button, false);
+ 202:     }
+ 203: }
+ 204: 
+ 205: async function initializeServices() {
+ 206:     routingRulesService = new RoutingRulesService();
+ 207: }
+ 208: 
+ 209: function bindEvents() {
+ 210:     const magicLinkBtn = document.getElementById('generateMagicLinkBtn');
+ 211:     if (magicLinkBtn) {
+ 212:         magicLinkBtn.addEventListener('click', generateMagicLink);
+ 213:     }
+ 214:     
+ 215:     const saveWebhookBtn = document.getElementById('saveConfigBtn');
+ 216:     if (saveWebhookBtn) {
+ 217:         saveWebhookBtn.addEventListener('click', () => WebhookService.saveConfig());
+ 218:     }
+ 219:     
+ 220:     const saveEmailPrefsBtn = document.getElementById('saveEmailPrefsBtn');
+ 221:     if (saveEmailPrefsBtn) {
+ 222:         saveEmailPrefsBtn.addEventListener('click', savePollingConfig);
+ 223:     }
+ 224:     
+ 225:     const clearLogsBtn = document.getElementById('clearLogsBtn');
+ 226:     if (clearLogsBtn) {
+ 227:         clearLogsBtn.addEventListener('click', () => LogService.clearLogs());
+ 228:     }
+ 229:     
+ 230:     const exportLogsBtn = document.getElementById('exportLogsBtn');
+ 231:     if (exportLogsBtn) {
+ 232:         exportLogsBtn.addEventListener('click', () => LogService.exportLogs());
+ 233:     }
+ 234:     
+ 235:     const logPeriodSelect = document.getElementById('logPeriodSelect');
+ 236:     if (logPeriodSelect) {
+ 237:         logPeriodSelect.addEventListener('change', (e) => {
+ 238:             LogService.changeLogPeriod(parseInt(e.target.value));
+ 239:         });
+ 240:     }
+ 241:     const pollingToggle = document.getElementById('pollingToggle');
+ 242:     if (pollingToggle) {
+ 243:         pollingToggle.addEventListener('change', togglePolling);
+ 244:     }
+ 245:     
+ 246:     const saveTimeWindowBtn = document.getElementById('saveTimeWindowBtn');
+ 247:     if (saveTimeWindowBtn) {
+ 248:         saveTimeWindowBtn.addEventListener('click', saveTimeWindow);
+ 249:     }
+ 250:     
+ 251:     const saveGlobalWebhookTimeBtn = document.getElementById('saveGlobalWebhookTimeBtn');
+ 252:     if (saveGlobalWebhookTimeBtn) {
+ 253:         saveGlobalWebhookTimeBtn.addEventListener('click', saveGlobalWebhookTimeWindow);
+ 254:     }
+ 255:     
+ 256:     const savePollingConfigBtn = document.getElementById('savePollingCfgBtn');
+ 257:     if (savePollingConfigBtn) {
+ 258:         savePollingConfigBtn.addEventListener('click', savePollingConfig);
+ 259:     }
+ 260:     
+ 261:     const saveRuntimeFlagsBtn = document.getElementById('runtimeFlagsSaveBtn');
+ 262:     if (saveRuntimeFlagsBtn) {
+ 263:         saveRuntimeFlagsBtn.addEventListener('click', saveRuntimeFlags);
+ 264:     }
+ 265:     
+ 266:     const saveProcessingPrefsBtn = document.getElementById('processingPrefsSaveBtn');
+ 267:     if (saveProcessingPrefsBtn) {
+ 268:         saveProcessingPrefsBtn.addEventListener('click', saveProcessingPrefsToServer);
+ 269:     }
+ 270:     
+ 271:     const exportConfigBtn = document.getElementById('exportConfigBtn');
+ 272:     if (exportConfigBtn) {
+ 273:         exportConfigBtn.addEventListener('click', exportAllConfig);
+ 274:     }
+ 275:     
+ 276:     const importConfigBtn = document.getElementById('importConfigBtn');
+ 277:     const importConfigInput = document.getElementById('importConfigFile');
+ 278:     if (importConfigBtn && importConfigInput) {
+ 279:         importConfigBtn.addEventListener('click', () => importConfigInput.click());
+ 280:         importConfigInput.addEventListener('change', handleImportConfigFile);
+ 281:     }
  282:     
- 283:     const addEmailBtn = document.getElementById('addSenderBtn');
- 284:     if (addEmailBtn) {
- 285:         addEmailBtn.addEventListener('click', () => addEmailField(''));
+ 283:     const testWebhookUrl = document.getElementById('testWebhookUrl');
+ 284:     if (testWebhookUrl) {
+ 285:         testWebhookUrl.addEventListener('input', validateWebhookUrlFromInput);
  286:     }
  287:     
- 288:     const refreshStatusBtn = document.getElementById('refreshStatusBtn');
- 289:     if (refreshStatusBtn) {
- 290:         refreshStatusBtn.addEventListener('click', updateGlobalStatus);
- 291:     }
- 292:     
- 293:     document.querySelectorAll('.panel-save-btn[data-panel]').forEach(btn => {
- 294:         btn.addEventListener('click', () => {
- 295:             const panelType = btn.dataset.panel;
- 296:             if (panelType) {
- 297:                 saveWebhookPanel(panelType);
- 298:             }
- 299:         });
- 300:     });
- 301:     
- 302:     // Populate dropdowns with options
- 303:     const timeDropdowns = ['webhooksTimeStart', 'webhooksTimeEnd', 'globalWebhookTimeStart', 'globalWebhookTimeEnd'];
- 304:     timeDropdowns.forEach(id => {
- 305:         const select = document.getElementById(id);
- 306:         if (select) {
- 307:             select.innerHTML = generateTimeOptions(30);
- 308:         }
- 309:     });
- 310:     
- 311:     const hourDropdowns = ['pollingStartHour', 'pollingEndHour'];
- 312:     hourDropdowns.forEach(id => {
- 313:         const select = document.getElementById(id);
- 314:         if (select) {
- 315:             select.innerHTML = generateHourOptions();
- 316:         }
- 317:     });
- 318:     
- 319:     const restartBtn = document.getElementById('restartServerBtn');
- 320:     if (restartBtn) {
- 321:         restartBtn.addEventListener('click', handleDeployApplication);
- 322:     }
+ 288:     const previewInputs = ['previewSubject', 'previewSender', 'previewBody'];
+ 289:     previewInputs.forEach(id => {
+ 290:         const el = document.getElementById(id);
+ 291:         if (el) {
+ 292:             el.addEventListener('input', buildPayloadPreview);
+ 293:         }
+ 294:     });
+ 295:     
+ 296:     const addEmailBtn = document.getElementById('addSenderBtn');
+ 297:     if (addEmailBtn) {
+ 298:         addEmailBtn.addEventListener('click', () => addEmailField(''));
+ 299:     }
+ 300:     
+ 301:     const refreshStatusBtn = document.getElementById('refreshStatusBtn');
+ 302:     if (refreshStatusBtn) {
+ 303:         refreshStatusBtn.addEventListener('click', updateGlobalStatus);
+ 304:     }
+ 305:     
+ 306:     document.querySelectorAll('.panel-save-btn[data-panel]').forEach(btn => {
+ 307:         btn.addEventListener('click', () => {
+ 308:             const panelType = btn.dataset.panel;
+ 309:             if (panelType) {
+ 310:                 saveWebhookPanel(panelType);
+ 311:             }
+ 312:         });
+ 313:     });
+ 314:     
+ 315:     // Populate dropdowns with options
+ 316:     const timeDropdowns = ['webhooksTimeStart', 'webhooksTimeEnd', 'globalWebhookTimeStart', 'globalWebhookTimeEnd'];
+ 317:     timeDropdowns.forEach(id => {
+ 318:         const select = document.getElementById(id);
+ 319:         if (select) {
+ 320:             select.innerHTML = generateTimeOptions(30);
+ 321:         }
+ 322:     });
  323:     
- 324:     const migrateBtn = document.getElementById('migrateConfigsBtn');
- 325:     if (migrateBtn) {
- 326:         migrateBtn.addEventListener('click', handleConfigMigration);
- 327:     }
- 328: 
- 329:     const verifyBtn = document.getElementById('verifyConfigStoreBtn');
- 330:     if (verifyBtn) {
- 331:         verifyBtn.addEventListener('click', handleConfigVerification);
- 332:     }
- 333:     
- 334:     // Metrics toggle event
- 335:     const enableMetricsToggle = document.getElementById('enableMetricsToggle');
- 336:     if (enableMetricsToggle) {
- 337:         enableMetricsToggle.addEventListener('change', async () => {
- 338:             saveLocalPreferences();
- 339:             if (enableMetricsToggle.checked) {
- 340:                 await computeAndRenderMetrics();
- 341:             } else {
- 342:                 clearMetrics();
- 343:             }
- 344:         });
+ 324:     const hourDropdowns = ['pollingStartHour', 'pollingEndHour'];
+ 325:     hourDropdowns.forEach(id => {
+ 326:         const select = document.getElementById(id);
+ 327:         if (select) {
+ 328:             select.innerHTML = generateHourOptions();
+ 329:         }
+ 330:     });
+ 331:     
+ 332:     const restartBtn = document.getElementById('restartServerBtn');
+ 333:     if (restartBtn) {
+ 334:         restartBtn.addEventListener('click', handleDeployApplication);
+ 335:     }
+ 336:     
+ 337:     const migrateBtn = document.getElementById('migrateConfigsBtn');
+ 338:     if (migrateBtn) {
+ 339:         migrateBtn.addEventListener('click', handleConfigMigration);
+ 340:     }
+ 341: 
+ 342:     const verifyBtn = document.getElementById('verifyConfigStoreBtn');
+ 343:     if (verifyBtn) {
+ 344:         verifyBtn.addEventListener('click', handleConfigVerification);
  345:     }
- 346: }
- 347: 
- 348: async function loadInitialData() {
- 349:     try {
- 350:         await Promise.all([
- 351:             WebhookService.loadConfig(),
- 352:             loadPollingStatus(),
- 353:             loadTimeWindow(),
- 354:             loadPollingConfig(),
- 355:             loadRuntimeFlags(),
- 356:             loadProcessingPrefsFromServer(),
- 357:             loadLocalPreferences()
- 358:         ]);
- 359:         
- 360:         await loadGlobalWebhookTimeWindow();
- 361:         
- 362:         await LogService.loadAndRenderLogs();
- 363:         
- 364:         await updateGlobalStatus();
- 365:         
- 366:         // Trigger metrics computation if toggle is enabled (default)
- 367:         const enableMetricsToggle = document.getElementById('enableMetricsToggle');
- 368:         if (enableMetricsToggle && enableMetricsToggle.checked) {
- 369:             await computeAndRenderMetrics();
- 370:         }
- 371:         
- 372:     } catch (e) {
- 373:         console.error('Erreur lors du chargement des données initiales:', e);
- 374:     }
- 375: }
- 376: 
- 377: // Metrics functions
- 378: async function computeAndRenderMetrics() {
- 379:     try {
- 380:         const res = await ApiService.get('/api/webhook_logs?days=1');
- 381:         if (!res.ok) { 
- 382:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 383:                 console.warn('metrics: non-200', res.status);
- 384:             }
- 385:             clearMetrics(); return; 
- 386:         }
- 387:         const data = await res.json();
- 388:         const logs = (data.success && Array.isArray(data.logs)) ? data.logs : [];
- 389:         const total = logs.length;
- 390:         const sent = logs.filter(l => l.status === 'success').length;
- 391:         const errors = logs.filter(l => l.status === 'error').length;
- 392:         const successRate = total ? Math.round((sent / total) * 100) : 0;
- 393:         setMetric('metricEmailsProcessed', String(total));
- 394:         setMetric('metricWebhooksSent', String(sent));
- 395:         setMetric('metricErrors', String(errors));
- 396:         setMetric('metricSuccessRate', String(successRate));
- 397:         renderMiniChart(logs);
- 398:     } catch (e) {
- 399:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 400:             console.warn('metrics error', e);
- 401:         }
- 402:         clearMetrics();
- 403:     }
- 404: }
- 405: 
- 406: function clearMetrics() {
- 407:     setMetric('metricEmailsProcessed', '—');
- 408:     setMetric('metricWebhooksSent', '—');
- 409:     setMetric('metricErrors', '—');
- 410:     setMetric('metricSuccessRate', '—');
- 411:     const chart = document.getElementById('metricsMiniChart');
- 412:     if (chart) chart.innerHTML = '';
- 413: }
- 414: 
- 415: function setMetric(id, text) {
- 416:     const el = document.getElementById(id);
- 417:     if (el) el.textContent = text;
- 418: }
- 419: 
- 420: function renderMiniChart(logs) {
- 421:     const chart = document.getElementById('metricsMiniChart');
- 422:     if (!chart) return;
- 423:     chart.innerHTML = '';
- 424:     const width = chart.clientWidth || 300;
- 425:     const height = chart.clientHeight || 60;
- 426:     const canvas = document.createElement('canvas');
- 427:     canvas.width = width; canvas.height = height;
- 428:     const ctx = canvas.getContext('2d');
- 429:     
- 430:     // Simple line chart implementation
- 431:     const padding = 5;
- 432:     const chartWidth = width - 2 * padding;
- 433:     const chartHeight = height - 2 * padding;
- 434:     
- 435:     // Group logs by hour
- 436:     const hourlyData = new Array(24).fill(0);
- 437:     logs.forEach(log => {
- 438:         const hour = new Date(log.timestamp).getHours();
- 439:         hourlyData[hour]++;
- 440:     });
- 441:     
- 442:     const maxCount = Math.max(...hourlyData, 1);
- 443:     const stepX = chartWidth / 23;
- 444:     
- 445:     ctx.strokeStyle = '#4CAF50';
- 446:     ctx.lineWidth = 2;
- 447:     ctx.beginPath();
- 448:     
- 449:     hourlyData.forEach((count, i) => {
- 450:         const x = padding + i * stepX;
- 451:         const y = padding + chartHeight - (count / maxCount) * chartHeight;
- 452:         
- 453:         if (i === 0) {
- 454:             ctx.moveTo(x, y);
- 455:         } else {
- 456:             ctx.lineTo(x, y);
- 457:         }
- 458:     });
- 459:     
- 460:     ctx.stroke();
- 461:     chart.appendChild(canvas);
- 462: }
- 463: 
- 464: function showCopiedFeedback() {
- 465:     let toast = document.querySelector('.copied-feedback');
- 466:     if (!toast) {
- 467:         toast = document.createElement('div');
- 468:         toast.className = 'copied-feedback';
- 469:         toast.textContent = '🔗 Magic link copié dans le presse-papiers !';
- 470:         document.body.appendChild(toast);
- 471:     }
- 472:     toast.classList.add('show');
- 473:     
- 474:     setTimeout(() => {
- 475:         toast.classList.remove('show');
- 476:     }, 3000);
- 477: }
- 478: 
- 479: async function generateMagicLink() {
- 480:     const btn = document.getElementById('generateMagicLinkBtn');
- 481:     const output = document.getElementById('magicLinkOutput');
- 482:     const unlimitedToggle = document.getElementById('magicLinkUnlimitedToggle');
- 483:     
- 484:     if (!btn || !output) return;
- 485:     
- 486:     output.textContent = '';
- 487:     MessageHelper.setButtonLoading(btn, true);
- 488:     
- 489:     try {
- 490:         const unlimited = unlimitedToggle?.checked ?? false;
- 491:         const data = await ApiService.post('/api/auth/magic-link', { unlimited });
- 492:         
- 493:         if (data.success && data.magic_link) {
- 494:             const expiresText = data.unlimited ? 'aucune expiration' : (data.expires_at || 'bientôt');
- 495:             output.textContent = `${data.magic_link} (exp. ${expiresText})`;
- 496:             output.className = 'status-msg success';
- 497:             
- 498:             try {
- 499:                 await navigator.clipboard.writeText(data.magic_link);
- 500:                 output.textContent += ' — Copié dans le presse-papiers';
- 501:                 showCopiedFeedback();
- 502:             } catch (clipboardError) {
- 503:                 // Silently fail clipboard copy
- 504:             }
- 505:         } else {
- 506:             output.textContent = data.message || 'Impossible de générer le magic link.';
- 507:             output.className = 'status-msg error';
- 508:         }
- 509:     } catch (e) {
- 510:         console.error('generateMagicLink error', e);
- 511:         output.textContent = 'Erreur de génération du magic link.';
- 512:         output.className = 'status-msg error';
- 513:     } finally {
- 514:         MessageHelper.setButtonLoading(btn, false);
- 515:         setTimeout(() => {
- 516:             if (output) output.className = 'status-msg';
- 517:         }, 7000);
- 518:     }
- 519: }
- 520: 
- 521: // Polling control
- 522: async function loadPollingStatus() {
- 523:     try {
- 524:         const data = await ApiService.get('/api/get_polling_config');
- 525:         
- 526:         if (data.success) {
- 527:             const isEnabled = !!data.config?.enable_polling;
- 528:             const toggle = document.getElementById('pollingToggle');
- 529:             const statusText = document.getElementById('pollingStatusText');
- 530:             
- 531:             if (toggle) toggle.checked = isEnabled;
- 532:             if (statusText) {
- 533:                 statusText.textContent = isEnabled ? '✅ Polling activé' : '❌ Polling désactivé';
- 534:             }
- 535:         }
- 536:     } catch (e) {
- 537:         console.error('Erreur chargement statut polling:', e);
- 538:         const statusText = document.getElementById('pollingStatusText');
- 539:         if (statusText) statusText.textContent = '⚠️ Erreur de chargement';
- 540:     }
- 541: }
- 542: 
- 543: async function togglePolling() {
- 544:     const enable = document.getElementById('pollingToggle').checked;
- 545:     
- 546:     try {
- 547:         const data = await ApiService.post('/api/update_polling_config', { enable_polling: enable });
- 548:         
- 549:         if (data.success) {
- 550:             MessageHelper.showInfo('pollingMsg', data.message);
- 551:             const statusText = document.getElementById('pollingStatusText');
- 552:             if (statusText) {
- 553:                 statusText.textContent = enable ? '✅ Polling activé' : '❌ Polling désactivé';
- 554:             }
- 555:         } else {
- 556:             MessageHelper.showError('pollingMsg', data.message || 'Erreur lors du changement.');
- 557:         }
- 558:     } catch (e) {
- 559:         MessageHelper.showError('pollingMsg', 'Erreur de communication avec le serveur.');
- 560:     }
- 561: }
- 562: 
- 563: // Time window helpers
- 564: function generateTimeOptions(stepMinutes = 30) {
- 565:     const options = ['<option value="">Sélectionner...</option>'];
- 566:     for (let hour = 0; hour < 24; hour++) {
- 567:         for (let minute = 0; minute < 60; minute += stepMinutes) {
- 568:             const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
- 569:             options.push(`<option value="${timeStr}">${timeStr}</option>`);
+ 346:     
+ 347:     // Metrics toggle event
+ 348:     const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+ 349:     if (enableMetricsToggle) {
+ 350:         enableMetricsToggle.addEventListener('change', async () => {
+ 351:             saveLocalPreferences();
+ 352:             if (enableMetricsToggle.checked) {
+ 353:                 await computeAndRenderMetrics();
+ 354:             } else {
+ 355:                 clearMetrics();
+ 356:             }
+ 357:         });
+ 358:     }
+ 359: }
+ 360: 
+ 361: async function loadInitialData() {
+ 362:     try {
+ 363:         await Promise.all([
+ 364:             WebhookService.loadConfig(),
+ 365:             loadPollingStatus(),
+ 366:             loadTimeWindow(),
+ 367:             loadPollingConfig(),
+ 368:             loadRuntimeFlags(),
+ 369:             loadProcessingPrefsFromServer(),
+ 370:             loadLocalPreferences()
+ 371:         ]);
+ 372:         
+ 373:         await loadGlobalWebhookTimeWindow();
+ 374:         
+ 375:         await LogService.loadAndRenderLogs();
+ 376:         
+ 377:         await updateGlobalStatus();
+ 378:         
+ 379:         // Trigger metrics computation if toggle is enabled (default)
+ 380:         const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+ 381:         if (enableMetricsToggle && enableMetricsToggle.checked) {
+ 382:             await computeAndRenderMetrics();
+ 383:         }
+ 384:         
+ 385:     } catch (e) {
+ 386:         console.error('Erreur lors du chargement des données initiales:', e);
+ 387:     }
+ 388: }
+ 389: 
+ 390: // Metrics functions
+ 391: async function computeAndRenderMetrics() {
+ 392:     try {
+ 393:         const res = await ApiService.get('/api/webhook_logs?days=1');
+ 394:         if (!res.ok) { 
+ 395:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 396:                 console.warn('metrics: non-200', res.status);
+ 397:             }
+ 398:             clearMetrics(); return; 
+ 399:         }
+ 400:         const data = await res.json();
+ 401:         const logs = (data.success && Array.isArray(data.logs)) ? data.logs : [];
+ 402:         const total = logs.length;
+ 403:         const sent = logs.filter(l => l.status === 'success').length;
+ 404:         const errors = logs.filter(l => l.status === 'error').length;
+ 405:         const successRate = total ? Math.round((sent / total) * 100) : 0;
+ 406:         setMetric('metricEmailsProcessed', String(total));
+ 407:         setMetric('metricWebhooksSent', String(sent));
+ 408:         setMetric('metricErrors', String(errors));
+ 409:         setMetric('metricSuccessRate', String(successRate));
+ 410:         renderMiniChart(logs);
+ 411:     } catch (e) {
+ 412:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 413:             console.warn('metrics error', e);
+ 414:         }
+ 415:         clearMetrics();
+ 416:     }
+ 417: }
+ 418: 
+ 419: function clearMetrics() {
+ 420:     setMetric('metricEmailsProcessed', '—');
+ 421:     setMetric('metricWebhooksSent', '—');
+ 422:     setMetric('metricErrors', '—');
+ 423:     setMetric('metricSuccessRate', '—');
+ 424:     const chart = document.getElementById('metricsMiniChart');
+ 425:     if (chart) chart.innerHTML = '';
+ 426: }
+ 427: 
+ 428: function setMetric(id, text) {
+ 429:     const el = document.getElementById(id);
+ 430:     if (el) el.textContent = text;
+ 431: }
+ 432: 
+ 433: function renderMiniChart(logs) {
+ 434:     const chart = document.getElementById('metricsMiniChart');
+ 435:     if (!chart) return;
+ 436:     chart.innerHTML = '';
+ 437:     const width = chart.clientWidth || 300;
+ 438:     const height = chart.clientHeight || 60;
+ 439:     const canvas = document.createElement('canvas');
+ 440:     canvas.width = width; canvas.height = height;
+ 441:     const ctx = canvas.getContext('2d');
+ 442:     
+ 443:     // Simple line chart implementation
+ 444:     const padding = 5;
+ 445:     const chartWidth = width - 2 * padding;
+ 446:     const chartHeight = height - 2 * padding;
+ 447:     
+ 448:     // Group logs by hour
+ 449:     const hourlyData = new Array(24).fill(0);
+ 450:     logs.forEach(log => {
+ 451:         const hour = new Date(log.timestamp).getHours();
+ 452:         hourlyData[hour]++;
+ 453:     });
+ 454:     
+ 455:     const maxCount = Math.max(...hourlyData, 1);
+ 456:     const stepX = chartWidth / 23;
+ 457:     
+ 458:     ctx.strokeStyle = '#4CAF50';
+ 459:     ctx.lineWidth = 2;
+ 460:     ctx.beginPath();
+ 461:     
+ 462:     hourlyData.forEach((count, i) => {
+ 463:         const x = padding + i * stepX;
+ 464:         const y = padding + chartHeight - (count / maxCount) * chartHeight;
+ 465:         
+ 466:         if (i === 0) {
+ 467:             ctx.moveTo(x, y);
+ 468:         } else {
+ 469:             ctx.lineTo(x, y);
+ 470:         }
+ 471:     });
+ 472:     
+ 473:     ctx.stroke();
+ 474:     chart.appendChild(canvas);
+ 475: }
+ 476: 
+ 477: function showCopiedFeedback() {
+ 478:     let toast = document.querySelector('.copied-feedback');
+ 479:     if (!toast) {
+ 480:         toast = document.createElement('div');
+ 481:         toast.className = 'copied-feedback';
+ 482:         toast.textContent = '🔗 Magic link copié dans le presse-papiers !';
+ 483:         document.body.appendChild(toast);
+ 484:     }
+ 485:     toast.classList.add('show');
+ 486:     
+ 487:     setTimeout(() => {
+ 488:         toast.classList.remove('show');
+ 489:     }, 3000);
+ 490: }
+ 491: 
+ 492: async function generateMagicLink() {
+ 493:     const btn = document.getElementById('generateMagicLinkBtn');
+ 494:     const output = document.getElementById('magicLinkOutput');
+ 495:     const unlimitedToggle = document.getElementById('magicLinkUnlimitedToggle');
+ 496:     
+ 497:     if (!btn || !output) return;
+ 498:     
+ 499:     output.textContent = '';
+ 500:     MessageHelper.setButtonLoading(btn, true);
+ 501:     
+ 502:     try {
+ 503:         const unlimited = unlimitedToggle?.checked ?? false;
+ 504:         const data = await ApiService.post('/api/auth/magic-link', { unlimited });
+ 505:         
+ 506:         if (data.success && data.magic_link) {
+ 507:             const expiresText = data.unlimited ? 'aucune expiration' : (data.expires_at || 'bientôt');
+ 508:             output.textContent = `${data.magic_link} (exp. ${expiresText})`;
+ 509:             output.className = 'status-msg success';
+ 510:             
+ 511:             try {
+ 512:                 await navigator.clipboard.writeText(data.magic_link);
+ 513:                 output.textContent += ' — Copié dans le presse-papiers';
+ 514:                 showCopiedFeedback();
+ 515:             } catch (clipboardError) {
+ 516:                 // Silently fail clipboard copy
+ 517:             }
+ 518:         } else {
+ 519:             output.textContent = data.message || 'Impossible de générer le magic link.';
+ 520:             output.className = 'status-msg error';
+ 521:         }
+ 522:     } catch (e) {
+ 523:         console.error('generateMagicLink error', e);
+ 524:         output.textContent = 'Erreur de génération du magic link.';
+ 525:         output.className = 'status-msg error';
+ 526:     } finally {
+ 527:         MessageHelper.setButtonLoading(btn, false);
+ 528:         setTimeout(() => {
+ 529:             if (output) output.className = 'status-msg';
+ 530:         }, 7000);
+ 531:     }
+ 532: }
+ 533: 
+ 534: // Polling control
+ 535: async function loadPollingStatus() {
+ 536:     try {
+ 537:         const data = await ApiService.get('/api/get_polling_config');
+ 538:         
+ 539:         if (data.success) {
+ 540:             const isEnabled = !!data.config?.enable_polling;
+ 541:             const toggle = document.getElementById('pollingToggle');
+ 542:             const statusText = document.getElementById('pollingStatusText');
+ 543:             
+ 544:             if (toggle) toggle.checked = isEnabled;
+ 545:             if (statusText) {
+ 546:                 statusText.textContent = isEnabled ? '✅ Polling activé' : '❌ Polling désactivé';
+ 547:             }
+ 548:         }
+ 549:     } catch (e) {
+ 550:         console.error('Erreur chargement statut polling:', e);
+ 551:         const statusText = document.getElementById('pollingStatusText');
+ 552:         if (statusText) statusText.textContent = '⚠️ Erreur de chargement';
+ 553:     }
+ 554: }
+ 555: 
+ 556: async function togglePolling() {
+ 557:     const enable = document.getElementById('pollingToggle').checked;
+ 558:     
+ 559:     try {
+ 560:         const data = await ApiService.post('/api/update_polling_config', { enable_polling: enable });
+ 561:         
+ 562:         if (data.success) {
+ 563:             MessageHelper.showInfo('pollingMsg', data.message);
+ 564:             const statusText = document.getElementById('pollingStatusText');
+ 565:             if (statusText) {
+ 566:                 statusText.textContent = enable ? '✅ Polling activé' : '❌ Polling désactivé';
+ 567:             }
+ 568:         } else {
+ 569:             MessageHelper.showError('pollingMsg', data.message || 'Erreur lors du changement.');
  570:         }
- 571:     }
- 572:     return options.join('');
- 573: }
- 574: 
- 575: function generateHourOptions() {
- 576:     const options = ['<option value="">Sélectionner...</option>'];
- 577:     for (let hour = 0; hour < 24; hour++) {
- 578:         const label = `${hour.toString().padStart(2, '0')}h`;
- 579:         options.push(`<option value="${hour}">${label}</option>`);
- 580:     }
- 581:     return options.join('');
- 582: }
- 583: 
- 584: function setSelectedOption(selectElement, value) {
- 585:     if (!selectElement) return;
- 586:     // Try to find exact match first
- 587:     for (let i = 0; i < selectElement.options.length; i++) {
- 588:         if (selectElement.options[i].value === value || selectElement.options[i].value === value.toString()) {
- 589:             selectElement.selectedIndex = i;
- 590:             return;
- 591:         }
- 592:     }
- 593:     // If no match, select first (empty) option
- 594:     selectElement.selectedIndex = 0;
+ 571:     } catch (e) {
+ 572:         MessageHelper.showError('pollingMsg', 'Erreur de communication avec le serveur.');
+ 573:     }
+ 574: }
+ 575: 
+ 576: // Time window helpers
+ 577: function generateTimeOptions(stepMinutes = 30) {
+ 578:     const options = ['<option value="">Sélectionner...</option>'];
+ 579:     for (let hour = 0; hour < 24; hour++) {
+ 580:         for (let minute = 0; minute < 60; minute += stepMinutes) {
+ 581:             const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+ 582:             options.push(`<option value="${timeStr}">${timeStr}</option>`);
+ 583:         }
+ 584:     }
+ 585:     return options.join('');
+ 586: }
+ 587: 
+ 588: function generateHourOptions() {
+ 589:     const options = ['<option value="">Sélectionner...</option>'];
+ 590:     for (let hour = 0; hour < 24; hour++) {
+ 591:         const label = `${hour.toString().padStart(2, '0')}h`;
+ 592:         options.push(`<option value="${hour}">${label}</option>`);
+ 593:     }
+ 594:     return options.join('');
  595: }
  596: 
- 597: // Time window
- 598: async function loadTimeWindow() {
- 599:     const applyWindowValues = (startValue = '', endValue = '') => {
- 600:         const startInput = document.getElementById('webhooksTimeStart');
- 601:         const endInput = document.getElementById('webhooksTimeEnd');
- 602:         if (startInput) setSelectedOption(startInput, startValue || '');
- 603:         if (endInput) setSelectedOption(endInput, endValue || '');
- 604:         renderTimeWindowDisplay(startValue || '', endValue || '');
- 605:     };
- 606:     
- 607:     try {
- 608:         // 0) Source principale : fenêtre horaire globale (ancien endpoint)
- 609:         const globalTimeResponse = await ApiService.get('/api/get_webhook_time_window');
- 610:         if (globalTimeResponse.success) {
- 611:             applyWindowValues(
- 612:                 globalTimeResponse.webhooks_time_start || '',
- 613:                 globalTimeResponse.webhooks_time_end || ''
- 614:             );
- 615:             return;
- 616:         }
- 617:     } catch (e) {
- 618:         console.warn('Impossible de charger la fenêtre horaire globale:', e);
- 619:     }
- 620:     
- 621:     try {
- 622:         // 2) Fallback: ancienne source (time window override)
- 623:         const data = await ApiService.get('/api/get_webhook_time_window');
- 624:         if (data.success) {
- 625:             applyWindowValues(data.webhooks_time_start, data.webhooks_time_end);
- 626:         }
- 627:     } catch (e) {
- 628:         console.error('Erreur chargement fenêtre horaire (fallback):', e);
- 629:     }
- 630: }
- 631: 
- 632: async function saveTimeWindow() {
- 633:     const startInput = document.getElementById('webhooksTimeStart');
- 634:     const endInput = document.getElementById('webhooksTimeEnd');
- 635:     const start = startInput.value.trim();
- 636:     const end = endInput.value.trim();
- 637:     
- 638:     // For dropdowns, validation is simpler - format is guaranteed HH:MM
- 639:     if (start && !/^\d{2}:\d{2}$/.test(start)) {
- 640:         MessageHelper.showError('timeWindowMsg', 'Veuillez sélectionner une heure valide.');
- 641:         return false;
+ 597: function setSelectedOption(selectElement, value) {
+ 598:     if (!selectElement) return;
+ 599:     // Try to find exact match first
+ 600:     for (let i = 0; i < selectElement.options.length; i++) {
+ 601:         if (selectElement.options[i].value === value || selectElement.options[i].value === value.toString()) {
+ 602:             selectElement.selectedIndex = i;
+ 603:             return;
+ 604:         }
+ 605:     }
+ 606:     // If no match, select first (empty) option
+ 607:     selectElement.selectedIndex = 0;
+ 608: }
+ 609: 
+ 610: // Time window
+ 611: async function loadTimeWindow() {
+ 612:     const applyWindowValues = (startValue = '', endValue = '') => {
+ 613:         const startInput = document.getElementById('webhooksTimeStart');
+ 614:         const endInput = document.getElementById('webhooksTimeEnd');
+ 615:         if (startInput) setSelectedOption(startInput, startValue || '');
+ 616:         if (endInput) setSelectedOption(endInput, endValue || '');
+ 617:         renderTimeWindowDisplay(startValue || '', endValue || '');
+ 618:     };
+ 619:     
+ 620:     try {
+ 621:         // 0) Source principale : fenêtre horaire globale (ancien endpoint)
+ 622:         const globalTimeResponse = await ApiService.get('/api/get_webhook_time_window');
+ 623:         if (globalTimeResponse.success) {
+ 624:             applyWindowValues(
+ 625:                 globalTimeResponse.webhooks_time_start || '',
+ 626:                 globalTimeResponse.webhooks_time_end || ''
+ 627:             );
+ 628:             return;
+ 629:         }
+ 630:     } catch (e) {
+ 631:         console.warn('Impossible de charger la fenêtre horaire globale:', e);
+ 632:     }
+ 633:     
+ 634:     try {
+ 635:         // 2) Fallback: ancienne source (time window override)
+ 636:         const data = await ApiService.get('/api/get_webhook_time_window');
+ 637:         if (data.success) {
+ 638:             applyWindowValues(data.webhooks_time_start, data.webhooks_time_end);
+ 639:         }
+ 640:     } catch (e) {
+ 641:         console.error('Erreur chargement fenêtre horaire (fallback):', e);
  642:     }
- 643:     
- 644:     if (end && !/^\d{2}:\d{2}$/.test(end)) {
- 645:         MessageHelper.showError('timeWindowMsg', 'Veuillez sélectionner une heure valide.');
- 646:         return false;
- 647:     }
- 648:     
- 649:     // No normalization needed for dropdowns - format is already HH:MM
+ 643: }
+ 644: 
+ 645: async function saveTimeWindow() {
+ 646:     const startInput = document.getElementById('webhooksTimeStart');
+ 647:     const endInput = document.getElementById('webhooksTimeEnd');
+ 648:     const start = startInput.value.trim();
+ 649:     const end = endInput.value.trim();
  650:     
- 651:     try {
- 652:         const data = await ApiService.post('/api/set_webhook_time_window', { 
- 653:             start: start, 
- 654:             end: end 
- 655:         });
- 656:         
- 657:         if (data.success) {
- 658:             MessageHelper.showSuccess('timeWindowMsg', 'Fenêtre horaire enregistrée avec succès !');
- 659:             updatePanelStatus('time-window', true);
- 660:             updatePanelIndicator('time-window');
- 661:             
- 662:             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
- 663:             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
- 664:                 setSelectedOption(startInput, data.webhooks_time_start || '');
- 665:             }
- 666:             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
- 667:                 setSelectedOption(endInput, data.webhooks_time_end || '');
- 668:             }
- 669:             
- 670:             renderTimeWindowDisplay(data.webhooks_time_start || start, data.webhooks_time_end || end);
- 671:             
- 672:             // S'assurer que la source persistée est rechargée
- 673:             await loadTimeWindow();
- 674:             return true;
- 675:         } else {
- 676:             MessageHelper.showError('timeWindowMsg', data.message || 'Erreur lors de la sauvegarde.');
- 677:             updatePanelStatus('time-window', false);
- 678:             return false;
- 679:         }
- 680:     } catch (e) {
- 681:         MessageHelper.showError('timeWindowMsg', 'Erreur de communication avec le serveur.');
- 682:         updatePanelStatus('time-window', false);
- 683:         return false;
- 684:     }
- 685: }
- 686: 
- 687: function renderTimeWindowDisplay(start, end) {
- 688:     const displayEl = document.getElementById('timeWindowDisplay');
- 689:     if (!displayEl) return;
- 690:     
- 691:     const hasStart = Boolean(start && String(start).trim());
- 692:     const hasEnd = Boolean(end && String(end).trim());
- 693:     
- 694:     if (!hasStart && !hasEnd) {
- 695:         displayEl.textContent = 'Dernière fenêtre enregistrée: aucune contrainte horaire active';
- 696:         return;
+ 651:     // For dropdowns, validation is simpler - format is guaranteed HH:MM
+ 652:     if (start && !/^\d{2}:\d{2}$/.test(start)) {
+ 653:         MessageHelper.showError('timeWindowMsg', 'Veuillez sélectionner une heure valide.');
+ 654:         return false;
+ 655:     }
+ 656:     
+ 657:     if (end && !/^\d{2}:\d{2}$/.test(end)) {
+ 658:         MessageHelper.showError('timeWindowMsg', 'Veuillez sélectionner une heure valide.');
+ 659:         return false;
+ 660:     }
+ 661:     
+ 662:     // No normalization needed for dropdowns - format is already HH:MM
+ 663:     
+ 664:     try {
+ 665:         const data = await ApiService.post('/api/set_webhook_time_window', { 
+ 666:             start: start, 
+ 667:             end: end 
+ 668:         });
+ 669:         
+ 670:         if (data.success) {
+ 671:             MessageHelper.showSuccess('timeWindowMsg', 'Fenêtre horaire enregistrée avec succès !');
+ 672:             updatePanelStatus('time-window', true);
+ 673:             updatePanelIndicator('time-window');
+ 674:             
+ 675:             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
+ 676:             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
+ 677:                 setSelectedOption(startInput, data.webhooks_time_start || '');
+ 678:             }
+ 679:             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
+ 680:                 setSelectedOption(endInput, data.webhooks_time_end || '');
+ 681:             }
+ 682:             
+ 683:             renderTimeWindowDisplay(data.webhooks_time_start || start, data.webhooks_time_end || end);
+ 684:             
+ 685:             // S'assurer que la source persistée est rechargée
+ 686:             await loadTimeWindow();
+ 687:             return true;
+ 688:         } else {
+ 689:             MessageHelper.showError('timeWindowMsg', data.message || 'Erreur lors de la sauvegarde.');
+ 690:             updatePanelStatus('time-window', false);
+ 691:             return false;
+ 692:         }
+ 693:     } catch (e) {
+ 694:         MessageHelper.showError('timeWindowMsg', 'Erreur de communication avec le serveur.');
+ 695:         updatePanelStatus('time-window', false);
+ 696:         return false;
  697:     }
- 698:     
- 699:     const startText = hasStart ? String(start) : '—';
- 700:     const endText = hasEnd ? String(end) : '—';
- 701:     displayEl.textContent = `Dernière fenêtre enregistrée: ${startText} → ${endText}`;
- 702: }
- 703: 
- 704: // Polling configuration
- 705: async function loadPollingConfig() {
- 706:     try {
- 707:         const data = await ApiService.get('/api/get_polling_config');
- 708:         
- 709:         if (data.success) {
- 710:             const cfg = data.config || {};
- 711:             
- 712:             // Déduplication
- 713:             const dedupEl = document.getElementById('enableSubjectGroupDedup');
- 714:             if (dedupEl) dedupEl.checked = !!cfg.enable_subject_group_dedup;
- 715:             
- 716:             // Senders
- 717:             const senders = Array.isArray(cfg.sender_of_interest_for_polling) ? cfg.sender_of_interest_for_polling : [];
- 718:             renderSenderInputs(senders);
- 719:             
- 720:             // Active days and hours
- 721:             try {
- 722:                 if (Array.isArray(cfg.active_days)) setDayCheckboxes(cfg.active_days);
- 723:                 
- 724:                 const sh = document.getElementById('pollingStartHour');
- 725:                 const eh = document.getElementById('pollingEndHour');
- 726:                 if (sh && Number.isInteger(cfg.active_start_hour)) setSelectedOption(sh, String(cfg.active_start_hour));
- 727:                 if (eh && Number.isInteger(cfg.active_end_hour)) setSelectedOption(eh, String(cfg.active_end_hour));
- 728:             } catch (e) {
- 729:                 console.warn('loadPollingConfig: applying days/hours failed', e);
- 730:             }
- 731:         }
- 732:     } catch (e) {
- 733:         console.error('Erreur chargement config polling:', e);
- 734:     }
- 735: }
- 736: 
- 737: async function savePollingConfig(event) {
- 738:     const btn = event?.target || document.getElementById('savePollingCfgBtn');
- 739:     if (btn) btn.disabled = true;
- 740:     
- 741:     const dedup = document.getElementById('enableSubjectGroupDedup')?.checked;
- 742:     const senders = collectSenderInputs();
- 743:     const activeDays = collectDayCheckboxes();
- 744:     const startHourStr = document.getElementById('pollingStartHour')?.value?.trim() ?? '';
- 745:     const endHourStr = document.getElementById('pollingEndHour')?.value?.trim() ?? '';
- 746:     const statusId = document.getElementById('emailPrefsSaveStatus') ? 'emailPrefsSaveStatus' : 'pollingCfgMsg';
- 747: 
- 748:     // Validation
- 749:     const startHour = startHourStr === '' ? null : Number.parseInt(startHourStr, 10);
- 750:     const endHour = endHourStr === '' ? null : Number.parseInt(endHourStr, 10);
- 751:     
- 752:     if (!activeDays || activeDays.length === 0) {
- 753:         MessageHelper.showError(statusId, 'Veuillez sélectionner au moins un jour actif.');
- 754:         if (btn) btn.disabled = false;
- 755:         return;
- 756:     }
- 757:     
- 758:     if (startHour === null || Number.isNaN(startHour) || startHour < 0 || startHour > 23) {
- 759:         MessageHelper.showError(statusId, 'Heure de début invalide (0-23).');
- 760:         if (btn) btn.disabled = false;
- 761:         return;
- 762:     }
- 763:     
- 764:     if (endHour === null || Number.isNaN(endHour) || endHour < 0 || endHour > 23) {
- 765:         MessageHelper.showError(statusId, 'Heure de fin invalide (0-23).');
- 766:         if (btn) btn.disabled = false;
- 767:         return;
- 768:     }
- 769:     
- 770:     if (startHour === endHour) {
- 771:         MessageHelper.showError(statusId, 'L\'heure de début et de fin ne peuvent pas être identiques.');
- 772:         if (btn) btn.disabled = false;
- 773:         return;
- 774:     }
- 775: 
- 776:     const payload = {
- 777:         enable_subject_group_dedup: dedup,
- 778:         sender_of_interest_for_polling: senders,
- 779:         active_days: activeDays,
- 780:         active_start_hour: startHour,
- 781:         active_end_hour: endHour
- 782:     };
- 783: 
- 784:     try {
- 785:         const data = await ApiService.post('/api/update_polling_config', payload);
- 786:         
- 787:         if (data.success) {
- 788:             MessageHelper.showSuccess(statusId, data.message || 'Préférences enregistrées avec succès !');
- 789:             await loadPollingConfig();
- 790:         } else {
- 791:             MessageHelper.showError(statusId, data.message || 'Erreur lors de la sauvegarde.');
- 792:         }
- 793:     } catch (e) {
- 794:         MessageHelper.showError(statusId, 'Erreur de communication avec le serveur.');
- 795:     } finally {
- 796:         if (btn) btn.disabled = false;
- 797:     }
- 798: }
- 799: 
- 800: // Runtime flags
- 801: async function loadRuntimeFlags() {
- 802:     try {
- 803:         const data = await ApiService.get('/api/get_runtime_flags');
- 804:         
- 805:         if (data.success) {
- 806:             const flags = data.flags || {};
- 807: 
- 808:             const disableDedup = document.getElementById('disableEmailIdDedupToggle');
- 809:             if (disableDedup && Object.prototype.hasOwnProperty.call(flags, 'disable_email_id_dedup')) {
- 810:                 disableDedup.checked = !!flags.disable_email_id_dedup;
- 811:             }
+ 698: }
+ 699: 
+ 700: function renderTimeWindowDisplay(start, end) {
+ 701:     const displayEl = document.getElementById('timeWindowDisplay');
+ 702:     if (!displayEl) return;
+ 703:     
+ 704:     const hasStart = Boolean(start && String(start).trim());
+ 705:     const hasEnd = Boolean(end && String(end).trim());
+ 706:     
+ 707:     if (!hasStart && !hasEnd) {
+ 708:         displayEl.textContent = 'Dernière fenêtre enregistrée: aucune contrainte horaire active';
+ 709:         return;
+ 710:     }
+ 711:     
+ 712:     const startText = hasStart ? String(start) : '—';
+ 713:     const endText = hasEnd ? String(end) : '—';
+ 714:     displayEl.textContent = `Dernière fenêtre enregistrée: ${startText} → ${endText}`;
+ 715: }
+ 716: 
+ 717: // Polling configuration
+ 718: async function loadPollingConfig() {
+ 719:     try {
+ 720:         const data = await ApiService.get('/api/get_polling_config');
+ 721:         
+ 722:         if (data.success) {
+ 723:             const cfg = data.config || {};
+ 724:             
+ 725:             // Déduplication
+ 726:             const dedupEl = document.getElementById('enableSubjectGroupDedup');
+ 727:             if (dedupEl) dedupEl.checked = !!cfg.enable_subject_group_dedup;
+ 728:             
+ 729:             // Senders
+ 730:             const senders = Array.isArray(cfg.sender_of_interest_for_polling) ? cfg.sender_of_interest_for_polling : [];
+ 731:             renderSenderInputs(senders);
+ 732:             
+ 733:             // Active days and hours
+ 734:             try {
+ 735:                 if (Array.isArray(cfg.active_days)) setDayCheckboxes(cfg.active_days);
+ 736:                 
+ 737:                 const sh = document.getElementById('pollingStartHour');
+ 738:                 const eh = document.getElementById('pollingEndHour');
+ 739:                 if (sh && Number.isInteger(cfg.active_start_hour)) setSelectedOption(sh, String(cfg.active_start_hour));
+ 740:                 if (eh && Number.isInteger(cfg.active_end_hour)) setSelectedOption(eh, String(cfg.active_end_hour));
+ 741:             } catch (e) {
+ 742:                 console.warn('loadPollingConfig: applying days/hours failed', e);
+ 743:             }
+ 744:         }
+ 745:     } catch (e) {
+ 746:         console.error('Erreur chargement config polling:', e);
+ 747:     }
+ 748: }
+ 749: 
+ 750: async function savePollingConfig(event) {
+ 751:     const btn = event?.target || document.getElementById('savePollingCfgBtn');
+ 752:     if (btn) btn.disabled = true;
+ 753:     
+ 754:     const dedup = document.getElementById('enableSubjectGroupDedup')?.checked;
+ 755:     const senders = collectSenderInputs();
+ 756:     const activeDays = collectDayCheckboxes();
+ 757:     const startHourStr = document.getElementById('pollingStartHour')?.value?.trim() ?? '';
+ 758:     const endHourStr = document.getElementById('pollingEndHour')?.value?.trim() ?? '';
+ 759:     const statusId = document.getElementById('emailPrefsSaveStatus') ? 'emailPrefsSaveStatus' : 'pollingCfgMsg';
+ 760: 
+ 761:     // Validation
+ 762:     const startHour = startHourStr === '' ? null : Number.parseInt(startHourStr, 10);
+ 763:     const endHour = endHourStr === '' ? null : Number.parseInt(endHourStr, 10);
+ 764:     
+ 765:     if (!activeDays || activeDays.length === 0) {
+ 766:         MessageHelper.showError(statusId, 'Veuillez sélectionner au moins un jour actif.');
+ 767:         if (btn) btn.disabled = false;
+ 768:         return;
+ 769:     }
+ 770:     
+ 771:     if (startHour === null || Number.isNaN(startHour) || startHour < 0 || startHour > 23) {
+ 772:         MessageHelper.showError(statusId, 'Heure de début invalide (0-23).');
+ 773:         if (btn) btn.disabled = false;
+ 774:         return;
+ 775:     }
+ 776:     
+ 777:     if (endHour === null || Number.isNaN(endHour) || endHour < 0 || endHour > 23) {
+ 778:         MessageHelper.showError(statusId, 'Heure de fin invalide (0-23).');
+ 779:         if (btn) btn.disabled = false;
+ 780:         return;
+ 781:     }
+ 782:     
+ 783:     if (startHour === endHour) {
+ 784:         MessageHelper.showError(statusId, 'L\'heure de début et de fin ne peuvent pas être identiques.');
+ 785:         if (btn) btn.disabled = false;
+ 786:         return;
+ 787:     }
+ 788: 
+ 789:     const payload = {
+ 790:         enable_subject_group_dedup: dedup,
+ 791:         sender_of_interest_for_polling: senders,
+ 792:         active_days: activeDays,
+ 793:         active_start_hour: startHour,
+ 794:         active_end_hour: endHour
+ 795:     };
+ 796: 
+ 797:     try {
+ 798:         const data = await ApiService.post('/api/update_polling_config', payload);
+ 799:         
+ 800:         if (data.success) {
+ 801:             MessageHelper.showSuccess(statusId, data.message || 'Préférences enregistrées avec succès !');
+ 802:             await loadPollingConfig();
+ 803:         } else {
+ 804:             MessageHelper.showError(statusId, data.message || 'Erreur lors de la sauvegarde.');
+ 805:         }
+ 806:     } catch (e) {
+ 807:         MessageHelper.showError(statusId, 'Erreur de communication avec le serveur.');
+ 808:     } finally {
+ 809:         if (btn) btn.disabled = false;
+ 810:     }
+ 811: }
  812: 
- 813:             const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
- 814:             if (
- 815:                 allowCustom
- 816:                 && Object.prototype.hasOwnProperty.call(flags, 'allow_custom_webhook_without_links')
- 817:             ) {
- 818:                 allowCustom.checked = !!flags.allow_custom_webhook_without_links;
- 819:             }
- 820:         }
- 821:     } catch (e) {
- 822:         console.error('loadRuntimeFlags error', e);
- 823:     }
- 824: }
+ 813: // Runtime flags
+ 814: async function loadRuntimeFlags() {
+ 815:     try {
+ 816:         const data = await ApiService.get('/api/get_runtime_flags');
+ 817:         
+ 818:         if (data.success) {
+ 819:             const flags = data.flags || {};
+ 820: 
+ 821:             const disableDedup = document.getElementById('disableEmailIdDedupToggle');
+ 822:             if (disableDedup && Object.prototype.hasOwnProperty.call(flags, 'disable_email_id_dedup')) {
+ 823:                 disableDedup.checked = !!flags.disable_email_id_dedup;
+ 824:             }
  825: 
- 826: async function saveRuntimeFlags() {
- 827:     const msgId = 'runtimeFlagsMsg';
- 828:     const btn = document.getElementById('runtimeFlagsSaveBtn');
- 829:     
- 830:     MessageHelper.setButtonLoading(btn, true);
- 831:     
- 832:     try {
- 833:         const disableDedup = document.getElementById('disableEmailIdDedupToggle');
- 834:         const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
- 835: 
- 836:         const payload = {
- 837:             disable_email_id_dedup: disableDedup?.checked ?? false,
- 838:             allow_custom_webhook_without_links: allowCustom?.checked ?? false,
- 839:         };
- 840: 
- 841:         const data = await ApiService.post('/api/update_runtime_flags', payload);
- 842:         
- 843:         if (data.success) {
- 844:             MessageHelper.showSuccess(msgId, 'Flags de débogage enregistrés avec succès !');
- 845:         } else {
- 846:             MessageHelper.showError(msgId, data.message || 'Erreur lors de la sauvegarde.');
- 847:         }
- 848:     } catch (e) {
- 849:         MessageHelper.showError(msgId, 'Erreur de communication avec le serveur.');
- 850:     } finally {
- 851:         MessageHelper.setButtonLoading(btn, false);
- 852:     }
- 853: }
- 854: 
- 855: // Processing preferences
- 856: async function loadProcessingPrefsFromServer() {
- 857:     try {
- 858:         const data = await ApiService.get('/api/processing_prefs');
- 859:         
- 860:         if (data.success) {
- 861:             const prefs = data.prefs || {};
- 862:             
- 863:             // Mapping des préférences vers les éléments UI avec les bons IDs
- 864:             const mappings = {
- 865:                 // Filtres
- 866:                 'exclude_keywords': 'excludeKeywords',
- 867:                 'exclude_keywords_recadrage': 'excludeKeywordsRecadrage', 
- 868:                 'exclude_keywords_autorepondeur': 'excludeKeywordsAutorepondeur',
- 869:                 
- 870:                 // Paramètres
- 871:                 'require_attachments': 'attachmentDetectionToggle',
- 872:                 'max_email_size_mb': 'maxEmailSizeMB',
- 873:                 'sender_priority': 'senderPriority',
- 874:                 
- 875:                 // Fiabilité
- 876:                 'retry_count': 'retryCount',
- 877:                 'retry_delay_sec': 'retryDelaySec',
- 878:                 'webhook_timeout_sec': 'webhookTimeoutSec',
- 879:                 'rate_limit_per_hour': 'rateLimitPerHour',
- 880:                 'notify_on_failure': 'notifyOnFailureToggle'
- 881:             };
- 882:             
- 883:             Object.entries(mappings).forEach(([prefKey, elementId]) => {
- 884:                 const el = document.getElementById(elementId);
- 885:                 if (el && prefs[prefKey] !== undefined) {
- 886:                     if (el.type === 'checkbox') {
- 887:                         el.checked = Boolean(prefs[prefKey]);
- 888:                     } else if (el.tagName === 'TEXTAREA' && Array.isArray(prefs[prefKey])) {
- 889:                         // Convertir les tableaux en chaînes multi-lignes pour les textarea
- 890:                         el.value = prefs[prefKey].join('\n');
- 891:                     } else if (el.tagName === 'TEXTAREA' && typeof prefs[prefKey] === 'object') {
- 892:                         // Convertir les objets JSON en chaînes formatées pour les textarea
- 893:                         el.value = JSON.stringify(prefs[prefKey], null, 2);
- 894:                     } else if (el.type === 'number' && prefs[prefKey] === null) {
- 895:                         el.value = '';
- 896:                     } else {
- 897:                         el.value = prefs[prefKey];
- 898:                     }
- 899:                 }
- 900:             });
- 901:         }
- 902:     } catch (e) {
- 903:         console.error('loadProcessingPrefs error', e);
- 904:     }
- 905: }
- 906: 
- 907: async function saveProcessingPrefsToServer() {
- 908:     const btn = document.getElementById('processingPrefsSaveBtn');
- 909:     const msgId = 'processingPrefsMsg';
- 910:     
- 911:     MessageHelper.setButtonLoading(btn, true);
- 912:     
- 913:     try {
- 914:         // Mapping des éléments UI vers les clés de préférences
- 915:         const mappings = {
- 916:             // Filtres
- 917:             'excludeKeywords': 'exclude_keywords',
- 918:             'excludeKeywordsRecadrage': 'exclude_keywords_recadrage', 
- 919:             'excludeKeywordsAutorepondeur': 'exclude_keywords_autorepondeur',
- 920:             
- 921:             // Paramètres
- 922:             'attachmentDetectionToggle': 'require_attachments',
- 923:             'maxEmailSizeMB': 'max_email_size_mb',
- 924:             'senderPriority': 'sender_priority',
- 925:             
- 926:             // Fiabilité
- 927:             'retryCount': 'retry_count',
- 928:             'retryDelaySec': 'retry_delay_sec',
- 929:             'webhookTimeoutSec': 'webhook_timeout_sec',
- 930:             'rateLimitPerHour': 'rate_limit_per_hour',
- 931:             'notifyOnFailureToggle': 'notify_on_failure'
- 932:         };
- 933:         
- 934:         // Collecter les préférences depuis les éléments UI
- 935:         const prefs = {};
- 936:         
- 937:         Object.entries(mappings).forEach(([elementId, prefKey]) => {
- 938:             const el = document.getElementById(elementId);
- 939:             if (el) {
- 940:                 if (el.type === 'checkbox') {
- 941:                     prefs[prefKey] = el.checked;
- 942:                 } else if (el.tagName === 'TEXTAREA') {
- 943:                     const value = el.value.trim();
- 944:                     if (value) {
- 945:                         // Pour les textarea de mots-clés, convertir en tableau
- 946:                         if (elementId.includes('Keywords')) {
- 947:                             prefs[prefKey] = value.split('\n').map(line => line.trim()).filter(line => line);
- 948:                         } 
- 949:                         // Pour le textarea JSON (sender_priority)
- 950:                         else if (elementId === 'senderPriority') {
- 951:                             try {
- 952:                                 prefs[prefKey] = JSON.parse(value);
- 953:                             } catch (e) {
- 954:                                 console.warn('Invalid JSON in senderPriority, using empty object');
- 955:                                 prefs[prefKey] = {};
- 956:                             }
- 957:                         }
- 958:                         // Pour les autres textarea
- 959:                         else {
- 960:                             prefs[prefKey] = value;
- 961:                         }
- 962:                     } else {
- 963:                         // Valeur vide selon le type
- 964:                         if (elementId.includes('Keywords')) {
- 965:                             prefs[prefKey] = [];
- 966:                         } else if (elementId === 'senderPriority') {
- 967:                             prefs[prefKey] = {};
- 968:                         } else {
- 969:                             prefs[prefKey] = value;
+ 826:             const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
+ 827:             if (
+ 828:                 allowCustom
+ 829:                 && Object.prototype.hasOwnProperty.call(flags, 'allow_custom_webhook_without_links')
+ 830:             ) {
+ 831:                 allowCustom.checked = !!flags.allow_custom_webhook_without_links;
+ 832:             }
+ 833:         }
+ 834:     } catch (e) {
+ 835:         console.error('loadRuntimeFlags error', e);
+ 836:     }
+ 837: }
+ 838: 
+ 839: async function saveRuntimeFlags() {
+ 840:     const msgId = 'runtimeFlagsMsg';
+ 841:     const btn = document.getElementById('runtimeFlagsSaveBtn');
+ 842:     
+ 843:     MessageHelper.setButtonLoading(btn, true);
+ 844:     
+ 845:     try {
+ 846:         const disableDedup = document.getElementById('disableEmailIdDedupToggle');
+ 847:         const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
+ 848: 
+ 849:         const payload = {
+ 850:             disable_email_id_dedup: disableDedup?.checked ?? false,
+ 851:             allow_custom_webhook_without_links: allowCustom?.checked ?? false,
+ 852:         };
+ 853: 
+ 854:         const data = await ApiService.post('/api/update_runtime_flags', payload);
+ 855:         
+ 856:         if (data.success) {
+ 857:             MessageHelper.showSuccess(msgId, 'Flags de débogage enregistrés avec succès !');
+ 858:         } else {
+ 859:             MessageHelper.showError(msgId, data.message || 'Erreur lors de la sauvegarde.');
+ 860:         }
+ 861:     } catch (e) {
+ 862:         MessageHelper.showError(msgId, 'Erreur de communication avec le serveur.');
+ 863:     } finally {
+ 864:         MessageHelper.setButtonLoading(btn, false);
+ 865:     }
+ 866: }
+ 867: 
+ 868: // Processing preferences
+ 869: async function loadProcessingPrefsFromServer() {
+ 870:     try {
+ 871:         const data = await ApiService.get('/api/processing_prefs');
+ 872:         
+ 873:         if (data.success) {
+ 874:             const prefs = data.prefs || {};
+ 875:             
+ 876:             // Mapping des préférences vers les éléments UI avec les bons IDs
+ 877:             const mappings = {
+ 878:                 // Filtres
+ 879:                 'exclude_keywords': 'excludeKeywords',
+ 880:                 'exclude_keywords_recadrage': 'excludeKeywordsRecadrage', 
+ 881:                 'exclude_keywords_autorepondeur': 'excludeKeywordsAutorepondeur',
+ 882:                 
+ 883:                 // Paramètres
+ 884:                 'require_attachments': 'attachmentDetectionToggle',
+ 885:                 'max_email_size_mb': 'maxEmailSizeMB',
+ 886:                 'sender_priority': 'senderPriority',
+ 887:                 
+ 888:                 // Fiabilité
+ 889:                 'retry_count': 'retryCount',
+ 890:                 'retry_delay_sec': 'retryDelaySec',
+ 891:                 'webhook_timeout_sec': 'webhookTimeoutSec',
+ 892:                 'rate_limit_per_hour': 'rateLimitPerHour',
+ 893:                 'notify_on_failure': 'notifyOnFailureToggle'
+ 894:             };
+ 895:             
+ 896:             Object.entries(mappings).forEach(([prefKey, elementId]) => {
+ 897:                 const el = document.getElementById(elementId);
+ 898:                 if (el && prefs[prefKey] !== undefined) {
+ 899:                     if (el.type === 'checkbox') {
+ 900:                         el.checked = Boolean(prefs[prefKey]);
+ 901:                     } else if (el.tagName === 'TEXTAREA' && Array.isArray(prefs[prefKey])) {
+ 902:                         // Convertir les tableaux en chaînes multi-lignes pour les textarea
+ 903:                         el.value = prefs[prefKey].join('\n');
+ 904:                     } else if (el.tagName === 'TEXTAREA' && typeof prefs[prefKey] === 'object') {
+ 905:                         // Convertir les objets JSON en chaînes formatées pour les textarea
+ 906:                         el.value = JSON.stringify(prefs[prefKey], null, 2);
+ 907:                     } else if (el.type === 'number' && prefs[prefKey] === null) {
+ 908:                         el.value = '';
+ 909:                     } else {
+ 910:                         el.value = prefs[prefKey];
+ 911:                     }
+ 912:                 }
+ 913:             });
+ 914:         }
+ 915:     } catch (e) {
+ 916:         console.error('loadProcessingPrefs error', e);
+ 917:     }
+ 918: }
+ 919: 
+ 920: async function saveProcessingPrefsToServer() {
+ 921:     const btn = document.getElementById('processingPrefsSaveBtn');
+ 922:     const msgId = 'processingPrefsMsg';
+ 923:     
+ 924:     MessageHelper.setButtonLoading(btn, true);
+ 925:     
+ 926:     try {
+ 927:         // Mapping des éléments UI vers les clés de préférences
+ 928:         const mappings = {
+ 929:             // Filtres
+ 930:             'excludeKeywords': 'exclude_keywords',
+ 931:             'excludeKeywordsRecadrage': 'exclude_keywords_recadrage', 
+ 932:             'excludeKeywordsAutorepondeur': 'exclude_keywords_autorepondeur',
+ 933:             
+ 934:             // Paramètres
+ 935:             'attachmentDetectionToggle': 'require_attachments',
+ 936:             'maxEmailSizeMB': 'max_email_size_mb',
+ 937:             'senderPriority': 'sender_priority',
+ 938:             
+ 939:             // Fiabilité
+ 940:             'retryCount': 'retry_count',
+ 941:             'retryDelaySec': 'retry_delay_sec',
+ 942:             'webhookTimeoutSec': 'webhook_timeout_sec',
+ 943:             'rateLimitPerHour': 'rate_limit_per_hour',
+ 944:             'notifyOnFailureToggle': 'notify_on_failure'
+ 945:         };
+ 946:         
+ 947:         // Collecter les préférences depuis les éléments UI
+ 948:         const prefs = {};
+ 949:         
+ 950:         Object.entries(mappings).forEach(([elementId, prefKey]) => {
+ 951:             const el = document.getElementById(elementId);
+ 952:             if (el) {
+ 953:                 if (el.type === 'checkbox') {
+ 954:                     prefs[prefKey] = el.checked;
+ 955:                 } else if (el.tagName === 'TEXTAREA') {
+ 956:                     const value = el.value.trim();
+ 957:                     if (value) {
+ 958:                         // Pour les textarea de mots-clés, convertir en tableau
+ 959:                         if (elementId.includes('Keywords')) {
+ 960:                             prefs[prefKey] = value.split('\n').map(line => line.trim()).filter(line => line);
+ 961:                         } 
+ 962:                         // Pour le textarea JSON (sender_priority)
+ 963:                         else if (elementId === 'senderPriority') {
+ 964:                             try {
+ 965:                                 prefs[prefKey] = JSON.parse(value);
+ 966:                             } catch (e) {
+ 967:                                 console.warn('Invalid JSON in senderPriority, using empty object');
+ 968:                                 prefs[prefKey] = {};
+ 969:                             }
  970:                         }
- 971:                     }
- 972:                 } else {
- 973:                     // Pour les inputs normaux
- 974:                     const value = (el.value ?? '').toString().trim();
- 975:                     if (el.type === 'number') {
- 976:                         if (value === '') {
- 977:                             if (elementId === 'maxEmailSizeMB') {
- 978:                                 prefs[prefKey] = null;
- 979:                             }
- 980:                             return;
- 981:                         }
- 982:                         prefs[prefKey] = parseInt(value, 10);
- 983:                         return;
+ 971:                         // Pour les autres textarea
+ 972:                         else {
+ 973:                             prefs[prefKey] = value;
+ 974:                         }
+ 975:                     } else {
+ 976:                         // Valeur vide selon le type
+ 977:                         if (elementId.includes('Keywords')) {
+ 978:                             prefs[prefKey] = [];
+ 979:                         } else if (elementId === 'senderPriority') {
+ 980:                             prefs[prefKey] = {};
+ 981:                         } else {
+ 982:                             prefs[prefKey] = value;
+ 983:                         }
  984:                     }
- 985:                     prefs[prefKey] = value;
- 986:                 }
- 987:             }
- 988:         });
- 989:         
- 990:         const data = await ApiService.post('/api/processing_prefs', prefs);
- 991:         
- 992:         if (data.success) {
- 993:             MessageHelper.showSuccess(msgId, 'Préférences de traitement enregistrées avec succès !');
- 994:         } else {
- 995:             MessageHelper.showError(msgId, data.message || 'Erreur lors de la sauvegarde.');
- 996:         }
- 997:     } catch (e) {
- 998:         MessageHelper.showError(msgId, 'Erreur de communication avec le serveur.');
- 999:     } finally {
-1000:         MessageHelper.setButtonLoading(btn, false);
-1001:     }
-1002: }
-1003: 
-1004: // Local preferences
-1005: function loadLocalPreferences() {
-1006:     try {
-1007:         const raw = localStorage.getItem('dashboard_prefs_v1');
-1008:         if (!raw) {
-1009:             // Default: enable metrics if no preference exists
-1010:             const enableMetricsToggle = document.getElementById('enableMetricsToggle');
-1011:             if (enableMetricsToggle) {
-1012:                 enableMetricsToggle.checked = true;
-1013:             }
-1014:             return;
-1015:         }
-1016:         
-1017:         const prefs = JSON.parse(raw);
-1018:         
-1019:         // Apply metrics preference if exists, otherwise default to true
-1020:         if (prefs.hasOwnProperty('enableMetricsToggle')) {
-1021:             const enableMetricsToggle = document.getElementById('enableMetricsToggle');
-1022:             if (enableMetricsToggle) {
-1023:                 enableMetricsToggle.checked = prefs.enableMetricsToggle;
-1024:             }
-1025:         }
-1026:         
-1027:         // Appliquer les préférences locales
-1028:         Object.keys(prefs).forEach(key => {
-1029:             const el = document.getElementById(key);
-1030:             if (el) {
-1031:                 if (el.type === 'checkbox') {
-1032:                     el.checked = prefs[key];
-1033:                 } else {
-1034:                     el.value = prefs[key];
-1035:                 }
-1036:             }
-1037:         });
-1038:     } catch (e) {
-1039:         console.warn('Erreur chargement préférences locales:', e);
-1040:     }
-1041: }
-1042: 
-1043: function saveLocalPreferences() {
-1044:     try {
-1045:         const prefs = {};
-1046:         
-1047:         // Collecter les préférences locales
-1048:         const localElements = document.querySelectorAll('[data-pref="local"]');
-1049:         localElements.forEach(el => {
-1050:             const prefName = el.id;
-1051:             if (el.type === 'checkbox') {
-1052:                 prefs[prefName] = el.checked;
-1053:             } else {
-1054:                 prefs[prefName] = el.value;
-1055:             }
-1056:         });
-1057:         
-1058:         // Always save enableMetricsToggle preference
-1059:         const enableMetricsToggle = document.getElementById('enableMetricsToggle');
-1060:         if (enableMetricsToggle) {
-1061:             prefs.enableMetricsToggle = enableMetricsToggle.checked;
-1062:         }
-1063:         
-1064:         localStorage.setItem('dashboard_prefs_v1', JSON.stringify(prefs));
-1065:     } catch (e) {
-1066:         console.warn('Erreur sauvegarde préférences locales:', e);
-1067:     }
-1068: }
-1069: 
-1070: // Configuration management
-1071: async function exportAllConfig() {
-1072:     try {
-1073:         const [webhookCfg, pollingCfg, timeWin, processingPrefs] = await Promise.all([
-1074:             ApiService.get('/api/webhooks/config'),
-1075:             ApiService.get('/api/get_polling_config'),
-1076:             ApiService.get('/api/get_webhook_time_window'),
-1077:             ApiService.get('/api/processing_prefs')
-1078:         ]);
-1079:         
-1080:         const prefsRaw = localStorage.getItem('dashboard_prefs_v1');
-1081:         const exportObj = {
-1082:             exported_at: new Date().toISOString(),
-1083:             webhook_config: webhookCfg,
-1084:             polling_config: pollingCfg,
-1085:             time_window: timeWin,
-1086:             processing_prefs: processingPrefs,
-1087:             ui_preferences: prefsRaw ? JSON.parse(prefsRaw) : {}
-1088:         };
-1089:         
-1090:         const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
-1091:         const url = URL.createObjectURL(blob);
-1092:         const a = document.createElement('a');
-1093:         a.href = url;
-1094:         a.download = 'render_signal_dashboard_config.json';
-1095:         a.click();
-1096:         URL.revokeObjectURL(url);
-1097:         
-1098:         MessageHelper.showSuccess('configMgmtMsg', 'Export réalisé avec succès.');
-1099:     } catch (e) {
-1100:         MessageHelper.showError('configMgmtMsg', 'Erreur lors de l\'export.');
-1101:     }
-1102: }
-1103: 
-1104: function handleImportConfigFile(evt) {
-1105:     const file = evt.target.files && evt.target.files[0];
-1106:     if (!file) return;
-1107:     
-1108:     const reader = new FileReader();
-1109:     reader.onload = async () => {
-1110:         try {
-1111:             const obj = JSON.parse(String(reader.result || '{}'));
-1112:             
-1113:             // Appliquer la configuration serveur
-1114:             await applyImportedServerConfig(obj);
-1115:             
-1116:             // Appliquer les préférences UI
-1117:             if (obj.ui_preferences) {
-1118:                 localStorage.setItem('dashboard_prefs_v1', JSON.stringify(obj.ui_preferences));
-1119:                 loadLocalPreferences();
-1120:             }
-1121:             
-1122:             MessageHelper.showSuccess('configMgmtMsg', 'Import appliqué.');
-1123:         } catch (e) {
-1124:             MessageHelper.showError('configMgmtMsg', 'Fichier invalide.');
-1125:         }
-1126:     };
-1127:     reader.readAsText(file);
-1128:     
-1129:     // Reset input pour permettre les imports consécutifs
-1130:     evt.target.value = '';
-1131: }
-1132: 
-1133: async function applyImportedServerConfig(obj) {
-1134:     // Webhook config
-1135:     if (obj?.webhook_config?.config) {
-1136:         const cfg = obj.webhook_config.config;
-1137:         const payload = {};
-1138: 
-1139:         if (
-1140:             cfg.webhook_url
-1141:             && typeof cfg.webhook_url === 'string'
-1142:             && !cfg.webhook_url.includes('***')
-1143:         ) {
-1144:             payload.webhook_url = cfg.webhook_url;
-1145:         }
-1146:         if (typeof cfg.webhook_ssl_verify === 'boolean') payload.webhook_ssl_verify = cfg.webhook_ssl_verify;
-1147:         if (typeof cfg.webhook_sending_enabled === 'boolean') {
-1148:             payload.webhook_sending_enabled = cfg.webhook_sending_enabled;
-1149:         }
-1150:         if (typeof cfg.absence_pause_enabled === 'boolean') {
-1151:             payload.absence_pause_enabled = cfg.absence_pause_enabled;
-1152:         }
-1153:         if (Array.isArray(cfg.absence_pause_days)) {
-1154:             payload.absence_pause_days = cfg.absence_pause_days;
-1155:         }
-1156:         
-1157:         if (Object.keys(payload).length) {
-1158:             await ApiService.post('/api/webhooks/config', payload);
-1159:             await WebhookService.loadConfig();
-1160:         }
-1161:     }
-1162:     
-1163:     // Polling config
-1164:     if (obj?.polling_config?.config) {
-1165:         const cfg = obj.polling_config.config;
-1166:         const payload = {};
-1167:         
-1168:         if (Array.isArray(cfg.active_days)) payload.active_days = cfg.active_days;
-1169:         if (Number.isInteger(cfg.active_start_hour)) payload.active_start_hour = cfg.active_start_hour;
-1170:         if (Number.isInteger(cfg.active_end_hour)) payload.active_end_hour = cfg.active_end_hour;
-1171:         if (typeof cfg.enable_subject_group_dedup === 'boolean') payload.enable_subject_group_dedup = cfg.enable_subject_group_dedup;
-1172:         if (Array.isArray(cfg.sender_of_interest_for_polling)) payload.sender_of_interest_for_polling = cfg.sender_of_interest_for_polling;
-1173:         
-1174:         if (Object.keys(payload).length) {
-1175:             await ApiService.post('/api/update_polling_config', payload);
-1176:             await loadPollingConfig();
-1177:         }
-1178:     }
-1179:     
-1180:     // Time window
-1181:     if (obj?.time_window) {
-1182:         const start = obj.time_window.webhooks_time_start ?? '';
-1183:         const end = obj.time_window.webhooks_time_end ?? '';
-1184:         await ApiService.post('/api/set_webhook_time_window', { start, end });
-1185:         await loadTimeWindow();
-1186:     }
-1187: 
-1188:     // Processing prefs
-1189:     if (obj?.processing_prefs?.prefs && typeof obj.processing_prefs.prefs === 'object') {
-1190:         await ApiService.post('/api/processing_prefs', obj.processing_prefs.prefs);
-1191:         await loadProcessingPrefsFromServer();
-1192:     }
-1193: }
-1194: 
-1195: // Validation
-1196: function validateWebhookUrlFromInput() {
-1197:     const inp = document.getElementById('testWebhookUrl');
-1198:     const msgId = 'webhookUrlValidationMsg';
-1199:     const val = (inp?.value || '').trim();
-1200:     
-1201:     if (!val) {
-1202:         MessageHelper.showError(msgId, 'Veuillez saisir une URL ou un alias.');
-1203:         return;
-1204:     }
-1205:     
-1206:     const ok = WebhookService.isValidWebhookUrl(val) || WebhookService.isValidHttpsUrl(val);
-1207:     if (ok) {
-1208:         MessageHelper.showSuccess(msgId, 'Format valide.');
-1209:     } else {
-1210:         MessageHelper.showError(msgId, 'Format invalide.');
-1211:     }
-1212: }
-1213: 
-1214: function buildPayloadPreview() {
-1215:     const subject = (document.getElementById('previewSubject')?.value || '').trim();
-1216:     const sender = (document.getElementById('previewSender')?.value || '').trim();
-1217:     const body = (document.getElementById('previewBody')?.value || '').trim();
+ 985:                 } else {
+ 986:                     // Pour les inputs normaux
+ 987:                     const value = (el.value ?? '').toString().trim();
+ 988:                     if (el.type === 'number') {
+ 989:                         if (value === '') {
+ 990:                             if (elementId === 'maxEmailSizeMB') {
+ 991:                                 prefs[prefKey] = null;
+ 992:                             }
+ 993:                             return;
+ 994:                         }
+ 995:                         prefs[prefKey] = parseInt(value, 10);
+ 996:                         return;
+ 997:                     }
+ 998:                     prefs[prefKey] = value;
+ 999:                 }
+1000:             }
+1001:         });
+1002:         
+1003:         const data = await ApiService.post('/api/processing_prefs', prefs);
+1004:         
+1005:         if (data.success) {
+1006:             MessageHelper.showSuccess(msgId, 'Préférences de traitement enregistrées avec succès !');
+1007:         } else {
+1008:             MessageHelper.showError(msgId, data.message || 'Erreur lors de la sauvegarde.');
+1009:         }
+1010:     } catch (e) {
+1011:         MessageHelper.showError(msgId, 'Erreur de communication avec le serveur.');
+1012:     } finally {
+1013:         MessageHelper.setButtonLoading(btn, false);
+1014:     }
+1015: }
+1016: 
+1017: // Local preferences
+1018: function loadLocalPreferences() {
+1019:     try {
+1020:         const raw = localStorage.getItem('dashboard_prefs_v1');
+1021:         if (!raw) {
+1022:             // Default: enable metrics if no preference exists
+1023:             const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+1024:             if (enableMetricsToggle) {
+1025:                 enableMetricsToggle.checked = true;
+1026:             }
+1027:             return;
+1028:         }
+1029:         
+1030:         const prefs = JSON.parse(raw);
+1031:         
+1032:         // Apply metrics preference if exists, otherwise default to true
+1033:         if (prefs.hasOwnProperty('enableMetricsToggle')) {
+1034:             const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+1035:             if (enableMetricsToggle) {
+1036:                 enableMetricsToggle.checked = prefs.enableMetricsToggle;
+1037:             }
+1038:         }
+1039:         
+1040:         // Appliquer les préférences locales
+1041:         Object.keys(prefs).forEach(key => {
+1042:             const el = document.getElementById(key);
+1043:             if (el) {
+1044:                 if (el.type === 'checkbox') {
+1045:                     el.checked = prefs[key];
+1046:                 } else {
+1047:                     el.value = prefs[key];
+1048:                 }
+1049:             }
+1050:         });
+1051:     } catch (e) {
+1052:         console.warn('Erreur chargement préférences locales:', e);
+1053:     }
+1054: }
+1055: 
+1056: function saveLocalPreferences() {
+1057:     try {
+1058:         const prefs = {};
+1059:         
+1060:         // Collecter les préférences locales
+1061:         const localElements = document.querySelectorAll('[data-pref="local"]');
+1062:         localElements.forEach(el => {
+1063:             const prefName = el.id;
+1064:             if (el.type === 'checkbox') {
+1065:                 prefs[prefName] = el.checked;
+1066:             } else {
+1067:                 prefs[prefName] = el.value;
+1068:             }
+1069:         });
+1070:         
+1071:         // Always save enableMetricsToggle preference
+1072:         const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+1073:         if (enableMetricsToggle) {
+1074:             prefs.enableMetricsToggle = enableMetricsToggle.checked;
+1075:         }
+1076:         
+1077:         localStorage.setItem('dashboard_prefs_v1', JSON.stringify(prefs));
+1078:     } catch (e) {
+1079:         console.warn('Erreur sauvegarde préférences locales:', e);
+1080:     }
+1081: }
+1082: 
+1083: // Configuration management
+1084: async function exportAllConfig() {
+1085:     try {
+1086:         const [webhookCfg, pollingCfg, timeWin, processingPrefs] = await Promise.all([
+1087:             ApiService.get('/api/webhooks/config'),
+1088:             ApiService.get('/api/get_polling_config'),
+1089:             ApiService.get('/api/get_webhook_time_window'),
+1090:             ApiService.get('/api/processing_prefs')
+1091:         ]);
+1092:         
+1093:         const prefsRaw = localStorage.getItem('dashboard_prefs_v1');
+1094:         const exportObj = {
+1095:             exported_at: new Date().toISOString(),
+1096:             webhook_config: webhookCfg,
+1097:             polling_config: pollingCfg,
+1098:             time_window: timeWin,
+1099:             processing_prefs: processingPrefs,
+1100:             ui_preferences: prefsRaw ? JSON.parse(prefsRaw) : {}
+1101:         };
+1102:         
+1103:         const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
+1104:         const url = URL.createObjectURL(blob);
+1105:         const a = document.createElement('a');
+1106:         a.href = url;
+1107:         a.download = 'render_signal_dashboard_config.json';
+1108:         a.click();
+1109:         URL.revokeObjectURL(url);
+1110:         
+1111:         MessageHelper.showSuccess('configMgmtMsg', 'Export réalisé avec succès.');
+1112:     } catch (e) {
+1113:         MessageHelper.showError('configMgmtMsg', 'Erreur lors de l\'export.');
+1114:     }
+1115: }
+1116: 
+1117: function handleImportConfigFile(evt) {
+1118:     const file = evt.target.files && evt.target.files[0];
+1119:     if (!file) return;
+1120:     
+1121:     const reader = new FileReader();
+1122:     reader.onload = async () => {
+1123:         try {
+1124:             const obj = JSON.parse(String(reader.result || '{}'));
+1125:             
+1126:             // Appliquer la configuration serveur
+1127:             await applyImportedServerConfig(obj);
+1128:             
+1129:             // Appliquer les préférences UI
+1130:             if (obj.ui_preferences) {
+1131:                 localStorage.setItem('dashboard_prefs_v1', JSON.stringify(obj.ui_preferences));
+1132:                 loadLocalPreferences();
+1133:             }
+1134:             
+1135:             MessageHelper.showSuccess('configMgmtMsg', 'Import appliqué.');
+1136:         } catch (e) {
+1137:             MessageHelper.showError('configMgmtMsg', 'Fichier invalide.');
+1138:         }
+1139:     };
+1140:     reader.readAsText(file);
+1141:     
+1142:     // Reset input pour permettre les imports consécutifs
+1143:     evt.target.value = '';
+1144: }
+1145: 
+1146: async function applyImportedServerConfig(obj) {
+1147:     // Webhook config
+1148:     if (obj?.webhook_config?.config) {
+1149:         const cfg = obj.webhook_config.config;
+1150:         const payload = {};
+1151: 
+1152:         if (
+1153:             cfg.webhook_url
+1154:             && typeof cfg.webhook_url === 'string'
+1155:             && !cfg.webhook_url.includes('***')
+1156:         ) {
+1157:             payload.webhook_url = cfg.webhook_url;
+1158:         }
+1159:         if (typeof cfg.webhook_ssl_verify === 'boolean') payload.webhook_ssl_verify = cfg.webhook_ssl_verify;
+1160:         if (typeof cfg.webhook_sending_enabled === 'boolean') {
+1161:             payload.webhook_sending_enabled = cfg.webhook_sending_enabled;
+1162:         }
+1163:         if (typeof cfg.absence_pause_enabled === 'boolean') {
+1164:             payload.absence_pause_enabled = cfg.absence_pause_enabled;
+1165:         }
+1166:         if (Array.isArray(cfg.absence_pause_days)) {
+1167:             payload.absence_pause_days = cfg.absence_pause_days;
+1168:         }
+1169:         
+1170:         if (Object.keys(payload).length) {
+1171:             await ApiService.post('/api/webhooks/config', payload);
+1172:             await WebhookService.loadConfig();
+1173:         }
+1174:     }
+1175:     
+1176:     // Polling config
+1177:     if (obj?.polling_config?.config) {
+1178:         const cfg = obj.polling_config.config;
+1179:         const payload = {};
+1180:         
+1181:         if (Array.isArray(cfg.active_days)) payload.active_days = cfg.active_days;
+1182:         if (Number.isInteger(cfg.active_start_hour)) payload.active_start_hour = cfg.active_start_hour;
+1183:         if (Number.isInteger(cfg.active_end_hour)) payload.active_end_hour = cfg.active_end_hour;
+1184:         if (typeof cfg.enable_subject_group_dedup === 'boolean') payload.enable_subject_group_dedup = cfg.enable_subject_group_dedup;
+1185:         if (Array.isArray(cfg.sender_of_interest_for_polling)) payload.sender_of_interest_for_polling = cfg.sender_of_interest_for_polling;
+1186:         
+1187:         if (Object.keys(payload).length) {
+1188:             await ApiService.post('/api/update_polling_config', payload);
+1189:             await loadPollingConfig();
+1190:         }
+1191:     }
+1192:     
+1193:     // Time window
+1194:     if (obj?.time_window) {
+1195:         const start = obj.time_window.webhooks_time_start ?? '';
+1196:         const end = obj.time_window.webhooks_time_end ?? '';
+1197:         await ApiService.post('/api/set_webhook_time_window', { start, end });
+1198:         await loadTimeWindow();
+1199:     }
+1200: 
+1201:     // Processing prefs
+1202:     if (obj?.processing_prefs?.prefs && typeof obj.processing_prefs.prefs === 'object') {
+1203:         await ApiService.post('/api/processing_prefs', obj.processing_prefs.prefs);
+1204:         await loadProcessingPrefsFromServer();
+1205:     }
+1206: }
+1207: 
+1208: // Validation
+1209: function validateWebhookUrlFromInput() {
+1210:     const inp = document.getElementById('testWebhookUrl');
+1211:     const msgId = 'webhookUrlValidationMsg';
+1212:     const val = (inp?.value || '').trim();
+1213:     
+1214:     if (!val) {
+1215:         MessageHelper.showError(msgId, 'Veuillez saisir une URL ou un alias.');
+1216:         return;
+1217:     }
 1218:     
-1219:     const payload = {
-1220:         subject,
-1221:         sender_email: sender,
-1222:         body_excerpt: body.slice(0, 500),
-1223:         delivery_links: [],
-1224:         first_direct_download_url: null,
-1225:         meta: { 
-1226:             preview: true, 
-1227:             generated_at: new Date().toISOString() 
-1228:         }
-1229:     };
-1230:     
-1231:     const pre = document.getElementById('payloadPreview');
-1232:     if (pre) pre.textContent = JSON.stringify(payload, null, 2);
-1233: }
-1234: 
-1235: // UI helpers
-1236: function setDayCheckboxes(days) {
-1237:     const group = document.getElementById('pollingActiveDaysGroup');
-1238:     if (!group) return;
-1239:     
-1240:     const set = new Set(Array.isArray(days) ? days : []);
-1241:     const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
-1242:     
-1243:     boxes.forEach(cb => {
-1244:         const idx = parseInt(cb.value, 10);
-1245:         cb.checked = set.has(idx);
-1246:     });
-1247: }
-1248: 
-1249: function collectDayCheckboxes() {
+1219:     const ok = WebhookService.isValidWebhookUrl(val) || WebhookService.isValidHttpsUrl(val);
+1220:     if (ok) {
+1221:         MessageHelper.showSuccess(msgId, 'Format valide.');
+1222:     } else {
+1223:         MessageHelper.showError(msgId, 'Format invalide.');
+1224:     }
+1225: }
+1226: 
+1227: function buildPayloadPreview() {
+1228:     const subject = (document.getElementById('previewSubject')?.value || '').trim();
+1229:     const sender = (document.getElementById('previewSender')?.value || '').trim();
+1230:     const body = (document.getElementById('previewBody')?.value || '').trim();
+1231:     
+1232:     const payload = {
+1233:         subject,
+1234:         sender_email: sender,
+1235:         body_excerpt: body.slice(0, 500),
+1236:         delivery_links: [],
+1237:         first_direct_download_url: null,
+1238:         meta: { 
+1239:             preview: true, 
+1240:             generated_at: new Date().toISOString() 
+1241:         }
+1242:     };
+1243:     
+1244:     const pre = document.getElementById('payloadPreview');
+1245:     if (pre) pre.textContent = JSON.stringify(payload, null, 2);
+1246: }
+1247: 
+1248: // UI helpers
+1249: function setDayCheckboxes(days) {
 1250:     const group = document.getElementById('pollingActiveDaysGroup');
-1251:     if (!group) return [];
+1251:     if (!group) return;
 1252:     
-1253:     const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
-1254:     const out = [];
+1253:     const set = new Set(Array.isArray(days) ? days : []);
+1254:     const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
 1255:     
 1256:     boxes.forEach(cb => {
-1257:         if (cb.checked) out.push(parseInt(cb.value, 10));
-1258:     });
-1259:     
-1260:     // Trier croissant et garantir l'unicité
-1261:     return Array.from(new Set(out)).sort((a, b) => a - b);
-1262: }
-1263: 
-1264: function addEmailField(value) {
-1265:     const container = document.getElementById('senderOfInterestContainer');
-1266:     if (!container) return;
-1267:     
-1268:     const row = document.createElement('div');
-1269:     row.className = 'inline-group';
-1270:     
-1271:     const input = document.createElement('input');
-1272:     input.type = 'email';
-1273:     input.placeholder = 'ex: email@example.com';
-1274:     input.value = value || '';
-1275:     input.style.flex = '1';
-1276:     
-1277:     const btn = document.createElement('button');
-1278:     btn.type = 'button';
-1279:     btn.className = 'email-remove-btn';
-1280:     btn.textContent = '❌';
-1281:     btn.title = 'Supprimer cet email';
-1282:     btn.addEventListener('click', () => row.remove());
+1257:         const idx = parseInt(cb.value, 10);
+1258:         cb.checked = set.has(idx);
+1259:     });
+1260: }
+1261: 
+1262: function collectDayCheckboxes() {
+1263:     const group = document.getElementById('pollingActiveDaysGroup');
+1264:     if (!group) return [];
+1265:     
+1266:     const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
+1267:     const out = [];
+1268:     
+1269:     boxes.forEach(cb => {
+1270:         if (cb.checked) out.push(parseInt(cb.value, 10));
+1271:     });
+1272:     
+1273:     // Trier croissant et garantir l'unicité
+1274:     return Array.from(new Set(out)).sort((a, b) => a - b);
+1275: }
+1276: 
+1277: function addEmailField(value) {
+1278:     const container = document.getElementById('senderOfInterestContainer');
+1279:     if (!container) return;
+1280:     
+1281:     const row = document.createElement('div');
+1282:     row.className = 'inline-group';
 1283:     
-1284:     row.appendChild(input);
-1285:     row.appendChild(btn);
-1286:     container.appendChild(row);
-1287: }
-1288: 
-1289: function renderSenderInputs(list) {
-1290:     const container = document.getElementById('senderOfInterestContainer');
-1291:     if (!container) return;
-1292:     
-1293:     container.innerHTML = '';
-1294:     (list || []).forEach(e => addEmailField(e));
-1295:     if (!list || list.length === 0) addEmailField('');
-1296: }
-1297: 
-1298: function collectSenderInputs() {
-1299:     const container = document.getElementById('senderOfInterestContainer');
-1300:     if (!container) return [];
-1301:     
-1302:     const inputs = Array.from(container.querySelectorAll('input[type="email"]'));
-1303:     const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-1304:     const out = [];
-1305:     const seen = new Set();
-1306:     
-1307:     for (const i of inputs) {
-1308:         const v = (i.value || '').trim().toLowerCase();
-1309:         if (!v) continue;
-1310:         
-1311:         if (emailRe.test(v) && !seen.has(v)) {
-1312:             seen.add(v);
-1313:             out.push(v);
-1314:         }
-1315:     }
-1316:     
-1317:     return out;
-1318: }
-1319: 
-1320: // Fenêtre horaire global webhook
-1321: async function loadGlobalWebhookTimeWindow() {
-1322:     const applyGlobalWindowValues = (startValue = '', endValue = '') => {
-1323:         const startInput = document.getElementById('globalWebhookTimeStart');
-1324:         const endInput = document.getElementById('globalWebhookTimeEnd');
-1325:         if (startInput) setSelectedOption(startInput, startValue || '');
-1326:         if (endInput) setSelectedOption(endInput, endValue || '');
-1327:     };
-1328:     
-1329:     try {
-1330:         const timeWindowResponse = await ApiService.get('/api/webhooks/time-window');
-1331:         if (timeWindowResponse.success) {
-1332:             applyGlobalWindowValues(
-1333:                 timeWindowResponse.webhooks_time_start || '',
-1334:                 timeWindowResponse.webhooks_time_end || ''
-1335:             );
-1336:             return;
-1337:         }
-1338:     } catch (e) {
-1339:         console.warn('Impossible de charger la fenêtre horaire webhook globale:', e);
-1340:     }
-1341: }
-1342: 
-1343: async function saveGlobalWebhookTimeWindow() {
-1344:     const startInput = document.getElementById('globalWebhookTimeStart');
-1345:     const endInput = document.getElementById('globalWebhookTimeEnd');
-1346:     const start = startInput.value.trim();
-1347:     const end = endInput.value.trim();
-1348:     
-1349:     // Validation des formats - dropdowns guarantee HH:MM format
-1350:     if (start && !/^\d{2}:\d{2}$/.test(start)) {
-1351:         MessageHelper.showError('globalWebhookTimeMsg', 'Veuillez sélectionner une heure valide.');
-1352:         return false;
+1284:     const input = document.createElement('input');
+1285:     input.type = 'email';
+1286:     input.placeholder = 'ex: email@example.com';
+1287:     input.value = value || '';
+1288:     input.style.flex = '1';
+1289:     
+1290:     const btn = document.createElement('button');
+1291:     btn.type = 'button';
+1292:     btn.className = 'email-remove-btn';
+1293:     btn.textContent = '❌';
+1294:     btn.title = 'Supprimer cet email';
+1295:     btn.addEventListener('click', () => row.remove());
+1296:     
+1297:     row.appendChild(input);
+1298:     row.appendChild(btn);
+1299:     container.appendChild(row);
+1300: }
+1301: 
+1302: function renderSenderInputs(list) {
+1303:     const container = document.getElementById('senderOfInterestContainer');
+1304:     if (!container) return;
+1305:     
+1306:     container.innerHTML = '';
+1307:     (list || []).forEach(e => addEmailField(e));
+1308:     if (!list || list.length === 0) addEmailField('');
+1309: }
+1310: 
+1311: function collectSenderInputs() {
+1312:     const container = document.getElementById('senderOfInterestContainer');
+1313:     if (!container) return [];
+1314:     
+1315:     const inputs = Array.from(container.querySelectorAll('input[type="email"]'));
+1316:     const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+1317:     const out = [];
+1318:     const seen = new Set();
+1319:     
+1320:     for (const i of inputs) {
+1321:         const v = (i.value || '').trim().toLowerCase();
+1322:         if (!v) continue;
+1323:         
+1324:         if (emailRe.test(v) && !seen.has(v)) {
+1325:             seen.add(v);
+1326:             out.push(v);
+1327:         }
+1328:     }
+1329:     
+1330:     return out;
+1331: }
+1332: 
+1333: // Fenêtre horaire global webhook
+1334: async function loadGlobalWebhookTimeWindow() {
+1335:     const applyGlobalWindowValues = (startValue = '', endValue = '') => {
+1336:         const startInput = document.getElementById('globalWebhookTimeStart');
+1337:         const endInput = document.getElementById('globalWebhookTimeEnd');
+1338:         if (startInput) setSelectedOption(startInput, startValue || '');
+1339:         if (endInput) setSelectedOption(endInput, endValue || '');
+1340:     };
+1341:     
+1342:     try {
+1343:         const timeWindowResponse = await ApiService.get('/api/webhooks/time-window');
+1344:         if (timeWindowResponse.success) {
+1345:             applyGlobalWindowValues(
+1346:                 timeWindowResponse.webhooks_time_start || '',
+1347:                 timeWindowResponse.webhooks_time_end || ''
+1348:             );
+1349:             return;
+1350:         }
+1351:     } catch (e) {
+1352:         console.warn('Impossible de charger la fenêtre horaire webhook globale:', e);
 1353:     }
-1354:     
-1355:     if (end && !/^\d{2}:\d{2}$/.test(end)) {
-1356:         MessageHelper.showError('globalWebhookTimeMsg', 'Veuillez sélectionner une heure valide.');
-1357:         return false;
-1358:     }
-1359:     
-1360:     // No normalization needed for dropdowns - format is already HH:MM
+1354: }
+1355: 
+1356: async function saveGlobalWebhookTimeWindow() {
+1357:     const startInput = document.getElementById('globalWebhookTimeStart');
+1358:     const endInput = document.getElementById('globalWebhookTimeEnd');
+1359:     const start = startInput.value.trim();
+1360:     const end = endInput.value.trim();
 1361:     
-1362:     try {
-1363:         const data = await ApiService.post('/api/webhooks/time-window', { 
-1364:             start: start, 
-1365:             end: end 
-1366:         });
-1367:         
-1368:         if (data.success) {
-1369:             MessageHelper.showSuccess('globalWebhookTimeMsg', 'Fenêtre horaire webhook enregistrée avec succès !');
-1370:             updatePanelStatus('time-window', true);
-1371:             updatePanelIndicator('time-window');
-1372:             
-1373:             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
-1374:             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
-1375:                 setSelectedOption(startInput, data.webhooks_time_start || '');
-1376:             }
-1377:             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
-1378:                 setSelectedOption(endInput, data.webhooks_time_end || '');
-1379:             }
-1380:             await loadGlobalWebhookTimeWindow();
-1381:             return true;
-1382:         } else {
-1383:             MessageHelper.showError('globalWebhookTimeMsg', data.message || 'Erreur lors de la sauvegarde.');
-1384:             updatePanelStatus('time-window', false);
-1385:             return false;
-1386:         }
-1387:     } catch (e) {
-1388:         MessageHelper.showError('globalWebhookTimeMsg', 'Erreur de communication avec le serveur.');
-1389:         updatePanelStatus('time-window', false);
-1390:         return false;
-1391:     }
-1392: }
-1393: 
-1394: // -------------------- Statut Global --------------------
-1395: /**
-1396:  * Met à jour le bandeau de statut global avec les données récentes
-1397:  */
-1398: async function updateGlobalStatus() {
-1399:     try {
-1400:         // Récupérer les logs récents pour analyser le statut
-1401:         const logsResponse = await ApiService.get('/api/webhook_logs?limit=50');
-1402:         const configResponse = await ApiService.get('/api/webhooks/config');
-1403:         
-1404:         if (!logsResponse.success || !configResponse.success) {
-1405:             console.warn('Impossible de récupérer les données pour le statut global');
-1406:             return;
-1407:         }
-1408:         
-1409:         const logs = logsResponse.logs || [];
-1410:         const config = configResponse.config || {};
-1411:         
-1412:         // Analyser les logs pour déterminer le statut
-1413:         const statusData = analyzeLogsForStatus(logs);
-1414:         
-1415:         // Mettre à jour l'interface
-1416:         updateStatusBanner(statusData, config);
-1417:         
-1418:     } catch (error) {
-1419:         console.error('Erreur lors de la mise à jour du statut global:', error);
-1420:         // Afficher un statut d'erreur
-1421:         updateStatusBanner({
-1422:             lastExecution: 'Erreur',
-1423:             recentIncidents: '—',
-1424:             criticalErrors: '—',
-1425:             activeWebhooks: config?.webhook_url ? '1' : '0',
-1426:             status: 'error'
-1427:         }, {});
-1428:     }
-1429: }
-1430: 
-1431: /**
-1432:  * Analyse les logs pour extraire les informations de statut
-1433:  */
-1434: function analyzeLogsForStatus(logs) {
-1435:     const now = new Date();
-1436:     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-1437:     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-1438:     
-1439:     let lastExecution = null;
-1440:     let recentIncidents = 0;
-1441:     let criticalErrors = 0;
-1442:     let totalWebhooks = 0;
-1443:     let successfulWebhooks = 0;
-1444:     
-1445:     logs.forEach(log => {
-1446:         const logTime = new Date(log.timestamp);
-1447:         
-1448:         // Dernière exécution
-1449:         if (!lastExecution || logTime > lastExecution) {
-1450:             lastExecution = logTime;
-1451:         }
-1452:         
-1453:         // Webhooks envoyés (dernière heure)
-1454:         if (logTime >= oneHourAgo) {
-1455:             totalWebhooks++;
-1456:             if (log.status === 'success') {
-1457:                 successfulWebhooks++;
-1458:             } else if (log.status === 'error') {
-1459:                 criticalErrors++;
-1460:             }
-1461:         }
-1462:         
-1463:         // Incidents récents (dernières 24h)
-1464:         if (logTime >= oneDayAgo && log.status === 'error') {
-1465:             recentIncidents++;
-1466:         }
-1467:     });
-1468:     
-1469:     // Formater la dernière exécution
-1470:     let lastExecutionText = '—';
-1471:     if (lastExecution) {
-1472:         const diffMinutes = Math.floor((now - lastExecution) / (1000 * 60));
-1473:         if (diffMinutes < 1) {
-1474:             lastExecutionText = 'À l\'instant';
-1475:         } else if (diffMinutes < 60) {
-1476:             lastExecutionText = `Il y a ${diffMinutes} min`;
-1477:         } else if (diffMinutes < 1440) {
-1478:             lastExecutionText = `Il y a ${Math.floor(diffMinutes / 60)}h`;
-1479:         } else {
-1480:             lastExecutionText = lastExecution.toLocaleDateString('fr-FR', { 
-1481:                 hour: '2-digit', 
-1482:                 minute: '2-digit' 
-1483:             });
-1484:         }
-1485:     }
-1486:     
-1487:     // Déterminer le statut global
-1488:     let status = 'success';
-1489:     if (criticalErrors > 0) {
-1490:         status = 'error';
-1491:     } else if (recentIncidents > 0) {
-1492:         status = 'warning';
-1493:     }
-1494:     
-1495:     return {
-1496:         lastExecution: lastExecutionText,
-1497:         recentIncidents: recentIncidents.toString(),
-1498:         criticalErrors: criticalErrors.toString(),
-1499:         activeWebhooks: totalWebhooks.toString(),
-1500:         status: status
-1501:     };
-1502: }
-1503: 
-1504: /**
-1505:  * Met à jour l'affichage du bandeau de statut
-1506:  */
-1507: function updateStatusBanner(statusData, config) {
-1508:     // Mettre à jour les valeurs
-1509:     document.getElementById('lastExecutionTime').textContent = statusData.lastExecution;
-1510:     document.getElementById('recentIncidents').textContent = statusData.recentIncidents;
-1511:     document.getElementById('criticalErrors').textContent = statusData.criticalErrors;
-1512:     document.getElementById('activeWebhooks').textContent = statusData.activeWebhooks;
-1513:     
-1514:     // Mettre à jour l'icône de statut
-1515:     const statusIcon = document.getElementById('globalStatusIcon');
-1516:     statusIcon.className = 'status-icon ' + statusData.status;
-1517:     
-1518:     switch (statusData.status) {
-1519:         case 'success':
-1520:             statusIcon.textContent = '🟢';
-1521:             break;
-1522:         case 'warning':
-1523:             statusIcon.textContent = '🟡';
-1524:             break;
-1525:         case 'error':
-1526:             statusIcon.textContent = '🔴';
-1527:             break;
-1528:         default:
-1529:             statusIcon.textContent = '🟢';
-1530:     }
-1531: }
-1532: 
-1533: // -------------------- Panneaux Pliables Webhooks --------------------
-1534: /**
-1535:  * Initialise les panneaux pliables des webhooks
-1536:  */
-1537: function initializeCollapsiblePanels() {
-1538:     const panels = document.querySelectorAll('.collapsible-panel');
-1539:     
-1540:     panels.forEach(panel => {
-1541:         const header = panel.querySelector('.panel-header');
-1542:         const content = panel.querySelector('.panel-content');
-1543:         const toggleIcon = panel.querySelector('.toggle-icon');
-1544:         
-1545:         if (header && content && toggleIcon) {
-1546:             header.addEventListener('click', () => {
-1547:                 const isCollapsed = content.classList.contains('collapsed');
-1548:                 
-1549:                 if (isCollapsed) {
-1550:                     content.classList.remove('collapsed');
-1551:                     toggleIcon.classList.remove('rotated');
-1552:                 } else {
-1553:                     content.classList.add('collapsed');
-1554:                     toggleIcon.classList.add('rotated');
-1555:                 }
-1556:             });
-1557:         }
-1558:     });
-1559: }
-1560: 
-1561: /**
-1562:  * Met à jour le statut d'un panneau
-1563:  * @param {string} panelType - Type de panneau
-1564:  * @param {boolean} success - Si la sauvegarde a réussi
-1565:  */
-1566: function updatePanelStatus(panelType, success) {
-1567:     const statusElement = document.getElementById(`${panelType}-status`);
-1568:     if (statusElement) {
-1569:         if (success) {
-1570:             statusElement.textContent = 'Sauvegardé';
-1571:             statusElement.classList.add('saved');
-1572:         } else {
-1573:             statusElement.textContent = 'Erreur';
-1574:             statusElement.classList.remove('saved');
-1575:         }
-1576:         
-1577:         // Réinitialiser après 3 secondes
-1578:         setTimeout(() => {
-1579:             statusElement.textContent = 'Sauvegarde requise';
-1580:             statusElement.classList.remove('saved');
-1581:         }, 3000);
-1582:     }
-1583: }
-1584: 
-1585: /**
-1586:  * Met à jour l'indicateur de dernière sauvegarde
-1587:  * @param {string} panelType - Type de panneau
-1588:  */
-1589: function updatePanelIndicator(panelType) {
-1590:     const indicator = document.getElementById(`${panelType}-indicator`);
-1591:     if (indicator) {
-1592:         const now = new Date();
-1593:         const timeString = now.toLocaleTimeString('fr-FR', { 
-1594:             hour: '2-digit', 
-1595:             minute: '2-digit' 
-1596:         });
-1597:         indicator.textContent = `Dernière sauvegarde: ${timeString}`;
-1598:     }
-1599: }
-1600: 
-1601: /**
-1602:  * Sauvegarde un panneau de configuration webhook
-1603:  * @param {string} panelType - Type de panneau (urls-ssl, absence, time-window)
-1604:  */
-1605: async function saveWebhookPanel(panelType) {
-1606:     try {
-1607:         let data;
-1608:         let endpoint;
-1609:         let successMessage;
-1610:         
-1611:         switch (panelType) {
-1612:             case 'urls-ssl':
-1613:                 data = collectUrlsData();
-1614:                 endpoint = '/api/webhooks/config';
-1615:                 successMessage = 'Configuration URLs & SSL enregistrée avec succès !';
-1616:                 break;
-1617:                 
-1618:             case 'absence':
-1619:                 data = collectAbsenceData();
-1620:                 endpoint = '/api/webhooks/config';
-1621:                 successMessage = 'Configuration Absence Globale enregistrée avec succès !';
-1622:                 break;
-1623:                 
-1624:             case 'time-window':
-1625:                 data = collectTimeWindowData();
-1626:                 endpoint = '/api/webhooks/time-window';
-1627:                 successMessage = 'Fenêtre horaire enregistrée avec succès !';
-1628:                 break;
-1629:                 
-1630:             default:
-1631:                 console.error('Type de panneau inconnu:', panelType);
-1632:                 return;
-1633:         }
-1634:         
-1635:         // Envoyer les données au serveur
-1636:         const response = await ApiService.post(endpoint, data);
-1637:         
-1638:         if (response.success) {
-1639:             MessageHelper.showSuccess(`${panelType}-msg`, successMessage);
-1640:             updatePanelStatus(panelType, true);
-1641:             updatePanelIndicator(panelType);
-1642:         } else {
-1643:             MessageHelper.showError(`${panelType}-msg`, response.message || 'Erreur lors de la sauvegarde');
-1644:             updatePanelStatus(panelType, false);
-1645:         }
-1646:         
-1647:     } catch (error) {
-1648:         console.error(`Erreur lors de la sauvegarde du panneau ${panelType}:`, error);
-1649:         MessageHelper.showError(`${panelType}-msg`, 'Erreur lors de la sauvegarde');
-1650:         updatePanelStatus(panelType, false);
-1651:     }
-1652: }
-1653: 
-1654: /**
-1655:  * Collecte les données du panneau URLs & SSL
-1656:  */
-1657: function collectUrlsData() {
-1658:     const webhookUrl = document.getElementById('webhookUrl')?.value || '';
-1659:     const webhookUrlPlaceholder = document.getElementById('webhookUrl')?.placeholder || '';
-1660:     const sslToggle = document.getElementById('sslVerifyToggle');
-1661:     const sendingToggle = document.getElementById('webhookSendingToggle');
-1662:     const sslVerify = sslToggle?.checked ?? true;
-1663:     const sendingEnabled = sendingToggle?.checked ?? true;
-1664: 
-1665:     const payload = {
-1666:         webhook_ssl_verify: sslVerify,
-1667:         webhook_sending_enabled: sendingEnabled,
-1668:     };
-1669: 
-1670:     const trimmedWebhookUrl = webhookUrl.trim();
-1671:     if (trimmedWebhookUrl && !MessageHelper.isPlaceholder(trimmedWebhookUrl, webhookUrlPlaceholder)) {
-1672:         payload.webhook_url = trimmedWebhookUrl;
-1673:     }
-1674: 
-1675:     return payload;
-1676: }
+1362:     // Validation des formats - dropdowns guarantee HH:MM format
+1363:     if (start && !/^\d{2}:\d{2}$/.test(start)) {
+1364:         MessageHelper.showError('globalWebhookTimeMsg', 'Veuillez sélectionner une heure valide.');
+1365:         return false;
+1366:     }
+1367:     
+1368:     if (end && !/^\d{2}:\d{2}$/.test(end)) {
+1369:         MessageHelper.showError('globalWebhookTimeMsg', 'Veuillez sélectionner une heure valide.');
+1370:         return false;
+1371:     }
+1372:     
+1373:     // No normalization needed for dropdowns - format is already HH:MM
+1374:     
+1375:     try {
+1376:         const data = await ApiService.post('/api/webhooks/time-window', { 
+1377:             start: start, 
+1378:             end: end 
+1379:         });
+1380:         
+1381:         if (data.success) {
+1382:             MessageHelper.showSuccess('globalWebhookTimeMsg', 'Fenêtre horaire webhook enregistrée avec succès !');
+1383:             updatePanelStatus('time-window', true);
+1384:             updatePanelIndicator('time-window');
+1385:             
+1386:             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
+1387:             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
+1388:                 setSelectedOption(startInput, data.webhooks_time_start || '');
+1389:             }
+1390:             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
+1391:                 setSelectedOption(endInput, data.webhooks_time_end || '');
+1392:             }
+1393:             await loadGlobalWebhookTimeWindow();
+1394:             return true;
+1395:         } else {
+1396:             MessageHelper.showError('globalWebhookTimeMsg', data.message || 'Erreur lors de la sauvegarde.');
+1397:             updatePanelStatus('time-window', false);
+1398:             return false;
+1399:         }
+1400:     } catch (e) {
+1401:         MessageHelper.showError('globalWebhookTimeMsg', 'Erreur de communication avec le serveur.');
+1402:         updatePanelStatus('time-window', false);
+1403:         return false;
+1404:     }
+1405: }
+1406: 
+1407: // -------------------- Statut Global --------------------
+1408: /**
+1409:  * Met à jour le bandeau de statut global avec les données récentes
+1410:  */
+1411: async function updateGlobalStatus() {
+1412:     try {
+1413:         // Récupérer les logs récents pour analyser le statut
+1414:         const logsResponse = await ApiService.get('/api/webhook_logs?limit=50');
+1415:         const configResponse = await ApiService.get('/api/webhooks/config');
+1416:         
+1417:         if (!logsResponse.success || !configResponse.success) {
+1418:             console.warn('Impossible de récupérer les données pour le statut global');
+1419:             return;
+1420:         }
+1421:         
+1422:         const logs = logsResponse.logs || [];
+1423:         const config = configResponse.config || {};
+1424:         
+1425:         // Analyser les logs pour déterminer le statut
+1426:         const statusData = analyzeLogsForStatus(logs);
+1427:         
+1428:         // Mettre à jour l'interface
+1429:         updateStatusBanner(statusData, config);
+1430:         
+1431:     } catch (error) {
+1432:         console.error('Erreur lors de la mise à jour du statut global:', error);
+1433:         // Afficher un statut d'erreur
+1434:         updateStatusBanner({
+1435:             lastExecution: 'Erreur',
+1436:             recentIncidents: '—',
+1437:             criticalErrors: '—',
+1438:             activeWebhooks: config?.webhook_url ? '1' : '0',
+1439:             status: 'error'
+1440:         }, {});
+1441:     }
+1442: }
+1443: 
+1444: /**
+1445:  * Analyse les logs pour extraire les informations de statut
+1446:  */
+1447: function analyzeLogsForStatus(logs) {
+1448:     const now = new Date();
+1449:     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+1450:     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+1451:     
+1452:     let lastExecution = null;
+1453:     let recentIncidents = 0;
+1454:     let criticalErrors = 0;
+1455:     let totalWebhooks = 0;
+1456:     let successfulWebhooks = 0;
+1457:     
+1458:     logs.forEach(log => {
+1459:         const logTime = new Date(log.timestamp);
+1460:         
+1461:         // Dernière exécution
+1462:         if (!lastExecution || logTime > lastExecution) {
+1463:             lastExecution = logTime;
+1464:         }
+1465:         
+1466:         // Webhooks envoyés (dernière heure)
+1467:         if (logTime >= oneHourAgo) {
+1468:             totalWebhooks++;
+1469:             if (log.status === 'success') {
+1470:                 successfulWebhooks++;
+1471:             } else if (log.status === 'error') {
+1472:                 criticalErrors++;
+1473:             }
+1474:         }
+1475:         
+1476:         // Incidents récents (dernières 24h)
+1477:         if (logTime >= oneDayAgo && log.status === 'error') {
+1478:             recentIncidents++;
+1479:         }
+1480:     });
+1481:     
+1482:     // Formater la dernière exécution
+1483:     let lastExecutionText = '—';
+1484:     if (lastExecution) {
+1485:         const diffMinutes = Math.floor((now - lastExecution) / (1000 * 60));
+1486:         if (diffMinutes < 1) {
+1487:             lastExecutionText = 'À l\'instant';
+1488:         } else if (diffMinutes < 60) {
+1489:             lastExecutionText = `Il y a ${diffMinutes} min`;
+1490:         } else if (diffMinutes < 1440) {
+1491:             lastExecutionText = `Il y a ${Math.floor(diffMinutes / 60)}h`;
+1492:         } else {
+1493:             lastExecutionText = lastExecution.toLocaleDateString('fr-FR', { 
+1494:                 hour: '2-digit', 
+1495:                 minute: '2-digit' 
+1496:             });
+1497:         }
+1498:     }
+1499:     
+1500:     // Déterminer le statut global
+1501:     let status = 'success';
+1502:     if (criticalErrors > 0) {
+1503:         status = 'error';
+1504:     } else if (recentIncidents > 0) {
+1505:         status = 'warning';
+1506:     }
+1507:     
+1508:     return {
+1509:         lastExecution: lastExecutionText,
+1510:         recentIncidents: recentIncidents.toString(),
+1511:         criticalErrors: criticalErrors.toString(),
+1512:         activeWebhooks: totalWebhooks.toString(),
+1513:         status: status
+1514:     };
+1515: }
+1516: 
+1517: /**
+1518:  * Met à jour l'affichage du bandeau de statut
+1519:  */
+1520: function updateStatusBanner(statusData, config) {
+1521:     // Mettre à jour les valeurs
+1522:     document.getElementById('lastExecutionTime').textContent = statusData.lastExecution;
+1523:     document.getElementById('recentIncidents').textContent = statusData.recentIncidents;
+1524:     document.getElementById('criticalErrors').textContent = statusData.criticalErrors;
+1525:     document.getElementById('activeWebhooks').textContent = statusData.activeWebhooks;
+1526:     
+1527:     // Mettre à jour l'icône de statut
+1528:     const statusIcon = document.getElementById('globalStatusIcon');
+1529:     statusIcon.className = 'status-icon ' + statusData.status;
+1530:     
+1531:     switch (statusData.status) {
+1532:         case 'success':
+1533:             statusIcon.textContent = '🟢';
+1534:             break;
+1535:         case 'warning':
+1536:             statusIcon.textContent = '🟡';
+1537:             break;
+1538:         case 'error':
+1539:             statusIcon.textContent = '🔴';
+1540:             break;
+1541:         default:
+1542:             statusIcon.textContent = '🟢';
+1543:     }
+1544: }
+1545: 
+1546: // -------------------- Panneaux Pliables Webhooks --------------------
+1547: /**
+1548:  * Initialise les panneaux pliables des webhooks
+1549:  */
+1550: function initializeCollapsiblePanels() {
+1551:     const panels = document.querySelectorAll('.collapsible-panel');
+1552:     
+1553:     panels.forEach(panel => {
+1554:         const header = panel.querySelector('.panel-header');
+1555:         const content = panel.querySelector('.panel-content');
+1556:         const toggleIcon = panel.querySelector('.toggle-icon');
+1557:         
+1558:         if (header && content && toggleIcon) {
+1559:             header.addEventListener('click', () => {
+1560:                 const isCollapsed = content.classList.contains('collapsed');
+1561:                 
+1562:                 if (isCollapsed) {
+1563:                     content.classList.remove('collapsed');
+1564:                     toggleIcon.classList.remove('rotated');
+1565:                 } else {
+1566:                     content.classList.add('collapsed');
+1567:                     toggleIcon.classList.add('rotated');
+1568:                 }
+1569:             });
+1570:         }
+1571:     });
+1572: }
+1573: 
+1574: /**
+1575:  * Met à jour le statut d'un panneau
+1576:  * @param {string} panelType - Type de panneau
+1577:  * @param {boolean} success - Si la sauvegarde a réussi
+1578:  */
+1579: function updatePanelStatus(panelType, success) {
+1580:     const statusElement = document.getElementById(`${panelType}-status`);
+1581:     if (statusElement) {
+1582:         if (success) {
+1583:             statusElement.textContent = 'Sauvegardé';
+1584:             statusElement.classList.add('saved');
+1585:         } else {
+1586:             statusElement.textContent = 'Erreur';
+1587:             statusElement.classList.remove('saved');
+1588:         }
+1589:         
+1590:         // Réinitialiser après 3 secondes
+1591:         setTimeout(() => {
+1592:             statusElement.textContent = 'Sauvegarde requise';
+1593:             statusElement.classList.remove('saved');
+1594:         }, 3000);
+1595:     }
+1596: }
+1597: 
+1598: /**
+1599:  * Met à jour l'indicateur de dernière sauvegarde
+1600:  * @param {string} panelType - Type de panneau
+1601:  */
+1602: function updatePanelIndicator(panelType) {
+1603:     const indicator = document.getElementById(`${panelType}-indicator`);
+1604:     if (indicator) {
+1605:         const now = new Date();
+1606:         const timeString = now.toLocaleTimeString('fr-FR', { 
+1607:             hour: '2-digit', 
+1608:             minute: '2-digit' 
+1609:         });
+1610:         indicator.textContent = `Dernière sauvegarde: ${timeString}`;
+1611:     }
+1612: }
+1613: 
+1614: /**
+1615:  * Sauvegarde un panneau de configuration webhook
+1616:  * @param {string} panelType - Type de panneau (urls-ssl, absence, time-window)
+1617:  */
+1618: async function saveWebhookPanel(panelType) {
+1619:     try {
+1620:         let data;
+1621:         let endpoint;
+1622:         let successMessage;
+1623:         
+1624:         switch (panelType) {
+1625:             case 'urls-ssl':
+1626:                 data = collectUrlsData();
+1627:                 endpoint = '/api/webhooks/config';
+1628:                 successMessage = 'Configuration URLs & SSL enregistrée avec succès !';
+1629:                 break;
+1630:                 
+1631:             case 'absence':
+1632:                 data = collectAbsenceData();
+1633:                 endpoint = '/api/webhooks/config';
+1634:                 successMessage = 'Configuration Absence Globale enregistrée avec succès !';
+1635:                 break;
+1636:                 
+1637:             case 'time-window':
+1638:                 data = collectTimeWindowData();
+1639:                 endpoint = '/api/webhooks/time-window';
+1640:                 successMessage = 'Fenêtre horaire enregistrée avec succès !';
+1641:                 break;
+1642:                 
+1643:             default:
+1644:                 console.error('Type de panneau inconnu:', panelType);
+1645:                 return;
+1646:         }
+1647:         
+1648:         // Envoyer les données au serveur
+1649:         const response = await ApiService.post(endpoint, data);
+1650:         
+1651:         if (response.success) {
+1652:             MessageHelper.showSuccess(`${panelType}-msg`, successMessage);
+1653:             updatePanelStatus(panelType, true);
+1654:             updatePanelIndicator(panelType);
+1655:         } else {
+1656:             MessageHelper.showError(`${panelType}-msg`, response.message || 'Erreur lors de la sauvegarde');
+1657:             updatePanelStatus(panelType, false);
+1658:         }
+1659:         
+1660:     } catch (error) {
+1661:         console.error(`Erreur lors de la sauvegarde du panneau ${panelType}:`, error);
+1662:         MessageHelper.showError(`${panelType}-msg`, 'Erreur lors de la sauvegarde');
+1663:         updatePanelStatus(panelType, false);
+1664:     }
+1665: }
+1666: 
+1667: /**
+1668:  * Collecte les données du panneau URLs & SSL
+1669:  */
+1670: function collectUrlsData() {
+1671:     const webhookUrl = document.getElementById('webhookUrl')?.value || '';
+1672:     const webhookUrlPlaceholder = document.getElementById('webhookUrl')?.placeholder || '';
+1673:     const sslToggle = document.getElementById('sslVerifyToggle');
+1674:     const sendingToggle = document.getElementById('webhookSendingToggle');
+1675:     const sslVerify = sslToggle?.checked ?? true;
+1676:     const sendingEnabled = sendingToggle?.checked ?? true;
 1677: 
-1678: /**
-1679:  * Collecte les données du panneau fenêtre horaire
-1680:  */
-1681: function collectTimeWindowData() {
-1682:     const startInput = document.getElementById('globalWebhookTimeStart');
-1683:     const endInput = document.getElementById('globalWebhookTimeEnd');
-1684:     const start = startInput?.value?.trim() || '';
-1685:     const end = endInput?.value?.trim() || '';
-1686:     
-1687:     // Normaliser les formats
-1688:     const normalizedStart = start ? (MessageHelper.normalizeTimeFormat(start) || '') : '';
-1689:     const normalizedEnd = end ? (MessageHelper.normalizeTimeFormat(end) || '') : '';
-1690:     
-1691:     return {
-1692:         start: normalizedStart,
-1693:         end: normalizedEnd
-1694:     };
-1695: }
-1696: 
-1697: /**
-1698:  * Collecte les données du panneau d'absence
-1699:  */
-1700: function collectAbsenceData() {
-1701:     const toggle = document.getElementById('absencePauseToggle');
-1702:     const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]:checked');
+1678:     const payload = {
+1679:         webhook_ssl_verify: sslVerify,
+1680:         webhook_sending_enabled: sendingEnabled,
+1681:     };
+1682: 
+1683:     const trimmedWebhookUrl = webhookUrl.trim();
+1684:     if (trimmedWebhookUrl && !MessageHelper.isPlaceholder(trimmedWebhookUrl, webhookUrlPlaceholder)) {
+1685:         payload.webhook_url = trimmedWebhookUrl;
+1686:     }
+1687: 
+1688:     return payload;
+1689: }
+1690: 
+1691: /**
+1692:  * Collecte les données du panneau fenêtre horaire
+1693:  */
+1694: function collectTimeWindowData() {
+1695:     const startInput = document.getElementById('globalWebhookTimeStart');
+1696:     const endInput = document.getElementById('globalWebhookTimeEnd');
+1697:     const start = startInput?.value?.trim() || '';
+1698:     const end = endInput?.value?.trim() || '';
+1699:     
+1700:     // Normaliser les formats
+1701:     const normalizedStart = start ? (MessageHelper.normalizeTimeFormat(start) || '') : '';
+1702:     const normalizedEnd = end ? (MessageHelper.normalizeTimeFormat(end) || '') : '';
 1703:     
 1704:     return {
-1705:         absence_pause_enabled: toggle ? toggle.checked : false,
-1706:         absence_pause_days: Array.from(dayCheckboxes).map(cb => cb.value)
+1705:         start: normalizedStart,
+1706:         end: normalizedEnd
 1707:     };
 1708: }
 1709: 
-1710: // -------------------- Déploiement Application --------------------
-1711: async function handleDeployApplication() {
-1712:     const button = document.getElementById('restartServerBtn');
-1713:     const messageId = 'restartMsg';
-1714:     
-1715:     if (!button) {
-1716:         MessageHelper.showError(messageId, 'Bouton de déploiement introuvable.');
-1717:         return;
-1718:     }
-1719:     
-1720:     const confirmed = window.confirm("Confirmez-vous le déploiement de l'application ? Elle peut être indisponible pendant quelques secondes.");
-1721:     if (!confirmed) {
-1722:         return;
-1723:     }
-1724:     
-1725:     button.disabled = true;
-1726:     MessageHelper.showInfo(messageId, 'Déploiement en cours...');
+1710: /**
+1711:  * Collecte les données du panneau d'absence
+1712:  */
+1713: function collectAbsenceData() {
+1714:     const toggle = document.getElementById('absencePauseToggle');
+1715:     const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]:checked');
+1716:     
+1717:     return {
+1718:         absence_pause_enabled: toggle ? toggle.checked : false,
+1719:         absence_pause_days: Array.from(dayCheckboxes).map(cb => cb.value)
+1720:     };
+1721: }
+1722: 
+1723: // -------------------- Déploiement Application --------------------
+1724: async function handleDeployApplication() {
+1725:     const button = document.getElementById('restartServerBtn');
+1726:     const messageId = 'restartMsg';
 1727:     
-1728:     try {
-1729:         const response = await ApiService.post('/api/deploy_application');
-1730:         if (response?.success) {
-1731:             MessageHelper.showSuccess(messageId, response.message || 'Déploiement planifié. Vérification du service…');
-1732:             try {
-1733:                 await pollHealthCheck({ attempts: 12, intervalMs: 1500, timeoutMs: 30000 });
-1734:                 window.location.reload();
-1735:             } catch (healthError) {
-1736:                 console.warn('Health check failed after deployment:', healthError);
-1737:                 MessageHelper.showError(messageId, "Le service ne répond pas encore. Réessayez dans quelques secondes ou rechargez la page.");
-1738:             }
-1739:         } else {
-1740:             MessageHelper.showError(messageId, response?.message || 'Échec du déploiement. Vérifiez les journaux serveur.');
-1741:         }
-1742:     } catch (error) {
-1743:         console.error('Erreur déploiement application:', error);
-1744:         MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
-1745:     } finally {
-1746:         button.disabled = false;
-1747:     }
-1748: }
-1749: 
-1750: async function pollHealthCheck({ attempts = 10, intervalMs = 1200, timeoutMs = 20000 } = {}) {
-1751:     const safeAttempts = Math.max(1, Number(attempts));
-1752:     const delayMs = Math.max(250, Number(intervalMs));
-1753:     const controller = new AbortController();
-1754:     const timeoutId = setTimeout(() => controller.abort(), Math.max(delayMs, Number(timeoutMs)));
-1755:     
-1756:     try {
-1757:         for (let attempt = 0; attempt < safeAttempts; attempt++) {
-1758:             try {
-1759:                 const res = await fetch('/health', { cache: 'no-store', signal: controller.signal });
-1760:                 if (res.ok) {
-1761:                     clearTimeout(timeoutId);
-1762:                     return true;
-1763:                 }
-1764:             } catch {
-1765:                 // Service peut être indisponible lors du redéploiement, ignorer
-1766:             }
-1767:             await new Promise(resolve => setTimeout(resolve, delayMs));
-1768:         }
-1769:         throw new Error('healthcheck failed');
-1770:     } finally {
-1771:         clearTimeout(timeoutId);
-1772:     }
-1773: }
-1774: 
-1775: // -------------------- Auto-sauvegarde Intelligente --------------------
-1776: /**
-1777:  * Initialise l'auto-sauvegarde intelligente
-1778:  */
-1779: function initializeAutoSave() {
-1780:     // Préférences qui peuvent être sauvegardées automatiquement
-1781:     const autoSaveFields = [
-1782:         'attachmentDetectionToggle',
-1783:         'retryCount', 
-1784:         'retryDelaySec',
-1785:         'webhookTimeoutSec',
-1786:         'rateLimitPerHour',
-1787:         'notifyOnFailureToggle'
-1788:     ];
-1789:     
-1790:     // Écouter les changements sur les champs d'auto-sauvegarde
-1791:     autoSaveFields.forEach(fieldId => {
-1792:         const field = document.getElementById(fieldId);
-1793:         if (field) {
-1794:             field.addEventListener('change', () => handleAutoSaveChange(fieldId));
-1795:             field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 2000));
-1796:         }
-1797:     });
-1798:     
-1799:     // Écouter les changements sur les textarea de préférences
-1800:     const preferenceTextareas = [
-1801:         'excludeKeywordsRecadrage',
-1802:         'excludeKeywordsAutorepondeur',
-1803:         'excludeKeywords',
-1804:         'senderPriority'
-1805:     ];
-1806:     
-1807:     preferenceTextareas.forEach(fieldId => {
-1808:         const field = document.getElementById(fieldId);
-1809:         if (field) {
-1810:             field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 3000));
-1811:         }
-1812:     });
-1813: }
-1814: 
-1815: /**
-1816:  * Gère les changements pour l'auto-sauvegarde
-1817:  * @param {string} fieldId - ID du champ modifié
-1818:  */
-1819: async function handleAutoSaveChange(fieldId) {
-1820:     try {
-1821:         // Marquer la section comme modifiée
-1822:         markSectionAsModified(fieldId);
-1823:         
-1824:         // Collecter les données de préférences
-1825:         const prefsData = collectPreferencesData();
-1826:         
-1827:         // Sauvegarder automatiquement
-1828:         const result = await ApiService.post('/api/processing_prefs', prefsData);
-1829:         
-1830:         if (result.success) {
-1831:             // Marquer la section comme sauvegardée
-1832:             markSectionAsSaved(fieldId);
-1833:             showAutoSaveFeedback(fieldId, true);
-1834:         } else {
-1835:             showAutoSaveFeedback(fieldId, false, result.message);
-1836:         }
-1837:         
-1838:     } catch (error) {
-1839:         console.error('Erreur lors de l\'auto-sauvegarde:', error);
-1840:         showAutoSaveFeedback(fieldId, false, 'Erreur de connexion');
-1841:     }
-1842: }
-1843: 
-1844: /**
-1845:  * Collecte les données des préférences
-1846:  */
-1847: function collectPreferencesData() {
-1848:     const data = {};
-1849:     
-1850:     // Préférences de filtres (tableaux)
-1851:     const excludeKeywordsRecadrage = document.getElementById('excludeKeywordsRecadrage')?.value || '';
-1852:     const excludeKeywordsAutorepondeur = document.getElementById('excludeKeywordsAutorepondeur')?.value || '';
-1853:     const excludeKeywords = document.getElementById('excludeKeywords')?.value || '';
-1854:     
-1855:     data.exclude_keywords_recadrage = excludeKeywordsRecadrage ? 
-1856:         excludeKeywordsRecadrage.split('\n').map(line => line.trim()).filter(line => line) : [];
-1857:     data.exclude_keywords_autorepondeur = excludeKeywordsAutorepondeur ? 
-1858:         excludeKeywordsAutorepondeur.split('\n').map(line => line.trim()).filter(line => line) : [];
-1859:     data.exclude_keywords = excludeKeywords ? 
-1860:         excludeKeywords.split('\n').map(line => line.trim()).filter(line => line) : [];
-1861:     
-1862:     // Préférences de fiabilité
-1863:     data.require_attachments = document.getElementById('attachmentDetectionToggle')?.checked || false;
-1864: 
-1865:     const retryCountRaw = document.getElementById('retryCount')?.value;
-1866:     if (retryCountRaw !== undefined && String(retryCountRaw).trim() !== '') {
-1867:         data.retry_count = parseInt(String(retryCountRaw).trim(), 10);
-1868:     }
-1869: 
-1870:     const retryDelayRaw = document.getElementById('retryDelaySec')?.value;
-1871:     if (retryDelayRaw !== undefined && String(retryDelayRaw).trim() !== '') {
-1872:         data.retry_delay_sec = parseInt(String(retryDelayRaw).trim(), 10);
-1873:     }
-1874: 
-1875:     const webhookTimeoutRaw = document.getElementById('webhookTimeoutSec')?.value;
-1876:     if (webhookTimeoutRaw !== undefined && String(webhookTimeoutRaw).trim() !== '') {
-1877:         data.webhook_timeout_sec = parseInt(String(webhookTimeoutRaw).trim(), 10);
-1878:     }
-1879: 
-1880:     const rateLimitRaw = document.getElementById('rateLimitPerHour')?.value;
-1881:     if (rateLimitRaw !== undefined && String(rateLimitRaw).trim() !== '') {
-1882:         data.rate_limit_per_hour = parseInt(String(rateLimitRaw).trim(), 10);
-1883:     }
-1884: 
-1885:     data.notify_on_failure = document.getElementById('notifyOnFailureToggle')?.checked || false;
-1886:     
-1887:     // Préférences de priorité (JSON)
-1888:     const senderPriorityText = document.getElementById('senderPriority')?.value || '{}';
-1889:     try {
-1890:         data.sender_priority = JSON.parse(senderPriorityText);
-1891:     } catch (e) {
-1892:         data.sender_priority = {};
-1893:     }
-1894:     
-1895:     return data;
-1896: }
+1728:     if (!button) {
+1729:         MessageHelper.showError(messageId, 'Bouton de déploiement introuvable.');
+1730:         return;
+1731:     }
+1732:     
+1733:     const confirmed = window.confirm("Confirmez-vous le déploiement de l'application ? Elle peut être indisponible pendant quelques secondes.");
+1734:     if (!confirmed) {
+1735:         return;
+1736:     }
+1737:     
+1738:     button.disabled = true;
+1739:     MessageHelper.showInfo(messageId, 'Déploiement en cours...');
+1740:     
+1741:     try {
+1742:         const response = await ApiService.post('/api/deploy_application');
+1743:         if (response?.success) {
+1744:             MessageHelper.showSuccess(messageId, response.message || 'Déploiement planifié. Vérification du service…');
+1745:             try {
+1746:                 await pollHealthCheck({ attempts: 12, intervalMs: 1500, timeoutMs: 30000 });
+1747:                 window.location.reload();
+1748:             } catch (healthError) {
+1749:                 console.warn('Health check failed after deployment:', healthError);
+1750:                 MessageHelper.showError(messageId, "Le service ne répond pas encore. Réessayez dans quelques secondes ou rechargez la page.");
+1751:             }
+1752:         } else {
+1753:             MessageHelper.showError(messageId, response?.message || 'Échec du déploiement. Vérifiez les journaux serveur.');
+1754:         }
+1755:     } catch (error) {
+1756:         console.error('Erreur déploiement application:', error);
+1757:         MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
+1758:     } finally {
+1759:         button.disabled = false;
+1760:     }
+1761: }
+1762: 
+1763: async function pollHealthCheck({ attempts = 10, intervalMs = 1200, timeoutMs = 20000 } = {}) {
+1764:     const safeAttempts = Math.max(1, Number(attempts));
+1765:     const delayMs = Math.max(250, Number(intervalMs));
+1766:     const controller = new AbortController();
+1767:     const timeoutId = setTimeout(() => controller.abort(), Math.max(delayMs, Number(timeoutMs)));
+1768:     
+1769:     try {
+1770:         for (let attempt = 0; attempt < safeAttempts; attempt++) {
+1771:             try {
+1772:                 const res = await fetch('/health', { cache: 'no-store', signal: controller.signal });
+1773:                 if (res.ok) {
+1774:                     clearTimeout(timeoutId);
+1775:                     return true;
+1776:                 }
+1777:             } catch {
+1778:                 // Service peut être indisponible lors du redéploiement, ignorer
+1779:             }
+1780:             await new Promise(resolve => setTimeout(resolve, delayMs));
+1781:         }
+1782:         throw new Error('healthcheck failed');
+1783:     } finally {
+1784:         clearTimeout(timeoutId);
+1785:     }
+1786: }
+1787: 
+1788: // -------------------- Auto-sauvegarde Intelligente --------------------
+1789: /**
+1790:  * Initialise l'auto-sauvegarde intelligente
+1791:  */
+1792: function initializeAutoSave() {
+1793:     // Préférences qui peuvent être sauvegardées automatiquement
+1794:     const autoSaveFields = [
+1795:         'attachmentDetectionToggle',
+1796:         'retryCount', 
+1797:         'retryDelaySec',
+1798:         'webhookTimeoutSec',
+1799:         'rateLimitPerHour',
+1800:         'notifyOnFailureToggle'
+1801:     ];
+1802:     
+1803:     // Écouter les changements sur les champs d'auto-sauvegarde
+1804:     autoSaveFields.forEach(fieldId => {
+1805:         const field = document.getElementById(fieldId);
+1806:         if (field) {
+1807:             field.addEventListener('change', () => handleAutoSaveChange(fieldId));
+1808:             field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 2000));
+1809:         }
+1810:     });
+1811:     
+1812:     // Écouter les changements sur les textarea de préférences
+1813:     const preferenceTextareas = [
+1814:         'excludeKeywordsRecadrage',
+1815:         'excludeKeywordsAutorepondeur',
+1816:         'excludeKeywords',
+1817:         'senderPriority'
+1818:     ];
+1819:     
+1820:     preferenceTextareas.forEach(fieldId => {
+1821:         const field = document.getElementById(fieldId);
+1822:         if (field) {
+1823:             field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 3000));
+1824:         }
+1825:     });
+1826: }
+1827: 
+1828: /**
+1829:  * Gère les changements pour l'auto-sauvegarde
+1830:  * @param {string} fieldId - ID du champ modifié
+1831:  */
+1832: async function handleAutoSaveChange(fieldId) {
+1833:     try {
+1834:         // Marquer la section comme modifiée
+1835:         markSectionAsModified(fieldId);
+1836:         
+1837:         // Collecter les données de préférences
+1838:         const prefsData = collectPreferencesData();
+1839:         
+1840:         // Sauvegarder automatiquement
+1841:         const result = await ApiService.post('/api/processing_prefs', prefsData);
+1842:         
+1843:         if (result.success) {
+1844:             // Marquer la section comme sauvegardée
+1845:             markSectionAsSaved(fieldId);
+1846:             showAutoSaveFeedback(fieldId, true);
+1847:         } else {
+1848:             showAutoSaveFeedback(fieldId, false, result.message);
+1849:         }
+1850:         
+1851:     } catch (error) {
+1852:         console.error('Erreur lors de l\'auto-sauvegarde:', error);
+1853:         showAutoSaveFeedback(fieldId, false, 'Erreur de connexion');
+1854:     }
+1855: }
+1856: 
+1857: /**
+1858:  * Collecte les données des préférences
+1859:  */
+1860: function collectPreferencesData() {
+1861:     const data = {};
+1862:     
+1863:     // Préférences de filtres (tableaux)
+1864:     const excludeKeywordsRecadrage = document.getElementById('excludeKeywordsRecadrage')?.value || '';
+1865:     const excludeKeywordsAutorepondeur = document.getElementById('excludeKeywordsAutorepondeur')?.value || '';
+1866:     const excludeKeywords = document.getElementById('excludeKeywords')?.value || '';
+1867:     
+1868:     data.exclude_keywords_recadrage = excludeKeywordsRecadrage ? 
+1869:         excludeKeywordsRecadrage.split('\n').map(line => line.trim()).filter(line => line) : [];
+1870:     data.exclude_keywords_autorepondeur = excludeKeywordsAutorepondeur ? 
+1871:         excludeKeywordsAutorepondeur.split('\n').map(line => line.trim()).filter(line => line) : [];
+1872:     data.exclude_keywords = excludeKeywords ? 
+1873:         excludeKeywords.split('\n').map(line => line.trim()).filter(line => line) : [];
+1874:     
+1875:     // Préférences de fiabilité
+1876:     data.require_attachments = document.getElementById('attachmentDetectionToggle')?.checked || false;
+1877: 
+1878:     const retryCountRaw = document.getElementById('retryCount')?.value;
+1879:     if (retryCountRaw !== undefined && String(retryCountRaw).trim() !== '') {
+1880:         data.retry_count = parseInt(String(retryCountRaw).trim(), 10);
+1881:     }
+1882: 
+1883:     const retryDelayRaw = document.getElementById('retryDelaySec')?.value;
+1884:     if (retryDelayRaw !== undefined && String(retryDelayRaw).trim() !== '') {
+1885:         data.retry_delay_sec = parseInt(String(retryDelayRaw).trim(), 10);
+1886:     }
+1887: 
+1888:     const webhookTimeoutRaw = document.getElementById('webhookTimeoutSec')?.value;
+1889:     if (webhookTimeoutRaw !== undefined && String(webhookTimeoutRaw).trim() !== '') {
+1890:         data.webhook_timeout_sec = parseInt(String(webhookTimeoutRaw).trim(), 10);
+1891:     }
+1892: 
+1893:     const rateLimitRaw = document.getElementById('rateLimitPerHour')?.value;
+1894:     if (rateLimitRaw !== undefined && String(rateLimitRaw).trim() !== '') {
+1895:         data.rate_limit_per_hour = parseInt(String(rateLimitRaw).trim(), 10);
+1896:     }
 1897: 
-1898: /**
-1899:  * Marque une section comme modifiée
-1900:  * @param {string} fieldId - ID du champ modifié
-1901:  */
-1902: function markSectionAsModified(fieldId) {
-1903:     const section = getFieldSection(fieldId);
-1904:     if (section) {
-1905:         section.classList.add('modified');
-1906:         updateSectionIndicator(section, 'Modifié');
-1907:     }
-1908: }
-1909: 
-1910: /**
-1911:  * Marque une section comme sauvegardée
-1912:  * @param {string} fieldId - ID du champ sauvegardé
-1913:  */
-1914: function markSectionAsSaved(fieldId) {
-1915:     const section = getFieldSection(fieldId);
-1916:     if (section) {
-1917:         section.classList.remove('modified');
-1918:         section.classList.add('saved');
-1919:         updateSectionIndicator(section, 'Sauvegardé');
-1920:         
-1921:         // Retirer la classe 'saved' après 2 secondes
-1922:         setTimeout(() => {
-1923:             section.classList.remove('saved');
-1924:             updateSectionIndicator(section, '');
-1925:         }, 2000);
-1926:     }
-1927: }
-1928: 
-1929: /**
-1930:  * Obtient la section d'un champ
-1931:  * @param {string} fieldId - ID du champ
-1932:  * @returns {HTMLElement|null} Section parente
-1933:  */
-1934: function getFieldSection(fieldId) {
-1935:     const field = document.getElementById(fieldId);
-1936:     if (!field) return null;
-1937:     
-1938:     // Remonter jusqu'à trouver une carte ou un panneau
-1939:     let parent = field.parentElement;
-1940:     while (parent && parent !== document.body) {
-1941:         if (parent.classList.contains('card') || parent.classList.contains('collapsible-panel')) {
-1942:             return parent;
-1943:         }
-1944:         parent = parent.parentElement;
-1945:     }
-1946:     
-1947:     return null;
-1948: }
-1949: 
-1950: /**
-1951:  * Met à jour l'indicateur de section
-1952:  * @param {HTMLElement} section - Section à mettre à jour
-1953:  * @param {string} status - Statut à afficher
-1954:  */
-1955: function updateSectionIndicator(section, status) {
-1956:     let indicator = section.querySelector('.section-indicator');
-1957:     
-1958:     if (!indicator) {
-1959:         // Créer l'indicateur s'il n'existe pas
-1960:         indicator = document.createElement('div');
-1961:         indicator.className = 'section-indicator';
-1962:         
-1963:         // Insérer après le titre
-1964:         const title = section.querySelector('.card-title, .panel-title');
-1965:         if (title) {
-1966:             title.appendChild(indicator);
-1967:         }
-1968:     }
-1969:     
-1970:     if (status) {
-1971:         indicator.textContent = status;
-1972:         indicator.className = `section-indicator ${status.toLowerCase()}`;
-1973:     } else {
-1974:         indicator.textContent = '';
-1975:         indicator.className = 'section-indicator';
-1976:     }
-1977: }
-1978: 
-1979: /**
-1980:  * Affiche un feedback d'auto-sauvegarde
-1981:  * @param {string} fieldId - ID du champ
-1982:  * @param {boolean} success - Si la sauvegarde a réussi
-1983:  * @param {string} message - Message optionnel
-1984:  */
-1985: function showAutoSaveFeedback(fieldId, success, message = '') {
-1986:     const field = document.getElementById(fieldId);
-1987:     if (!field) return;
-1988:     
-1989:     // Créer ou récupérer le conteneur de feedback
-1990:     let feedback = field.parentElement.querySelector('.auto-save-feedback');
-1991:     if (!feedback) {
-1992:         feedback = document.createElement('div');
-1993:         feedback.className = 'auto-save-feedback';
-1994:         field.parentElement.appendChild(feedback);
-1995:     }
-1996:     
-1997:     // Définir le style et le message
-1998:     feedback.style.cssText = `
-1999:         font-size: 0.7em;
-2000:         margin-top: 4px;
-2001:         padding: 2px 6px;
-2002:         border-radius: 3px;
-2003:         opacity: 0;
-2004:         transition: opacity 0.3s ease;
-2005:     `;
-2006:     
-2007:     if (success) {
-2008:         feedback.style.background = 'rgba(26, 188, 156, 0.2)';
-2009:         feedback.style.color = 'var(--cork-success)';
-2010:         feedback.textContent = '✓ Auto-sauvegardé';
-2011:     } else {
-2012:         feedback.style.background = 'rgba(231, 81, 90, 0.2)';
-2013:         feedback.style.color = 'var(--cork-danger)';
-2014:         feedback.textContent = `✗ Erreur: ${message}`;
-2015:     }
-2016:     
-2017:     // Afficher le feedback
-2018:     feedback.style.opacity = '1';
+1898:     data.notify_on_failure = document.getElementById('notifyOnFailureToggle')?.checked || false;
+1899:     
+1900:     // Préférences de priorité (JSON)
+1901:     const senderPriorityText = document.getElementById('senderPriority')?.value || '{}';
+1902:     try {
+1903:         data.sender_priority = JSON.parse(senderPriorityText);
+1904:     } catch (e) {
+1905:         data.sender_priority = {};
+1906:     }
+1907:     
+1908:     return data;
+1909: }
+1910: 
+1911: /**
+1912:  * Marque une section comme modifiée
+1913:  * @param {string} fieldId - ID du champ modifié
+1914:  */
+1915: function markSectionAsModified(fieldId) {
+1916:     const section = getFieldSection(fieldId);
+1917:     if (section) {
+1918:         section.classList.add('modified');
+1919:         updateSectionIndicator(section, 'Modifié');
+1920:     }
+1921: }
+1922: 
+1923: /**
+1924:  * Marque une section comme sauvegardée
+1925:  * @param {string} fieldId - ID du champ sauvegardé
+1926:  */
+1927: function markSectionAsSaved(fieldId) {
+1928:     const section = getFieldSection(fieldId);
+1929:     if (section) {
+1930:         section.classList.remove('modified');
+1931:         section.classList.add('saved');
+1932:         updateSectionIndicator(section, 'Sauvegardé');
+1933:         
+1934:         // Retirer la classe 'saved' après 2 secondes
+1935:         setTimeout(() => {
+1936:             section.classList.remove('saved');
+1937:             updateSectionIndicator(section, '');
+1938:         }, 2000);
+1939:     }
+1940: }
+1941: 
+1942: /**
+1943:  * Obtient la section d'un champ
+1944:  * @param {string} fieldId - ID du champ
+1945:  * @returns {HTMLElement|null} Section parente
+1946:  */
+1947: function getFieldSection(fieldId) {
+1948:     const field = document.getElementById(fieldId);
+1949:     if (!field) return null;
+1950:     
+1951:     // Remonter jusqu'à trouver une carte ou un panneau
+1952:     let parent = field.parentElement;
+1953:     while (parent && parent !== document.body) {
+1954:         if (parent.classList.contains('card') || parent.classList.contains('collapsible-panel')) {
+1955:             return parent;
+1956:         }
+1957:         parent = parent.parentElement;
+1958:     }
+1959:     
+1960:     return null;
+1961: }
+1962: 
+1963: /**
+1964:  * Met à jour l'indicateur de section
+1965:  * @param {HTMLElement} section - Section à mettre à jour
+1966:  * @param {string} status - Statut à afficher
+1967:  */
+1968: function updateSectionIndicator(section, status) {
+1969:     let indicator = section.querySelector('.section-indicator');
+1970:     
+1971:     if (!indicator) {
+1972:         // Créer l'indicateur s'il n'existe pas
+1973:         indicator = document.createElement('div');
+1974:         indicator.className = 'section-indicator';
+1975:         
+1976:         // Insérer après le titre
+1977:         const title = section.querySelector('.card-title, .panel-title');
+1978:         if (title) {
+1979:             title.appendChild(indicator);
+1980:         }
+1981:     }
+1982:     
+1983:     if (status) {
+1984:         indicator.textContent = status;
+1985:         indicator.className = `section-indicator ${status.toLowerCase()}`;
+1986:     } else {
+1987:         indicator.textContent = '';
+1988:         indicator.className = 'section-indicator';
+1989:     }
+1990: }
+1991: 
+1992: /**
+1993:  * Affiche un feedback d'auto-sauvegarde
+1994:  * @param {string} fieldId - ID du champ
+1995:  * @param {boolean} success - Si la sauvegarde a réussi
+1996:  * @param {string} message - Message optionnel
+1997:  */
+1998: function showAutoSaveFeedback(fieldId, success, message = '') {
+1999:     const field = document.getElementById(fieldId);
+2000:     if (!field) return;
+2001:     
+2002:     // Créer ou récupérer le conteneur de feedback
+2003:     let feedback = field.parentElement.querySelector('.auto-save-feedback');
+2004:     if (!feedback) {
+2005:         feedback = document.createElement('div');
+2006:         feedback.className = 'auto-save-feedback';
+2007:         field.parentElement.appendChild(feedback);
+2008:     }
+2009:     
+2010:     // Définir le style et le message
+2011:     feedback.style.cssText = `
+2012:         font-size: 0.7em;
+2013:         margin-top: 4px;
+2014:         padding: 2px 6px;
+2015:         border-radius: 3px;
+2016:         opacity: 0;
+2017:         transition: opacity 0.3s ease;
+2018:     `;
 2019:     
-2020:     // Masquer après 3 secondes
-2021:     setTimeout(() => {
-2022:         feedback.style.opacity = '0';
-2023:     }, 3000);
-2024: }
-2025: 
-2026: /**
-2027:  * Fonction de debounce pour limiter les appels
-2028:  * @param {Function} func - Fonction à débouncer
-2029:  * @param {number} wait - Temps d'attente en ms
-2030:  * @returns {Function} Fonction débouncée
-2031:  */
-2032: function debounce(func, wait) {
-2033:     let timeout;
-2034:     return function executedFunction(...args) {
-2035:         const later = () => {
-2036:             clearTimeout(timeout);
-2037:             func(...args);
-2038:         };
-2039:         clearTimeout(timeout);
-2040:         timeout = setTimeout(later, wait);
-2041:     };
-2042: }
-2043: 
-2044: // -------------------- Nettoyage --------------------
-2045: window.addEventListener('beforeunload', () => {
-2046:     // Arrêter le polling des logs
-2047:     LogService.stopLogPolling();
-2048:     
-2049:     // Nettoyer le gestionnaire d'onglets
-2050:     if (tabManager) {
-2051:         tabManager.destroy();
-2052:     }
-2053:     
-2054:     // Sauvegarder les préférences locales
-2055:     saveLocalPreferences();
-2056: });
-2057: 
-2058: // -------------------- Export pour compatibilité --------------------
-2059: // Exporter les classes pour utilisation externe si nécessaire
-2060: window.DashboardServices = {
-2061:     ApiService,
-2062:     WebhookService,
-2063:     LogService,
-2064:     MessageHelper,
-2065:     TabManager
-2066: };
+2020:     if (success) {
+2021:         feedback.style.background = 'rgba(26, 188, 156, 0.2)';
+2022:         feedback.style.color = 'var(--cork-success)';
+2023:         feedback.textContent = '✓ Auto-sauvegardé';
+2024:     } else {
+2025:         feedback.style.background = 'rgba(231, 81, 90, 0.2)';
+2026:         feedback.style.color = 'var(--cork-danger)';
+2027:         feedback.textContent = `✗ Erreur: ${message}`;
+2028:     }
+2029:     
+2030:     // Afficher le feedback
+2031:     feedback.style.opacity = '1';
+2032:     
+2033:     // Masquer après 3 secondes
+2034:     setTimeout(() => {
+2035:         feedback.style.opacity = '0';
+2036:     }, 3000);
+2037: }
+2038: 
+2039: /**
+2040:  * Fonction de debounce pour limiter les appels
+2041:  * @param {Function} func - Fonction à débouncer
+2042:  * @param {number} wait - Temps d'attente en ms
+2043:  * @returns {Function} Fonction débouncée
+2044:  */
+2045: function debounce(func, wait) {
+2046:     let timeout;
+2047:     return function executedFunction(...args) {
+2048:         const later = () => {
+2049:             clearTimeout(timeout);
+2050:             func(...args);
+2051:         };
+2052:         clearTimeout(timeout);
+2053:         timeout = setTimeout(later, wait);
+2054:     };
+2055: }
+2056: 
+2057: // -------------------- Nettoyage --------------------
+2058: window.addEventListener('beforeunload', () => {
+2059:     // Arrêter le polling des logs
+2060:     LogService.stopLogPolling();
+2061:     
+2062:     // Nettoyer le gestionnaire d'onglets
+2063:     if (tabManager) {
+2064:         tabManager.destroy();
+2065:     }
+2066:     
+2067:     // Sauvegarder les préférences locales
+2068:     saveLocalPreferences();
+2069: });
+2070: 
+2071: // -------------------- Export pour compatibilité --------------------
+2072: // Exporter les classes pour utilisation externe si nécessaire
+2073: window.DashboardServices = {
+2074:     ApiService,
+2075:     WebhookService,
+2076:     LogService,
+2077:     MessageHelper,
+2078:     TabManager
+2079: };
 ````

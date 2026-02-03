@@ -68,6 +68,7 @@ from routes import (
     api_make_bp,
     api_auth_bp,
     api_routing_rules_bp,
+    api_ingress_bp,
 )
 from routes.api_processing import DEFAULT_PROCESSING_PREFS as _DEFAULT_PROCESSING_PREFS
 DEFAULT_PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS
@@ -133,6 +134,7 @@ app.register_blueprint(api_config_bp)
 app.register_blueprint(api_make_bp)
 app.register_blueprint(api_auth_bp)
 app.register_blueprint(api_routing_rules_bp)
+app.register_blueprint(api_ingress_bp)
 
 _cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
 if _cors_origins:

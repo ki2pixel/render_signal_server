@@ -16,9 +16,26 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 ## Politique d'archivage
 Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archive/` par trimestre. Les entrées actuelles conservent uniquement le progrès récent. Voir les archives pour l'historique détaillé.
 
+## En cours
+- Aucune tâche active.
+
 ---
 
 ## Terminé
+
+[2026-02-03 15:30:00] - Implémentation Gmail Push Ingestion Endpoint Terminée
+- **Objectif** : Implémenter un nouveau endpoint `POST /api/ingress/gmail` pour permettre à Gmail Apps Script de pousser les emails directement à l'application, contournant les limitations du polling IMAP.
+- **Actions réalisées** :
+  1. **Blueprint api_ingress** : Création de `routes/api_ingress.py` (188 lignes) avec authentification Bearer token via `AuthService.verify_api_key_from_request()`, validation JSON payload (subject, sender, body, date), génération email_id MD5, extraction liens via `link_extraction.extract_provider_links_from_text()`, vérification allowlist sender et fenêtre horaire, et appel à `orchestrator.send_custom_webhook_flow()` avec imports dynamiques pour éviter les dépendances circulaires.
+  2. **Enregistrement blueprint** : Ajout de l'import dans `routes/__init__.py` et enregistrement dans `app_render.py` selon les conventions du projet.
+  3. **Tests exhaustifs** : Création de `tests/routes/test_api_ingress.py` (185 lignes) avec 7 tests couvrant auth failure (401), invalid JSON (400), missing fields (400), sender not allowed (200 skipped), webhook disabled (409), time window skip (200 skipped), et happy path (200 processed).
+  4. **Correction dépendances** : Adaptation de `tests/conftest.py` pour gérer `fakeredis` optionnel et éviter les erreurs d'import en CI.
+  5. **Validation finale** : Exécution des tests avec succès (7 passed, 1 warning) dans l'environnement partagé `/mnt/venv_ext4/venv_render_signal_server`.
+- **Résultat** : Endpoint production-ready permettant une intégration Gmail Apps Script directe, contournant les limitations IMAP tout en préservant tous les garde-fous existants (auth, déduplication, fenêtre horaire, pattern matching).
+- **Fichiers créés** : `routes/api_ingress.py`, `tests/routes/test_api_ingress.py`
+- **Fichiers modifiés** : `routes/__init__.py`, `app_render.py`, `tests/conftest.py`
+- **Tests** : 7/7 tests passent, couverture 70.21% pour le module api_ingress
+- **Statut** : Terminé avec succès, endpoint prêt pour production et intégration Gmail Apps Script.
 
 [2026-01-29 14:45:00] - Modularisation CSS Dashboard Terminée
 - **Objectif** : Refactoriser le CSS inline de `dashboard.html` en 4 fichiers CSS modulaires dans `static/css/` pour améliorer la maintenabilité et l'organisation sans régressions.
@@ -429,10 +446,6 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 [2026-01-06 11:27:00] - Réduction de la dette historique des Memory Bank
 - **Actions réalisées** : Archivage trimestriel, consolidation des entrées, nettoyage des fichiers principaux.
-
-## En cours
-
-Aucune tâche active.
 
 ## À faire
 

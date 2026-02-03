@@ -26,6 +26,7 @@ docs/
 │   ├── email_polling.md       # Polling IMAP + store-as-source-of-truth
 │   ├── webhooks.md             # Flux webhooks + Offload R2 + Absence Globale
 │   ├── magic_link_auth.md      # Authentification Magic Link
+│   ├── gmail_push_ingress.md  # Endpoint POST /api/ingress/gmail pour Apps Script
 │   ├── resilience_lot2.md      # Résilience & Architecture (Lot 2)
 │   ├── ui.md                   # Interface utilisateur
 │   └── frontend_dashboard_features.md # Architecture modulaire ES6
@@ -50,6 +51,7 @@ docs/
 - **Architecture orientée services** : 8 services principaux (Config, Auth, RuntimeFlags, Webhook, Deduplication, Polling, MagicLink, R2)
 - **Store-as-Source-of-Truth** : Redis Config Store prioritaire, backend JSON externe fallback, fichiers locaux dernier recours
 - **Frontend modulaire ES6** : Architecture découplée avec services spécialisés (ApiService, WebhookService, LogService)
+- **Ingress Gmail** : Endpoint `POST /api/ingress/gmail` pour push Apps Script avec auth Bearer et orchestration complète
 - **Résilience Lot 2** : Verrou distribué Redis, fallback R2 garanti, watchdog IMAP
 - **Sécurité Lot 1** : Anonymisation logs, écriture atomique, validation domaines R2, variables ENV obligatoires
 
