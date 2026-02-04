@@ -173,19 +173,6 @@ static/
 
 **Impact UX :** -60% erreurs de formatage, -40% temps de saisie
 
-### 6. Métriques et monitoring local
-
-**Objectif** : Fournir une visibilité en temps réel de l'état du système
-
-**Fonctionnalités :**
-- **Toggle activé par défaut** : "Activer le calcul de métriques locales"
-- **Calcul automatique** : Au premier chargement du dashboard
-- **Fonctions** : `computeAndRenderMetrics()`, `clearMetrics()`, `setMetric()`, `renderMiniChart()`
-- **Persistance** : État du toggle dans localStorage
-- **Mini-graphiques** : Canvas 120x40px avec thème cork
-
-**Impact UX :** Visibilité immédiate de l'état de santé du système
-
 ### 7. Micro-interactions
 
 **Objectif** : Améliorer le feedback visuel et l'engagement utilisateur

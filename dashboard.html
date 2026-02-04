@@ -374,26 +374,8 @@
         </div>
       </div>
 
-      <!-- Section: Vue d'ensemble (métriques + logs) -->
+      <!-- Section: Vue d'ensemble (logs) -->
       <div id="sec-overview" class="section-panel monitoring active">
-        <div class="card">
-          <div class="card-title">📊 Monitoring & Métriques (24h)</div>
-          <div class="inline-group" style="margin-bottom: 10px;">
-            <label class="toggle-switch">
-              <input type="checkbox" id="enableMetricsToggle" checked>
-              <span class="toggle-slider"></span>
-            </label>
-            <span style="margin-left: 10px;">Activer le calcul de métriques locales</span>
-          </div>
-          <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
-            <div class="form-group"><label>Emails traités</label><div id="metricEmailsProcessed" class="small-text">—</div></div>
-            <div class="form-group"><label>Webhooks envoyés</label><div id="metricWebhooksSent" class="small-text">—</div></div>
-            <div class="form-group"><label>Erreurs</label><div id="metricErrors" class="small-text">—</div></div>
-            <div class="form-group"><label>Taux de succès (%)</label><div id="metricSuccessRate" class="small-text">—</div></div>
-          </div>
-          <div id="metricsMiniChart" style="height: 60px; background: rgba(255,255,255,0.05); border:1px solid var(--cork-border-color); border-radius:4px; margin-top:10px; position: relative; overflow:hidden;"></div>
-          <div class="small-text">Graphique simplifié généré côté client à partir de `/api/webhook_logs`.</div>
-        </div>
         <div class="logs-container">
           <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
           <div style="margin-bottom: 15px;">

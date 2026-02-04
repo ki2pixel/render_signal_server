@@ -79,6 +79,7 @@ routes/
   api_admin.py
   api_auth.py
   api_config.py
+  api_ingress.py
   api_logs.py
   api_make.py
   api_polling.py
@@ -163,6 +164,144 @@ requirements.txt
 ## File: background/__init__.py
 ````python
 1: # background package initializer
+````
+
+## File: background/polling_thread.py
+````python
+  1: """
+  2: background.polling_thread
+  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~
+  4: 
+  5: Polling thread loop extracted from app_render for Step 6.
+  6: The loop logic is pure and driven by injected dependencies to avoid cycles.
+  7: """
+  8: from __future__ import annotations
+  9: 
+ 10: import time
+ 11: from datetime import datetime
+ 12: from typing import Callable, Iterable
+ 13: 
+ 14: 
+ 15: def background_email_poller_loop(
+ 16:     *,
+ 17:     logger,
+ 18:     tz_for_polling,
+ 19:     get_active_days: Callable[[], Iterable[int]],
+ 20:     get_active_start_hour: Callable[[], int],
+ 21:     get_active_end_hour: Callable[[], int],
+ 22:     inactive_sleep_seconds: int,
+ 23:     active_sleep_seconds: int,
+ 24:     is_in_vacation: Callable[[datetime], bool],
+ 25:     is_ready_to_poll: Callable[[], bool],
+ 26:     run_poll_cycle: Callable[[], int],
+ 27:     max_consecutive_errors: int = 5,
+ 28: ) -> None:
+ 29:     """Generic polling loop.
+ 30: 
+ 31:     Args:
+ 32:         logger: Logger-like object with .info/.warning/.error/.critical
+ 33:         tz_for_polling: timezone for scheduling (datetime.tzinfo)
+ 34:         get_active_days: returns list of active weekday indices (0=Mon .. 6=Sun)
+ 35:         get_active_start_hour: returns hour (0..23) start inclusive
+ 36:         get_active_end_hour: returns hour (0..23) end exclusive
+ 37:         inactive_sleep_seconds: sleep duration when outside active window
+ 38:         active_sleep_seconds: base sleep duration after successful active cycle
+ 39:         is_in_vacation: func(now_dt) -> bool to disable polling in vacation window
+ 40:         is_ready_to_poll: func() -> bool to ensure config is valid before polling
+ 41:         run_poll_cycle: func() -> int that executes a poll cycle and returns number of triggered actions
+ 42:         max_consecutive_errors: circuit breaker to stop loop on repeated failures
+ 43:     """
+ 44:     logger.info(
+ 45:         "BG_POLLER: Email polling loop started. TZ for schedule is configured."
+ 46:     )
+ 47:     consecutive_error_count = 0
+ 48:     # Avoid spamming logs when schedule is not active; log diagnostic once
+ 49:     outside_period_diag_logged = False
+ 50: 
+ 51:     while True:
+ 52:         try:
+ 53:             now_in_tz = datetime.now(tz_for_polling)
+ 54: 
+ 55:             # Vacation window check
+ 56:             if is_in_vacation(now_in_tz):
+ 57:                 logger.info("BG_POLLER: Vacation window active. Polling suspended.")
+ 58:                 time.sleep(inactive_sleep_seconds)
+ 59:                 continue
+ 60: 
+ 61:             active_days = set(get_active_days())
+ 62:             start_hour = get_active_start_hour()
+ 63:             end_hour = get_active_end_hour()
+ 64: 
+ 65:             is_active_day = now_in_tz.weekday() in active_days
+ 66:             # Support windows that cross midnight
+ 67:             h = now_in_tz.hour
+ 68:             if 0 <= start_hour <= 23 and 0 <= end_hour <= 23:
+ 69:                 if start_hour < end_hour:
+ 70:                     is_active_time = (start_hour <= h < end_hour)
+ 71:                 elif start_hour > end_hour:
+ 72:                     # Wrap-around (e.g., 23 -> 0 or 22 -> 6)
+ 73:                     is_active_time = (h >= start_hour) or (h < end_hour)
+ 74:                 else:
+ 75:                     # start == end => empty window
+ 76:                     is_active_time = False
+ 77:             else:
+ 78:                 is_active_time = False
+ 79: 
+ 80:             if is_active_day and is_active_time:
+ 81:                 logger.info("BG_POLLER: In active period. Starting poll cycle.")
+ 82: 
+ 83:                 if not is_ready_to_poll():
+ 84:                     logger.warning(
+ 85:                         "BG_POLLER: Essential config for polling is incomplete. Waiting 60s."
+ 86:                     )
+ 87:                     time.sleep(60)
+ 88:                     continue
+ 89: 
+ 90:                 triggered = run_poll_cycle()
+ 91:                 logger.info(
+ 92:                     f"BG_POLLER: Active poll cycle finished. {triggered} webhook(s) triggered."
+ 93:                 )
+ 94:                 # Update last poll cycle timestamp in main module if available
+ 95:                 try:
+ 96:                     import sys, time as _t
+ 97:                     _mod = sys.modules.get("app_render")
+ 98:                     if _mod is not None:
+ 99:                         setattr(_mod, "LAST_POLL_CYCLE_TS", int(_t.time()))
+100:                 except Exception:
+101:                     pass
+102:                 consecutive_error_count = 0
+103:                 sleep_duration = active_sleep_seconds
+104:             else:
+105:                 logger.info("BG_POLLER: Outside active period. Sleeping.")
+106:                 if not outside_period_diag_logged:
+107:                     try:
+108:                         logger.info(
+109:                             "BG_POLLER: DIAG outside period — now=%s, active_days=%s, start_hour=%s, end_hour=%s, is_active_day=%s, is_active_time=%s",
+110:                             now_in_tz.isoformat(),
+111:                             sorted(list(active_days)),
+112:                             start_hour,
+113:                             end_hour,
+114:                             is_active_day,
+115:                             is_active_time,
+116:                         )
+117:                     except Exception:
+118:                         pass
+119:                     outside_period_diag_logged = True
+120:                 sleep_duration = inactive_sleep_seconds
+121: 
+122:             time.sleep(sleep_duration)
+123: 
+124:         except Exception as e:  # pragma: no cover - defensive
+125:             consecutive_error_count += 1
+126:             logger.error(
+127:                 f"BG_POLLER: Unhandled error in polling loop (Error #{consecutive_error_count}): {e}",
+128:                 exc_info=True,
+129:             )
+130:             if consecutive_error_count >= max_consecutive_errors:
+131:                 logger.critical(
+132:                     "BG_POLLER: Max consecutive errors reached. Stopping thread."
+133:                 )
+134:                 break
 ````
 
 ## File: config/__init__.py
@@ -1040,144 +1179,6 @@ requirements.txt
 76:     return None
 ````
 
-## File: background/polling_thread.py
-````python
-  1: """
-  2: background.polling_thread
-  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~
-  4: 
-  5: Polling thread loop extracted from app_render for Step 6.
-  6: The loop logic is pure and driven by injected dependencies to avoid cycles.
-  7: """
-  8: from __future__ import annotations
-  9: 
- 10: import time
- 11: from datetime import datetime
- 12: from typing import Callable, Iterable
- 13: 
- 14: 
- 15: def background_email_poller_loop(
- 16:     *,
- 17:     logger,
- 18:     tz_for_polling,
- 19:     get_active_days: Callable[[], Iterable[int]],
- 20:     get_active_start_hour: Callable[[], int],
- 21:     get_active_end_hour: Callable[[], int],
- 22:     inactive_sleep_seconds: int,
- 23:     active_sleep_seconds: int,
- 24:     is_in_vacation: Callable[[datetime], bool],
- 25:     is_ready_to_poll: Callable[[], bool],
- 26:     run_poll_cycle: Callable[[], int],
- 27:     max_consecutive_errors: int = 5,
- 28: ) -> None:
- 29:     """Generic polling loop.
- 30: 
- 31:     Args:
- 32:         logger: Logger-like object with .info/.warning/.error/.critical
- 33:         tz_for_polling: timezone for scheduling (datetime.tzinfo)
- 34:         get_active_days: returns list of active weekday indices (0=Mon .. 6=Sun)
- 35:         get_active_start_hour: returns hour (0..23) start inclusive
- 36:         get_active_end_hour: returns hour (0..23) end exclusive
- 37:         inactive_sleep_seconds: sleep duration when outside active window
- 38:         active_sleep_seconds: base sleep duration after successful active cycle
- 39:         is_in_vacation: func(now_dt) -> bool to disable polling in vacation window
- 40:         is_ready_to_poll: func() -> bool to ensure config is valid before polling
- 41:         run_poll_cycle: func() -> int that executes a poll cycle and returns number of triggered actions
- 42:         max_consecutive_errors: circuit breaker to stop loop on repeated failures
- 43:     """
- 44:     logger.info(
- 45:         "BG_POLLER: Email polling loop started. TZ for schedule is configured."
- 46:     )
- 47:     consecutive_error_count = 0
- 48:     # Avoid spamming logs when schedule is not active; log diagnostic once
- 49:     outside_period_diag_logged = False
- 50: 
- 51:     while True:
- 52:         try:
- 53:             now_in_tz = datetime.now(tz_for_polling)
- 54: 
- 55:             # Vacation window check
- 56:             if is_in_vacation(now_in_tz):
- 57:                 logger.info("BG_POLLER: Vacation window active. Polling suspended.")
- 58:                 time.sleep(inactive_sleep_seconds)
- 59:                 continue
- 60: 
- 61:             active_days = set(get_active_days())
- 62:             start_hour = get_active_start_hour()
- 63:             end_hour = get_active_end_hour()
- 64: 
- 65:             is_active_day = now_in_tz.weekday() in active_days
- 66:             # Support windows that cross midnight
- 67:             h = now_in_tz.hour
- 68:             if 0 <= start_hour <= 23 and 0 <= end_hour <= 23:
- 69:                 if start_hour < end_hour:
- 70:                     is_active_time = (start_hour <= h < end_hour)
- 71:                 elif start_hour > end_hour:
- 72:                     # Wrap-around (e.g., 23 -> 0 or 22 -> 6)
- 73:                     is_active_time = (h >= start_hour) or (h < end_hour)
- 74:                 else:
- 75:                     # start == end => empty window
- 76:                     is_active_time = False
- 77:             else:
- 78:                 is_active_time = False
- 79: 
- 80:             if is_active_day and is_active_time:
- 81:                 logger.info("BG_POLLER: In active period. Starting poll cycle.")
- 82: 
- 83:                 if not is_ready_to_poll():
- 84:                     logger.warning(
- 85:                         "BG_POLLER: Essential config for polling is incomplete. Waiting 60s."
- 86:                     )
- 87:                     time.sleep(60)
- 88:                     continue
- 89: 
- 90:                 triggered = run_poll_cycle()
- 91:                 logger.info(
- 92:                     f"BG_POLLER: Active poll cycle finished. {triggered} webhook(s) triggered."
- 93:                 )
- 94:                 # Update last poll cycle timestamp in main module if available
- 95:                 try:
- 96:                     import sys, time as _t
- 97:                     _mod = sys.modules.get("app_render")
- 98:                     if _mod is not None:
- 99:                         setattr(_mod, "LAST_POLL_CYCLE_TS", int(_t.time()))
-100:                 except Exception:
-101:                     pass
-102:                 consecutive_error_count = 0
-103:                 sleep_duration = active_sleep_seconds
-104:             else:
-105:                 logger.info("BG_POLLER: Outside active period. Sleeping.")
-106:                 if not outside_period_diag_logged:
-107:                     try:
-108:                         logger.info(
-109:                             "BG_POLLER: DIAG outside period — now=%s, active_days=%s, start_hour=%s, end_hour=%s, is_active_day=%s, is_active_time=%s",
-110:                             now_in_tz.isoformat(),
-111:                             sorted(list(active_days)),
-112:                             start_hour,
-113:                             end_hour,
-114:                             is_active_day,
-115:                             is_active_time,
-116:                         )
-117:                     except Exception:
-118:                         pass
-119:                     outside_period_diag_logged = True
-120:                 sleep_duration = inactive_sleep_seconds
-121: 
-122:             time.sleep(sleep_duration)
-123: 
-124:         except Exception as e:  # pragma: no cover - defensive
-125:             consecutive_error_count += 1
-126:             logger.error(
-127:                 f"BG_POLLER: Unhandled error in polling loop (Error #{consecutive_error_count}): {e}",
-128:                 exc_info=True,
-129:             )
-130:             if consecutive_error_count >= max_consecutive_errors:
-131:                 logger.critical(
-132:                     "BG_POLLER: Max consecutive errors reached. Stopping thread."
-133:                 )
-134:                 break
-````
-
 ## File: config/webhook_time_window.py
 ````python
   1: """
@@ -1835,6 +1836,326 @@ requirements.txt
 289:         return result
 ````
 
+## File: routes/api_ingress.py
+````python
+  1: from __future__ import annotations
+  2: 
+  3: import hashlib
+  4: import sys
+  5: from datetime import datetime, timezone
+  6: 
+  7: from flask import Blueprint, current_app, jsonify, request
+  8: 
+  9: from email_processing import link_extraction
+ 10: from email_processing import orchestrator as email_orchestrator
+ 11: from email_processing import pattern_matching
+ 12: from services import AuthService, ConfigService
+ 13: from utils.text_helpers import mask_sensitive_data
+ 14: from utils.time_helpers import is_within_time_window_local, parse_time_hhmm
+ 15: 
+ 16: bp = Blueprint("api_ingress", __name__, url_prefix="/api/ingress")
+ 17: 
+ 18: _config_service = ConfigService()
+ 19: _auth_service = AuthService(_config_service)
+ 20: 
+ 21: 
+ 22: def _compute_email_id(*, subject: str, sender: str, date: str) -> str:
+ 23:     unique_str = f"{subject}|{sender}|{date}"
+ 24:     return hashlib.md5(unique_str.encode("utf-8")).hexdigest()
+ 25: 
+ 26: 
+ 27: @bp.route("/gmail", methods=["POST"])
+ 28: def ingest_gmail():
+ 29:     if not _auth_service.verify_api_key_from_request(request):
+ 30:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+ 31: 
+ 32:     payload = request.get_json(silent=True)
+ 33:     if not isinstance(payload, dict):
+ 34:         return jsonify({"success": False, "message": "Invalid JSON payload"}), 400
+ 35: 
+ 36:     subject = payload.get("subject")
+ 37:     sender_raw = payload.get("sender")
+ 38:     body = payload.get("body")
+ 39:     email_date = payload.get("date")
+ 40: 
+ 41:     if not isinstance(subject, str):
+ 42:         subject = ""
+ 43:     if not isinstance(sender_raw, str):
+ 44:         sender_raw = ""
+ 45:     if not isinstance(body, str):
+ 46:         body = ""
+ 47:     if not isinstance(email_date, str):
+ 48:         email_date = ""
+ 49: 
+ 50:     if not sender_raw:
+ 51:         return jsonify({"success": False, "message": "Missing field: sender"}), 400
+ 52:     if not body:
+ 53:         return jsonify({"success": False, "message": "Missing field: body"}), 400
+ 54: 
+ 55:     ar = sys.modules.get("app_render")
+ 56:     if ar is None:
+ 57:         return jsonify({"success": False, "message": "Server not ready"}), 503
+ 58: 
+ 59:     try:
+ 60:         extract_sender_fn = getattr(ar, "extract_sender_email", None)
+ 61:         sender_email = (
+ 62:             extract_sender_fn(sender_raw) if callable(extract_sender_fn) else sender_raw
+ 63:         )
+ 64:     except Exception:
+ 65:         sender_email = sender_raw
+ 66: 
+ 67:     sender_email = (sender_email or sender_raw).strip().lower()
+ 68: 
+ 69:     email_id = _compute_email_id(subject=subject, sender=sender_email, date=email_date)
+ 70: 
+ 71:     try:
+ 72:         current_app.logger.info(
+ 73:             "INGRESS: gmail payload received (email_id=%s sender=%s subject=%s)",
+ 74:             email_id,
+ 75:             mask_sensitive_data(sender_email, "email"),
+ 76:             mask_sensitive_data(subject, "subject"),
+ 77:         )
+ 78:     except Exception:
+ 79:         pass
+ 80: 
+ 81:     try:
+ 82:         is_processed_fn = getattr(ar, "is_email_id_processed_redis", None)
+ 83:         if callable(is_processed_fn) and is_processed_fn(email_id):
+ 84:             return (
+ 85:                 jsonify({"success": True, "status": "already_processed", "email_id": email_id}),
+ 86:                 200,
+ 87:             )
+ 88:     except Exception:
+ 89:         pass
+ 90: 
+ 91:     try:
+ 92:         sender_list = []
+ 93:         polling_service = getattr(ar, "_polling_service", None)
+ 94:         if polling_service is not None:
+ 95:             try:
+ 96:                 sender_list = polling_service.get_sender_list() or []
+ 97:             except Exception:
+ 98:                 sender_list = []
+ 99:         allowed = [str(s).strip().lower() for s in sender_list if isinstance(s, str) and s.strip()]
+100:         if allowed and sender_email not in allowed:
+101:             try:
+102:                 mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
+103:                 if callable(mark_processed_fn):
+104:                     mark_processed_fn(email_id)
+105:             except Exception:
+106:                 pass
+107:             return (
+108:                 jsonify({"success": True, "status": "skipped_sender_not_allowed", "email_id": email_id}),
+109:                 200,
+110:             )
+111:     except Exception:
+112:         pass
+113: 
+114:     try:
+115:         if not email_orchestrator._is_webhook_sending_enabled():
+116:             return (
+117:                 jsonify({"success": False, "message": "Webhook sending disabled"}),
+118:                 409,
+119:             )
+120:     except Exception:
+121:         pass
+122: 
+123:     tz_for_polling = getattr(ar, "TZ_FOR_POLLING", None)
+124:     try:
+125:         now_local = datetime.now(tz_for_polling) if tz_for_polling else datetime.now()
+126:     except Exception:
+127:         now_local = datetime.now()
+128: 
+129:     detector_val = None
+130:     delivery_time_val = None
+131:     desabo_is_urgent = False
+132:     try:
+133:         ms_res = pattern_matching.check_media_solution_pattern(
+134:             subject or "", body, tz_for_polling, current_app.logger
+135:         )
+136:         if isinstance(ms_res, dict) and bool(ms_res.get("matches")):
+137:             detector_val = "recadrage"
+138:             delivery_time_val = ms_res.get("delivery_time")
+139:         else:
+140:             des_res = pattern_matching.check_desabo_conditions(
+141:                 subject or "", body, current_app.logger
+142:             )
+143:             if isinstance(des_res, dict) and bool(des_res.get("matches")):
+144:                 detector_val = "desabonnement_journee_tarifs"
+145:                 desabo_is_urgent = bool(des_res.get("is_urgent"))
+146:     except Exception:
+147:         detector_val = None
+148: 
+149:     s_str, e_str = "", ""
+150:     try:
+151:         s_str, e_str = email_orchestrator._load_webhook_global_time_window()
+152:     except Exception:
+153:         s_str, e_str = "", ""
+154: 
+155:     start_t = parse_time_hhmm(s_str) if s_str else None
+156:     end_t = parse_time_hhmm(e_str) if e_str else None
+157:     within = True
+158:     if start_t and end_t:
+159:         within = is_within_time_window_local(now_local, start_t, end_t)
+160: 
+161:     if not within:
+162:         if detector_val == "desabonnement_journee_tarifs":
+163:             if desabo_is_urgent:
+164:                 return (
+165:                     jsonify({"success": False, "message": "Outside time window (DESABO urgent)"}),
+166:                     409,
+167:                 )
+168:         elif detector_val == "recadrage":
+169:             try:
+170:                 mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
+171:                 if callable(mark_processed_fn):
+172:                     mark_processed_fn(email_id)
+173:             except Exception:
+174:                 pass
+175:             return (
+176:                 jsonify({"success": True, "status": "skipped_outside_time_window", "email_id": email_id}),
+177:                 200,
+178:             )
+179:         else:
+180:             return (
+181:                 jsonify({"success": False, "message": "Outside time window"}),
+182:                 409,
+183:             )
+184: 
+185:     start_payload_val = None
+186:     try:
+187:         if start_t and end_t:
+188:             if within:
+189:                 start_payload_val = "maintenant"
+190:             else:
+191:                 if (
+192:                     detector_val == "desabonnement_journee_tarifs"
+193:                     and not desabo_is_urgent
+194:                     and now_local.time() < start_t
+195:                 ):
+196:                     start_payload_val = s_str
+197:     except Exception:
+198:         start_payload_val = None
+199: 
+200:     delivery_links = link_extraction.extract_provider_links_from_text(body)
+201: 
+202:     payload_for_webhook = {
+203:         "microsoft_graph_email_id": email_id,
+204:         "subject": subject or "",
+205:         "receivedDateTime": email_date or "",
+206:         "sender_address": sender_raw,
+207:         "bodyPreview": (body or "")[:200],
+208:         "email_content": body or "",
+209:         "source": "gmail_push",
+210:     }
+211: 
+212:     try:
+213:         if detector_val:
+214:             payload_for_webhook["detector"] = detector_val
+215:         if detector_val == "recadrage" and delivery_time_val:
+216:             payload_for_webhook["delivery_time"] = delivery_time_val
+217:         payload_for_webhook["sender_email"] = sender_email
+218:     except Exception:
+219:         pass
+220: 
+221:     try:
+222:         if start_payload_val is not None:
+223:             payload_for_webhook["webhooks_time_start"] = start_payload_val
+224:         if e_str:
+225:             payload_for_webhook["webhooks_time_end"] = e_str
+226:     except Exception:
+227:         pass
+228: 
+229:     webhook_cfg = {}
+230:     try:
+231:         webhook_cfg = email_orchestrator._get_webhook_config_dict() or {}
+232:     except Exception:
+233:         webhook_cfg = {}
+234: 
+235:     webhook_url = ""
+236:     try:
+237:         webhook_url = str(webhook_cfg.get("webhook_url") or "").strip()
+238:     except Exception:
+239:         webhook_url = ""
+240:     if not webhook_url:
+241:         webhook_url = str(getattr(ar, "WEBHOOK_URL", "") or "").strip()
+242:     if not webhook_url:
+243:         return jsonify({"success": False, "message": "WEBHOOK_URL not configured"}), 500
+244: 
+245:     webhook_ssl_verify = True
+246:     try:
+247:         webhook_ssl_verify = bool(webhook_cfg.get("webhook_ssl_verify", True))
+248:     except Exception:
+249:         webhook_ssl_verify = True
+250: 
+251:     allow_without_links = bool(getattr(ar, "ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS", False))
+252:     try:
+253:         rfs = getattr(ar, "_runtime_flags_service", None)
+254:         if rfs is not None and hasattr(rfs, "get_flag"):
+255:             allow_without_links = bool(
+256:                 rfs.get_flag("allow_custom_webhook_without_links", allow_without_links)
+257:             )
+258:     except Exception:
+259:         pass
+260: 
+261:     processing_prefs = getattr(ar, "PROCESSING_PREFS", {})
+262: 
+263:     rate_limit_allow_send = getattr(ar, "_rate_limit_allow_send", None)
+264:     record_send_event = getattr(ar, "_record_send_event", None)
+265:     append_webhook_log = getattr(ar, "_append_webhook_log", None)
+266:     mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
+267: 
+268:     if not callable(rate_limit_allow_send) or not callable(record_send_event):
+269:         return jsonify({"success": False, "message": "Server misconfigured"}), 500
+270:     if not callable(append_webhook_log) or not callable(mark_processed_fn):
+271:         return jsonify({"success": False, "message": "Server misconfigured"}), 500
+272: 
+273:     import requests
+274:     import time
+275: 
+276:     try:
+277:         flow_result = email_orchestrator.send_custom_webhook_flow(
+278:             email_id=email_id,
+279:             subject=subject,
+280:             payload_for_webhook=payload_for_webhook,
+281:             delivery_links=delivery_links or [],
+282:             webhook_url=webhook_url,
+283:             webhook_ssl_verify=webhook_ssl_verify,
+284:             allow_without_links=allow_without_links,
+285:             processing_prefs=processing_prefs,
+286:             rate_limit_allow_send=rate_limit_allow_send,
+287:             record_send_event=record_send_event,
+288:             append_webhook_log=append_webhook_log,
+289:             mark_email_id_as_processed_redis=mark_processed_fn,
+290:             mark_email_as_read_imap=lambda *_a, **_kw: True,
+291:             mail=None,
+292:             email_num=None,
+293:             urlparse=None,
+294:             requests=requests,
+295:             time=time,
+296:             logger=current_app.logger,
+297:         )
+298: 
+299:         return (
+300:             jsonify(
+301:                 {
+302:                     "success": True,
+303:                     "status": "processed",
+304:                     "email_id": email_id,
+305:                     "flow_result": flow_result,
+306:                     "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+307:                 }
+308:             ),
+309:             200,
+310:         )
+311:     except Exception as e:
+312:         try:
+313:             current_app.logger.error("INGRESS: processing error for %s: %s", email_id, e)
+314:         except Exception:
+315:             pass
+316:         return jsonify({"success": False, "message": "Internal error"}), 500
+````
+
 ## File: routes/api_polling.py
 ````python
  1: from __future__ import annotations
@@ -1880,6 +2201,125 @@ requirements.txt
 41:         }), 200
 42:     except Exception:
 43:         return jsonify({"success": False, "message": "Erreur interne"}), 500
+````
+
+## File: routes/api_utility.py
+````python
+  1: from __future__ import annotations
+  2: 
+  3: from datetime import datetime, timezone
+  4: import json
+  5: import sys
+  6: 
+  7: from flask import Blueprint, jsonify, request
+  8: from flask_login import login_required
+  9: 
+ 10: from config.settings import TRIGGER_SIGNAL_FILE
+ 11: 
+ 12: bp = Blueprint("api_utility", __name__, url_prefix="/api")
+ 13: 
+ 14: 
+ 15: @bp.route("/ping", methods=["GET", "HEAD"])
+ 16: def ping():
+ 17:     return (
+ 18:         jsonify({"status": "pong", "timestamp_utc": datetime.now(timezone.utc).isoformat()}),
+ 19:         200,
+ 20:     )
+ 21: 
+ 22: 
+ 23: @bp.route("/diag/runtime", methods=["GET"])
+ 24: def diag_runtime():
+ 25:     """Expose basic runtime state without requiring auth.
+ 26: 
+ 27:     Reads values from the main module (app_render) if available. All fields are best-effort.
+ 28:     """
+ 29:     now = datetime.now(timezone.utc)
+ 30:     process_start_iso = None
+ 31:     uptime_sec = None
+ 32:     last_poll_cycle_ts = None
+ 33:     last_webhook_sent_ts = None
+ 34:     bg_poller_alive = None
+ 35:     make_watcher_alive = None
+ 36:     enable_bg = None
+ 37: 
+ 38:     mod = sys.modules.get("app_render")
+ 39:     if mod is not None:
+ 40:         try:
+ 41:             ps = getattr(mod, "PROCESS_START_TIME", None)
+ 42:             if ps:
+ 43:                 process_start_iso = getattr(ps, "isoformat", lambda: str(ps))()
+ 44:                 try:
+ 45:                     uptime_sec = int((now - ps).total_seconds())
+ 46:                 except Exception:
+ 47:                     uptime_sec = None
+ 48:         except Exception:
+ 49:             pass
+ 50:         try:
+ 51:             last_poll_cycle_ts = getattr(mod, "LAST_POLL_CYCLE_TS", None)
+ 52:         except Exception:
+ 53:             pass
+ 54:         try:
+ 55:             last_webhook_sent_ts = getattr(mod, "LAST_WEBHOOK_SENT_TS", None)
+ 56:         except Exception:
+ 57:             pass
+ 58:         try:
+ 59:             t = getattr(mod, "_bg_email_poller_thread", None)
+ 60:             bg_poller_alive = bool(t and t.is_alive())
+ 61:         except Exception:
+ 62:             bg_poller_alive = None
+ 63:         try:
+ 64:             t2 = getattr(mod, "_make_watcher_thread", None)
+ 65:             make_watcher_alive = bool(t2 and t2.is_alive())
+ 66:         except Exception:
+ 67:             make_watcher_alive = None
+ 68:         try:
+ 69:             enable_bg = bool(getattr(getattr(mod, "settings", object()), "ENABLE_BACKGROUND_TASKS", False))
+ 70:         except Exception:
+ 71:             enable_bg = None
+ 72: 
+ 73:     payload = {
+ 74:         "process_start_time": process_start_iso,
+ 75:         "uptime_sec": uptime_sec,
+ 76:         "last_poll_cycle_ts": last_poll_cycle_ts,
+ 77:         "last_webhook_sent_ts": last_webhook_sent_ts,
+ 78:         "bg_poller_thread_alive": bg_poller_alive,
+ 79:         "make_watcher_thread_alive": make_watcher_alive,
+ 80:         "enable_background_tasks": enable_bg,
+ 81:         "server_time_utc": now.isoformat(),
+ 82:     }
+ 83:     return jsonify(payload), 200
+ 84: 
+ 85: 
+ 86: @bp.route("/check_trigger", methods=["GET"])
+ 87: def check_local_workflow_trigger():
+ 88:     if TRIGGER_SIGNAL_FILE.exists():
+ 89:         try:
+ 90:             with open(TRIGGER_SIGNAL_FILE, "r", encoding="utf-8") as f:
+ 91:                 payload = json.load(f)
+ 92:         except Exception:
+ 93:             payload = None
+ 94:         try:
+ 95:             TRIGGER_SIGNAL_FILE.unlink()
+ 96:         except Exception:
+ 97:             pass
+ 98:         return jsonify({"command_pending": True, "payload": payload})
+ 99:     return jsonify({"command_pending": False, "payload": None})
+100: 
+101: 
+102: @bp.route("/get_local_status", methods=["GET"])
+103: @login_required
+104: def api_get_local_status():
+105:     """Retourne un snapshot minimal de statut pour l'UI distante."""
+106:     payload = {
+107:         "overall_status_text": "En attente...",
+108:         "status_text": "Système prêt.",
+109:         "overall_status_code_from_worker": "idle",
+110:         "progress_current": 0,
+111:         "progress_total": 0,
+112:         "current_step_name": "",
+113:         "recent_downloads": [],
+114:     }
+115:     return jsonify(payload), 200
 ````
 
 ## File: routes/health.py
@@ -6116,26 +6556,6 @@ requirements.txt
 124:     }
 ````
 
-## File: routes/__init__.py
-````python
- 1: # routes package initializer
- 2: 
- 3: from .health import bp as health_bp  # noqa: F401
- 4: from .api_webhooks import bp as api_webhooks_bp  # noqa: F401
- 5: from .api_polling import bp as api_polling_bp  # noqa: F401
- 6: from .api_processing import bp as api_processing_bp  # noqa: F401
- 7: from .api_processing import legacy_bp as api_processing_legacy_bp  # noqa: F401
- 8: from .api_test import bp as api_test_bp  # noqa: F401
- 9: from .dashboard import bp as dashboard_bp  # noqa: F401
-10: from .api_logs import bp as api_logs_bp  # noqa: F401
-11: from .api_admin import bp as api_admin_bp  # noqa: F401
-12: from .api_utility import bp as api_utility_bp  # noqa: F401
-13: from .api_config import bp as api_config_bp  # noqa: F401
-14: from .api_make import bp as api_make_bp  # noqa: F401
-15: from .api_auth import bp as api_auth_bp  # noqa: F401
-16: from .api_routing_rules import bp as api_routing_rules_bp  # noqa: F401
-````
-
 ## File: routes/api_auth.py
 ````python
  1: from __future__ import annotations
@@ -6310,125 +6730,6 @@ requirements.txt
 122: @login_required
 123: def legacy_update_processing_prefs():
 124:     return update_processing_prefs()
-````
-
-## File: routes/api_utility.py
-````python
-  1: from __future__ import annotations
-  2: 
-  3: from datetime import datetime, timezone
-  4: import json
-  5: import sys
-  6: 
-  7: from flask import Blueprint, jsonify, request
-  8: from flask_login import login_required
-  9: 
- 10: from config.settings import TRIGGER_SIGNAL_FILE
- 11: 
- 12: bp = Blueprint("api_utility", __name__, url_prefix="/api")
- 13: 
- 14: 
- 15: @bp.route("/ping", methods=["GET", "HEAD"])
- 16: def ping():
- 17:     return (
- 18:         jsonify({"status": "pong", "timestamp_utc": datetime.now(timezone.utc).isoformat()}),
- 19:         200,
- 20:     )
- 21: 
- 22: 
- 23: @bp.route("/diag/runtime", methods=["GET"])
- 24: def diag_runtime():
- 25:     """Expose basic runtime state without requiring auth.
- 26: 
- 27:     Reads values from the main module (app_render) if available. All fields are best-effort.
- 28:     """
- 29:     now = datetime.now(timezone.utc)
- 30:     process_start_iso = None
- 31:     uptime_sec = None
- 32:     last_poll_cycle_ts = None
- 33:     last_webhook_sent_ts = None
- 34:     bg_poller_alive = None
- 35:     make_watcher_alive = None
- 36:     enable_bg = None
- 37: 
- 38:     mod = sys.modules.get("app_render")
- 39:     if mod is not None:
- 40:         try:
- 41:             ps = getattr(mod, "PROCESS_START_TIME", None)
- 42:             if ps:
- 43:                 process_start_iso = getattr(ps, "isoformat", lambda: str(ps))()
- 44:                 try:
- 45:                     uptime_sec = int((now - ps).total_seconds())
- 46:                 except Exception:
- 47:                     uptime_sec = None
- 48:         except Exception:
- 49:             pass
- 50:         try:
- 51:             last_poll_cycle_ts = getattr(mod, "LAST_POLL_CYCLE_TS", None)
- 52:         except Exception:
- 53:             pass
- 54:         try:
- 55:             last_webhook_sent_ts = getattr(mod, "LAST_WEBHOOK_SENT_TS", None)
- 56:         except Exception:
- 57:             pass
- 58:         try:
- 59:             t = getattr(mod, "_bg_email_poller_thread", None)
- 60:             bg_poller_alive = bool(t and t.is_alive())
- 61:         except Exception:
- 62:             bg_poller_alive = None
- 63:         try:
- 64:             t2 = getattr(mod, "_make_watcher_thread", None)
- 65:             make_watcher_alive = bool(t2 and t2.is_alive())
- 66:         except Exception:
- 67:             make_watcher_alive = None
- 68:         try:
- 69:             enable_bg = bool(getattr(getattr(mod, "settings", object()), "ENABLE_BACKGROUND_TASKS", False))
- 70:         except Exception:
- 71:             enable_bg = None
- 72: 
- 73:     payload = {
- 74:         "process_start_time": process_start_iso,
- 75:         "uptime_sec": uptime_sec,
- 76:         "last_poll_cycle_ts": last_poll_cycle_ts,
- 77:         "last_webhook_sent_ts": last_webhook_sent_ts,
- 78:         "bg_poller_thread_alive": bg_poller_alive,
- 79:         "make_watcher_thread_alive": make_watcher_alive,
- 80:         "enable_background_tasks": enable_bg,
- 81:         "server_time_utc": now.isoformat(),
- 82:     }
- 83:     return jsonify(payload), 200
- 84: 
- 85: 
- 86: @bp.route("/check_trigger", methods=["GET"])
- 87: def check_local_workflow_trigger():
- 88:     if TRIGGER_SIGNAL_FILE.exists():
- 89:         try:
- 90:             with open(TRIGGER_SIGNAL_FILE, "r", encoding="utf-8") as f:
- 91:                 payload = json.load(f)
- 92:         except Exception:
- 93:             payload = None
- 94:         try:
- 95:             TRIGGER_SIGNAL_FILE.unlink()
- 96:         except Exception:
- 97:             pass
- 98:         return jsonify({"command_pending": True, "payload": payload})
- 99:     return jsonify({"command_pending": False, "payload": None})
-100: 
-101: 
-102: @bp.route("/get_local_status", methods=["GET"])
-103: @login_required
-104: def api_get_local_status():
-105:     """Retourne un snapshot minimal de statut pour l'UI distante."""
-106:     payload = {
-107:         "overall_status_text": "En attente...",
-108:         "status_text": "Système prêt.",
-109:         "overall_status_code_from_worker": "idle",
-110:         "progress_current": 0,
-111:         "progress_total": 0,
-112:         "current_step_name": "",
-113:         "recent_downloads": [],
-114:     }
-115:     return jsonify(payload), 200
 ````
 
 ## File: services/deduplication_service.py
@@ -9216,6 +9517,27 @@ requirements.txt
 146:                     pass
 147: 
 148:     return last_ok
+````
+
+## File: routes/__init__.py
+````python
+ 1: # routes package initializer
+ 2: 
+ 3: from .health import bp as health_bp  # noqa: F401
+ 4: from .api_webhooks import bp as api_webhooks_bp  # noqa: F401
+ 5: from .api_polling import bp as api_polling_bp  # noqa: F401
+ 6: from .api_processing import bp as api_processing_bp  # noqa: F401
+ 7: from .api_processing import legacy_bp as api_processing_legacy_bp  # noqa: F401
+ 8: from .api_test import bp as api_test_bp  # noqa: F401
+ 9: from .dashboard import bp as dashboard_bp  # noqa: F401
+10: from .api_logs import bp as api_logs_bp  # noqa: F401
+11: from .api_admin import bp as api_admin_bp  # noqa: F401
+12: from .api_utility import bp as api_utility_bp  # noqa: F401
+13: from .api_config import bp as api_config_bp  # noqa: F401
+14: from .api_make import bp as api_make_bp  # noqa: F401
+15: from .api_auth import bp as api_auth_bp  # noqa: F401
+16: from .api_routing_rules import bp as api_routing_rules_bp  # noqa: F401
+17: from .api_ingress import bp as api_ingress_bp  # noqa: F401
 ````
 
 ## File: routes/api_make.py
@@ -17132,712 +17454,714 @@ requirements.txt
  68:     api_make_bp,
  69:     api_auth_bp,
  70:     api_routing_rules_bp,
- 71: )
- 72: from routes.api_processing import DEFAULT_PROCESSING_PREFS as _DEFAULT_PROCESSING_PREFS
- 73: DEFAULT_PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS
- 74: from background.polling_thread import background_email_poller_loop
- 75: 
+ 71:     api_ingress_bp,
+ 72: )
+ 73: from routes.api_processing import DEFAULT_PROCESSING_PREFS as _DEFAULT_PROCESSING_PREFS
+ 74: DEFAULT_PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS
+ 75: from background.polling_thread import background_email_poller_loop
  76: 
- 77: def append_webhook_log(webhook_id: str, webhook_url: str, webhook_status_code: int, webhook_response: str):
- 78:     """Append a webhook log entry to the webhook log file."""
- 79:     return _append_webhook_log_helper(webhook_id, webhook_url, webhook_status_code, webhook_response)
- 80: 
- 81: try:
- 82:     from zoneinfo import ZoneInfo
- 83: except ImportError:
- 84:     ZoneInfo = None
- 85: 
- 86: try:
- 87:     import redis
- 88: 
- 89:     REDIS_AVAILABLE = True
- 90: except ImportError:
- 91:     REDIS_AVAILABLE = False
- 92: 
+ 77: 
+ 78: def append_webhook_log(webhook_id: str, webhook_url: str, webhook_status_code: int, webhook_response: str):
+ 79:     """Append a webhook log entry to the webhook log file."""
+ 80:     return _append_webhook_log_helper(webhook_id, webhook_url, webhook_status_code, webhook_response)
+ 81: 
+ 82: try:
+ 83:     from zoneinfo import ZoneInfo
+ 84: except ImportError:
+ 85:     ZoneInfo = None
+ 86: 
+ 87: try:
+ 88:     import redis
+ 89: 
+ 90:     REDIS_AVAILABLE = True
+ 91: except ImportError:
+ 92:     REDIS_AVAILABLE = False
  93: 
- 94: def _init_redis_client(logger: logging.Logger | None = None):
- 95:     if not REDIS_AVAILABLE:
- 96:         return None
- 97:     redis_url = os.environ.get("REDIS_URL", "").strip()
- 98:     if not redis_url:
- 99:         return None
-100:     try:
-101:         import redis
-102: 
-103:         return redis.Redis.from_url(redis_url, decode_responses=True)
-104:     except Exception as e:
-105:         if logger:
-106:             logger.warning("CFG REDIS: failed to initialize redis client: %s", e)
-107:         return None
-108: 
+ 94: 
+ 95: def _init_redis_client(logger: logging.Logger | None = None):
+ 96:     if not REDIS_AVAILABLE:
+ 97:         return None
+ 98:     redis_url = os.environ.get("REDIS_URL", "").strip()
+ 99:     if not redis_url:
+100:         return None
+101:     try:
+102:         import redis
+103: 
+104:         return redis.Redis.from_url(redis_url, decode_responses=True)
+105:     except Exception as e:
+106:         if logger:
+107:             logger.warning("CFG REDIS: failed to initialize redis client: %s", e)
+108:         return None
 109: 
-110: app = Flask(__name__, template_folder='.', static_folder='static')
-111: app.secret_key = settings.FLASK_SECRET_KEY
-112: 
-113: _config_service = ConfigService()
-114: 
-115: _runtime_flags_service = RuntimeFlagsService.get_instance(...)
-116: 
-117: _webhook_service = WebhookConfigService.get_instance(...)
-118: 
-119: _auth_service = AuthService(_config_service)
-120: 
+110: 
+111: app = Flask(__name__, template_folder='.', static_folder='static')
+112: app.secret_key = settings.FLASK_SECRET_KEY
+113: 
+114: _config_service = ConfigService()
+115: 
+116: _runtime_flags_service = RuntimeFlagsService.get_instance(...)
+117: 
+118: _webhook_service = WebhookConfigService.get_instance(...)
+119: 
+120: _auth_service = AuthService(_config_service)
 121: 
-122: app.register_blueprint(health_bp)
-123: app.register_blueprint(api_webhooks_bp)
-124: app.register_blueprint(api_polling_bp)
-125: app.register_blueprint(api_processing_bp)
-126: app.register_blueprint(api_processing_legacy_bp)
-127: app.register_blueprint(api_test_bp)
-128: app.register_blueprint(dashboard_bp)
-129: app.register_blueprint(api_logs_bp)
-130: app.register_blueprint(api_admin_bp)
-131: app.register_blueprint(api_utility_bp)
-132: app.register_blueprint(api_config_bp)
-133: app.register_blueprint(api_make_bp)
-134: app.register_blueprint(api_auth_bp)
-135: app.register_blueprint(api_routing_rules_bp)
-136: 
-137: _cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
-138: if _cors_origins:
-139:     CORS(
-140:         app,
-141:         resources={
-142:             r"/api/test/*": {
-143:                 "origins": _cors_origins,
-144:                 "supports_credentials": False,
-145:                 "methods": ["GET", "POST", "OPTIONS"],
-146:                 "allow_headers": ["Content-Type", "X-API-Key"],
-147:                 "max_age": 600,
-148:             }
-149:         },
-150:     )
-151: 
-152: login_manager = _auth_service.init_flask_login(app, login_view='dashboard.login')
+122: 
+123: app.register_blueprint(health_bp)
+124: app.register_blueprint(api_webhooks_bp)
+125: app.register_blueprint(api_polling_bp)
+126: app.register_blueprint(api_processing_bp)
+127: app.register_blueprint(api_processing_legacy_bp)
+128: app.register_blueprint(api_test_bp)
+129: app.register_blueprint(dashboard_bp)
+130: app.register_blueprint(api_logs_bp)
+131: app.register_blueprint(api_admin_bp)
+132: app.register_blueprint(api_utility_bp)
+133: app.register_blueprint(api_config_bp)
+134: app.register_blueprint(api_make_bp)
+135: app.register_blueprint(api_auth_bp)
+136: app.register_blueprint(api_routing_rules_bp)
+137: app.register_blueprint(api_ingress_bp)
+138: 
+139: _cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+140: if _cors_origins:
+141:     CORS(
+142:         app,
+143:         resources={
+144:             r"/api/test/*": {
+145:                 "origins": _cors_origins,
+146:                 "supports_credentials": False,
+147:                 "methods": ["GET", "POST", "OPTIONS"],
+148:                 "allow_headers": ["Content-Type", "X-API-Key"],
+149:                 "max_age": 600,
+150:             }
+151:         },
+152:     )
 153: 
-154: auth_user.init_login_manager(app, login_view='dashboard.login')
+154: login_manager = _auth_service.init_flask_login(app, login_view='dashboard.login')
 155: 
-156: WEBHOOK_URL = settings.WEBHOOK_URL
-157: MAKECOM_API_KEY = settings.MAKECOM_API_KEY
-158: WEBHOOK_SSL_VERIFY = settings.WEBHOOK_SSL_VERIFY
-159: 
-160: EMAIL_ADDRESS = settings.EMAIL_ADDRESS
-161: EMAIL_PASSWORD = settings.EMAIL_PASSWORD
-162: IMAP_SERVER = settings.IMAP_SERVER
-163: IMAP_PORT = settings.IMAP_PORT
-164: IMAP_USE_SSL = settings.IMAP_USE_SSL
-165: 
-166: EXPECTED_API_TOKEN = settings.EXPECTED_API_TOKEN
+156: auth_user.init_login_manager(app, login_view='dashboard.login')
+157: 
+158: WEBHOOK_URL = settings.WEBHOOK_URL
+159: MAKECOM_API_KEY = settings.MAKECOM_API_KEY
+160: WEBHOOK_SSL_VERIFY = settings.WEBHOOK_SSL_VERIFY
+161: 
+162: EMAIL_ADDRESS = settings.EMAIL_ADDRESS
+163: EMAIL_PASSWORD = settings.EMAIL_PASSWORD
+164: IMAP_SERVER = settings.IMAP_SERVER
+165: IMAP_PORT = settings.IMAP_PORT
+166: IMAP_USE_SSL = settings.IMAP_USE_SSL
 167: 
-168: ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
-169: SENDER_LIST_FOR_POLLING = settings.SENDER_LIST_FOR_POLLING
-170: 
-171: # Runtime flags and files
-172: DISABLE_EMAIL_ID_DEDUP = settings.DISABLE_EMAIL_ID_DEDUP
-173: ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS
-174: POLLING_CONFIG_FILE = settings.POLLING_CONFIG_FILE
-175: TRIGGER_SIGNAL_FILE = settings.TRIGGER_SIGNAL_FILE
-176: RUNTIME_FLAGS_FILE = settings.RUNTIME_FLAGS_FILE
-177: 
-178: # Configuration du logging
-179: log_level_str = os.environ.get('FLASK_LOG_LEVEL', 'INFO').upper()
-180: log_level = getattr(logging, log_level_str, logging.INFO)
-181: logging.basicConfig(level=log_level,
-182:                     format='%(asctime)s - %(levelname)s - %(name)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s')
-183: if not REDIS_AVAILABLE:
-184:     logging.warning(
-185:         "CFG REDIS (module level): 'redis' Python library not installed. Redis-based features will be disabled or use fallbacks.")
-186: 
-187: redis_client = _init_redis_client(app.logger)
+168: EXPECTED_API_TOKEN = settings.EXPECTED_API_TOKEN
+169: 
+170: ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
+171: SENDER_LIST_FOR_POLLING = settings.SENDER_LIST_FOR_POLLING
+172: 
+173: # Runtime flags and files
+174: DISABLE_EMAIL_ID_DEDUP = settings.DISABLE_EMAIL_ID_DEDUP
+175: ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS
+176: POLLING_CONFIG_FILE = settings.POLLING_CONFIG_FILE
+177: TRIGGER_SIGNAL_FILE = settings.TRIGGER_SIGNAL_FILE
+178: RUNTIME_FLAGS_FILE = settings.RUNTIME_FLAGS_FILE
+179: 
+180: # Configuration du logging
+181: log_level_str = os.environ.get('FLASK_LOG_LEVEL', 'INFO').upper()
+182: log_level = getattr(logging, log_level_str, logging.INFO)
+183: logging.basicConfig(level=log_level,
+184:                     format='%(asctime)s - %(levelname)s - %(name)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s')
+185: if not REDIS_AVAILABLE:
+186:     logging.warning(
+187:         "CFG REDIS (module level): 'redis' Python library not installed. Redis-based features will be disabled or use fallbacks.")
 188: 
-189: 
-190: # Diagnostics (process start + heartbeat)
-191: try:
-192:     from datetime import datetime, timezone as _tz
-193:     PROCESS_START_TIME = datetime.now(_tz.utc)
-194: except Exception:
-195:     PROCESS_START_TIME = None
-196: 
-197: def _heartbeat_loop():
-198:     interval = 60
-199:     while True:
-200:         try:
-201:             bg = globals().get("_bg_email_poller_thread")
-202:             mk = globals().get("_make_watcher_thread")
-203:             bg_alive = bool(bg and bg.is_alive())
-204:             mk_alive = bool(mk and mk.is_alive())
-205:             app.logger.info("HEARTBEAT: alive (bg_poller=%s, make_watcher=%s)", bg_alive, mk_alive)
-206:         except Exception:
-207:             # Ignored intentionally: heartbeat logging must never crash the loop
-208:             pass
-209:         time.sleep(interval)
-210: 
-211: try:
-212:     disable_bg_hb = os.environ.get("DISABLE_BACKGROUND_TASKS", "").strip().lower() in ["1", "true", "yes"]
-213:     if getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and not disable_bg_hb:
-214:         _heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
-215:         _heartbeat_thread.start()
-216: except Exception:
-217:     pass
-218: 
-219: # Process signal handlers (observability)
-220: def _handle_sigterm(signum, frame):  # pragma: no cover - environment dependent
-221:     try:
-222:         app.logger.info("PROCESS: SIGTERM received; shutting down gracefully (platform restart/deploy).")
-223:     except Exception:
-224:         pass
-225: 
-226: try:
-227:     signal.signal(signal.SIGTERM, _handle_sigterm)
-228: except Exception:
-229:     # Some environments may not allow setting signal handlers (e.g., Windows)
-230:     pass
-231: 
-232: 
-233: # Configuration (log centralisé)
-234: settings.log_configuration(app.logger)
-235: if not WEBHOOK_SSL_VERIFY:
-236:     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-237:     app.logger.warning("CFG WEBHOOK: SSL verification DISABLED for webhook calls (development/legacy). Use valid certificates in production.")
-238:     
-239: TZ_FOR_POLLING = polling_config.initialize_polling_timezone(app.logger)
-240: 
-241: # Polling Config Service (accès centralisé à la configuration)
-242: _polling_service = PollingConfigService(settings)
-243: 
-244: # =============================================================================
-245: # SERVICES INITIALIZATION
+189: redis_client = _init_redis_client(app.logger)
+190: 
+191: 
+192: # Diagnostics (process start + heartbeat)
+193: try:
+194:     from datetime import datetime, timezone as _tz
+195:     PROCESS_START_TIME = datetime.now(_tz.utc)
+196: except Exception:
+197:     PROCESS_START_TIME = None
+198: 
+199: def _heartbeat_loop():
+200:     interval = 60
+201:     while True:
+202:         try:
+203:             bg = globals().get("_bg_email_poller_thread")
+204:             mk = globals().get("_make_watcher_thread")
+205:             bg_alive = bool(bg and bg.is_alive())
+206:             mk_alive = bool(mk and mk.is_alive())
+207:             app.logger.info("HEARTBEAT: alive (bg_poller=%s, make_watcher=%s)", bg_alive, mk_alive)
+208:         except Exception:
+209:             # Ignored intentionally: heartbeat logging must never crash the loop
+210:             pass
+211:         time.sleep(interval)
+212: 
+213: try:
+214:     disable_bg_hb = os.environ.get("DISABLE_BACKGROUND_TASKS", "").strip().lower() in ["1", "true", "yes"]
+215:     if getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and not disable_bg_hb:
+216:         _heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
+217:         _heartbeat_thread.start()
+218: except Exception:
+219:     pass
+220: 
+221: # Process signal handlers (observability)
+222: def _handle_sigterm(signum, frame):  # pragma: no cover - environment dependent
+223:     try:
+224:         app.logger.info("PROCESS: SIGTERM received; shutting down gracefully (platform restart/deploy).")
+225:     except Exception:
+226:         pass
+227: 
+228: try:
+229:     signal.signal(signal.SIGTERM, _handle_sigterm)
+230: except Exception:
+231:     # Some environments may not allow setting signal handlers (e.g., Windows)
+232:     pass
+233: 
+234: 
+235: # Configuration (log centralisé)
+236: settings.log_configuration(app.logger)
+237: if not WEBHOOK_SSL_VERIFY:
+238:     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+239:     app.logger.warning("CFG WEBHOOK: SSL verification DISABLED for webhook calls (development/legacy). Use valid certificates in production.")
+240:     
+241: TZ_FOR_POLLING = polling_config.initialize_polling_timezone(app.logger)
+242: 
+243: # Polling Config Service (accès centralisé à la configuration)
+244: _polling_service = PollingConfigService(settings)
+245: 
 246: # =============================================================================
-247: 
-248: # 5. Runtime Flags Service (Singleton)
-249: try:
-250:     _runtime_flags_service = RuntimeFlagsService.get_instance(
-251:         file_path=settings.RUNTIME_FLAGS_FILE,
-252:         defaults={
-253:             "disable_email_id_dedup": bool(settings.DISABLE_EMAIL_ID_DEDUP),
-254:             "allow_custom_webhook_without_links": bool(settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
-255:         }
-256:     )
-257:     app.logger.info(f"SVC: RuntimeFlagsService initialized (cache_ttl={_runtime_flags_service.get_cache_ttl()}s)")
-258: except Exception as e:
-259:     app.logger.error(f"SVC: Failed to initialize RuntimeFlagsService: {e}")
-260:     _runtime_flags_service = None
-261: 
-262: # 6. Webhook Config Service (Singleton)
-263: try:
-264:     from config import app_config_store
-265:     _webhook_service = WebhookConfigService.get_instance(
-266:         file_path=Path(__file__).parent / "debug" / "webhook_config.json",
-267:         external_store=app_config_store
-268:     )
-269:     app.logger.info(f"SVC: WebhookConfigService initialized (has_url={_webhook_service.has_webhook_url()})")
-270: except Exception as e:
-271:     app.logger.error(f"SVC: Failed to initialize WebhookConfigService: {e}")
-272:     _webhook_service = None
-273: 
-274: 
-275: if not EXPECTED_API_TOKEN:
-276:     app.logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
-277: else:
-278:     app.logger.info(f"CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: '{EXPECTED_API_TOKEN[:5]}...')")
-279: 
-280: # --- Configuration des Webhooks de Présence ---
-281: # Présence: déjà fournie par settings (alias ci-dessus)
-282: 
-283: # --- Email server config validation flag (maintenant via ConfigService) ---
-284: email_config_valid = _config_service.is_email_config_valid()
-285: 
-286: # --- Webhook time window initialization (env -> then optional UI override from disk) ---
-287: try:
-288:     webhook_time_window.initialize_webhook_time_window(
-289:         start_str=(
-290:             os.environ.get("WEBHOOKS_TIME_START")
-291:             or os.environ.get("WEBHOOK_TIME_START")
-292:             or ""
-293:         ),
-294:         end_str=(
-295:             os.environ.get("WEBHOOKS_TIME_END")
-296:             or os.environ.get("WEBHOOK_TIME_END")
-297:             or ""
-298:         ),
-299:     )
-300:     webhook_time_window.reload_time_window_from_disk()
-301: except Exception:
-302:     pass
-303: 
-304: # --- Polling config overrides (optional UI overrides from external store with file fallback) ---
-305: try:
-306:     _poll_cfg_path = settings.POLLING_CONFIG_FILE
-307:     app.logger.info(
-308:         f"CFG POLL(file): path={_poll_cfg_path}; exists={_poll_cfg_path.exists()}"
-309:     )
-310:     _pc = {}
-311:     try:
-312:         _pc = _config_get("polling_config", file_fallback=_poll_cfg_path) or {}
-313:     except Exception:
-314:         _pc = {}
-315:     app.logger.info(
-316:         "CFG POLL(loaded): keys=%s; snippet={active_days=%s,start=%s,end=%s,enable_polling=%s}",
-317:         list(_pc.keys()),
-318:         _pc.get("active_days"),
-319:         _pc.get("active_start_hour"),
-320:         _pc.get("active_end_hour"),
-321:         _pc.get("enable_polling"),
-322:     )
-323:     try:
-324:         app.logger.info(
-325:             "CFG POLL(effective): days=%s; start=%s; end=%s; senders=%s; dedup_monthly_scope=%s; enable_polling=%s; vacation_start=%s; vacation_end=%s",
-326:             _polling_service.get_active_days(),
-327:             _polling_service.get_active_start_hour(),
-328:             _polling_service.get_active_end_hour(),
-329:             len(_polling_service.get_sender_list() or []),
-330:             _polling_service.is_subject_group_dedup_enabled(),
-331:             _polling_service.get_enable_polling(True),
-332:             (_pc.get("vacation_start") if isinstance(_pc, dict) else None),
-333:             (_pc.get("vacation_end") if isinstance(_pc, dict) else None),
-334:         )
-335:     except Exception:
-336:         pass
-337: except Exception:
-338:     pass
-339: 
-340: # --- Dedup constants mapping (from central settings) ---
-341: PROCESSED_EMAIL_IDS_REDIS_KEY = settings.PROCESSED_EMAIL_IDS_REDIS_KEY
-342: PROCESSED_SUBJECT_GROUPS_REDIS_KEY = settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY
-343: SUBJECT_GROUP_REDIS_PREFIX = settings.SUBJECT_GROUP_REDIS_PREFIX
-344: SUBJECT_GROUP_TTL_SECONDS = settings.SUBJECT_GROUP_TTL_SECONDS
-345: 
-346: # Memory fallback set for subject groups when Redis is not available
-347: SUBJECT_GROUPS_MEMORY = set()
-348: 
-349: # 7. Deduplication Service (avec Redis ou fallback mémoire)
-350: try:
-351:     _dedup_service = DeduplicationService(
-352:         redis_client=redis_client,  # None = fallback mémoire automatique
-353:         logger=app.logger,
-354:         config_service=_config_service,
-355:         polling_config_service=_polling_service,
-356:     )
-357:     app.logger.info(f"SVC: DeduplicationService initialized {_dedup_service}")
-358: except Exception as e:
-359:     app.logger.error(f"SVC: Failed to initialize DeduplicationService: {e}")
-360:     _dedup_service = None
-361: 
-362: # --- Fonctions Utilitaires IMAP ---
-363: def create_imap_connection():
-364:     """Wrapper vers email_processing.imap_client.create_imap_connection."""
-365:     return email_imap_client.create_imap_connection(app.logger)
-366: 
-367: 
-368: def close_imap_connection(mail):
-369:     """Wrapper vers email_processing.imap_client.close_imap_connection."""
-370:     return email_imap_client.close_imap_connection(app.logger, mail)
-371: 
-372: 
-373: def generate_email_id(msg_data):
-374:     """Wrapper vers email_processing.imap_client.generate_email_id."""
-375:     return email_imap_client.generate_email_id(msg_data)
-376: 
-377: 
-378: def extract_sender_email(from_header):
-379:     """Wrapper vers email_processing.imap_client.extract_sender_email."""
-380:     return email_imap_client.extract_sender_email(from_header)
-381: 
-382: 
-383: def decode_email_header(header_value):
-384:     """Wrapper vers email_processing.imap_client.decode_email_header_value."""
-385:     return email_imap_client.decode_email_header_value(header_value)
-386: 
-387: 
-388: def mark_email_as_read_imap(mail, email_num):
-389:     """Wrapper vers email_processing.imap_client.mark_email_as_read_imap."""
-390:     return email_imap_client.mark_email_as_read_imap(app.logger, mail, email_num)
-391: 
-392: 
-393: def check_media_solution_pattern(subject, email_content):
-394:     """Compatibility wrapper delegating to email_processing.pattern_matching.
-395: 
-396:     Maintains backward compatibility while centralizing pattern detection.
-397:     """
-398:     try:
-399:         return email_pattern_matching.check_media_solution_pattern(
-400:             subject=subject,
-401:             email_content=email_content,
-402:             tz_for_polling=TZ_FOR_POLLING,
-403:             logger=app.logger,
-404:         )
-405:     except Exception as e:
-406:         try:
-407:             app.logger.error(f"MEDIA_PATTERN_WRAPPER: Exception: {e}")
-408:         except Exception:
-409:             pass
-410:         return {"matches": False, "delivery_time": None}
-411: 
-412: 
-413: def send_makecom_webhook(subject, delivery_time, sender_email, email_id, override_webhook_url: str | None = None, extra_payload: dict | None = None):
-414:     """Délègue l'envoi du webhook Make.com au module email_processing.webhook_sender.
-415: 
-416:     Maintient la compatibilité tout en centralisant la logique d'envoi.
-417:     """
-418:     return email_webhook_sender.send_makecom_webhook(
-419:         subject=subject,
-420:         delivery_time=delivery_time,
-421:         sender_email=sender_email,
-422:         email_id=email_id,
-423:         override_webhook_url=override_webhook_url,
-424:         extra_payload=extra_payload,
-425:         logger=app.logger,
-426:         log_hook=_append_webhook_log,
-427:     )
-428: 
-429: 
-430: # --- Fonctions de Déduplication avec Redis ---
-431: def is_email_id_processed_redis(email_id):
-432:     """Back-compat wrapper: delegate to dedup module; returns False on errors or no Redis."""
-433:     rc = globals().get("redis_client")
-434:     return _dedup.is_email_id_processed(
-435:         rc,
-436:         email_id=email_id,
-437:         logger=app.logger,
-438:         processed_ids_key=PROCESSED_EMAIL_IDS_REDIS_KEY,
-439:     )
-440: 
-441: 
-442: def mark_email_id_as_processed_redis(email_id):
-443:     """Back-compat wrapper: delegate to dedup module; returns False without Redis."""
-444:     rc = globals().get("redis_client")
-445:     return _dedup.mark_email_id_processed(
-446:         rc,
-447:         email_id=email_id,
-448:         logger=app.logger,
-449:         processed_ids_key=PROCESSED_EMAIL_IDS_REDIS_KEY,
-450:     )
-451: 
-452: 
+247: # SERVICES INITIALIZATION
+248: # =============================================================================
+249: 
+250: # 5. Runtime Flags Service (Singleton)
+251: try:
+252:     _runtime_flags_service = RuntimeFlagsService.get_instance(
+253:         file_path=settings.RUNTIME_FLAGS_FILE,
+254:         defaults={
+255:             "disable_email_id_dedup": bool(settings.DISABLE_EMAIL_ID_DEDUP),
+256:             "allow_custom_webhook_without_links": bool(settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
+257:         }
+258:     )
+259:     app.logger.info(f"SVC: RuntimeFlagsService initialized (cache_ttl={_runtime_flags_service.get_cache_ttl()}s)")
+260: except Exception as e:
+261:     app.logger.error(f"SVC: Failed to initialize RuntimeFlagsService: {e}")
+262:     _runtime_flags_service = None
+263: 
+264: # 6. Webhook Config Service (Singleton)
+265: try:
+266:     from config import app_config_store
+267:     _webhook_service = WebhookConfigService.get_instance(
+268:         file_path=Path(__file__).parent / "debug" / "webhook_config.json",
+269:         external_store=app_config_store
+270:     )
+271:     app.logger.info(f"SVC: WebhookConfigService initialized (has_url={_webhook_service.has_webhook_url()})")
+272: except Exception as e:
+273:     app.logger.error(f"SVC: Failed to initialize WebhookConfigService: {e}")
+274:     _webhook_service = None
+275: 
+276: 
+277: if not EXPECTED_API_TOKEN:
+278:     app.logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
+279: else:
+280:     app.logger.info(f"CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: '{EXPECTED_API_TOKEN[:5]}...')")
+281: 
+282: # --- Configuration des Webhooks de Présence ---
+283: # Présence: déjà fournie par settings (alias ci-dessus)
+284: 
+285: # --- Email server config validation flag (maintenant via ConfigService) ---
+286: email_config_valid = _config_service.is_email_config_valid()
+287: 
+288: # --- Webhook time window initialization (env -> then optional UI override from disk) ---
+289: try:
+290:     webhook_time_window.initialize_webhook_time_window(
+291:         start_str=(
+292:             os.environ.get("WEBHOOKS_TIME_START")
+293:             or os.environ.get("WEBHOOK_TIME_START")
+294:             or ""
+295:         ),
+296:         end_str=(
+297:             os.environ.get("WEBHOOKS_TIME_END")
+298:             or os.environ.get("WEBHOOK_TIME_END")
+299:             or ""
+300:         ),
+301:     )
+302:     webhook_time_window.reload_time_window_from_disk()
+303: except Exception:
+304:     pass
+305: 
+306: # --- Polling config overrides (optional UI overrides from external store with file fallback) ---
+307: try:
+308:     _poll_cfg_path = settings.POLLING_CONFIG_FILE
+309:     app.logger.info(
+310:         f"CFG POLL(file): path={_poll_cfg_path}; exists={_poll_cfg_path.exists()}"
+311:     )
+312:     _pc = {}
+313:     try:
+314:         _pc = _config_get("polling_config", file_fallback=_poll_cfg_path) or {}
+315:     except Exception:
+316:         _pc = {}
+317:     app.logger.info(
+318:         "CFG POLL(loaded): keys=%s; snippet={active_days=%s,start=%s,end=%s,enable_polling=%s}",
+319:         list(_pc.keys()),
+320:         _pc.get("active_days"),
+321:         _pc.get("active_start_hour"),
+322:         _pc.get("active_end_hour"),
+323:         _pc.get("enable_polling"),
+324:     )
+325:     try:
+326:         app.logger.info(
+327:             "CFG POLL(effective): days=%s; start=%s; end=%s; senders=%s; dedup_monthly_scope=%s; enable_polling=%s; vacation_start=%s; vacation_end=%s",
+328:             _polling_service.get_active_days(),
+329:             _polling_service.get_active_start_hour(),
+330:             _polling_service.get_active_end_hour(),
+331:             len(_polling_service.get_sender_list() or []),
+332:             _polling_service.is_subject_group_dedup_enabled(),
+333:             _polling_service.get_enable_polling(True),
+334:             (_pc.get("vacation_start") if isinstance(_pc, dict) else None),
+335:             (_pc.get("vacation_end") if isinstance(_pc, dict) else None),
+336:         )
+337:     except Exception:
+338:         pass
+339: except Exception:
+340:     pass
+341: 
+342: # --- Dedup constants mapping (from central settings) ---
+343: PROCESSED_EMAIL_IDS_REDIS_KEY = settings.PROCESSED_EMAIL_IDS_REDIS_KEY
+344: PROCESSED_SUBJECT_GROUPS_REDIS_KEY = settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY
+345: SUBJECT_GROUP_REDIS_PREFIX = settings.SUBJECT_GROUP_REDIS_PREFIX
+346: SUBJECT_GROUP_TTL_SECONDS = settings.SUBJECT_GROUP_TTL_SECONDS
+347: 
+348: # Memory fallback set for subject groups when Redis is not available
+349: SUBJECT_GROUPS_MEMORY = set()
+350: 
+351: # 7. Deduplication Service (avec Redis ou fallback mémoire)
+352: try:
+353:     _dedup_service = DeduplicationService(
+354:         redis_client=redis_client,  # None = fallback mémoire automatique
+355:         logger=app.logger,
+356:         config_service=_config_service,
+357:         polling_config_service=_polling_service,
+358:     )
+359:     app.logger.info(f"SVC: DeduplicationService initialized {_dedup_service}")
+360: except Exception as e:
+361:     app.logger.error(f"SVC: Failed to initialize DeduplicationService: {e}")
+362:     _dedup_service = None
+363: 
+364: # --- Fonctions Utilitaires IMAP ---
+365: def create_imap_connection():
+366:     """Wrapper vers email_processing.imap_client.create_imap_connection."""
+367:     return email_imap_client.create_imap_connection(app.logger)
+368: 
+369: 
+370: def close_imap_connection(mail):
+371:     """Wrapper vers email_processing.imap_client.close_imap_connection."""
+372:     return email_imap_client.close_imap_connection(app.logger, mail)
+373: 
+374: 
+375: def generate_email_id(msg_data):
+376:     """Wrapper vers email_processing.imap_client.generate_email_id."""
+377:     return email_imap_client.generate_email_id(msg_data)
+378: 
+379: 
+380: def extract_sender_email(from_header):
+381:     """Wrapper vers email_processing.imap_client.extract_sender_email."""
+382:     return email_imap_client.extract_sender_email(from_header)
+383: 
+384: 
+385: def decode_email_header(header_value):
+386:     """Wrapper vers email_processing.imap_client.decode_email_header_value."""
+387:     return email_imap_client.decode_email_header_value(header_value)
+388: 
+389: 
+390: def mark_email_as_read_imap(mail, email_num):
+391:     """Wrapper vers email_processing.imap_client.mark_email_as_read_imap."""
+392:     return email_imap_client.mark_email_as_read_imap(app.logger, mail, email_num)
+393: 
+394: 
+395: def check_media_solution_pattern(subject, email_content):
+396:     """Compatibility wrapper delegating to email_processing.pattern_matching.
+397: 
+398:     Maintains backward compatibility while centralizing pattern detection.
+399:     """
+400:     try:
+401:         return email_pattern_matching.check_media_solution_pattern(
+402:             subject=subject,
+403:             email_content=email_content,
+404:             tz_for_polling=TZ_FOR_POLLING,
+405:             logger=app.logger,
+406:         )
+407:     except Exception as e:
+408:         try:
+409:             app.logger.error(f"MEDIA_PATTERN_WRAPPER: Exception: {e}")
+410:         except Exception:
+411:             pass
+412:         return {"matches": False, "delivery_time": None}
+413: 
+414: 
+415: def send_makecom_webhook(subject, delivery_time, sender_email, email_id, override_webhook_url: str | None = None, extra_payload: dict | None = None):
+416:     """Délègue l'envoi du webhook Make.com au module email_processing.webhook_sender.
+417: 
+418:     Maintient la compatibilité tout en centralisant la logique d'envoi.
+419:     """
+420:     return email_webhook_sender.send_makecom_webhook(
+421:         subject=subject,
+422:         delivery_time=delivery_time,
+423:         sender_email=sender_email,
+424:         email_id=email_id,
+425:         override_webhook_url=override_webhook_url,
+426:         extra_payload=extra_payload,
+427:         logger=app.logger,
+428:         log_hook=_append_webhook_log,
+429:     )
+430: 
+431: 
+432: # --- Fonctions de Déduplication avec Redis ---
+433: def is_email_id_processed_redis(email_id):
+434:     """Back-compat wrapper: delegate to dedup module; returns False on errors or no Redis."""
+435:     rc = globals().get("redis_client")
+436:     return _dedup.is_email_id_processed(
+437:         rc,
+438:         email_id=email_id,
+439:         logger=app.logger,
+440:         processed_ids_key=PROCESSED_EMAIL_IDS_REDIS_KEY,
+441:     )
+442: 
+443: 
+444: def mark_email_id_as_processed_redis(email_id):
+445:     """Back-compat wrapper: delegate to dedup module; returns False without Redis."""
+446:     rc = globals().get("redis_client")
+447:     return _dedup.mark_email_id_processed(
+448:         rc,
+449:         email_id=email_id,
+450:         logger=app.logger,
+451:         processed_ids_key=PROCESSED_EMAIL_IDS_REDIS_KEY,
+452:     )
 453: 
-454: def generate_subject_group_id(subject: str) -> str:
-455:     """Wrapper vers deduplication.subject_group.generate_subject_group_id."""
-456:     return _gen_subject_group_id(subject)
-457: 
-458: 
-459: def is_subject_group_processed(group_id: str) -> bool:
-460:     """Check subject-group dedup via Redis or memory using the centralized helper."""
-461:     rc = globals().get("redis_client")
-462:     return _dedup.is_subject_group_processed(
-463:         rc,
-464:         group_id=group_id,
-465:         logger=app.logger,
-466:         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
-467:         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
-468:         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
-469:         enable_monthly_scope=_polling_service.is_subject_group_dedup_enabled(),
-470:         tz=TZ_FOR_POLLING,
-471:         memory_set=SUBJECT_GROUPS_MEMORY,
-472:     )
-473: 
-474: 
-475: def mark_subject_group_processed(group_id: str) -> bool:
-476:     """Mark subject-group as processed using centralized helper (Redis or memory)."""
-477:     rc = globals().get("redis_client")
-478:     return _dedup.mark_subject_group_processed(
-479:         rc,
-480:         group_id=group_id,
-481:         logger=app.logger,
-482:         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
-483:         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
-484:         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
-485:         enable_monthly_scope=_polling_service.is_subject_group_dedup_enabled(),
-486:         tz=TZ_FOR_POLLING,
-487:         memory_set=SUBJECT_GROUPS_MEMORY,
-488:     )
-489: 
-490: 
-491:  
-492:  
-493: def check_new_emails_and_trigger_webhook():
-494:     """Delegate to orchestrator entry-point."""
-495:     global SENDER_LIST_FOR_POLLING, ENABLE_SUBJECT_GROUP_DEDUP
-496:     try:
-497:         SENDER_LIST_FOR_POLLING = _polling_service.get_sender_list() or []
-498:     except Exception:
-499:         pass
-500:     try:
-501:         ENABLE_SUBJECT_GROUP_DEDUP = _polling_service.is_subject_group_dedup_enabled()
-502:     except Exception:
-503:         pass
-504:     return email_orchestrator.check_new_emails_and_trigger_webhook()
-505: 
-506: def background_email_poller() -> None:
-507:     """Delegate polling loop to background.polling_thread with injected deps."""
-508:     def _is_ready_to_poll() -> bool:
-509:         return all([email_config_valid, _polling_service.get_sender_list(), WEBHOOK_URL])
-510: 
-511:     def _run_cycle() -> int:
-512:         return check_new_emails_and_trigger_webhook()
-513: 
-514:     def _is_in_vacation(now_dt: datetime) -> bool:
-515:         try:
-516:             return _polling_service.is_in_vacation(now_dt)
-517:         except Exception:
-518:             return False
-519: 
-520:     background_email_poller_loop(
-521:         logger=app.logger,
-522:         tz_for_polling=_polling_service.get_tz(),
-523:         get_active_days=_polling_service.get_active_days,
-524:         get_active_start_hour=_polling_service.get_active_start_hour,
-525:         get_active_end_hour=_polling_service.get_active_end_hour,
-526:         inactive_sleep_seconds=_polling_service.get_inactive_check_interval_s(),
-527:         active_sleep_seconds=_polling_service.get_email_poll_interval_s(),
-528:         is_in_vacation=_is_in_vacation,
-529:         is_ready_to_poll=_is_ready_to_poll,
-530:         run_poll_cycle=_run_cycle,
-531:         max_consecutive_errors=5,
-532:     )
-533: 
-534: 
-535: def make_scenarios_vacation_watcher() -> None:
-536:     """Background watcher that enforces Make scenarios ON/OFF according to
-537:     - UI global toggle enable_polling (persisted via /api/update_polling_config)
-538:     - Vacation window in polling_config (POLLING_VACATION_START/END)
-539: 
-540:     Logic:
-541:     - If enable_polling is False => ensure scenarios are OFF
-542:     - If enable_polling is True and in vacation => ensure scenarios are OFF
-543:     - If enable_polling is True and not in vacation => ensure scenarios are ON
-544: 
-545:     To minimize API calls, apply only on state changes.
-546:     """
-547:     last_applied = None  # None|True|False meaning desired state last set
-548:     interval = max(60, _polling_service.get_inactive_check_interval_s())
-549:     while True:
-550:         try:
-551:             enable_ui = _polling_service.get_enable_polling(True)
-552:             in_vac = False
-553:             try:
-554:                 in_vac = _polling_service.is_in_vacation(None)
-555:             except Exception:
-556:                 in_vac = False
-557:             desired = bool(enable_ui and not in_vac)
-558:             if last_applied is None or desired != last_applied:
-559:                 try:
-560:                     from routes.api_make import toggle_all_scenarios  # local import to avoid cycles
-561:                     res = toggle_all_scenarios(desired, logger=app.logger)
-562:                     app.logger.info(
-563:                         "MAKE_WATCHER: applied desired=%s (enable_ui=%s, in_vacation=%s) results_keys=%s",
-564:                         desired, enable_ui, in_vac, list(res.keys()) if isinstance(res, dict) else 'n/a'
-565:                     )
-566:                 except Exception as e:
-567:                     app.logger.error(f"MAKE_WATCHER: toggle_all_scenarios failed: {e}")
-568:                 last_applied = desired
-569:         except Exception as e:
-570:             try:
-571:                 app.logger.error(f"MAKE_WATCHER: loop error: {e}")
-572:             except Exception:
-573:                 pass
-574:         time.sleep(interval)
-575: 
-576: 
-577: def _start_daemon_thread(target, name: str) -> threading.Thread | None:
-578:     try:
-579:         thread = threading.Thread(target=target, daemon=True, name=name)
-580:         thread.start()
-581:         app.logger.info(f"THREAD: {name} started successfully")
-582:         return thread
-583:     except Exception as e:
-584:         app.logger.error(f"THREAD: Failed to start {name}: {e}", exc_info=True)
-585:         return None
-586: 
-587: 
-588: try:
-589:     # Check legacy disable flag (priority override)
-590:     disable_bg = os.environ.get("DISABLE_BACKGROUND_TASKS", "").strip().lower() in ["1", "true", "yes"]
-591:     enable_bg = getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and not disable_bg
-592:     
-593:     # Log effective config before starting background tasks
-594:     try:
-595:         app.logger.info(
-596:             f"CFG BG: enable_polling(UI)={_polling_service.get_enable_polling(True)}; ENABLE_BACKGROUND_TASKS(env)={getattr(settings, 'ENABLE_BACKGROUND_TASKS', False)}; DISABLE_BACKGROUND_TASKS={disable_bg}"
-597:         )
-598:     except Exception:
-599:         pass
-600:     # Start background poller only if both the environment flag and the persisted
-601:     # UI-controlled switch are enabled. This avoids unexpected background work
-602:     # when the operator intentionally disabled polling from the dashboard.
-603:     if enable_bg and _polling_service.get_enable_polling(True):
-604:         lock_path = getattr(settings, "BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock")
-605:         try:
-606:             if acquire_singleton_lock(lock_path):
-607:                 app.logger.info(
-608:                     f"BG_POLLER: Singleton lock acquired on {lock_path}. Starting background thread."
-609:                 )
-610:                 _bg_email_poller_thread = _start_daemon_thread(background_email_poller, "EmailPoller")
-611:             else:
-612:                 app.logger.info(
-613:                     f"BG_POLLER: Singleton lock NOT acquired on {lock_path}. Background thread will not start."
-614:                 )
-615:         except Exception as e:
-616:             app.logger.error(
-617:                 f"BG_POLLER: Failed to start background thread: {e}", exc_info=True
-618:             )
-619:     else:
-620:         # Clarify which condition prevented starting the poller
-621:         if disable_bg:
-622:             app.logger.info(
-623:                 "BG_POLLER: DISABLE_BACKGROUND_TASKS is set. Background poller not started."
-624:             )
-625:         elif not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
-626:             app.logger.info(
-627:                 "BG_POLLER: ENABLE_BACKGROUND_TASKS is false. Background poller not started."
-628:             )
-629:         elif not _polling_service.get_enable_polling(True):
-630:             app.logger.info(
-631:                 "BG_POLLER: UI 'enable_polling' flag is false. Background poller not started."
-632:             )
-633: except Exception:
-634:     # Defensive: never block app startup because of background thread wiring
-635:     pass
-636: 
-637: try:
-638:     if enable_bg and bool(settings.MAKECOM_API_KEY):
-639:         _make_watcher_thread = _start_daemon_thread(make_scenarios_vacation_watcher, "MakeVacationWatcher")
-640:         if _make_watcher_thread:
-641:             app.logger.info("MAKE_WATCHER: vacation-aware ON/OFF watcher active")
-642:     else:
-643:         if disable_bg:
-644:             app.logger.info("MAKE_WATCHER: not started because DISABLE_BACKGROUND_TASKS is set")
-645:         elif not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
-646:             app.logger.info("MAKE_WATCHER: not started because ENABLE_BACKGROUND_TASKS is false")
-647:         elif not bool(settings.MAKECOM_API_KEY):
-648:             app.logger.info("MAKE_WATCHER: not started because MAKECOM_API_KEY is not configured (avoiding 401 noise)")
-649: except Exception as e:
-650:     app.logger.error(f"MAKE_WATCHER: failed to start thread: {e}")
-651: 
-652: 
+454: 
+455: 
+456: def generate_subject_group_id(subject: str) -> str:
+457:     """Wrapper vers deduplication.subject_group.generate_subject_group_id."""
+458:     return _gen_subject_group_id(subject)
+459: 
+460: 
+461: def is_subject_group_processed(group_id: str) -> bool:
+462:     """Check subject-group dedup via Redis or memory using the centralized helper."""
+463:     rc = globals().get("redis_client")
+464:     return _dedup.is_subject_group_processed(
+465:         rc,
+466:         group_id=group_id,
+467:         logger=app.logger,
+468:         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
+469:         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
+470:         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
+471:         enable_monthly_scope=_polling_service.is_subject_group_dedup_enabled(),
+472:         tz=TZ_FOR_POLLING,
+473:         memory_set=SUBJECT_GROUPS_MEMORY,
+474:     )
+475: 
+476: 
+477: def mark_subject_group_processed(group_id: str) -> bool:
+478:     """Mark subject-group as processed using centralized helper (Redis or memory)."""
+479:     rc = globals().get("redis_client")
+480:     return _dedup.mark_subject_group_processed(
+481:         rc,
+482:         group_id=group_id,
+483:         logger=app.logger,
+484:         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
+485:         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
+486:         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
+487:         enable_monthly_scope=_polling_service.is_subject_group_dedup_enabled(),
+488:         tz=TZ_FOR_POLLING,
+489:         memory_set=SUBJECT_GROUPS_MEMORY,
+490:     )
+491: 
+492: 
+493:  
+494:  
+495: def check_new_emails_and_trigger_webhook():
+496:     """Delegate to orchestrator entry-point."""
+497:     global SENDER_LIST_FOR_POLLING, ENABLE_SUBJECT_GROUP_DEDUP
+498:     try:
+499:         SENDER_LIST_FOR_POLLING = _polling_service.get_sender_list() or []
+500:     except Exception:
+501:         pass
+502:     try:
+503:         ENABLE_SUBJECT_GROUP_DEDUP = _polling_service.is_subject_group_dedup_enabled()
+504:     except Exception:
+505:         pass
+506:     return email_orchestrator.check_new_emails_and_trigger_webhook()
+507: 
+508: def background_email_poller() -> None:
+509:     """Delegate polling loop to background.polling_thread with injected deps."""
+510:     def _is_ready_to_poll() -> bool:
+511:         return all([email_config_valid, _polling_service.get_sender_list(), WEBHOOK_URL])
+512: 
+513:     def _run_cycle() -> int:
+514:         return check_new_emails_and_trigger_webhook()
+515: 
+516:     def _is_in_vacation(now_dt: datetime) -> bool:
+517:         try:
+518:             return _polling_service.is_in_vacation(now_dt)
+519:         except Exception:
+520:             return False
+521: 
+522:     background_email_poller_loop(
+523:         logger=app.logger,
+524:         tz_for_polling=_polling_service.get_tz(),
+525:         get_active_days=_polling_service.get_active_days,
+526:         get_active_start_hour=_polling_service.get_active_start_hour,
+527:         get_active_end_hour=_polling_service.get_active_end_hour,
+528:         inactive_sleep_seconds=_polling_service.get_inactive_check_interval_s(),
+529:         active_sleep_seconds=_polling_service.get_email_poll_interval_s(),
+530:         is_in_vacation=_is_in_vacation,
+531:         is_ready_to_poll=_is_ready_to_poll,
+532:         run_poll_cycle=_run_cycle,
+533:         max_consecutive_errors=5,
+534:     )
+535: 
+536: 
+537: def make_scenarios_vacation_watcher() -> None:
+538:     """Background watcher that enforces Make scenarios ON/OFF according to
+539:     - UI global toggle enable_polling (persisted via /api/update_polling_config)
+540:     - Vacation window in polling_config (POLLING_VACATION_START/END)
+541: 
+542:     Logic:
+543:     - If enable_polling is False => ensure scenarios are OFF
+544:     - If enable_polling is True and in vacation => ensure scenarios are OFF
+545:     - If enable_polling is True and not in vacation => ensure scenarios are ON
+546: 
+547:     To minimize API calls, apply only on state changes.
+548:     """
+549:     last_applied = None  # None|True|False meaning desired state last set
+550:     interval = max(60, _polling_service.get_inactive_check_interval_s())
+551:     while True:
+552:         try:
+553:             enable_ui = _polling_service.get_enable_polling(True)
+554:             in_vac = False
+555:             try:
+556:                 in_vac = _polling_service.is_in_vacation(None)
+557:             except Exception:
+558:                 in_vac = False
+559:             desired = bool(enable_ui and not in_vac)
+560:             if last_applied is None or desired != last_applied:
+561:                 try:
+562:                     from routes.api_make import toggle_all_scenarios  # local import to avoid cycles
+563:                     res = toggle_all_scenarios(desired, logger=app.logger)
+564:                     app.logger.info(
+565:                         "MAKE_WATCHER: applied desired=%s (enable_ui=%s, in_vacation=%s) results_keys=%s",
+566:                         desired, enable_ui, in_vac, list(res.keys()) if isinstance(res, dict) else 'n/a'
+567:                     )
+568:                 except Exception as e:
+569:                     app.logger.error(f"MAKE_WATCHER: toggle_all_scenarios failed: {e}")
+570:                 last_applied = desired
+571:         except Exception as e:
+572:             try:
+573:                 app.logger.error(f"MAKE_WATCHER: loop error: {e}")
+574:             except Exception:
+575:                 pass
+576:         time.sleep(interval)
+577: 
+578: 
+579: def _start_daemon_thread(target, name: str) -> threading.Thread | None:
+580:     try:
+581:         thread = threading.Thread(target=target, daemon=True, name=name)
+582:         thread.start()
+583:         app.logger.info(f"THREAD: {name} started successfully")
+584:         return thread
+585:     except Exception as e:
+586:         app.logger.error(f"THREAD: Failed to start {name}: {e}", exc_info=True)
+587:         return None
+588: 
+589: 
+590: try:
+591:     # Check legacy disable flag (priority override)
+592:     disable_bg = os.environ.get("DISABLE_BACKGROUND_TASKS", "").strip().lower() in ["1", "true", "yes"]
+593:     enable_bg = getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and not disable_bg
+594:     
+595:     # Log effective config before starting background tasks
+596:     try:
+597:         app.logger.info(
+598:             f"CFG BG: enable_polling(UI)={_polling_service.get_enable_polling(True)}; ENABLE_BACKGROUND_TASKS(env)={getattr(settings, 'ENABLE_BACKGROUND_TASKS', False)}; DISABLE_BACKGROUND_TASKS={disable_bg}"
+599:         )
+600:     except Exception:
+601:         pass
+602:     # Start background poller only if both the environment flag and the persisted
+603:     # UI-controlled switch are enabled. This avoids unexpected background work
+604:     # when the operator intentionally disabled polling from the dashboard.
+605:     if enable_bg and _polling_service.get_enable_polling(True):
+606:         lock_path = getattr(settings, "BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock")
+607:         try:
+608:             if acquire_singleton_lock(lock_path):
+609:                 app.logger.info(
+610:                     f"BG_POLLER: Singleton lock acquired on {lock_path}. Starting background thread."
+611:                 )
+612:                 _bg_email_poller_thread = _start_daemon_thread(background_email_poller, "EmailPoller")
+613:             else:
+614:                 app.logger.info(
+615:                     f"BG_POLLER: Singleton lock NOT acquired on {lock_path}. Background thread will not start."
+616:                 )
+617:         except Exception as e:
+618:             app.logger.error(
+619:                 f"BG_POLLER: Failed to start background thread: {e}", exc_info=True
+620:             )
+621:     else:
+622:         # Clarify which condition prevented starting the poller
+623:         if disable_bg:
+624:             app.logger.info(
+625:                 "BG_POLLER: DISABLE_BACKGROUND_TASKS is set. Background poller not started."
+626:             )
+627:         elif not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
+628:             app.logger.info(
+629:                 "BG_POLLER: ENABLE_BACKGROUND_TASKS is false. Background poller not started."
+630:             )
+631:         elif not _polling_service.get_enable_polling(True):
+632:             app.logger.info(
+633:                 "BG_POLLER: UI 'enable_polling' flag is false. Background poller not started."
+634:             )
+635: except Exception:
+636:     # Defensive: never block app startup because of background thread wiring
+637:     pass
+638: 
+639: try:
+640:     if enable_bg and bool(settings.MAKECOM_API_KEY):
+641:         _make_watcher_thread = _start_daemon_thread(make_scenarios_vacation_watcher, "MakeVacationWatcher")
+642:         if _make_watcher_thread:
+643:             app.logger.info("MAKE_WATCHER: vacation-aware ON/OFF watcher active")
+644:     else:
+645:         if disable_bg:
+646:             app.logger.info("MAKE_WATCHER: not started because DISABLE_BACKGROUND_TASKS is set")
+647:         elif not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
+648:             app.logger.info("MAKE_WATCHER: not started because ENABLE_BACKGROUND_TASKS is false")
+649:         elif not bool(settings.MAKECOM_API_KEY):
+650:             app.logger.info("MAKE_WATCHER: not started because MAKECOM_API_KEY is not configured (avoiding 401 noise)")
+651: except Exception as e:
+652:     app.logger.error(f"MAKE_WATCHER: failed to start thread: {e}")
 653: 
-654: WEBHOOK_LOGS_FILE = Path(__file__).resolve().parent / "debug" / "webhook_logs.json"
-655: WEBHOOK_LOGS_REDIS_KEY = "r:ss:webhook_logs:v1"  # Redis list, each item is JSON string
-656: 
-657: # --- Processing Preferences (Filters, Reliability, Rate limiting) ---
-658: PROCESSING_PREFS_FILE = Path(__file__).resolve().parent / "debug" / "processing_prefs.json"
-659: PROCESSING_PREFS_REDIS_KEY = "r:ss:processing_prefs:v1"
-660: 
-661: 
-662: try:
-663:     PROCESSING_PREFS  # noqa: F401
-664: except NameError:
-665:     PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS.copy()
-666: 
-667: 
-668: def _load_processing_prefs() -> dict:
-669:     """Charge les préférences via app_config_store (Redis-first, fallback fichier)."""
-670:     try:
-671:         data = _config_get("processing_prefs", file_fallback=PROCESSING_PREFS_FILE) or {}
-672:     except Exception:
-673:         data = {}
-674: 
-675:     if isinstance(data, dict):
-676:         return {**_DEFAULT_PROCESSING_PREFS, **data}
-677:     return _DEFAULT_PROCESSING_PREFS.copy()
-678: 
-679: 
-680: def _save_processing_prefs(prefs: dict) -> bool:
-681:     """Sauvegarde via app_config_store (Redis-first, fallback fichier)."""
-682:     try:
-683:         return bool(_config_set("processing_prefs", prefs, file_fallback=PROCESSING_PREFS_FILE))
-684:     except Exception:
-685:         return False
-686: 
-687: PROCESSING_PREFS = _load_processing_prefs()
+654: 
+655: 
+656: WEBHOOK_LOGS_FILE = Path(__file__).resolve().parent / "debug" / "webhook_logs.json"
+657: WEBHOOK_LOGS_REDIS_KEY = "r:ss:webhook_logs:v1"  # Redis list, each item is JSON string
+658: 
+659: # --- Processing Preferences (Filters, Reliability, Rate limiting) ---
+660: PROCESSING_PREFS_FILE = Path(__file__).resolve().parent / "debug" / "processing_prefs.json"
+661: PROCESSING_PREFS_REDIS_KEY = "r:ss:processing_prefs:v1"
+662: 
+663: 
+664: try:
+665:     PROCESSING_PREFS  # noqa: F401
+666: except NameError:
+667:     PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS.copy()
+668: 
+669: 
+670: def _load_processing_prefs() -> dict:
+671:     """Charge les préférences via app_config_store (Redis-first, fallback fichier)."""
+672:     try:
+673:         data = _config_get("processing_prefs", file_fallback=PROCESSING_PREFS_FILE) or {}
+674:     except Exception:
+675:         data = {}
+676: 
+677:     if isinstance(data, dict):
+678:         return {**_DEFAULT_PROCESSING_PREFS, **data}
+679:     return _DEFAULT_PROCESSING_PREFS.copy()
+680: 
+681: 
+682: def _save_processing_prefs(prefs: dict) -> bool:
+683:     """Sauvegarde via app_config_store (Redis-first, fallback fichier)."""
+684:     try:
+685:         return bool(_config_set("processing_prefs", prefs, file_fallback=PROCESSING_PREFS_FILE))
+686:     except Exception:
+687:         return False
 688: 
-689: def _log_webhook_config_startup():
-690:     try:
-691:         # Préférer le service si disponible, sinon fallback sur chargement direct
-692:         config = None
-693:         if _webhook_service is not None:
-694:             try:
-695:                 config = _webhook_service.get_all_config()
-696:             except Exception:
-697:                 pass
-698:         
-699:         if config is None:
-700:             from routes.api_webhooks import _load_webhook_config
-701:             config = _load_webhook_config()
-702:         
-703:         if not config:
-704:             app.logger.info("CFG WEBHOOK_CONFIG: Aucune configuration webhook trouvée (fichier vide ou inexistant)")
-705:             return
-706:             
-707:         # Liste des clés à logger avec des valeurs par défaut si absentes
-708:         keys_to_log = [
-709:             'webhook_ssl_verify',
-710:             'webhook_sending_enabled',
-711:             'webhook_time_start',
-712:             'webhook_time_end',
-713:             'global_time_start',
-714:             'global_time_end'
-715:         ]
-716:         
-717:         # Log chaque valeur individuellement pour une meilleure lisibilité
-718:         for key in keys_to_log:
-719:             value = config.get(key, 'non défini')
-720:             app.logger.info("CFG WEBHOOK_CONFIG: %s=%s", key, value)
-721:             
-722:     except Exception as e:
-723:         app.logger.warning("CFG WEBHOOK_CONFIG: Erreur lors de la lecture de la configuration: %s", str(e))
-724: 
-725: _log_webhook_config_startup()
+689: PROCESSING_PREFS = _load_processing_prefs()
+690: 
+691: def _log_webhook_config_startup():
+692:     try:
+693:         # Préférer le service si disponible, sinon fallback sur chargement direct
+694:         config = None
+695:         if _webhook_service is not None:
+696:             try:
+697:                 config = _webhook_service.get_all_config()
+698:             except Exception:
+699:                 pass
+700:         
+701:         if config is None:
+702:             from routes.api_webhooks import _load_webhook_config
+703:             config = _load_webhook_config()
+704:         
+705:         if not config:
+706:             app.logger.info("CFG WEBHOOK_CONFIG: Aucune configuration webhook trouvée (fichier vide ou inexistant)")
+707:             return
+708:             
+709:         # Liste des clés à logger avec des valeurs par défaut si absentes
+710:         keys_to_log = [
+711:             'webhook_ssl_verify',
+712:             'webhook_sending_enabled',
+713:             'webhook_time_start',
+714:             'webhook_time_end',
+715:             'global_time_start',
+716:             'global_time_end'
+717:         ]
+718:         
+719:         # Log chaque valeur individuellement pour une meilleure lisibilité
+720:         for key in keys_to_log:
+721:             value = config.get(key, 'non défini')
+722:             app.logger.info("CFG WEBHOOK_CONFIG: %s=%s", key, value)
+723:             
+724:     except Exception as e:
+725:         app.logger.warning("CFG WEBHOOK_CONFIG: Erreur lors de la lecture de la configuration: %s", str(e))
 726: 
-727: try:
-728:     app.logger.info(
-729:         "CFG CUSTOM_WEBHOOK: WEBHOOK_URL configured=%s value=%s",
-730:         bool(WEBHOOK_URL),
-731:         (WEBHOOK_URL[:80] if WEBHOOK_URL else ""),
-732:     )
-733:     app.logger.info(
-734:         "CFG PROCESSING_PREFS: mirror_media_to_custom=%s webhook_timeout_sec=%s",
-735:         bool(PROCESSING_PREFS.get("mirror_media_to_custom")),
-736:         PROCESSING_PREFS.get("webhook_timeout_sec"),
-737:     )
-738: except Exception:
-739:     pass
-740: 
-741: WEBHOOK_SEND_EVENTS = deque()
+727: _log_webhook_config_startup()
+728: 
+729: try:
+730:     app.logger.info(
+731:         "CFG CUSTOM_WEBHOOK: WEBHOOK_URL configured=%s value=%s",
+732:         bool(WEBHOOK_URL),
+733:         (WEBHOOK_URL[:80] if WEBHOOK_URL else ""),
+734:     )
+735:     app.logger.info(
+736:         "CFG PROCESSING_PREFS: mirror_media_to_custom=%s webhook_timeout_sec=%s",
+737:         bool(PROCESSING_PREFS.get("mirror_media_to_custom")),
+738:         PROCESSING_PREFS.get("webhook_timeout_sec"),
+739:     )
+740: except Exception:
+741:     pass
 742: 
-743: def _rate_limit_allow_send() -> bool:
-744:     try:
-745:         limit = int(PROCESSING_PREFS.get("rate_limit_per_hour") or 0)
-746:     except Exception:
-747:         limit = 0
-748:     return _rate_prune_and_allow(WEBHOOK_SEND_EVENTS, limit)
-749: 
-750: 
-751: def _record_send_event():
-752:     _rate_record_event(WEBHOOK_SEND_EVENTS)
-753: 
-754: 
-755: def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
-756:     """Valide via module preferences en partant des valeurs courantes comme base."""
-757:     base = dict(PROCESSING_PREFS)
-758:     ok, msg, out = _processing_prefs.validate_processing_prefs(payload, base)
-759:     return ok, msg, out
-760: 
-761: 
-762: def _append_webhook_log(log_entry: dict):
-763:     """Ajoute une entrée de log webhook (Redis si dispo, sinon fichier JSON).
-764:     Délègue à app_logging.webhook_logger pour centraliser la logique. Conserve au plus 500 entrées."""
-765:     try:
-766:         rc = globals().get("redis_client")
-767:     except Exception:
-768:         rc = None
-769:     _append_webhook_log_helper(
-770:         log_entry,
-771:         redis_client=rc,
-772:         logger=app.logger,
-773:         file_path=WEBHOOK_LOGS_FILE,
-774:         redis_list_key=WEBHOOK_LOGS_REDIS_KEY,
-775:         max_entries=500,
-776:     )
+743: WEBHOOK_SEND_EVENTS = deque()
+744: 
+745: def _rate_limit_allow_send() -> bool:
+746:     try:
+747:         limit = int(PROCESSING_PREFS.get("rate_limit_per_hour") or 0)
+748:     except Exception:
+749:         limit = 0
+750:     return _rate_prune_and_allow(WEBHOOK_SEND_EVENTS, limit)
+751: 
+752: 
+753: def _record_send_event():
+754:     _rate_record_event(WEBHOOK_SEND_EVENTS)
+755: 
+756: 
+757: def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
+758:     """Valide via module preferences en partant des valeurs courantes comme base."""
+759:     base = dict(PROCESSING_PREFS)
+760:     ok, msg, out = _processing_prefs.validate_processing_prefs(payload, base)
+761:     return ok, msg, out
+762: 
+763: 
+764: def _append_webhook_log(log_entry: dict):
+765:     """Ajoute une entrée de log webhook (Redis si dispo, sinon fichier JSON).
+766:     Délègue à app_logging.webhook_logger pour centraliser la logique. Conserve au plus 500 entrées."""
+767:     try:
+768:         rc = globals().get("redis_client")
+769:     except Exception:
+770:         rc = None
+771:     _append_webhook_log_helper(
+772:         log_entry,
+773:         redis_client=rc,
+774:         logger=app.logger,
+775:         file_path=WEBHOOK_LOGS_FILE,
+776:         redis_list_key=WEBHOOK_LOGS_REDIS_KEY,
+777:         max_entries=500,
+778:     )
 ````
 
 ## File: dashboard.html

@@ -23,6 +23,21 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-02-04 14:30:00] - Suppression section "📊 Monitoring & Métriques (24h)" du dashboard
+- **Objectif** : Supprimer la section monitoring de l'onglet "Vue d'ensemble" selon la demande utilisateur.
+- **Actions réalisées** :
+  1. **HTML dashboard.html** : Suppression complète de la section "📊 Monitoring & Métriques (24h)" (lignes 380-396) incluant le toggle, les métriques (Emails traités, Webhooks envoyés, Erreurs, Taux de succès) et le mini-graphique Canvas.
+  2. **JavaScript dashboard.js** : Commentarisation de tout le code lié aux métriques :
+     - Event listener du toggle enableMetricsToggle
+     - Déclenchement automatique dans loadInitialData()
+     - Fonctions computeAndRenderMetrics(), clearMetrics(), setMetric(), renderMiniChart()
+     - Gestion des préférences locales (loadLocalPreferences/saveLocalPreferences)
+  3. **Documentation docs/features/frontend_dashboard_features.md** : Suppression de la section 6 "Métriques et monitoring local" et renumérotation des sections suivantes.
+- **Résultat** : La section monitoring a été complètement retirée du dashboard, l'onglet "Vue d'ensemble" ne contient plus que l'historique des webhooks. Tous les code JavaScript associé est préservé mais désactivé pour éviter les erreurs console.
+- **Fichiers modifiés** : dashboard.html (suppression section), static/dashboard.js (commentarisation code métriques), docs/features/frontend_dashboard_features.md (suppression section documentation).
+- **Tests** : 243/244 tests passent (1 échec préexistant dans api_ingress.py, non lié à cette modification).
+- **Statut** : Terminé avec succès, section monitoring supprimée comme demandé.
+
 [2026-02-03 15:30:00] - Implémentation Gmail Push Ingestion Endpoint Terminée
 - **Objectif** : Implémenter un nouveau endpoint `POST /api/ingress/gmail` pour permettre à Gmail Apps Script de pousser les emails directement à l'application, contournant les limitations du polling IMAP.
 - **Actions réalisées** :
