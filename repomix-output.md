@@ -56,7 +56,6 @@ background/
 config/
   __init__.py
   app_config_store.py
-  polling_config.py
   runtime_flags.py
   settings.py
   webhook_config.py
@@ -82,7 +81,6 @@ routes/
   api_ingress.py
   api_logs.py
   api_make.py
-  api_polling.py
   api_processing.py
   api_routing_rules.py
   api_test.py
@@ -303,27 +301,6 @@ requirements.txt
 132:                     "BG_POLLER: Max consecutive errors reached. Stopping thread."
 133:                 )
 134:                 break
-````
-
-## File: config/__init__.py
-````python
- 1: """
- 2: config
- 3: ~~~~~~
- 4: 
- 5: Module de configuration centralisée pour render_signal_server.
- 6: Regroupe toutes les variables d'environnement, constantes de référence,
- 7: et configurations persistées pour améliorer la maintenabilité.
- 8: 
- 9: Structure:
-10: - settings.py: Variables d'environnement et constantes de référence
-11: - runtime_flags.py: Flags de debug persistés
-12: - webhook_config.py: Configuration des webhooks (load/save)
-13: - polling_config.py: Configuration du polling IMAP (load/save)
-14: """
-15: 
-16: # Les imports seront ajoutés progressivement au fur et à mesure de l'extraction
-17: __all__ = []
 ````
 
 ## File: config/runtime_flags.py
@@ -1598,6 +1575,26 @@ requirements.txt
 76:     return None
 ````
 
+## File: config/__init__.py
+````python
+ 1: """
+ 2: config
+ 3: ~~~~~~
+ 4: 
+ 5: Module de configuration centralisée pour render_signal_server.
+ 6: Regroupe toutes les variables d'environnement, constantes de référence,
+ 7: et configurations persistées pour améliorer la maintenabilité.
+ 8: 
+ 9: Structure:
+10: - settings.py: Variables d'environnement et constantes de référence
+11: - runtime_flags.py: Flags de debug persistés
+12: - webhook_config.py: Configuration des webhooks (load/save)
+13: """
+14: 
+15: # Les imports seront ajoutés progressivement au fur et à mesure de l'extraction
+16: __all__ = []
+````
+
 ## File: config/app_config_store.py
 ````python
   1: """
@@ -2591,53 +2588,6 @@ requirements.txt
 130:         return jsonify({"success": False, "message": "Erreur interne."}), 500
 ````
 
-## File: routes/api_polling.py
-````python
- 1: from __future__ import annotations
- 2: 
- 3: from flask import Blueprint, jsonify, request
- 4: import json
- 5: from flask_login import login_required
- 6: 
- 7: from config.settings import WEBHOOK_CONFIG_FILE as _WEBHOOK_CONFIG_FILE
- 8: 
- 9: bp = Blueprint("api_polling", __name__, url_prefix="/api/polling")
-10: 
-11: # Legacy compatibility: some tests patch this symbol directly.
-12: # We expose it to keep tests working without reintroducing heavy logic.
-13: WEBHOOK_CONFIG_FILE = _WEBHOOK_CONFIG_FILE
-14: 
-15: 
-16: @bp.route("/toggle", methods=["POST"])
-17: @login_required
-18: def toggle_polling():
-19:     """Minimal legacy-compatible endpoint to toggle polling.
-20: 
-21:     Notes:
-22:     - Protected by login to satisfy auth tests (302/401 when unauthenticated).
-23:     - Returns the requested state without persisting complex config to disk.
-24:     - Tests may patch WEBHOOK_CONFIG_FILE; we keep the symbol available.
-25:     """
-26:     try:
-27:         payload = request.get_json(silent=True) or {}
-28:         enable = bool(payload.get("enable"))
-29:         # Persist minimal state expected by tests
-30:         try:
-31:             WEBHOOK_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-32:             with open(WEBHOOK_CONFIG_FILE, 'w', encoding='utf-8') as f:
-33:                 json.dump({"polling_enabled": enable}, f)
-34:         except Exception:
-35:             # Non-fatal: continue to return success payload even if persistence fails
-36:             pass
-37:         return jsonify({
-38:             "success": True,
-39:             "polling_enabled": enable,
-40:             "message": "Configuration polling mise à jour. Un redémarrage peut être nécessaire.",
-41:         }), 200
-42:     except Exception:
-43:         return jsonify({"success": False, "message": "Erreur interne"}), 500
-````
-
 ## File: routes/api_processing.py
 ````python
   1: from __future__ import annotations
@@ -2901,644 +2851,6 @@ requirements.txt
 ## File: scripts/__init__.py
 ````python
 1: """Utility scripts package for render_signal_server."""
-````
-
-## File: services/config_service.py
-````python
-  1: """
-  2: services.config_service
-  3: ~~~~~~~~~~~~~~~~~~~~~~~
-  4: 
-  5: Service centralisé pour accéder à la configuration applicative.
-  6: 
-  7: Ce service remplace l'accès direct aux variables de config.settings et fournit:
-  8: - Validation des valeurs de configuration
-  9: - Transformation et normalisation
- 10: - Interface stable indépendante de l'implémentation sous-jacente
- 11: - Méthodes typées pour accès sécurisé
- 12: 
- 13: Usage:
- 14:     from services import ConfigService
- 15:     
- 16:     config = ConfigService()
- 17:     
- 18:     if config.is_email_config_valid():
- 19:         email_cfg = config.get_email_config()
- 20:         # ... use email_cfg
- 21: """
- 22: 
- 23: from __future__ import annotations
- 24: from typing import Optional
- 25: 
- 26: 
- 27: class ConfigService:
- 28:     """Service centralisé pour accéder à la configuration applicative.
- 29:     
- 30:     Attributes:
- 31:         _settings: Module de configuration (config.settings par défaut)
- 32:     """
- 33:     
- 34:     def __init__(self, settings_module=None):
- 35:         """Initialise le service avec un module de configuration.
- 36:         
- 37:         Args:
- 38:             settings_module: Module contenant la configuration (None = import dynamique)
- 39:         """
- 40:         if settings_module:
- 41:             self._settings = settings_module
- 42:         else:
- 43:             from config import settings
- 44:             self._settings = settings
- 45:     
- 46:     # Configuration IMAP / Email
- 47:     
- 48:     def get_email_config(self) -> dict:
- 49:         """Retourne la configuration email complète et validée.
- 50:         
- 51:         Returns:
- 52:             dict avec clés: address, password, server, port, use_ssl
- 53:         """
- 54:         return {
- 55:             "address": self._settings.EMAIL_ADDRESS,
- 56:             "password": self._settings.EMAIL_PASSWORD,
- 57:             "server": self._settings.IMAP_SERVER,
- 58:             "port": self._settings.IMAP_PORT,
- 59:             "use_ssl": self._settings.IMAP_USE_SSL,
- 60:         }
- 61:     
- 62:     def is_email_config_valid(self) -> bool:
- 63:         """Vérifie si la configuration email est complète et valide.
- 64:         
- 65:         Returns:
- 66:             True si tous les champs requis sont présents
- 67:         """
- 68:         return bool(
- 69:             self._settings.EMAIL_ADDRESS
- 70:             and self._settings.EMAIL_PASSWORD
- 71:             and self._settings.IMAP_SERVER
- 72:         )
- 73:     
- 74:     def get_email_address(self) -> str:
- 75:         return self._settings.EMAIL_ADDRESS
- 76:     
- 77:     def get_email_password(self) -> str:
- 78:         return self._settings.EMAIL_PASSWORD
- 79:     
- 80:     def get_imap_server(self) -> str:
- 81:         return self._settings.IMAP_SERVER
- 82:     
- 83:     def get_imap_port(self) -> int:
- 84:         return self._settings.IMAP_PORT
- 85:     
- 86:     def get_imap_use_ssl(self) -> bool:
- 87:         return self._settings.IMAP_USE_SSL
- 88:     
- 89:     # Configuration Webhooks
- 90:     
- 91:     def get_webhook_url(self) -> str:
- 92:         return self._settings.WEBHOOK_URL
- 93:     
- 94:     def get_webhook_ssl_verify(self) -> bool:
- 95:         return self._settings.WEBHOOK_SSL_VERIFY
- 96:     
- 97:     def has_webhook_url(self) -> bool:
- 98:         return bool(self._settings.WEBHOOK_URL)
- 99:     
-100:     # Configuration API / Tokens
-101:     
-102:     def get_api_token(self) -> str:
-103:         return self._settings.EXPECTED_API_TOKEN or ""
-104:     
-105:     def verify_api_token(self, token: str) -> bool:
-106:         """Vérifie si un token correspond au token API configuré.
-107:         
-108:         Args:
-109:             token: Token à vérifier
-110:             
-111:         Returns:
-112:             True si le token est valide
-113:         """
-114:         expected = self.get_api_token()
-115:         if not expected:
-116:             return False
-117:         return token == expected
-118:     
-119:     def has_api_token(self) -> bool:
-120:         return bool(self._settings.EXPECTED_API_TOKEN)
-121:     
-122:     def get_test_api_key(self) -> str:
-123:         import os
-124:         return os.environ.get("TEST_API_KEY", "")
-125:     
-126:     def verify_test_api_key(self, key: str) -> bool:
-127:         expected = self.get_test_api_key()
-128:         if not expected:
-129:             return False
-130:         return key == expected
-131:     
-132:     # Configuration Render (Déploiement)
-133:     
-134:     def get_render_config(self) -> dict:
-135:         """Retourne la configuration Render pour déploiement.
-136:         
-137:         Returns:
-138:             dict avec api_key, service_id, deploy_hook_url, clear_cache
-139:         """
-140:         return {
-141:             "api_key": self._settings.RENDER_API_KEY,
-142:             "service_id": self._settings.RENDER_SERVICE_ID,
-143:             "deploy_hook_url": self._settings.RENDER_DEPLOY_HOOK_URL,
-144:             "clear_cache": self._settings.RENDER_DEPLOY_CLEAR_CACHE,
-145:         }
-146:     
-147:     def has_render_config(self) -> bool:
-148:         return bool(
-149:             self._settings.RENDER_API_KEY and self._settings.RENDER_SERVICE_ID
-150:         ) or bool(self._settings.RENDER_DEPLOY_HOOK_URL)
-151:     
-152:     # Présence: feature removed
-153:     
-154:     # Configuration Authentification Dashboard
-155:     
-156:     def get_dashboard_user(self) -> str:
-157:         return self._settings.TRIGGER_PAGE_USER
-158:     
-159:     def get_dashboard_password(self) -> str:
-160:         return self._settings.TRIGGER_PAGE_PASSWORD
-161:     
-162:     def verify_dashboard_credentials(self, username: str, password: str) -> bool:
-163:         """Vérifie les credentials du dashboard.
-164:         
-165:         Args:
-166:             username: Nom d'utilisateur
-167:             password: Mot de passe
-168:             
-169:         Returns:
-170:             True si credentials valides
-171:         """
-172:         return (
-173:             username == self._settings.TRIGGER_PAGE_USER
-174:             and password == self._settings.TRIGGER_PAGE_PASSWORD
-175:         )
-176:     
-177:     # Configuration Déduplication
-178:     
-179:     def is_email_id_dedup_disabled(self) -> bool:
-180:         return bool(self._settings.DISABLE_EMAIL_ID_DEDUP)
-181:     
-182:     def is_subject_group_dedup_enabled(self) -> bool:
-183:         return bool(self._settings.ENABLE_SUBJECT_GROUP_DEDUP)
-184:     
-185:     def get_dedup_redis_keys(self) -> dict:
-186:         """Retourne les clés Redis pour la déduplication.
-187:         
-188:         Returns:
-189:             dict avec email_ids_key, subject_groups_key, subject_group_prefix
-190:         """
-191:         return {
-192:             "email_ids_key": self._settings.PROCESSED_EMAIL_IDS_REDIS_KEY,
-193:             "subject_groups_key": self._settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
-194:             "subject_group_prefix": self._settings.SUBJECT_GROUP_REDIS_PREFIX,
-195:             "subject_group_ttl": self._settings.SUBJECT_GROUP_TTL_SECONDS,
-196:         }
-197:     
-198:     # Configuration Make.com
-199:     
-200:     def get_makecom_api_key(self) -> str:
-201:         return self._settings.MAKECOM_API_KEY or ""
-202:     
-203:     def has_makecom_api_key(self) -> bool:
-204:         return bool(self._settings.MAKECOM_API_KEY)
-205:     
-206:     # Configuration Tâches de Fond
-207:     
-208:     def is_background_tasks_enabled(self) -> bool:
-209:         return bool(getattr(self._settings, "ENABLE_BACKGROUND_TASKS", False))
-210:     
-211:     def get_bg_poller_lock_file(self) -> str:
-212:         return getattr(
-213:             self._settings,
-214:             "BG_POLLER_LOCK_FILE",
-215:             "/tmp/render_signal_server_email_poller.lock",
-216:         )
-217:     
-218:     # Chemins de Fichiers
-219:     
-220:     def get_runtime_flags_file(self):
-221:         return self._settings.RUNTIME_FLAGS_FILE
-222:     
-223:     def get_polling_config_file(self):
-224:         return self._settings.POLLING_CONFIG_FILE
-225:     
-226:     def get_trigger_signal_file(self):
-227:         return self._settings.TRIGGER_SIGNAL_FILE
-228:     
-229:     # Méthodes Utilitaires
-230:     
-231:     def get_raw_settings(self):
-232:         return self._settings
-233:     
-234:     def __repr__(self) -> str:
-235:         return f"<ConfigService(email_valid={self.is_email_config_valid()}, webhook={self.has_webhook_url()})>"
-````
-
-## File: services/deduplication_service.py
-````python
-  1: """
-  2: services.deduplication_service
-  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  4: 
-  5: Service pour la déduplication d'emails avec Redis et fallback mémoire.
-  6: 
-  7: Features:
-  8: - Déduplication par email ID (identifiant unique de l'email)
-  9: - Déduplication par subject group (regroupement par sujet)
- 10: - Fallback automatique en mémoire si Redis indisponible
- 11: - Scoping mensuel optionnel pour subject groups
- 12: - Thread-safe via design immutable
- 13: 
- 14: Usage:
- 15:     from services import DeduplicationService, ConfigService
- 16:     from config.polling_config import PollingConfigService
- 17:     
- 18:     config = ConfigService()
- 19:     polling_config = PollingConfigService()
- 20:     
- 21:     dedup = DeduplicationService(
- 22:         redis_client=redis_client,
- 23:         logger=app.logger,
- 24:         config_service=config,
- 25:         polling_config_service=polling_config
- 26:     )
- 27:     
- 28:     if not dedup.is_email_processed(email_id):
- 29:         dedup.mark_email_processed(email_id)
- 30:     
- 31:     if not dedup.is_subject_group_processed(subject):
- 32:         dedup.mark_subject_group_processed(subject)
- 33: """
- 34: 
- 35: from __future__ import annotations
- 36: 
- 37: import hashlib
- 38: import re
- 39: from datetime import datetime
- 40: from typing import Optional, Set, TYPE_CHECKING
- 41: 
- 42: if TYPE_CHECKING:
- 43:     from services.config_service import ConfigService
- 44:     from config.polling_config import PollingConfigService
- 45: 
- 46: from utils.text_helpers import (
- 47:     normalize_no_accents_lower_trim,
- 48:     strip_leading_reply_prefixes,
- 49: )
- 50: 
- 51: 
- 52: class DeduplicationService:
- 53:     """Service pour la déduplication d'emails et subject groups.
- 54:     
- 55:     Attributes:
- 56:         _redis: Client Redis optionnel
- 57:         _logger: Logger pour diagnostics
- 58:         _config: ConfigService pour accès à la configuration
- 59:         _polling_config: PollingConfigService pour timezone
- 60:         _processed_email_ids: Set en mémoire (fallback)
- 61:         _processed_subject_groups: Set en mémoire (fallback)
- 62:     """
- 63:     
- 64:     def __init__(
- 65:         self,
- 66:         redis_client=None,
- 67:         logger=None,
- 68:         config_service: Optional[ConfigService] = None,
- 69:         polling_config_service: Optional[PollingConfigService] = None,
- 70:     ):
- 71:         """Initialise le service de déduplication.
- 72:         
- 73:         Args:
- 74:             redis_client: Client Redis optionnel (None = fallback mémoire)
- 75:             logger: Logger optionnel pour diagnostics
- 76:             config_service: ConfigService pour configuration
- 77:             polling_config_service: PollingConfigService pour timezone
- 78:         """
- 79:         self._redis = redis_client
- 80:         self._logger = logger
- 81:         self._config = config_service
- 82:         self._polling_config = polling_config_service
- 83:         
- 84:         # Fallbacks en mémoire (process-local uniquement)
- 85:         self._processed_email_ids: Set[str] = set()
- 86:         self._processed_subject_groups: Set[str] = set()
- 87:     
- 88:     # =========================================================================
- 89:     # Déduplication Email ID
- 90:     # =========================================================================
- 91:     
- 92:     def is_email_processed(self, email_id: str) -> bool:
- 93:         """Vérifie si un email a déjà été traité.
- 94:         
- 95:         Args:
- 96:             email_id: Identifiant unique de l'email
- 97:             
- 98:         Returns:
- 99:             True si déjà traité, False sinon
-100:         """
-101:         if not email_id:
-102:             return False
-103:         
-104:         if self.is_email_dedup_disabled():
-105:             return False
-106:         
-107:         # Essayer Redis d'abord
-108:         if self._use_redis():
-109:             try:
-110:                 keys_config = self._get_dedup_keys()
-111:                 key = keys_config["email_ids_key"]
-112:                 return bool(self._redis.sismember(key, email_id))
-113:             except Exception as e:
-114:                 if self._logger:
-115:                     self._logger.error(
-116:                         f"DEDUP: Error checking email ID '{email_id}': {e}. "
-117:                         f"Assuming NOT processed."
-118:                     )
-119:                 # Fall through to memory
-120:         
-121:         # Fallback mémoire
-122:         return email_id in self._processed_email_ids
-123:     
-124:     def mark_email_processed(self, email_id: str) -> bool:
-125:         """Marque un email comme traité.
-126:         
-127:         Args:
-128:             email_id: Identifiant unique de l'email
-129:             
-130:         Returns:
-131:             True si marqué avec succès
-132:         """
-133:         if not email_id:
-134:             return False
-135:         
-136:         # Si dédup désactivée, ne rien faire
-137:         if self.is_email_dedup_disabled():
-138:             return True  # Considéré comme succès (pas d'erreur)
-139:         
-140:         # Essayer Redis d'abord
-141:         if self._use_redis():
-142:             try:
-143:                 keys_config = self._get_dedup_keys()
-144:                 key = keys_config["email_ids_key"]
-145:                 self._redis.sadd(key, email_id)
-146:                 return True
-147:             except Exception as e:
-148:                 if self._logger:
-149:                     self._logger.error(f"DEDUP: Error marking email ID '{email_id}': {e}")
-150:                 # Fall through to memory
-151:         
-152:         # Fallback mémoire
-153:         self._processed_email_ids.add(email_id)
-154:         return True
-155:     
-156:     # =========================================================================
-157:     # Déduplication Subject Group
-158:     # =========================================================================
-159:     
-160:     def is_subject_group_processed(self, subject: str) -> bool:
-161:         """Vérifie si un subject group a été traité.
-162:         
-163:         Args:
-164:             subject: Sujet de l'email
-165:             
-166:         Returns:
-167:             True si déjà traité
-168:         """
-169:         if not subject:
-170:             return False
-171:         
-172:         if not self.is_subject_dedup_enabled():
-173:             return False
-174:         
-175:         # Générer l'ID du groupe
-176:         group_id = self.generate_subject_group_id(subject)
-177:         scoped_id = self._get_scoped_group_id(group_id)
-178:         
-179:         # Essayer Redis d'abord
-180:         if self._use_redis():
-181:             try:
-182:                 keys_config = self._get_dedup_keys()
-183:                 ttl_seconds = keys_config["subject_group_ttl"]
-184:                 ttl_prefix = keys_config["subject_group_prefix"]
-185:                 groups_key = keys_config["subject_groups_key"]
-186:                 
-187:                 if ttl_seconds and ttl_seconds > 0:
-188:                     ttl_key = ttl_prefix + scoped_id
-189:                     val = self._redis.get(ttl_key)
-190:                     if val is not None:
-191:                         return True
-192:                 
-193:                 return bool(self._redis.sismember(groups_key, scoped_id))
-194:             except Exception as e:
-195:                 if self._logger:
-196:                     self._logger.error(
-197:                         f"DEDUP: Error checking subject group '{group_id}': {e}. "
-198:                         f"Assuming NOT processed."
-199:                     )
-200:                 # Fall through to memory
-201:         
-202:         # Fallback mémoire
-203:         return scoped_id in self._processed_subject_groups
-204:     
-205:     def mark_subject_group_processed(self, subject: str) -> bool:
-206:         """Marque un subject group comme traité.
-207:         
-208:         Args:
-209:             subject: Sujet de l'email
-210:             
-211:         Returns:
-212:             True si succès
-213:         """
-214:         if not subject:
-215:             return False
-216:         
-217:         # Si dédup désactivée, ne rien faire
-218:         if not self.is_subject_dedup_enabled():
-219:             return True
-220:         
-221:         # Générer l'ID du groupe
-222:         group_id = self.generate_subject_group_id(subject)
-223:         scoped_id = self._get_scoped_group_id(group_id)
-224:         
-225:         # Essayer Redis d'abord
-226:         if self._use_redis():
-227:             try:
-228:                 keys_config = self._get_dedup_keys()
-229:                 ttl_seconds = keys_config["subject_group_ttl"]
-230:                 ttl_prefix = keys_config["subject_group_prefix"]
-231:                 groups_key = keys_config["subject_groups_key"]
-232:                 
-233:                 # Marquer avec TTL si configuré
-234:                 if ttl_seconds and ttl_seconds > 0:
-235:                     ttl_key = ttl_prefix + scoped_id
-236:                     self._redis.set(ttl_key, 1, ex=ttl_seconds)
-237:                 
-238:                 # Ajouter au set permanent
-239:                 self._redis.sadd(groups_key, scoped_id)
-240:                 return True
-241:             except Exception as e:
-242:                 if self._logger:
-243:                     self._logger.error(f"DEDUP: Error marking subject group '{group_id}': {e}")
-244:                 # Fall through to memory
-245:         
-246:         # Fallback mémoire
-247:         self._processed_subject_groups.add(scoped_id)
-248:         return True
-249:     
-250:     def generate_subject_group_id(self, subject: str) -> str:
-251:         """Génère un ID de groupe stable pour un sujet.
-252:         
-253:         Heuristique:
-254:         - Normalise le sujet (sans accents, minuscules, espaces réduits)
-255:         - Retire les préfixes Re:/Fwd:
-256:         - Si détecte "Média Solution Missions Recadrage Lot <num>" → groupe par lot
-257:         - Sinon si détecte "Lot <num>" → groupe par lot
-258:         - Sinon → hash MD5 du sujet normalisé
-259:         
-260:         Args:
-261:             subject: Sujet de l'email
-262:             
-263:         Returns:
-264:             Identifiant de groupe stable
-265:         """
-266:         # Normaliser
-267:         norm = normalize_no_accents_lower_trim(subject or "")
-268:         core = strip_leading_reply_prefixes(norm)
-269:         
-270:         # Essayer d'extraire un numéro de lot
-271:         m_lot = re.search(r"\blot\s+(\d+)\b", core)
-272:         lot_part = m_lot.group(1) if m_lot else None
-273:         
-274:         # Détecter les mots-clés Média Solution
-275:         is_media_solution = (
-276:             all(tok in core for tok in ["media solution", "missions recadrage", "lot"])
-277:             if core
-278:             else False
-279:         )
-280:         
-281:         if is_media_solution and lot_part:
-282:             return f"media_solution_missions_recadrage_lot_{lot_part}"
-283:         
-284:         if lot_part:
-285:             return f"lot_{lot_part}"
-286:         
-287:         # Fallback: hash du sujet normalisé
-288:         subject_hash = hashlib.md5(core.encode("utf-8")).hexdigest()
-289:         return f"subject_hash_{subject_hash}"
-290:     
-291:     # =========================================================================
-292:     # Configuration
-293:     # =========================================================================
-294:     
-295:     def is_email_dedup_disabled(self) -> bool:
-296:         """Vérifie si la déduplication par email ID est désactivée.
-297:         
-298:         Returns:
-299:             True si désactivée
-300:         """
-301:         if self._config:
-302:             return self._config.is_email_id_dedup_disabled()
-303:         return False
-304:     
-305:     def is_subject_dedup_enabled(self) -> bool:
-306:         """Vérifie si la déduplication par subject group est activée.
-307:         
-308:         Returns:
-309:             True si activée
-310:         """
-311:         if self._config:
-312:             return self._config.is_subject_group_dedup_enabled()
-313:         return False
-314:     
-315:     # =========================================================================
-316:     # Helpers Internes
-317:     # =========================================================================
-318:     
-319:     def _get_scoped_group_id(self, group_id: str) -> str:
-320:         """Applique le scoping mensuel si activé.
-321:         
-322:         Args:
-323:             group_id: ID de base du groupe
-324:             
-325:         Returns:
-326:             ID scopé (ex: "2025-11:lot_42") si scoping activé, sinon ID original
-327:         """
-328:         if not self.is_subject_dedup_enabled():
-329:             return group_id
-330:         
-331:         # Scoping mensuel basé sur le timezone de polling
-332:         try:
-333:             tz = self._polling_config.get_tz() if self._polling_config else None
-334:             now_local = datetime.now(tz) if tz else datetime.now()
-335:         except Exception:
-336:             now_local = datetime.now()
-337:         
-338:         month_prefix = now_local.strftime("%Y-%m")
-339:         return f"{month_prefix}:{group_id}"
-340:     
-341:     def _use_redis(self) -> bool:
-342:         """Vérifie si Redis est disponible.
-343:         
-344:         Returns:
-345:             True si Redis peut être utilisé
-346:         """
-347:         return self._redis is not None
-348:     
-349:     def _get_dedup_keys(self) -> dict:
-350:         """Récupère les clés Redis depuis la configuration.
-351:         
-352:         Returns:
-353:             dict avec email_ids_key, subject_groups_key, etc.
-354:         """
-355:         if self._config:
-356:             return self._config.get_dedup_redis_keys()
-357:         
-358:         # Fallback sur valeurs par défaut
-359:         return {
-360:             "email_ids_key": "r:ss:processed_email_ids:v1",
-361:             "subject_groups_key": "r:ss:processed_subject_groups:v1",
-362:             "subject_group_prefix": "r:ss:subj_grp:",
-363:             "subject_group_ttl": 2592000,  # 30 jours
-364:         }
-365:     
-366:     # =========================================================================
-367:     # Diagnostic & Stats
-368:     # =========================================================================
-369:     
-370:     def get_memory_stats(self) -> dict:
-371:         """Retourne les statistiques du fallback mémoire.
-372:         
-373:         Returns:
-374:             dict avec email_ids_count, subject_groups_count
-375:         """
-376:         return {
-377:             "email_ids_count": len(self._processed_email_ids),
-378:             "subject_groups_count": len(self._processed_subject_groups),
-379:             "using_redis": self._use_redis(),
-380:         }
-381:     
-382:     def clear_memory_cache(self) -> None:
-383:         """Vide le cache mémoire (pour tests ou débogage)."""
-384:         self._processed_email_ids.clear()
-385:         self._processed_subject_groups.clear()
-386:     
-387:     def __repr__(self) -> str:
-388:         """Représentation du service."""
-389:         backend = "Redis" if self._use_redis() else "Memory"
-390:         email_dedup = "disabled" if self.is_email_dedup_disabled() else "enabled"
-391:         subject_dedup = "enabled" if self.is_subject_dedup_enabled() else "disabled"
-392:         return (
-393:             f"<DeduplicationService(backend={backend}, "
-394:             f"email_dedup={email_dedup}, subject_dedup={subject_dedup})>"
-395:         )
 ````
 
 ## File: services/README.md
@@ -6419,1497 +5731,6 @@ requirements.txt
 192: document.addEventListener('DOMContentLoaded', initialize);
 ````
 
-## File: static/dashboard_legacy.js
-````javascript
-   1: // static/dashboard.js
-   2: // Dashboard de contrôle des webhooks
-   3: window.DASHBOARD_BUILD = 'tabs-2025-10-05-15h29';
-   4: if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-   5:     console.log('[build] static/dashboard.js loaded:', window.DASHBOARD_BUILD);
-   6: }
-   7: 
-   8: // Utilitaires
-   9: function showMessage(elementId, message, type) {
-  10:     const el = document.getElementById(elementId);
-  11:     if (!el) return; // Safe-guard: element may be absent in some contexts
-  12:     el.textContent = message;
-  13:     el.className = 'status-msg ' + type;
-  14:     setTimeout(() => {
-  15:         if (!el) return;
-  16:         el.className = 'status-msg';
-  17:     }, 5000);
-  18: }
-  19: 
-  20: // Client API centralisé pour la gestion des erreurs
-  21: class ApiClient {
-  22:     static async handleResponse(res) {
-  23:         if (res.status === 401) {
-  24:             window.location.href = '/login';
-  25:             throw new Error('Session expirée');
-  26:         }
-  27:         if (res.status === 403) {
-  28:             throw new Error('Accès refusé');
-  29:         }
-  30:         if (res.status >= 500) {
-  31:             throw new Error('Erreur serveur');
-  32:         }
-  33:         return res;
-  34:     }
-  35:     
-  36:     static async request(url, options = {}) {
-  37:         const res = await fetch(url, options);
-  38:         return ApiClient.handleResponse(res);
-  39:     }
-  40: }
-  41: 
-  42: 
-  43: async function generateMagicLink() {
-  44:     const btn = document.getElementById('generateMagicLinkBtn');
-  45:     const output = document.getElementById('magicLinkOutput');
-  46:     const unlimitedToggle = document.getElementById('magicLinkUnlimitedToggle');
-  47:     if (!btn || !output) return;
-  48:     output.textContent = '';
-  49:     try {
-  50:         btn.disabled = true;
-  51:         const payload = unlimitedToggle && unlimitedToggle.checked ? { unlimited: true } : {};
-  52:         const res = await ApiClient.request('/api/auth/magic-link', {
-  53:             method: 'POST',
-  54:             headers: { 'Content-Type': 'application/json' },
-  55:             body: JSON.stringify(payload),
-  56:         });
-  57:         const data = await res.json();
-  58:         if (res.status === 401) {
-  59:             output.textContent = "Session expirée. Merci de vous reconnecter.";
-  60:             output.className = 'status-msg error';
-  61:             return;
-  62:         }
-  63:         if (!data.success || !data.magic_link) {
-  64:             output.textContent = data.message || 'Impossible de générer le magic link.';
-  65:             output.className = 'status-msg error';
-  66:             return;
-  67:         }
-  68:         const expiresText = data.unlimited ? 'aucune expiration' : (data.expires_at || 'bientôt');
-  69:         output.textContent = data.magic_link + ' (exp. ' + expiresText + ')';
-  70:         output.className = 'status-msg success';
-  71:         try {
-  72:             await navigator.clipboard.writeText(data.magic_link);
-  73:             output.textContent += ' — Copié dans le presse-papiers';
-  74:         } catch (clipErr) {
-  75:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-  76:                 console.warn('Clipboard write failed', clipErr);
-  77:             }
-  78:         }
-  79:     } catch (e) {
-  80:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-  81:             console.error('generateMagicLink error', e);
-  82:         }
-  83:         output.textContent = 'Erreur de génération du magic link.';
-  84:         output.className = 'status-msg error';
-  85:     } finally {
-  86:         if (btn) btn.disabled = false;
-  87:         setTimeout(() => {
-  88:             if (output) output.className = 'status-msg';
-  89:         }, 7000);
-  90:     }
-  91: }
-  92: 
-  93: // -------------------- Runtime Flags (Debug) --------------------
-  94: async function loadRuntimeFlags() {
-  95:     try {
-  96:         const res = await ApiClient.request('/api/get_runtime_flags');
-  97:         const data = await res.json();
-  98:         if (!data.success || !data.flags) return;
-  99:         const f = data.flags;
- 100:         const dedupToggle = document.getElementById('disableEmailIdDedupToggle');
- 101:         const allowCustomToggle = document.getElementById('allowCustomWithoutLinksToggle');
- 102:         if (dedupToggle) dedupToggle.checked = !!f.disable_email_id_dedup;
- 103:         if (allowCustomToggle) allowCustomToggle.checked = !!f.allow_custom_webhook_without_links;
- 104:     } catch (e) {
- 105:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 106:             console.warn('loadRuntimeFlags error', e);
- 107:         }
- 108:     }
- 109: }
- 110: 
- 111: async function saveRuntimeFlags() {
- 112:     const msgId = 'runtimeFlagsMsg';
- 113:     const btn = document.getElementById('runtimeFlagsSaveBtn');
- 114:     try {
- 115:         btn && (btn.disabled = true);
- 116:         const payload = {
- 117:             disable_email_id_dedup: !!document.getElementById('disableEmailIdDedupToggle')?.checked,
- 118:             allow_custom_webhook_without_links: !!document.getElementById('allowCustomWithoutLinksToggle')?.checked,
- 119:         };
- 120:         const res = await ApiClient.request('/api/update_runtime_flags', {
- 121:             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
- 122:         });
- 123:         const data = await res.json();
- 124:         if (data.success) {
- 125:             showMessage(msgId, 'Flags runtime enregistrés.', 'success');
- 126:         } else {
- 127:             showMessage(msgId, data.message || 'Erreur lors de la sauvegarde des flags.', 'error');
- 128:         }
- 129:     } catch (e) {
- 130:         showMessage(msgId, 'Erreur de communication avec le serveur.', 'error');
- 131:     } finally {
- 132:         btn && (btn.disabled = false);
- 133:     }
- 134: }
- 135: 
- 136: // --- Bootstrap: attach handlers after DOM load ---
- 137: window.addEventListener('DOMContentLoaded', () => {
- 138:     // Existing initializers
- 139:     loadWebhookConfig();
- 140:     loadTimeWindow();
- 141:     loadProcessingPrefsFromServer();
- 142:     computeAndRenderMetrics();
- 143:     loadPollingConfig();
- 144:     // Note: global Make toggle and vacation controls removed from UI
- 145:     // New: runtime flags
- 146:     loadRuntimeFlags();
- 147:     initMagicLinkTools();
- 148: 
- 149:     // Buttons
- 150:     const rfBtn = document.getElementById('runtimeFlagsSaveBtn');
- 151:     if (rfBtn) rfBtn.addEventListener('click', saveRuntimeFlags);
- 152: });
- 153: 
- 154: 
- 155: function initMagicLinkTools() {
- 156:     const btn = document.getElementById('generateMagicLinkBtn');
- 157:     if (btn) {
- 158:         btn.addEventListener('click', generateMagicLink);
- 159:     }
- 160: }
- 161: 
- 162: // --- Processing Prefs (server) ---
- 163: async function loadProcessingPrefsFromServer() {
- 164:     try {
- 165:         const res = await ApiClient.request('/api/get_processing_prefs');
- 166:         if (!res.ok) { 
- 167:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 168:                 console.warn('loadProcessingPrefsFromServer: non-200', res.status);
- 169:             }
- 170:             return; 
- 171:         }
- 172:         const data = await res.json();
- 173:         if (!data.success) return;
- 174:         const p = data.prefs || {};
- 175:         // Backward compatibility: legacy single list + new per-webhook lists
- 176:         const legacy = Array.isArray(p.exclude_keywords) ? p.exclude_keywords : [];
- 177:         const rec = Array.isArray(p.exclude_keywords_recadrage) ? p.exclude_keywords_recadrage : [];
- 178:         const aut = Array.isArray(p.exclude_keywords_autorepondeur) ? p.exclude_keywords_autorepondeur : [];
- 179:         const recEl = document.getElementById('excludeKeywordsRecadrage');
- 180:         const autEl = document.getElementById('excludeKeywordsAutorepondeur');
- 181:         if (recEl) {
- 182:             recEl.value = rec.join('\n');
- 183:             recEl.placeholder = (rec.length ? rec : ['ex: annulation', 'ex: rappel']).join('\n');
- 184:         }
- 185:         if (autEl) {
- 186:             autEl.value = aut.join('\n');
- 187:             autEl.placeholder = (aut.length ? aut : ['ex: facture', 'ex: hors périmètre']).join('\n');
- 188:         }
- 189:         // Keep legacy field if present in DOM
- 190:         setIfPresent('excludeKeywords', legacy.join('\n'), v => v);
- 191:         const att = document.getElementById('attachmentDetectionToggle');
- 192:         if (att) att.checked = !!p.require_attachments;
- 193:         const maxSz = document.getElementById('maxEmailSizeMB');
- 194:         if (maxSz) maxSz.value = p.max_email_size_mb ?? '';
- 195:         const sp = document.getElementById('senderPriority');
- 196:         if (sp) sp.value = JSON.stringify(p.sender_priority || {}, null, 2);
- 197:         const rc = document.getElementById('retryCount'); if (rc) rc.value = p.retry_count ?? '';
- 198:         const rd = document.getElementById('retryDelaySec'); if (rd) rd.value = p.retry_delay_sec ?? '';
- 199:         const to = document.getElementById('webhookTimeoutSec'); if (to) to.value = p.webhook_timeout_sec ?? '';
- 200:         const rl = document.getElementById('rateLimitPerHour'); if (rl) rl.value = p.rate_limit_per_hour ?? '';
- 201:         const nf = document.getElementById('notifyOnFailureToggle'); if (nf) nf.checked = !!p.notify_on_failure;
- 202:     } catch (e) {
- 203:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 204:             console.warn('loadProcessingPrefsFromServer error', e);
- 205:         }
- 206:     }
- 207: }
- 208: 
- 209: async function saveProcessingPrefsToServer() {
- 210:     const btn = document.getElementById('processingPrefsSaveBtn');
- 211:     const msgId = 'processingPrefsMsg';
- 212:     try {
- 213:         btn && (btn.disabled = true);
- 214:         // Build payload from UI
- 215:         const excludeKeywordsRaw = (document.getElementById('excludeKeywords')?.value || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
- 216:         const excludeKeywordsRecadrage = (document.getElementById('excludeKeywordsRecadrage')?.value || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
- 217:         const excludeKeywordsAutorepondeur = (document.getElementById('excludeKeywordsAutorepondeur')?.value || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
- 218:         const requireAttachments = !!document.getElementById('attachmentDetectionToggle')?.checked;
- 219:         const maxEmailSize = document.getElementById('maxEmailSizeMB')?.value.trim();
- 220:         let senderPriorityObj = {};
- 221:         const senderPriorityStr = (document.getElementById('senderPriority')?.value || '').trim();
- 222:         if (senderPriorityStr) {
- 223:             try { senderPriorityObj = JSON.parse(senderPriorityStr); } catch { senderPriorityObj = {}; }
- 224:         }
- 225:         const retryCount = document.getElementById('retryCount')?.value.trim();
- 226:         const retryDelaySec = document.getElementById('retryDelaySec')?.value.trim();
- 227:         const webhookTimeoutSec = document.getElementById('webhookTimeoutSec')?.value.trim();
- 228:         const rateLimitPerHour = document.getElementById('rateLimitPerHour')?.value.trim();
- 229:         const notifyOnFailure = !!document.getElementById('notifyOnFailureToggle')?.checked;
- 230: 
- 231:         const payload = {
- 232:             // keep legacy for backward compatibility
- 233:             exclude_keywords: excludeKeywordsRaw,
- 234:             // new per-webhook lists
- 235:             exclude_keywords_recadrage: excludeKeywordsRecadrage,
- 236:             exclude_keywords_autorepondeur: excludeKeywordsAutorepondeur,
- 237:             require_attachments: requireAttachments,
- 238:             max_email_size_mb: maxEmailSize === '' ? null : parseInt(maxEmailSize, 10),
- 239:             sender_priority: senderPriorityObj,
- 240:             retry_count: retryCount === '' ? 0 : parseInt(retryCount, 10),
- 241:             retry_delay_sec: retryDelaySec === '' ? 0 : parseInt(retryDelaySec, 10),
- 242:             webhook_timeout_sec: webhookTimeoutSec === '' ? 30 : parseInt(webhookTimeoutSec, 10),
- 243:             rate_limit_per_hour: rateLimitPerHour === '' ? 0 : parseInt(rateLimitPerHour, 10),
- 244:             notify_on_failure: notifyOnFailure,
- 245:         };
- 246: 
- 247:         const res = await ApiClient.request('/api/update_processing_prefs', {
- 248:             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
- 249:         });
- 250:         const data = await res.json();
- 251:         if (data.success) {
- 252:             showMessage(msgId, 'Préférences enregistrées.', 'success');
- 253:             // Recharger pour refléter la normalisation côté serveur
- 254:             loadProcessingPrefsFromServer();
- 255:         } else {
- 256:             showMessage(msgId, data.message || 'Erreur lors de la sauvegarde.', 'error');
- 257:         }
- 258:     } catch (e) {
- 259:         showMessage(msgId, 'Erreur de communication avec le serveur.', 'error');
- 260:     } finally {
- 261:         btn && (btn.disabled = false);
- 262:     }
- 263: }
- 264: 
- 265: // -------------------- Nouvelles fonctionnalités UI (client-side only) --------------------
- 266: 
- 267: function loadLocalPreferences() {
- 268:     try {
- 269:         const raw = localStorage.getItem('dashboard_prefs_v1');
- 270:         if (!raw) return;
- 271:         const prefs = JSON.parse(raw);
- 272:         setIfPresent('excludeKeywords', prefs.excludeKeywords, v => v);
- 273:         setIfPresent('excludeKeywordsRecadrage', prefs.excludeKeywordsRecadrage, v => v);
- 274:         setIfPresent('excludeKeywordsAutorepondeur', prefs.excludeKeywordsAutorepondeur, v => v);
- 275:         setIfPresent('attachmentDetectionToggle', prefs.attachmentDetection, (v, el) => el.checked = !!v);
- 276:         setIfPresent('maxEmailSizeMB', prefs.maxEmailSizeMB, v => v);
- 277:         setIfPresent('senderPriority', prefs.senderPriorityJson, v => v);
- 278:         setIfPresent('retryCount', prefs.retryCount, v => v);
- 279:         setIfPresent('retryDelaySec', prefs.retryDelaySec, v => v);
- 280:         setIfPresent('webhookTimeoutSec', prefs.webhookTimeoutSec, v => v);
- 281:         setIfPresent('rateLimitPerHour', prefs.rateLimitPerHour, v => v);
- 282:         setIfPresent('notifyOnFailureToggle', prefs.notifyOnFailure, (v, el) => el.checked = !!v);
- 283:         setIfPresent('enableMetricsToggle', prefs.enableMetrics, (v, el) => el.checked = !!v);
- 284:     } catch (e) {
- 285:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 286:             console.warn('Prefs load error', e);
- 287:         }
- 288:     }
- 289: }
- 290: 
- 291: function setIfPresent(id, value, setter) {
- 292:     if (value === undefined) return;
- 293:     const el = document.getElementById(id);
- 294:     if (!el) return;
- 295:     if (typeof setter === 'function') {
- 296:         const ret = setter(value, el);
- 297:         if (ret !== undefined && el.value !== undefined) el.value = ret;
- 298:     } else {
- 299:         el.value = value;
- 300:     }
- 301: }
- 302: 
- 303: function saveLocalPreferences() {
- 304:     try {
- 305:         const prefs = {
- 306:             excludeKeywords: (document.getElementById('excludeKeywords')?.value || ''),
- 307:             excludeKeywordsRecadrage: (document.getElementById('excludeKeywordsRecadrage')?.value || ''),
- 308:             excludeKeywordsAutorepondeur: (document.getElementById('excludeKeywordsAutorepondeur')?.value || ''),
- 309:             attachmentDetection: !!document.getElementById('attachmentDetectionToggle')?.checked,
- 310:             maxEmailSizeMB: parseInt(document.getElementById('maxEmailSizeMB')?.value || '0', 10) || undefined,
- 311:             senderPriorityJson: (document.getElementById('senderPriority')?.value || ''),
- 312:             retryCount: parseInt(document.getElementById('retryCount')?.value || '0', 10) || undefined,
- 313:             retryDelaySec: parseInt(document.getElementById('retryDelaySec')?.value || '0', 10) || undefined,
- 314:             webhookTimeoutSec: parseInt(document.getElementById('webhookTimeoutSec')?.value || '0', 10) || undefined,
- 315:             rateLimitPerHour: parseInt(document.getElementById('rateLimitPerHour')?.value || '0', 10) || undefined,
- 316:             notifyOnFailure: !!document.getElementById('notifyOnFailureToggle')?.checked,
- 317:             enableMetrics: !!document.getElementById('enableMetricsToggle')?.checked,
- 318:         };
- 319:         localStorage.setItem('dashboard_prefs_v1', JSON.stringify(prefs));
- 320:     } catch (e) {
- 321:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 322:             console.warn('Prefs save error', e);
- 323:         }
- 324:     }
- 325: }
- 326: 
- 327: async function computeAndRenderMetrics() {
- 328:     try {
- 329:         const res = await ApiClient.request('/api/webhook_logs?days=1');
- 330:         if (!res.ok) { 
- 331:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 332:                 console.warn('metrics: non-200', res.status);
- 333:             }
- 334:             clearMetrics(); return; 
- 335:         }
- 336:         const data = await res.json();
- 337:         const logs = (data.success && Array.isArray(data.logs)) ? data.logs : [];
- 338:         const total = logs.length;
- 339:         const sent = logs.filter(l => l.status === 'success').length;
- 340:         const errors = logs.filter(l => l.status === 'error').length;
- 341:         const successRate = total ? Math.round((sent / total) * 100) : 0;
- 342:         setMetric('metricEmailsProcessed', String(total));
- 343:         setMetric('metricWebhooksSent', String(sent));
- 344:         setMetric('metricErrors', String(errors));
- 345:         setMetric('metricSuccessRate', String(successRate));
- 346:         renderMiniChart(logs);
- 347:     } catch (e) {
- 348:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 349:             console.warn('metrics error', e);
- 350:         }
- 351:         clearMetrics();
- 352:     }
- 353: }
- 354: 
- 355: function clearMetrics() {
- 356:     setMetric('metricEmailsProcessed', '—');
- 357:     setMetric('metricWebhooksSent', '—');
- 358:     setMetric('metricErrors', '—');
- 359:     setMetric('metricSuccessRate', '—');
- 360:     const chart = document.getElementById('metricsMiniChart');
- 361:     if (chart) chart.innerHTML = '';
- 362: }
- 363: 
- 364: function setMetric(id, text) {
- 365:     const el = document.getElementById(id);
- 366:     if (el) el.textContent = text;
- 367: }
- 368: 
- 369: function renderMiniChart(logs) {
- 370:     const chart = document.getElementById('metricsMiniChart');
- 371:     if (!chart) return;
- 372:     chart.innerHTML = '';
- 373:     const width = chart.clientWidth || 300;
- 374:     const height = chart.clientHeight || 60;
- 375:     const canvas = document.createElement('canvas');
- 376:     canvas.width = width; canvas.height = height;
- 377:     chart.appendChild(canvas);
- 378:     const ctx = canvas.getContext('2d');
- 379:     // Simple timeline: success=1, error=0
- 380:     const n = Math.min(logs.length, Math.floor(width / 4));
- 381:     const step = width / (n || 1);
- 382:     ctx.strokeStyle = '#22c98f';
- 383:     ctx.lineWidth = 2;
- 384:     ctx.beginPath();
- 385:     for (let i = 0; i < n; i++) {
- 386:         const log = logs[logs.length - n + i];
- 387:         const val = (log && log.status === 'success') ? 1 : 0;
- 388:         const x = i * step + 1;
- 389:         const y = height - (val * (height - 4)) - 2;
- 390:         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
- 391:     }
- 392:     ctx.stroke();
- 393: }
- 394: 
- 395: async function exportFullConfiguration() {
- 396:     try {
- 397:         // Gather server-side configs
- 398:         const [webhookCfgRes, pollingCfgRes, timeWinRes] = await Promise.all([
- 399:             ApiClient.request('/api/webhooks/config'),
- 400:             ApiClient.request('/api/get_polling_config'),
- 401:             ApiClient.request('/api/get_webhook_time_window')
- 402:         ]);
- 403:         const [webhookCfg, pollingCfg, timeWin] = await Promise.all([
- 404:             webhookCfgRes.json(), pollingCfgRes.json(), timeWinRes.json()
- 405:         ]);
- 406:         const prefsRaw = localStorage.getItem('dashboard_prefs_v1');
- 407:         const exportObj = {
- 408:             exported_at: new Date().toISOString(),
- 409:             webhook_config: webhookCfg,
- 410:             polling_config: pollingCfg,
- 411:             time_window: timeWin,
- 412:             ui_preferences: prefsRaw ? JSON.parse(prefsRaw) : {}
- 413:         };
- 414:         const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
- 415:         const a = document.createElement('a');
- 416:         a.href = URL.createObjectURL(blob);
- 417:         a.download = 'render_signal_dashboard_config.json';
- 418:         a.click();
- 419:         URL.revokeObjectURL(a.href);
- 420:         showMessage('configMgmtMsg', 'Export réalisé avec succès.', 'success');
- 421:     } catch (e) {
- 422:         showMessage('configMgmtMsg', 'Erreur lors de l\'export.', 'error');
- 423:     }
- 424: }
- 425: 
- 426: function handleImportConfigFile(evt) {
- 427:     const file = evt.target.files && evt.target.files[0];
- 428:     if (!file) return;
- 429:     const reader = new FileReader();
- 430:     reader.onload = async () => {
- 431:         try {
- 432:             const obj = JSON.parse(String(reader.result || '{}'));
- 433:             // Apply server-supported parts
- 434:             await applyImportedServerConfig(obj);
- 435:             // Store UI preferences
- 436:             if (obj.ui_preferences) {
- 437:                 localStorage.setItem('dashboard_prefs_v1', JSON.stringify(obj.ui_preferences));
- 438:                 loadLocalPreferences();
- 439:             }
- 440:             showMessage('configMgmtMsg', 'Import appliqué.', 'success');
- 441:         } catch (e) {
- 442:             showMessage('configMgmtMsg', 'Fichier invalide.', 'error');
- 443:         }
- 444:     };
- 445:     reader.readAsText(file);
- 446:     // reset input so consecutive imports fire change
- 447:     evt.target.value = '';
- 448: }
- 449: 
- 450: async function applyImportedServerConfig(obj) {
- 451:     // webhook config
- 452:     if (obj?.webhook_config?.config) {
- 453:         const cfg = obj.webhook_config.config;
- 454:         const payload = {};
- 455:         if (cfg.webhook_url) payload.webhook_url = cfg.webhook_url;
- 456:         if (typeof cfg.webhook_ssl_verify === 'boolean') payload.webhook_ssl_verify = cfg.webhook_ssl_verify;
- 457:         if (Object.keys(payload).length) {
- 458:             await ApiClient.request('/api/webhooks/config', {
- 459:                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
- 460:             });
- 461:             await loadWebhookConfig();
- 462:         }
- 463:     }
- 464:     // polling config
- 465:     if (obj?.polling_config?.config) {
- 466:         const cfg = obj.polling_config.config;
- 467:         const payload = {};
- 468:         if (Array.isArray(cfg.active_days)) payload.active_days = cfg.active_days;
- 469:         if (Number.isInteger(cfg.active_start_hour)) payload.active_start_hour = cfg.active_start_hour;
- 470:         if (Number.isInteger(cfg.active_end_hour)) payload.active_end_hour = cfg.active_end_hour;
- 471:         if (typeof cfg.enable_subject_group_dedup === 'boolean') payload.enable_subject_group_dedup = cfg.enable_subject_group_dedup;
- 472:         if (Array.isArray(cfg.sender_of_interest_for_polling)) payload.sender_of_interest_for_polling = cfg.sender_of_interest_for_polling;
- 473:         if ('vacation_start' in cfg) payload.vacation_start = cfg.vacation_start || null;
- 474:         if ('vacation_end' in cfg) payload.vacation_end = cfg.vacation_end || null;
- 475:         if (Object.keys(payload).length) {
- 476:             await ApiClient.request('/api/update_polling_config', {
- 477:                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
- 478:             });
- 479:             await loadPollingConfig();
- 480:         }
- 481:     }
- 482:     // time window
- 483:     if (obj?.time_window) {
- 484:         const start = obj.time_window.webhooks_time_start ?? '';
- 485:         const end = obj.time_window.webhooks_time_end ?? '';
- 486:         await ApiClient.request('/api/set_webhook_time_window', {
- 487:             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start, end })
- 488:         });
- 489:         await loadTimeWindow();
- 490:     }
- 491: }
- 492: 
- 493: function validateWebhookUrlFromInput() {
- 494:     const inp = document.getElementById('testWebhookUrl');
- 495:     const msgId = 'webhookUrlValidationMsg';
- 496:     const val = (inp?.value || '').trim();
- 497:     if (!val) return showMessage(msgId, 'Veuillez saisir une URL ou un alias.', 'error');
- 498:     const ok = isValidMakeWebhookUrl(val) || isValidHttpsUrl(val);
- 499:     if (ok) showMessage(msgId, 'Format valide.', 'success'); else showMessage(msgId, 'Format invalide.', 'error');
- 500: }
- 501: 
- 502: function isValidHttpsUrl(url) {
- 503:     try {
- 504:         const u = new URL(url);
- 505:         return u.protocol === 'https:' && !!u.hostname;
- 506:     } catch { return false; }
- 507: }
- 508: 
- 509: function isValidMakeWebhookUrl(value) {
- 510:     // Accept either full https URL or alias token@hook.eu2.make.com
- 511:     if (isValidHttpsUrl(value)) return /hook\.eu\d+\.make\.com/i.test(value);
- 512:     return /^[A-Za-z0-9_-]{10,}@[Hh]ook\.eu\d+\.make\.com$/.test(value);
- 513: }
- 514: 
- 515: function buildPayloadPreview() {
- 516:     const subject = (document.getElementById('previewSubject')?.value || '').trim();
- 517:     const sender = (document.getElementById('previewSender')?.value || '').trim();
- 518:     const body = (document.getElementById('previewBody')?.value || '').trim();
- 519:     const payload = {
- 520:         subject,
- 521:         sender_email: sender,
- 522:         body_excerpt: body.slice(0, 500),
- 523:         delivery_links: [],
- 524:         first_direct_download_url: null,
- 525:         meta: { preview: true, generated_at: new Date().toISOString() }
- 526:     };
- 527:     const pre = document.getElementById('payloadPreview');
- 528:     if (pre) pre.textContent = JSON.stringify(payload, null, 2);
- 529: }
- 530: 
- 531: 
- 532: // Nouvelle approche: gestion via cases à cocher (0=Mon .. 6=Sun)
- 533: function setDayCheckboxes(days) {
- 534:     const group = document.getElementById('pollingActiveDaysGroup');
- 535:     if (!group) return;
- 536:     const set = new Set(Array.isArray(days) ? days : []);
- 537:     const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
- 538:     boxes.forEach(cb => {
- 539:         const idx = parseInt(cb.value, 10);
- 540:         cb.checked = set.has(idx);
- 541:     });
- 542: }
- 543: 
- 544: function collectDayCheckboxes() {
- 545:     const group = document.getElementById('pollingActiveDaysGroup');
- 546:     if (!group) return [];
- 547:     const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
- 548:     const out = [];
- 549:     boxes.forEach(cb => {
- 550:         if (cb.checked) out.push(parseInt(cb.value, 10));
- 551:     });
- 552:     // tri croissant et unique par sécurité
- 553:     return Array.from(new Set(out)).sort((a,b)=>a-b);
- 554: }
- 555: 
- 556: // ---- UI dynamique pour la liste d'emails ----
- 557: function addEmailField(value) {
- 558:     const container = document.getElementById('senderOfInterestContainer');
- 559:     if (!container) return;
- 560:     const row = document.createElement('div');
- 561:     row.className = 'inline-group';
- 562:     const input = document.createElement('input');
- 563:     input.type = 'email';
- 564:     input.placeholder = 'ex: email@example.com';
- 565:     input.value = value || '';
- 566:     input.style.flex = '1';
- 567:     const btn = document.createElement('button');
- 568:     btn.type = 'button';
- 569:     btn.className = 'email-remove-btn';
- 570:     btn.textContent = '❌';
- 571:     btn.title = 'Supprimer cet email';
- 572:     btn.addEventListener('click', () => row.remove());
- 573:     row.appendChild(input);
- 574:     row.appendChild(btn);
- 575:     container.appendChild(row);
- 576: }
- 577: 
- 578: function renderSenderInputs(list) {
- 579:     const container = document.getElementById('senderOfInterestContainer');
- 580:     if (!container) return;
- 581:     container.innerHTML = '';
- 582:     (list || []).forEach(e => addEmailField(e));
- 583:     if (!list || list.length === 0) addEmailField('');
- 584: }
- 585: 
- 586: function collectSenderInputs() {
- 587:     const container = document.getElementById('senderOfInterestContainer');
- 588:     if (!container) return [];
- 589:     const inputs = Array.from(container.querySelectorAll('input[type="email"]'));
- 590:     const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
- 591:     const out = [];
- 592:     const seen = new Set();
- 593:     for (const i of inputs) {
- 594:         const v = (i.value || '').trim().toLowerCase();
- 595:         if (!v) continue;
- 596:         if (emailRe.test(v) && !seen.has(v)) {
- 597:             seen.add(v);
- 598:             out.push(v);
- 599:         }
- 600:     }
- 601:     return out;
- 602: }
- 603: 
- 604: // Affiche le statut des vacances sous les sélecteurs de dates
- 605: // vacation helpers removed with UI
- 606: 
- 607: function formatTimestamp(isoString) {
- 608:     try {
- 609:         const date = new Date(isoString);
- 610:         return date.toLocaleString('fr-FR', {
- 611:             year: 'numeric',
- 612:             month: '2-digit',
- 613:             day: '2-digit',
- 614:             hour: '2-digit',
- 615:             minute: '2-digit',
- 616:             second: '2-digit'
- 617:         });
- 618:     } catch (e) {
- 619:         return isoString;
- 620:     }
- 621: }
- 622: 
- 623: // Affichage convivial de la dernière fenêtre horaire enregistrée
- 624: function renderTimeWindowDisplay(start, end) {
- 625:     const displayEl = document.getElementById('timeWindowDisplay');
- 626:     if (!displayEl) return;
- 627:     const hasStart = Boolean(start && String(start).trim());
- 628:     const hasEnd = Boolean(end && String(end).trim());
- 629:     if (!hasStart && !hasEnd) {
- 630:         displayEl.textContent = 'Dernière fenêtre enregistrée: aucune contrainte horaire active';
- 631:         return;
- 632:     }
- 633:     const startText = hasStart ? String(start) : '—';
- 634:     const endText = hasEnd ? String(end) : '—';
- 635:     displayEl.textContent = `Dernière fenêtre enregistrée: ${startText} → ${endText}`;
- 636: }
- 637: 
- 638: // Section 1: Fenêtre horaire
- 639: async function loadTimeWindow() {
- 640:     try {
- 641:         const res = await ApiClient.request('/api/get_webhook_time_window');
- 642:         const data = await res.json();
- 643:         
- 644:         if (data.success) {
- 645:             if (data.webhooks_time_start) {
- 646:                 document.getElementById('webhooksTimeStart').value = data.webhooks_time_start;
- 647:             }
- 648:             if (data.webhooks_time_end) {
- 649:                 document.getElementById('webhooksTimeEnd').value = data.webhooks_time_end;
- 650:             }
- 651:             // Mettre à jour l'affichage sous le bouton
- 652:             renderTimeWindowDisplay(data.webhooks_time_start || '', data.webhooks_time_end || '');
- 653:         }
- 654:     } catch (e) {
- 655:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 656:             console.error('Erreur chargement fenêtre horaire:', e);
- 657:         }
- 658:     }
- 659: }
- 660: 
- 661: async function saveTimeWindow() {
- 662:     const start = document.getElementById('webhooksTimeStart').value.trim();
- 663:     const end = document.getElementById('webhooksTimeEnd').value.trim();
- 664:     
- 665:     try {
- 666:         const res = await ApiClient.request('/api/set_webhook_time_window', {
- 667:             method: 'POST',
- 668:             headers: { 'Content-Type': 'application/json' },
- 669:             body: JSON.stringify({ start, end })
- 670:         });
- 671:         const data = await res.json();
- 672:         
- 673:         if (data.success) {
- 674:             showMessage('timeWindowMsg', 'Fenêtre horaire enregistrée avec succès !', 'success');
- 675:             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
- 676:             if (Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
- 677:                 document.getElementById('webhooksTimeStart').value = data.webhooks_time_start || '';
- 678:             }
- 679:             if (Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
- 680:                 document.getElementById('webhooksTimeEnd').value = data.webhooks_time_end || '';
- 681:             }
- 682:             // Mettre à jour l'affichage sous le bouton
- 683:             renderTimeWindowDisplay(data.webhooks_time_start || start, data.webhooks_time_end || end);
- 684:         } else {
- 685:             showMessage('timeWindowMsg', data.message || 'Erreur lors de la sauvegarde.', 'error');
- 686:         }
- 687:     } catch (e) {
- 688:         showMessage('timeWindowMsg', 'Erreur de communication avec le serveur.', 'error');
- 689:     }
- 690: }
- 691: 
- 692: // Section 2: Contrôle du polling
- 693: async function loadPollingStatus() {
- 694:     try {
- 695:         const res = await ApiClient.request('/api/webhooks/config');
- 696:         const data = await res.json();
- 697:         
- 698:         if (data.success) {
- 699:             const isEnabled = data.config.polling_enabled;
- 700:             document.getElementById('pollingToggle').checked = isEnabled;
- 701:             document.getElementById('pollingStatusText').textContent = 
- 702:                 isEnabled ? '✅ Polling activé' : '❌ Polling désactivé';
- 703:         }
- 704:     } catch (e) {
- 705:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 706:             console.error('Erreur chargement statut polling:', e);
- 707:         }
- 708:         document.getElementById('pollingStatusText').textContent = '⚠️ Erreur de chargement';
- 709:     }
- 710: }
- 711: 
- 712: async function togglePolling() {
- 713:     const enable = document.getElementById('pollingToggle').checked;
- 714:     
- 715:     try {
- 716:         const res = await ApiClient.request('/api/toggle_polling', {
- 717:             method: 'POST',
- 718:             headers: { 'Content-Type': 'application/json' },
- 719:             body: JSON.stringify({ enable })
- 720:         });
- 721:         const data = await res.json();
- 722:         
- 723:         if (data.success) {
- 724:             showMessage('pollingMsg', data.message, 'info');
- 725:             document.getElementById('pollingStatusText').textContent = 
- 726:                 enable ? '✅ Polling activé' : '❌ Polling désactivé';
- 727:         } else {
- 728:             showMessage('pollingMsg', data.message || 'Erreur lors du changement.', 'error');
- 729:         }
- 730:     } catch (e) {
- 731:         showMessage('pollingMsg', 'Erreur de communication avec le serveur.', 'error');
- 732:     }
- 733: }
- 734: 
- 735: // Section 3: Configuration des webhooks
- 736: async function loadWebhookConfig() {
- 737:     try {
- 738:         const res = await ApiClient.request('/api/webhooks/config');
- 739:         const data = await res.json();
- 740:         
- 741:         if (data.success) {
- 742:             const config = data.config;
- 743:             
- 744:             // Afficher les valeurs (masquées partiellement pour sécurité)
- 745:             const wh = document.getElementById('webhookUrl');
- 746:             if (wh) wh.placeholder = config.webhook_url || 'Non configuré';
- 747:             
- 748:             const ssl = document.getElementById('sslVerifyToggle');
- 749:             if (ssl) ssl.checked = !!config.webhook_ssl_verify;
- 750:             const sending = document.getElementById('webhookSendingToggle');
- 751:             if (sending) sending.checked = !!config.webhook_sending_enabled;
- 752:             
- 753:             // Absence pause
- 754:             const absenceToggle = document.getElementById('absencePauseToggle');
- 755:             if (absenceToggle) absenceToggle.checked = !!config.absence_pause_enabled;
- 756:             
- 757:             // Jours d'absence pause
- 758:             const absenceDays = Array.isArray(config.absence_pause_days) ? config.absence_pause_days : [];
- 759:             const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]');
- 760:             dayCheckboxes.forEach(cb => {
- 761:                 cb.checked = absenceDays.includes(cb.value);
- 762:             });
- 763:             
- 764:             // Charger la fenêtre horaire dédiée
- 765:             await loadGlobalWebhookTimeWindow();
- 766:         }
- 767:     } catch (e) {
- 768:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 769:             console.error('Erreur chargement config webhooks:', e);
- 770:         }
- 771:     }
- 772: }
- 773: 
- 774: // Charge la fenêtre horaire dédiée aux webhooks
- 775: async function loadGlobalWebhookTimeWindow() {
- 776:     try {
- 777:         const res = await ApiClient.request('/api/webhooks/time-window');
- 778:         const data = await res.json();
- 779:         if (!data.success) return;
- 780: 
- 781:         const startEl = document.getElementById('globalWebhookTimeStart');
- 782:         const endEl = document.getElementById('globalWebhookTimeEnd');
- 783:         
- 784:         if (startEl) startEl.value = data.webhooks_time_start || '';
- 785:         if (endEl) endEl.value = data.webhooks_time_end || '';
- 786:         
- 787:         // Mettre à jour l'affichage
- 788:         renderGlobalWebhookTimeWindowDisplay(data.webhooks_time_start, data.webhooks_time_end);
- 789:     } catch (e) {
- 790:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 791:             console.error('Erreur chargement fenêtre horaire webhooks:', e);
- 792:         }
- 793:     }
- 794: }
- 795: 
- 796: // Enregistre la fenêtre horaire dédiée aux webhooks
- 797: async function saveGlobalWebhookTimeWindow() {
- 798:     const start = document.getElementById('globalWebhookTimeStart').value.trim();
- 799:     const end = document.getElementById('globalWebhookTimeEnd').value.trim();
- 800:     const msgEl = document.getElementById('globalWebhookTimeMsg');
- 801:     const btn = document.getElementById('saveGlobalWebhookTimeBtn');
- 802:     
- 803:     if (!msgEl || !btn) return;
- 804:     
- 805:     try {
- 806:         btn.disabled = true;
- 807:         msgEl.textContent = 'Enregistrement en cours...';
- 808:         msgEl.className = 'status-msg info';
- 809:         
- 810:         const res = await ApiClient.request('/api/webhooks/time-window', {
- 811:             method: 'POST',
- 812:             headers: { 'Content-Type': 'application/json' },
- 813:             body: JSON.stringify({ start, end })
- 814:         });
- 815:         const data = await res.json();
- 816:         if (data.success) {
- 817:             msgEl.textContent = 'Fenêtre horaire enregistrée avec succès !';
- 818:             msgEl.className = 'status-msg success';
- 819:             // Mettre à jour l'affichage avec les valeurs normalisées
- 820:             renderGlobalWebhookTimeWindowDisplay(
- 821:                 data.webhooks_time_start || start,
- 822:                 data.webhooks_time_end || end
- 823:             );
- 824:         } else {
- 825:             msgEl.textContent = data.message || 'Erreur lors de la sauvegarde';
- 826:             msgEl.className = 'status-msg error';
- 827:         }
- 828:     } catch (e) {
- 829:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 830:             console.error('Erreur sauvegarde fenêtre horaire webhooks:', e);
- 831:         }
- 832:         msgEl.textContent = 'Erreur de communication avec le serveur';
- 833:         msgEl.className = 'status-msg error';
- 834:     } finally {
- 835:         btn.disabled = false;
- 836:         setTimeout(() => {
- 837:             msgEl.className = 'status-msg';
- 838:         }, 5000);
- 839:     }
- 840: }
- 841: 
- 842: // Affiche la fenêtre horaire dédiée
- 843: function renderGlobalWebhookTimeWindowDisplay(start, end) {
- 844:     const displayEl = document.getElementById('globalWebhookTimeMsg');
- 845:     if (!displayEl) return;
- 846:     
- 847:     const hasStart = start && start.trim();
- 848:     const hasEnd = end && end.trim();
- 849:     
- 850:     if (!hasStart && !hasEnd) {
- 851:         displayEl.textContent = 'Aucune contrainte horaire définie';
- 852:         return;
- 853:     }
- 854:     
- 855:     const startText = hasStart ? String(start) : '—';
- 856:     const endText = hasEnd ? String(end) : '—';
- 857:     displayEl.textContent = `Fenêtre active : ${startText} → ${endText}`;
- 858: }
- 859: 
- 860: async function saveWebhookConfig() {
- 861:     const payload = {};
- 862:     // Collecter seulement les champs pertinents
- 863:     const webhookUrlEl = document.getElementById('webhookUrl');
- 864:     const sslEl = document.getElementById('sslVerifyToggle');
- 865:     const sendingEl = document.getElementById('webhookSendingToggle');
- 866:     const absenceToggle = document.getElementById('absencePauseToggle');
- 867:     
- 868:     const webhookUrl = (webhookUrlEl?.value || '').trim();
- 869:     
- 870:     // Validation: bloquer l'envoi si le champ est vide ou contient uniquement le placeholder
- 871:     if (webhookUrl) {
- 872:         // Vérifier que ce n'est pas le placeholder masqué
- 873:         const placeholder = webhookUrlEl?.placeholder || '';
- 874:         if (webhookUrl === placeholder || webhookUrl === 'Non configuré') {
- 875:             showMessage('configMsg', 'Veuillez saisir une URL webhook valide.', 'error');
- 876:             return;
- 877:         }
- 878:         payload.webhook_url = webhookUrl;
- 879:     }
- 880:     
- 881:     if (sslEl) payload.webhook_ssl_verify = !!sslEl.checked;
- 882:     if (sendingEl) payload.webhook_sending_enabled = !!sendingEl.checked;
- 883:     
- 884:     // Absence pause
- 885:     if (absenceToggle) {
- 886:         payload.absence_pause_enabled = !!absenceToggle.checked;
- 887:         
- 888:         // Collecter les jours sélectionnés
- 889:         const selectedDays = [];
- 890:         const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]:checked');
- 891:         dayCheckboxes.forEach(cb => selectedDays.push(cb.value));
- 892:         payload.absence_pause_days = selectedDays;
- 893:         
- 894:         // Validation: si le toggle est activé, au moins un jour doit être sélectionné
- 895:         if (absenceToggle.checked && selectedDays.length === 0) {
- 896:             showMessage('configMsg', 'Au moins un jour doit être sélectionné pour activer l\'absence.', 'error');
- 897:             return;
- 898:         }
- 899:     }
- 900:     
- 901:     try {
- 902:         const res = await ApiClient.request('/api/webhooks/config', {
- 903:             method: 'POST',
- 904:             headers: { 'Content-Type': 'application/json' },
- 905:             body: JSON.stringify(payload)
- 906:         });
- 907:         const data = await res.json();
- 908:         
- 909:         if (data.success) {
- 910:             showMessage('configMsg', 'Configuration sauvegardée avec succès !', 'success');
- 911:             // Recharger pour afficher les nouvelles valeurs masquées
- 912:             setTimeout(() => {
- 913:                 // Vider le champ pour montrer le placeholder masqué
- 914:                 const wh2 = document.getElementById('webhookUrl');
- 915:                 if (wh2) wh2.value = '';
- 916:                 loadWebhookConfig();
- 917:             }, 1000);
- 918:         } else {
- 919:             showMessage('configMsg', data.message || 'Erreur lors de la sauvegarde.', 'error');
- 920:         }
- 921:     } catch (e) {
- 922:         showMessage('configMsg', 'Erreur de communication avec le serveur.', 'error');
- 923:     }
- 924: }
- 925: 
- 926: // Section 4: Logs des webhooks
- 927: async function loadWebhookLogs() {
- 928:     const logsContainer = document.getElementById('logsContainer');
- 929:     logsContainer.innerHTML = '<div class="log-empty">Chargement des logs...</div>';
- 930:     
- 931:     try {
- 932:         const res = await ApiClient.request('/api/webhook_logs?days=7');
- 933:         const data = await res.json();
- 934:         
- 935:         if (data.success && data.logs && data.logs.length > 0) {
- 936:             logsContainer.innerHTML = '';
- 937:             
- 938:             data.logs.forEach(log => {
- 939:                 const logEntry = document.createElement('div');
- 940:                 logEntry.className = 'log-entry ' + log.status;
- 941:                 
- 942:                 const timeDiv = document.createElement('div');
- 943:                 timeDiv.className = 'log-entry-time';
- 944:                 timeDiv.textContent = formatTimestamp(log.timestamp);
- 945:                 logEntry.appendChild(timeDiv);
- 946:                 
- 947:                 const typeSpan = document.createElement('span');
- 948:                 typeSpan.className = 'log-entry-type ' + (log.type === 'custom' ? 'custom' : 'makecom');
- 949:                 typeSpan.textContent = log.type === 'custom' ? 'CUSTOM' : 'MAKE.COM';
- 950:                 logEntry.appendChild(typeSpan);
- 951:                 
- 952:                 const statusStrong = document.createElement('strong');
- 953:                 statusStrong.textContent = log.status === 'success' ? '✅ Succès' : '❌ Erreur';
- 954:                 logEntry.appendChild(statusStrong);
- 955:                 
- 956:                 if (log.subject) {
- 957:                     const subjectDiv = document.createElement('div');
- 958:                     subjectDiv.textContent = 'Sujet: ' + log.subject;
- 959:                     logEntry.appendChild(subjectDiv);
- 960:                 }
- 961:                 
- 962:                 if (log.target_url) {
- 963:                     const urlDiv = document.createElement('div');
- 964:                     urlDiv.textContent = 'URL: ' + log.target_url;
- 965:                     logEntry.appendChild(urlDiv);
- 966:                 }
- 967:                 
- 968:                 if (log.status_code) {
- 969:                     const statusDiv = document.createElement('div');
- 970:                     statusDiv.textContent = 'Code HTTP: ' + log.status_code;
- 971:                     logEntry.appendChild(statusDiv);
- 972:                 }
- 973:                 
- 974:                 if (log.error) {
- 975:                     const errorDiv = document.createElement('div');
- 976:                     errorDiv.style.color = 'var(--cork-danger)';
- 977:                     errorDiv.style.marginTop = '5px';
- 978:                     errorDiv.textContent = 'Erreur: ' + log.error;
- 979:                     logEntry.appendChild(errorDiv);
- 980:                 }
- 981:                 
- 982:                 if (log.email_id) {
- 983:                     const emailIdDiv = document.createElement('div');
- 984:                     emailIdDiv.style.fontSize = '0.8em';
- 985:                     emailIdDiv.style.color = 'var(--cork-text-secondary)';
- 986:                     emailIdDiv.style.marginTop = '5px';
- 987:                     emailIdDiv.textContent = 'Email ID: ' + log.email_id;
- 988:                     logEntry.appendChild(emailIdDiv);
- 989:                 }
- 990:                 
- 991:                 logsContainer.appendChild(logEntry);
- 992:             });
- 993:         } else {
- 994:             logsContainer.innerHTML = '<div class="log-empty">Aucun log webhook trouvé pour les 7 derniers jours.</div>';
- 995:         }
- 996:     } catch (e) {
- 997:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 998:             console.error('Erreur chargement logs:', e);
- 999:         }
-1000:         logsContainer.innerHTML = '<div class="log-empty">Erreur lors du chargement des logs.</div>';
-1001:     }
-1002: }
-1003: 
-1004: // Utilitaire pour échapper le HTML
-1005: function escapeHtml(text) {
-1006:     const div = document.createElement('div');
-1007:     div.textContent = text;
-1008:     return div.innerHTML;
-1009: }
-1010: 
-1011: // -------------------- Navigation par onglets --------------------
-1012: function initTabs() {
-1013:     if (window.__tabsInitialized) { 
-1014:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-1015:             console.log('[tabs] initTabs: already initialized');
-1016:         }
-1017:         return; 
-1018:     }
-1019:     window.__tabsInitialized = true;
-1020:     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-1021:         console.log('[tabs] initTabs: starting');
-1022:     }
-1023:     const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
-1024:     const panels = Array.from(document.querySelectorAll('.section-panel'));
-1025:     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-1026:         console.log(`[tabs] found buttons=${tabButtons.length}, panels=${panels.length}`);
-1027:     }
-1028: 
-1029:     const mapHashToId = {
-1030:         '#overview': '#sec-overview',
-1031:         '#webhooks': '#sec-webhooks',
-1032:         '#email': '#sec-email',
-1033:         '#make': '#sec-email',      // legacy alias kept for backward compatibility
-1034:         '#polling': '#sec-email',   // legacy alias kept
-1035:         '#preferences': '#sec-preferences',
-1036:         '#tools': '#sec-tools',
-1037:     };
-1038: 
-1039:     function activate(targetSelector) {
-1040:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-1041:             console.log('[tabs] activate called for target:', targetSelector);
-1042:         }
-1043:         // Toggle active class on panels
-1044:         panels.forEach(p => { p.classList.remove('active'); p.style.display = 'none'; });
-1045:         const panel = document.querySelector(targetSelector);
-1046:         if (panel) {
-1047:             panel.classList.add('active');
-1048:             panel.style.display = 'block';
-1049:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-1050:                 console.log('[tabs] panel activated:', panel.id);
-1051:             }
-1052:         } else {
-1053:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-1054:                 console.warn('[tabs] panel not found for selector:', targetSelector);
-1055:             }
-1056:         }
-1057: 
-1058:         // Toggle active class on buttons
-1059:         tabButtons.forEach(btn => btn.classList.remove('active'));
-1060:         const btn = tabButtons.find(b => b.getAttribute('data-target') === targetSelector);
-1061:         if (btn) {
-1062:             btn.classList.add('active');
-1063:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-1064:                 console.log('[tabs] button activated (data-target):', targetSelector);
-1065:             }
-1066:         } else {
-1067:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-1068:                 console.warn('[tabs] button not found for selector:', targetSelector);
-1069:             }
-1070:         }
-1071: 
-1072:         // Optional: refresh section data on show
-1073:         if (targetSelector === '#sec-overview') {
-1074:             const enableMetricsToggle = document.getElementById('enableMetricsToggle');
-1075:             if (enableMetricsToggle && enableMetricsToggle.checked) {
-1076:                 computeAndRenderMetrics();
-1077:             }
-1078:             loadWebhookLogs();
-1079:         } else if (targetSelector === '#sec-webhooks') {
-1080:             loadTimeWindow();
-1081:             loadWebhookConfig();
-1082:         } else if (targetSelector === '#sec-email') {
-1083:             loadPollingConfig();
-1084:         }
-1085:     }
-1086: 
-1087:     // Wire click handlers
-1088:     tabButtons.forEach(btn => {
-1089:         btn.addEventListener('click', () => {
-1090:             const target = btn.getAttribute('data-target');
-1091:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-1092:                 console.log('[tabs] click on tab-btn, target=', target);
-1093:             }
-1094:             if (target) {
-1095:                 // Update URL hash for deep-linking (without scrolling)
-1096:                 // Prefer canonical hash for the target
-1097:                 const preferred = (target === '#sec-email') ? '#email' :
-1098:                                   (target === '#sec-overview') ? '#overview' :
-1099:                                   (target === '#sec-webhooks') ? '#webhooks' :
-1100:                                   (target === '#sec-preferences') ? '#preferences' :
-1101:                                   (target === '#sec-tools') ? '#tools' : '';
-1102:                 if (preferred) history.replaceState(null, '', preferred);
-1103:                 activate(target);
-1104:             }
-1105:         });
-1106:     });
-1107: 
-1108:     // Determine initial tab: from hash or default to overview
-1109:     const initialHash = window.location.hash;
-1110:     const initialTarget = mapHashToId[initialHash] || '#sec-overview';
-1111:     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-1112:         console.log('[tabs] initialHash=', initialHash, ' -> initialTarget=', initialTarget);
-1113:     }
-1114:     activate(initialTarget);
-1115: 
-1116:     // React to hash changes (e.g., manual URL edit)
-1117:     window.addEventListener('hashchange', () => {
-1118:         const t = mapHashToId[window.location.hash];
-1119:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-1120:             console.log('[tabs] hashchange ->', window.location.hash, ' mapped to ', t);
-1121:         }
-1122:         if (t) activate(t);
-1123:     });
-1124:     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-1125:         console.log('[tabs] initTabs: ready');
-1126:     }
-1127: }
-1128: 
-1129: // Gestionnaire pour le bouton de sauvegarde de la fenêtre horaire webhook
-1130: document.addEventListener('DOMContentLoaded', () => {
-1131:     const saveGlobalTimeBtn = document.getElementById('saveGlobalWebhookTimeBtn');
-1132:     if (saveGlobalTimeBtn) {
-1133:         saveGlobalTimeBtn.addEventListener('click', saveGlobalWebhookTimeWindow);
-1134:     }
-1135:     
-1136:     // Raccourci Entrée dans les champs de la fenêtre horaire
-1137:     const timeInputs = ['globalWebhookTimeStart', 'globalWebhookTimeEnd'];
-1138:     timeInputs.forEach(id => {
-1139:         const el = document.getElementById(id);
-1140:         if (el) {
-1141:             el.addEventListener('keypress', (e) => {
-1142:                 if (e.key === 'Enter') saveGlobalWebhookTimeWindow();
-1143:             });
-1144:         }
-1145:     });
-1146: });
-1147: 
-1148: // Initialisation au chargement de la page
-1149: document.addEventListener('DOMContentLoaded', () => {
-1150:     console.log('📊 DOMContentLoaded: init start');
-1151:     // Hide non-active panels immediately (not relying only on CSS)
-1152:     try {
-1153:         const allPanels = document.querySelectorAll('.section-panel');
-1154:         allPanels.forEach(p => {
-1155:             if (!p.classList.contains('active')) p.style.display = 'none';
-1156:             else p.style.display = 'block';
-1157:         });
-1158:         console.log(`[tabs] initial panel visibility set (count=${allPanels.length})`);
-1159:     } catch (e) {
-1160:         console.warn('[tabs] initial hide panels failed:', e);
-1161:     }
-1162:     // Initialiser les onglets en premier pour garantir l'UX même si des erreurs surviennent après
-1163:     try {
-1164:         console.log('[tabs] calling initTabs early');
-1165:         initTabs();
-1166:         console.log('[tabs] initTabs completed');
-1167:     } catch (e) {
-1168:         console.error('[tabs] initTabs threw (early):', e);
-1169:     }
-1170: 
-1171:     // Fallback: programmer un appel asynchrone très tôt pour contourner d'éventuels ordres d'exécution
-1172:     try {
-1173:         setTimeout(() => {
-1174:             try {
-1175:                 console.log('[tabs] setTimeout fallback: calling initTabs');
-1176:                 initTabs();
-1177:             } catch (err) {
-1178:                 console.error('[tabs] setTimeout fallback failed:', err);
-1179:             }
-1180:         }, 0);
-1181:     } catch (e) {
-1182:         console.warn('[tabs] setTimeout fallback scheduling failed:', e);
-1183:     }
-1184: 
-1185:     // Charger les données initiales (protégées)
-1186:     try { console.log('[init] loadTimeWindow'); loadTimeWindow(); } catch (e) { console.error('[init] loadTimeWindow failed', e); }
-1187:     // old loadPollingStatus removed
-1188:     try { console.log('[init] loadWebhookConfig'); loadWebhookConfig(); } catch (e) { console.error('[init] loadWebhookConfig failed', e); }
-1189:     try { console.log('[init] loadPollingConfig'); loadPollingConfig(); } catch (e) { console.error('[init] loadPollingConfig failed', e); }
-1190:     try { console.log('[init] loadWebhookLogs'); loadWebhookLogs(); } catch (e) { console.error('[init] loadWebhookLogs failed', e); }
-1191:     
-1192:     // Attacher les gestionnaires d'événements (avec garde)
-1193:     const elSaveTimeWindow = document.getElementById('saveTimeWindowBtn');
-1194:     elSaveTimeWindow && elSaveTimeWindow.addEventListener('click', saveTimeWindow);
-1195:     // old togglePollingBtn removed
-1196:     const elSaveConfig = document.getElementById('saveConfigBtn');
-1197:     elSaveConfig && elSaveConfig.addEventListener('click', saveWebhookConfig);
-1198:     const elRefreshLogs = document.getElementById('refreshLogsBtn');
-1199:     elRefreshLogs && elRefreshLogs.addEventListener('click', loadWebhookLogs);
-1200:     const elSavePollingCfg = document.getElementById('savePollingCfgBtn');
-1201:     // Removed from UI; keep guard in case of legacy DOM
-1202:     elSavePollingCfg && elSavePollingCfg.addEventListener('click', savePollingConfig);
-1203:     const addSenderBtn = document.getElementById('addSenderBtn');
-1204:     if (addSenderBtn) addSenderBtn.addEventListener('click', () => addEmailField(''));
-1205:     // Mettre à jour le statut vacances quand l'utilisateur change les dates
-1206:     // vacation inputs removed
-1207:     
-1208:     // Auto-refresh des logs toutes les 30 secondes
-1209:     setInterval(loadWebhookLogs, 30000);
-1210:     
-1211:     console.log('📊 Dashboard Webhooks initialisé.');
-1212: 
-1213:     // --- Préférences UI locales (localStorage) ---
-1214:     loadLocalPreferences();
-1215: 
-1216:     // --- Events: Filtres Email Avancés ---
-1217:     const excludeKeywords = document.getElementById('excludeKeywords');
-1218:     const attachmentDetectionToggle = document.getElementById('attachmentDetectionToggle');
-1219:     const maxEmailSizeMB = document.getElementById('maxEmailSizeMB');
-1220:     const senderPriority = document.getElementById('senderPriority');
-1221:     ;[excludeKeywords, attachmentDetectionToggle, maxEmailSizeMB, senderPriority]
-1222:       .forEach(el => el && el.addEventListener('change', saveLocalPreferences));
-1223: 
-1224:     // --- Events: Fiabilité ---
-1225:     const retryCount = document.getElementById('retryCount');
-1226:     const retryDelaySec = document.getElementById('retryDelaySec');
-1227:     const webhookTimeoutSec = document.getElementById('webhookTimeoutSec');
-1228:     const rateLimitPerHour = document.getElementById('rateLimitPerHour');
-1229:     const notifyOnFailureToggle = document.getElementById('notifyOnFailureToggle');
-1230:     ;[retryCount, retryDelaySec, webhookTimeoutSec, rateLimitPerHour, notifyOnFailureToggle]
-1231:       .forEach(el => el && el.addEventListener('change', saveLocalPreferences));
-1232: 
-1233:     // --- Events: Metrics ---
-1234:     const enableMetricsToggle = document.getElementById('enableMetricsToggle');
-1235:     if (enableMetricsToggle) {
-1236:         enableMetricsToggle.addEventListener('change', async () => {
-1237:             saveLocalPreferences();
-1238:             if (enableMetricsToggle.checked) {
-1239:                 await computeAndRenderMetrics();
-1240:             } else {
-1241:                 clearMetrics();
-1242:             }
-1243:         });
-1244:     }
-1245: 
-1246:     // --- Export / Import de configuration ---
-1247:     const exportBtn = document.getElementById('exportConfigBtn');
-1248:     const importBtn = document.getElementById('importConfigBtn');
-1249:     const importFile = document.getElementById('importConfigFile');
-1250:     exportBtn && exportBtn.addEventListener('click', exportFullConfiguration);
-1251:     importBtn && importBtn.addEventListener('click', () => importFile && importFile.click());
-1252:     importFile && importFile.addEventListener('change', handleImportConfigFile);
-1253: 
-1254:     // --- Outils de test --- 
-1255:     const validateWebhookUrlBtn = document.getElementById('validateWebhookUrlBtn');
-1256:     validateWebhookUrlBtn && validateWebhookUrlBtn.addEventListener('click', validateWebhookUrlFromInput);
-1257:     const buildPayloadPreviewBtn = document.getElementById('buildPayloadPreviewBtn');
-1258:     buildPayloadPreviewBtn && buildPayloadPreviewBtn.addEventListener('click', buildPayloadPreview);
-1259: 
-1260: 
-1261:     // --- Ouvrir une page de téléchargement (manuel) ---
-1262:     const openDownloadPageBtn = document.getElementById('openDownloadPageBtn');
-1263:     if (openDownloadPageBtn) {
-1264:         openDownloadPageBtn.addEventListener('click', () => {
-1265:             const msgId = 'openDownloadMsg';
-1266:             try {
-1267:                 const input = document.getElementById('downloadPageUrl');
-1268:                 const val = (input?.value || '').trim();
-1269:                 if (!val) {
-1270:                     showMessage(msgId, 'Veuillez saisir une URL.', 'error');
-1271:                     return;
-1272:                 }
-1273:                 // Vérification basique HTTPS + domaine attendu (optionnelle, on reste permissif)
-1274:                 let ok = false;
-1275:                 try {
-1276:                     const u = new URL(val);
-1277:                     ok = (u.protocol === 'https:');
-1278:                 } catch (_) {
-1279:                     ok = false;
-1280:                 }
-1281:                 if (!ok) {
-1282:                     showMessage(msgId, 'URL invalide. Utilisez un lien HTTPS.', 'error');
-1283:                     return;
-1284:                 }
-1285:                 window.open(val, '_blank', 'noopener');
-1286:                 showMessage(msgId, 'Ouverture dans un nouvel onglet…', 'info');
-1287:             } catch (e) {
-1288:                 showMessage(msgId, 'Impossible d’ouvrir l’URL.', 'error');
-1289:             }
-1290:         });
-1291:     }
-1292: 
-1293:     // --- Charger les préférences serveur au démarrage ---
-1294:     loadProcessingPrefsFromServer();
-1295: 
-1296:     // --- Sauvegarder préférences de traitement ---
-1297:     const processingPrefsSaveBtn = document.getElementById('processingPrefsSaveBtn');
-1298:     processingPrefsSaveBtn && processingPrefsSaveBtn.addEventListener('click', saveProcessingPrefsToServer);
-1299: 
-1300:     // --- Déploiement application ---
-1301:     const restartBtn = document.getElementById('restartServerBtn');
-1302:     if (restartBtn) {
-1303:         restartBtn.addEventListener('click', async () => {
-1304:             const msgId = 'restartMsg';
-1305:             try {
-1306:                 if (!confirm('Confirmez-vous le déploiement de l\'application ? Elle peut être indisponible quelques secondes.')) return;
-1307:                 restartBtn.disabled = true;
-1308:                 showMessage(msgId, 'Déploiement en cours...', 'info');
-1309:                 const res = await ApiClient.request('/api/deploy_application', { method: 'POST' });
-1310:                 const data = await res.json().catch(() => ({}));
-1311:                 if (res.ok && data.success) {
-1312:                     showMessage(msgId, data.message || 'Déploiement planifié. Vérification de disponibilité…', 'success');
-1313:                     // Poll health endpoint jusqu'à disponibilité puis recharger
-1314:                     try {
-1315:                         await pollHealthCheck({ attempts: 10, intervalMs: 1500, timeoutMs: 25000 });
-1316:                         try { location.reload(); } catch {}
-1317:                     } catch (e) {
-1318:                         // Si la vérification échoue, proposer un rechargement manuel
-1319:                         showMessage(msgId, 'Le service ne répond pas encore. Réessayez plus tard ou rechargez la page.', 'error');
-1320:                     }
-1321:                 } else {
-1322:                     showMessage(msgId, data.message || 'Échec du déploiement (vérifiez permissions sudoers).', 'error');
-1323:                 }
-1324:             } catch (e) {
-1325:                 showMessage(msgId, 'Erreur de communication avec le serveur.', 'error');
-1326:             } finally {
-1327:                 restartBtn.disabled = false;
-1328:             }
-1329:         });
-1330:     }
-1331: 
-1332:     /**
-1333:      * Vérifie la disponibilité du serveur en appelant /health à intervalles réguliers.
-1334:      * @param {{attempts:number, intervalMs:number, timeoutMs:number}} opts
-1335:      */
-1336:     async function pollHealthCheck(opts) {
-1337:         const attempts = Math.max(1, Number(opts?.attempts || 8));
-1338:         const intervalMs = Math.max(250, Number(opts?.intervalMs || 1000));
-1339:         const timeoutMs = Math.max(intervalMs, Number(opts?.timeoutMs || 15000));
-1340: 
-1341:         const controller = new AbortController();
-1342:         const id = setTimeout(() => controller.abort(), timeoutMs);
-1343:         try {
-1344:             for (let i = 0; i < attempts; i++) {
-1345:                 try {
-1346:                     const res = await ApiClient.request('/health', { signal: controller.signal, cache: 'no-store' });
-1347:                     if (res.ok) {
-1348:                         clearTimeout(id);
-1349:                         return true;
-1350:                     }
-1351:                 } catch (_) { /* service peut être indisponible pendant le reload */ }
-1352:                 await new Promise(r => setTimeout(r, intervalMs));
-1353:             }
-1354:             throw new Error('healthcheck failed');
-1355:         } finally {
-1356:             clearTimeout(id);
-1357:         }
-1358:     }
-1359: 
-1360:     // --- Délégation de clic (fallback) pour .tab-btn ---
-1361:     document.addEventListener('click', (evt) => {
-1362:         const btn = evt.target && evt.target.closest && evt.target.closest('.tab-btn');
-1363:         if (!btn) return;
-1364:         const target = btn.getAttribute('data-target');
-1365:         console.log('[tabs-fallback] click captured on', target);
-1366:         if (!target) return;
-1367:         // Activer/désactiver manuellement sans dépendre d'initTabs
-1368:         try {
-1369:             const panels = Array.from(document.querySelectorAll('.section-panel'));
-1370:             panels.forEach(p => { p.classList.remove('active'); p.style.display = 'none'; });
-1371:             const panel = document.querySelector(target);
-1372:             if (panel) { panel.classList.add('active'); panel.style.display = 'block'; }
-1373:             const allBtns = Array.from(document.querySelectorAll('.tab-btn'));
-1374:             allBtns.forEach(b => b.classList.remove('active'));
-1375:             btn.classList.add('active');
-1376:             // Mettre à jour le hash pour deep-linking
-1377:             const map = { '#sec-overview': '#overview', '#sec-webhooks': '#webhooks', '#sec-email': '#email', '#sec-preferences': '#preferences', '#sec-tools': '#tools' };
-1378:             const hash = map[target]; if (hash) history.replaceState(null, '', hash);
-1379:         } catch (e) {
-1380:             console.error('[tabs-fallback] activation failed:', e);
-1381:         }
-1382:     });
-1383: });
-1384: 
-1385: // --- Gestionnaire du bouton d'enregistrement des préférences email ---
-1386: document.addEventListener('DOMContentLoaded', () => {
-1387:     const saveEmailPrefsBtn = document.getElementById('saveEmailPrefsBtn');
-1388:     if (saveEmailPrefsBtn) {
-1389:         saveEmailPrefsBtn.addEventListener('click', savePollingConfig);
-1390:     }
-1391: });
-1392: 
-1393: // --- Polling Config (jours, heures, dédup) ---
-1394: 
-1395: async function loadPollingConfig() {
-1396:     try {
-1397:         const res = await ApiClient.request('/api/get_polling_config');
-1398:         const data = await res.json();
-1399:         if (data.success) {
-1400:             const cfg = data.config || {};
-1401:             const dedupEl = document.getElementById('enableSubjectGroupDedup');
-1402:             if (dedupEl) dedupEl.checked = !!cfg.enable_subject_group_dedup;
-1403:             const senders = Array.isArray(cfg.sender_of_interest_for_polling) ? cfg.sender_of_interest_for_polling : [];
-1404:             renderSenderInputs(senders);
-1405:             // New: populate active days and hours if present
-1406:             try {
-1407:                 if (Array.isArray(cfg.active_days)) setDayCheckboxes(cfg.active_days);
-1408:                 const sh = document.getElementById('pollingStartHour');
-1409:                 const eh = document.getElementById('pollingEndHour');
-1410:                 if (sh && Number.isInteger(cfg.active_start_hour)) sh.value = String(cfg.active_start_hour);
-1411:                 if (eh && Number.isInteger(cfg.active_end_hour)) eh.value = String(cfg.active_end_hour);
-1412:             } catch (e) {
-1413:                 console.warn('loadPollingConfig: applying days/hours failed', e);
-1414:             }
-1415:             // vacations and global enable removed from UI
-1416:         }
-1417:     } catch (e) {
-1418:         console.error('Erreur chargement config polling:', e);
-1419:     }
-1420: }
-1421: 
-1422: async function savePollingConfig(event) {
-1423:     // Désactiver le bouton qui a déclenché l'événement
-1424:     const btn = event?.target || document.getElementById('savePollingCfgBtn');
-1425:     if (btn) btn.disabled = true;
-1426:     
-1427:     const dedup = document.getElementById('enableSubjectGroupDedup')?.checked;
-1428:     const senders = collectSenderInputs();
-1429:     const activeDays = collectDayCheckboxes();
-1430:     const startHourStr = document.getElementById('pollingStartHour')?.value?.trim() ?? '';
-1431:     const endHourStr = document.getElementById('pollingEndHour')?.value?.trim() ?? '';
-1432:     const statusId = document.getElementById('emailPrefsSaveStatus') ? 'emailPrefsSaveStatus' : 'pollingCfgMsg';
-1433: 
-1434:     // Basic validation
-1435:     const startHour = startHourStr === '' ? null : Number.parseInt(startHourStr, 10);
-1436:     const endHour = endHourStr === '' ? null : Number.parseInt(endHourStr, 10);
-1437:     if (!activeDays || activeDays.length === 0) {
-1438:         showMessage(statusId, 'Veuillez sélectionner au moins un jour actif.', 'error');
-1439:         if (btn) btn.disabled = false;
-1440:         return;
-1441:     }
-1442:     if (startHour === null || Number.isNaN(startHour) || startHour < 0 || startHour > 23) {
-1443:         showMessage(statusId, 'Heure de début invalide (0-23).', 'error');
-1444:         if (btn) btn.disabled = false;
-1445:         return;
-1446:     }
-1447:     if (endHour === null || Number.isNaN(endHour) || endHour < 0 || endHour > 23) {
-1448:         showMessage(statusId, 'Heure de fin invalide (0-23).', 'error');
-1449:         if (btn) btn.disabled = false;
-1450:         return;
-1451:     }
-1452:     if (startHour === endHour) {
-1453:         showMessage(statusId, 'L\'heure de début et de fin ne peuvent pas être identiques.', 'error');
-1454:         if (btn) btn.disabled = false;
-1455:         return;
-1456:     }
-1457: 
-1458:     const payload = {};
-1459:     payload.enable_subject_group_dedup = dedup;
-1460: 
-1461:     payload.sender_of_interest_for_polling = senders;
-1462:     payload.active_days = activeDays;
-1463:     payload.active_start_hour = startHour;
-1464:     payload.active_end_hour = endHour;
-1465:     // Dates ISO (ou null)
-1466:     // vacations and global enable removed
-1467: 
-1468:     try {
-1469:         const res = await ApiClient.request('/api/update_polling_config', {
-1470:             method: 'POST',
-1471:             headers: { 'Content-Type': 'application/json' },
-1472:             body: JSON.stringify(payload)
-1473:         });
-1474:         const data = await res.json();
-1475:         if (data.success) {
-1476:             showMessage(statusId, data.message || 'Préférences enregistrées avec succès !', 'success');
-1477:             // Recharger pour refléter la normalisation côté serveur
-1478:             loadPollingConfig();
-1479:         } else {
-1480:             showMessage(statusId, data.message || 'Erreur lors de la sauvegarde.', 'error');
-1481:         }
-1482:     } catch (e) {
-1483:         showMessage(statusId, 'Erreur de communication avec le serveur.', 'error');
-1484:     } finally {
-1485:         if (btn) btn.disabled = false;
-1486:     }
-1487: }
-````
-
 ## File: utils/text_helpers.py
 ````python
   1: """
@@ -8064,406 +5885,6 @@ requirements.txt
 150:         return f"Content length: {len(value)} chars"
 151: 
 152:     return "[redacted]"
-````
-
-## File: config/polling_config.py
-````python
-  1: """
-  2: config.polling_config
-  3: ~~~~~~~~~~~~~~~~~~~~~
-  4: 
-  5: Configuration et helpers pour le polling IMAP.
-  6: Gère le timezone, la fenêtre horaire, et les paramètres de vacances.
-  7: """
-  8: 
-  9: from datetime import timezone, datetime, date
- 10: from typing import Optional
- 11: import json
- 12: import re
- 13: 
- 14: from config import app_config_store as _app_config_store
- 15: from config.settings import (
- 16:     POLLING_TIMEZONE_STR,
- 17:     POLLING_CONFIG_FILE,
- 18:     POLLING_ACTIVE_DAYS as SETTINGS_POLLING_ACTIVE_DAYS,
- 19:     POLLING_ACTIVE_START_HOUR as SETTINGS_POLLING_ACTIVE_START_HOUR,
- 20:     POLLING_ACTIVE_END_HOUR as SETTINGS_POLLING_ACTIVE_END_HOUR,
- 21:     SENDER_LIST_FOR_POLLING as SETTINGS_SENDER_LIST_FOR_POLLING,
- 22:     EMAIL_POLLING_INTERVAL_SECONDS,
- 23:     POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
- 24: )
- 25: 
- 26: # Tentative d'import de ZoneInfo (Python 3.9+)
- 27: try:
- 28:     from zoneinfo import ZoneInfo
- 29: except ImportError:
- 30:     ZoneInfo = None
- 31: 
- 32: 
- 33: # =============================================================================
- 34: # TIMEZONE POUR LE POLLING
- 35: # =============================================================================
- 36: 
- 37: TZ_FOR_POLLING = None
- 38: 
- 39: def initialize_polling_timezone(logger):
- 40:     """
- 41:     Initialise le timezone pour le polling IMAP.
- 42:     
- 43:     Args:
- 44:         logger: Instance de logger Flask (app.logger)
- 45:     
- 46:     Returns:
- 47:         ZoneInfo ou timezone.utc
- 48:     """
- 49:     global TZ_FOR_POLLING
- 50:     
- 51:     if POLLING_TIMEZONE_STR.upper() != "UTC":
- 52:         if ZoneInfo:
- 53:             try:
- 54:                 TZ_FOR_POLLING = ZoneInfo(POLLING_TIMEZONE_STR)
- 55:                 logger.info(f"CFG POLL: Using timezone '{POLLING_TIMEZONE_STR}' for polling schedule.")
- 56:             except Exception as e:
- 57:                 logger.warning(f"CFG POLL: Error loading TZ '{POLLING_TIMEZONE_STR}': {e}. Using UTC.")
- 58:                 TZ_FOR_POLLING = timezone.utc
- 59:         else:
- 60:             logger.warning(f"CFG POLL: 'zoneinfo' module not available. Using UTC. '{POLLING_TIMEZONE_STR}' ignored.")
- 61:             TZ_FOR_POLLING = timezone.utc
- 62:     else:
- 63:         TZ_FOR_POLLING = timezone.utc
- 64:     
- 65:     if TZ_FOR_POLLING is None or TZ_FOR_POLLING == timezone.utc:
- 66:         logger.info(f"CFG POLL: Using timezone 'UTC' for polling schedule (default or fallback).")
- 67:     
- 68:     return TZ_FOR_POLLING
- 69: 
- 70: 
- 71: # =============================================================================
- 72: # GESTION DES VACANCES (VACATION MODE)
- 73: # =============================================================================
- 74: 
- 75: POLLING_VACATION_START_DATE = None
- 76: POLLING_VACATION_END_DATE = None
- 77: 
- 78: def set_vacation_period(start_date: date | None, end_date: date | None, logger):
- 79:     """
- 80:     Définit une période de vacances pendant laquelle le polling est désactivé.
- 81:     
- 82:     Args:
- 83:         start_date: Date de début (incluse) ou None pour désactiver
- 84:         end_date: Date de fin (incluse) ou None pour désactiver
- 85:         logger: Instance de logger Flask
- 86:     """
- 87:     global POLLING_VACATION_START_DATE, POLLING_VACATION_END_DATE
- 88:     
- 89:     POLLING_VACATION_START_DATE = start_date
- 90:     POLLING_VACATION_END_DATE = end_date
- 91:     
- 92:     if start_date and end_date:
- 93:         logger.info(f"CFG POLL: Vacation mode enabled from {start_date} to {end_date}")
- 94:     else:
- 95:         logger.info("CFG POLL: Vacation mode disabled")
- 96: 
- 97: 
- 98: def is_in_vacation_period(check_date: date = None) -> bool:
- 99:     """
-100:     Vérifie si une date donnée est dans la période de vacances.
-101:     
-102:     Args:
-103:         check_date: Date à vérifier (utilise aujourd'hui si None)
-104:     
-105:     Returns:
-106:         True si dans la période de vacances, False sinon
-107:     """
-108:     if not check_date:
-109:         check_date = datetime.now(TZ_FOR_POLLING if TZ_FOR_POLLING else timezone.utc).date()
-110:     
-111:     if not (POLLING_VACATION_START_DATE and POLLING_VACATION_END_DATE):
-112:         return False
-113:     
-114:     return POLLING_VACATION_START_DATE <= check_date <= POLLING_VACATION_END_DATE
-115: 
-116: 
-117: # =============================================================================
-118: # HELPERS POUR VALIDATION DES JOURS ET HEURES
-119: # =============================================================================
-120: 
-121: def is_polling_active(now_dt: datetime, active_days: list[int], 
-122:                      start_hour: int, end_hour: int) -> bool:
-123:     """
-124:     Vérifie si le polling est actif pour un datetime donné.
-125:     
-126:     Args:
-127:         now_dt: Datetime à vérifier (avec timezone)
-128:         active_days: Liste des jours actifs (0=Lundi, 6=Dimanche)
-129:         start_hour: Heure de début (0-23)
-130:         end_hour: Heure de fin (0-23)
-131:     
-132:     Returns:
-133:         True si le polling est actif, False sinon
-134:     """
-135:     if is_in_vacation_period(now_dt.date()):
-136:         return False
-137:     
-138:     is_active_day = now_dt.weekday() in active_days
-139:     
-140:     h = now_dt.hour
-141:     if 0 <= start_hour <= 23 and 0 <= end_hour <= 23:
-142:         if start_hour < end_hour:
-143:             # Fenêtre standard dans la même journée
-144:             is_active_time = (start_hour <= h < end_hour)
-145:         elif start_hour > end_hour:
-146:             # Fenêtre qui traverse minuit (ex: 23 -> 0 ou 22 -> 6)
-147:             is_active_time = (h >= start_hour) or (h < end_hour)
-148:         else:
-149:             # start == end : fenêtre vide (aucune heure active)
-150:             is_active_time = False
-151:     else:
-152:         # Valeurs hors bornes: considérer inactif par sécurité
-153:         is_active_time = False
-154: 
-155:     return is_active_day and is_active_time
-156: 
-157: 
-158: # =============================================================================
-159: # GLOBAL ENABLE (BOOT-TIME POLLER SWITCH)
-160: # =============================================================================
-161: 
-162: def get_enable_polling(default: bool = True) -> bool:
-163:     """Return whether polling is globally enabled from the persisted polling config.
-164: 
-165:     Why: UI may disable polling at the configuration level (in addition to the
-166:     environment flag ENABLE_BACKGROUND_TASKS). This helper centralizes reading
-167:     of the persisted switch stored alongside other polling parameters in
-168:     POLLING_CONFIG_FILE.
-169: 
-170:     Notes:
-171:     - If the file or the key is missing/invalid, we fall back to `default=True`
-172:       to preserve the existing behavior (polling enabled unless explicitly
-173:       disabled via UI).
-174:     """
-175:     try:
-176:         if not POLLING_CONFIG_FILE.exists():
-177:             return bool(default)
-178:         with open(POLLING_CONFIG_FILE, "r", encoding="utf-8") as f:
-179:             data = json.load(f) or {}
-180:         val = data.get("enable_polling")
-181:         # Accept truthy/falsy representations robustly
-182:         if isinstance(val, bool):
-183:             return val
-184:         if isinstance(val, (int, float)):
-185:             return bool(val)
-186:         if isinstance(val, str):
-187:             s = val.strip().lower()
-188:             if s in {"1", "true", "yes", "y", "on"}:
-189:                 return True
-190:             if s in {"0", "false", "no", "n", "off"}:
-191:                 return False
-192:         return bool(default)
-193:     except Exception:
-194:         return bool(default)
-195: 
-196: 
-197: # =============================================================================
-198: # POLLING CONFIG SERVICE
-199: # =============================================================================
-200: 
-201: class PollingConfigService:
-202:     """Service centralisé pour accéder à la configuration de polling.
-203:     
-204:     Ce service encapsule l'accès aux variables de configuration depuis le
-205:     module settings, offrant une interface cohérente et facilitant les tests
-206:     via injection de dépendances.
-207:     """
-208:     
-209:     def __init__(self, settings_module=None, config_store=None):
-210:         """Initialise le service avec un module de settings.
-211:         
-212:         Args:
-213:             settings_module: Module de configuration (par défaut: config.settings)
-214:         """
-215:         self._settings = settings_module
-216:         self._store = config_store
-217: 
-218:     def _get_persisted_polling_config(self) -> dict:
-219:         store = self._store or _app_config_store
-220:         file_fallback = None
-221:         try:
-222:             if self._settings is not None:
-223:                 file_fallback = getattr(self._settings, "POLLING_CONFIG_FILE", None)
-224:         except Exception:
-225:             file_fallback = None
-226: 
-227:         try:
-228:             cfg = store.get_config_json("polling_config", file_fallback=file_fallback)
-229:             return cfg if isinstance(cfg, dict) else {}
-230:         except Exception:
-231:             return {}
-232:     
-233:     def get_active_days(self) -> list[int]:
-234:         """Retourne la liste des jours actifs pour le polling (0=Lundi, 6=Dimanche)."""
-235:         cfg = self._get_persisted_polling_config()
-236:         raw = cfg.get("active_days")
-237:         parsed: list[int] = []
-238:         if isinstance(raw, list):
-239:             for d in raw:
-240:                 try:
-241:                     v = int(d)
-242:                     if 0 <= v <= 6:
-243:                         parsed.append(v)
-244:                 except Exception:
-245:                     continue
-246:         if parsed:
-247:             return sorted(set(parsed))
-248: 
-249:         if self._settings:
-250:             return self._settings.POLLING_ACTIVE_DAYS
-251:         from config import settings
-252:         return settings.POLLING_ACTIVE_DAYS
-253:     
-254:     def get_active_start_hour(self) -> int:
-255:         """Retourne l'heure de début de la fenêtre de polling (0-23)."""
-256:         cfg = self._get_persisted_polling_config()
-257:         if "active_start_hour" in cfg:
-258:             try:
-259:                 v = int(cfg.get("active_start_hour"))
-260:                 if 0 <= v <= 23:
-261:                     return v
-262:             except Exception:
-263:                 pass
-264: 
-265:         if self._settings:
-266:             return self._settings.POLLING_ACTIVE_START_HOUR
-267:         from config import settings
-268:         return settings.POLLING_ACTIVE_START_HOUR
-269:     
-270:     def get_active_end_hour(self) -> int:
-271:         """Retourne l'heure de fin de la fenêtre de polling (0-23)."""
-272:         cfg = self._get_persisted_polling_config()
-273:         if "active_end_hour" in cfg:
-274:             try:
-275:                 v = int(cfg.get("active_end_hour"))
-276:                 if 0 <= v <= 23:
-277:                     return v
-278:             except Exception:
-279:                 pass
-280: 
-281:         if self._settings:
-282:             return self._settings.POLLING_ACTIVE_END_HOUR
-283:         from config import settings
-284:         return settings.POLLING_ACTIVE_END_HOUR
-285:     
-286:     def get_sender_list(self) -> list[str]:
-287:         """Retourne la liste des expéditeurs d'intérêt pour le polling."""
-288:         cfg = self._get_persisted_polling_config()
-289:         raw = cfg.get("sender_of_interest_for_polling")
-290:         senders: list[str] = []
-291:         if isinstance(raw, list):
-292:             senders = [str(s).strip().lower() for s in raw if str(s).strip()]
-293:         elif isinstance(raw, str):
-294:             senders = [p.strip().lower() for p in raw.split(",") if p.strip()]
-295:         if senders:
-296:             email_re = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-297:             filtered = [s for s in senders if email_re.match(s)]
-298:             seen = set()
-299:             unique = []
-300:             for s in filtered:
-301:                 if s not in seen:
-302:                     seen.add(s)
-303:                     unique.append(s)
-304:             return unique
-305: 
-306:         if self._settings:
-307:             return self._settings.SENDER_LIST_FOR_POLLING
-308:         from config import settings
-309:         return settings.SENDER_LIST_FOR_POLLING
-310:     
-311:     def get_email_poll_interval_s(self) -> int:
-312:         """Retourne l'intervalle de polling actif en secondes."""
-313:         if self._settings:
-314:             return self._settings.EMAIL_POLLING_INTERVAL_SECONDS
-315:         from config import settings
-316:         return settings.EMAIL_POLLING_INTERVAL_SECONDS
-317:     
-318:     def get_inactive_check_interval_s(self) -> int:
-319:         """Retourne l'intervalle de vérification hors période active en secondes."""
-320:         if self._settings:
-321:             return self._settings.POLLING_INACTIVE_CHECK_INTERVAL_SECONDS
-322:         from config import settings
-323:         return settings.POLLING_INACTIVE_CHECK_INTERVAL_SECONDS
-324:     
-325:     def get_tz(self):
-326:         """Retourne le timezone configuré pour le polling.
-327:         
-328:         Returns:
-329:             ZoneInfo ou timezone.utc selon la configuration
-330:         """
-331:         return TZ_FOR_POLLING if TZ_FOR_POLLING else timezone.utc
-332:     
-333:     def is_in_vacation(self, check_date_or_dt) -> bool:
-334:         """Vérifie si une date/datetime est dans la période de vacances.
-335:         
-336:         Args:
-337:             check_date_or_dt: date ou datetime à vérifier (None = aujourd'hui)
-338:         
-339:         Returns:
-340:             True si dans la période de vacances, False sinon
-341:         """
-342:         if isinstance(check_date_or_dt, datetime):
-343:             check_date = check_date_or_dt.date()
-344:         elif isinstance(check_date_or_dt, date):
-345:             check_date = check_date_or_dt
-346:         else:
-347:             check_date = None
-348: 
-349:         cfg = self._get_persisted_polling_config()
-350:         vs = cfg.get("vacation_start")
-351:         ve = cfg.get("vacation_end")
-352:         if vs and ve:
-353:             try:
-354:                 start_date = datetime.fromisoformat(str(vs)).date()
-355:                 end_date = datetime.fromisoformat(str(ve)).date()
-356:                 if check_date is None:
-357:                     check_date = datetime.now(
-358:                         TZ_FOR_POLLING if TZ_FOR_POLLING else timezone.utc
-359:                     ).date()
-360:                 return start_date <= check_date <= end_date
-361:             except Exception:
-362:                 pass
-363: 
-364:         return is_in_vacation_period(check_date)
-365:     
-366:     def get_enable_polling(self, default: bool = True) -> bool:
-367:         """Retourne si le polling est activé globalement.
-368:         
-369:         Args:
-370:             default: Valeur par défaut si non configuré
-371:         
-372:         Returns:
-373:             True si le polling est activé, False sinon
-374:         """
-375:         cfg = self._get_persisted_polling_config()
-376:         val = cfg.get("enable_polling")
-377:         if isinstance(val, bool):
-378:             return val
-379:         if isinstance(val, (int, float)):
-380:             return bool(val)
-381:         if isinstance(val, str):
-382:             s = val.strip().lower()
-383:             if s in {"1", "true", "yes", "y", "on"}:
-384:                 return True
-385:             if s in {"0", "false", "no", "n", "off"}:
-386:                 return False
-387:         return bool(default)
-388: 
-389:     def is_subject_group_dedup_enabled(self) -> bool:
-390:         cfg = self._get_persisted_polling_config()
-391:         if "enable_subject_group_dedup" in cfg:
-392:             return bool(cfg.get("enable_subject_group_dedup"))
-393:         if self._settings:
-394:             return bool(getattr(self._settings, "ENABLE_SUBJECT_GROUP_DEDUP", False))
-395:         from config import settings
-396:         return bool(getattr(settings, "ENABLE_SUBJECT_GROUP_DEDUP", False))
 ````
 
 ## File: email_processing/link_extraction.py
@@ -8782,422 +6203,6 @@ requirements.txt
 44:         return jsonify({"success": False, "message": "Impossible de générer un magic link."}), 500
 ````
 
-## File: routes/api_ingress.py
-````python
-  1: from __future__ import annotations
-  2: 
-  3: import hashlib
-  4: import sys
-  5: from datetime import datetime, timezone
-  6: 
-  7: from flask import Blueprint, current_app, jsonify, request
-  8: 
-  9: from email_processing import link_extraction
- 10: from email_processing import orchestrator as email_orchestrator
- 11: from email_processing import pattern_matching
- 12: from services import AuthService, ConfigService
- 13: from utils.text_helpers import mask_sensitive_data
- 14: from utils.time_helpers import is_within_time_window_local, parse_time_hhmm
- 15: 
- 16: try:
- 17:     from services import R2TransferService
- 18: except Exception:
- 19:     R2TransferService = None
- 20: 
- 21: bp = Blueprint("api_ingress", __name__, url_prefix="/api/ingress")
- 22: 
- 23: _config_service = ConfigService()
- 24: _auth_service = AuthService(_config_service)
- 25: 
- 26: 
- 27: def _maybe_enrich_delivery_links_with_r2(
- 28:     *, delivery_links: list, email_id: str, logger
- 29: ) -> None:
- 30:     if not delivery_links:
- 31:         return
- 32: 
- 33:     try:
- 34:         if R2TransferService is None:
- 35:             return
- 36: 
- 37:         r2_service = R2TransferService.get_instance()
- 38:         if not r2_service.is_enabled():
- 39:             return
- 40:     except Exception:
- 41:         return
- 42: 
- 43:     for item in delivery_links:
- 44:         if not isinstance(item, dict):
- 45:             continue
- 46: 
- 47:         raw_url = item.get("raw_url")
- 48:         provider = item.get("provider")
- 49:         if not isinstance(raw_url, str) or not raw_url.strip():
- 50:             continue
- 51:         if not isinstance(provider, str) or not provider.strip():
- 52:             continue
- 53: 
- 54:         if not isinstance(item.get("direct_url"), str) or not item.get("direct_url"):
- 55:             item["direct_url"] = raw_url
- 56: 
- 57:         try:
- 58:             normalized_source_url = r2_service.normalize_source_url(raw_url, provider)
- 59:         except Exception:
- 60:             normalized_source_url = raw_url
- 61: 
- 62:         remote_fetch_timeout = 15
- 63:         try:
- 64:             if provider == "dropbox" and "/scl/fo/" in normalized_source_url.lower():
- 65:                 remote_fetch_timeout = 120
- 66:         except Exception:
- 67:             remote_fetch_timeout = 15
- 68: 
- 69:         try:
- 70:             r2_url, original_filename = r2_service.request_remote_fetch(
- 71:                 source_url=normalized_source_url,
- 72:                 provider=provider,
- 73:                 email_id=email_id,
- 74:                 timeout=remote_fetch_timeout,
- 75:             )
- 76:         except Exception:
- 77:             continue
- 78: 
- 79:         if not isinstance(r2_url, str) or not r2_url.strip():
- 80:             continue
- 81: 
- 82:         item["r2_url"] = r2_url
- 83:         if isinstance(original_filename, str) and original_filename.strip():
- 84:             item["original_filename"] = original_filename.strip()
- 85: 
- 86:         try:
- 87:             logger.info(
- 88:                 "R2_TRANSFER: Successfully transferred %s link to R2 for email %s",
- 89:                 provider,
- 90:                 email_id,
- 91:             )
- 92:         except Exception:
- 93:             pass
- 94: 
- 95:         try:
- 96:             r2_service.persist_link_pair(
- 97:                 source_url=normalized_source_url,
- 98:                 r2_url=r2_url,
- 99:                 provider=provider,
-100:                 original_filename=(original_filename if isinstance(original_filename, str) else None),
-101:             )
-102:         except Exception as ex:
-103:             try:
-104:                 logger.debug("R2_TRANSFER: persist_link_pair failed for email %s: %s", email_id, ex)
-105:             except Exception:
-106:                 pass
-107: 
-108: 
-109: def _compute_email_id(*, subject: str, sender: str, date: str) -> str:
-110:     unique_str = f"{subject}|{sender}|{date}"
-111:     return hashlib.md5(unique_str.encode("utf-8")).hexdigest()
-112: 
-113: 
-114: @bp.route("/gmail", methods=["POST"])
-115: def ingest_gmail():
-116:     if not _auth_service.verify_api_key_from_request(request):
-117:         return jsonify({"success": False, "message": "Unauthorized"}), 401
-118: 
-119:     payload = request.get_json(silent=True)
-120:     if not isinstance(payload, dict):
-121:         return jsonify({"success": False, "message": "Invalid JSON payload"}), 400
-122: 
-123:     subject = payload.get("subject")
-124:     sender_raw = payload.get("sender")
-125:     body = payload.get("body")
-126:     email_date = payload.get("date")
-127: 
-128:     if not isinstance(subject, str):
-129:         subject = ""
-130:     if not isinstance(sender_raw, str):
-131:         sender_raw = ""
-132:     if not isinstance(body, str):
-133:         body = ""
-134:     if not isinstance(email_date, str):
-135:         email_date = ""
-136: 
-137:     if not sender_raw:
-138:         return jsonify({"success": False, "message": "Missing field: sender"}), 400
-139:     if not body:
-140:         return jsonify({"success": False, "message": "Missing field: body"}), 400
-141: 
-142:     ar = sys.modules.get("app_render")
-143:     if ar is None:
-144:         return jsonify({"success": False, "message": "Server not ready"}), 503
-145: 
-146:     try:
-147:         extract_sender_fn = getattr(ar, "extract_sender_email", None)
-148:         sender_email = (
-149:             extract_sender_fn(sender_raw) if callable(extract_sender_fn) else sender_raw
-150:         )
-151:     except Exception:
-152:         sender_email = sender_raw
-153: 
-154:     sender_email = (sender_email or sender_raw).strip().lower()
-155: 
-156:     email_id = _compute_email_id(subject=subject, sender=sender_email, date=email_date)
-157: 
-158:     try:
-159:         current_app.logger.info(
-160:             "INGRESS: gmail payload received (email_id=%s sender=%s subject=%s)",
-161:             email_id,
-162:             mask_sensitive_data(sender_email, "email"),
-163:             mask_sensitive_data(subject, "subject"),
-164:         )
-165:     except Exception:
-166:         pass
-167: 
-168:     try:
-169:         is_processed_fn = getattr(ar, "is_email_id_processed_redis", None)
-170:         if callable(is_processed_fn) and is_processed_fn(email_id):
-171:             return (
-172:                 jsonify({"success": True, "status": "already_processed", "email_id": email_id}),
-173:                 200,
-174:             )
-175:     except Exception:
-176:         pass
-177: 
-178:     try:
-179:         sender_list = []
-180:         polling_service = getattr(ar, "_polling_service", None)
-181:         if polling_service is not None:
-182:             try:
-183:                 sender_list = polling_service.get_sender_list() or []
-184:             except Exception:
-185:                 sender_list = []
-186:         allowed = [str(s).strip().lower() for s in sender_list if isinstance(s, str) and s.strip()]
-187:         if allowed and sender_email not in allowed:
-188:             try:
-189:                 mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
-190:                 if callable(mark_processed_fn):
-191:                     mark_processed_fn(email_id)
-192:             except Exception:
-193:                 pass
-194:             return (
-195:                 jsonify({"success": True, "status": "skipped_sender_not_allowed", "email_id": email_id}),
-196:                 200,
-197:             )
-198:     except Exception:
-199:         pass
-200: 
-201:     try:
-202:         if not email_orchestrator._is_webhook_sending_enabled():
-203:             return (
-204:                 jsonify({"success": False, "message": "Webhook sending disabled"}),
-205:                 409,
-206:             )
-207:     except Exception:
-208:         pass
-209: 
-210:     tz_for_polling = getattr(ar, "TZ_FOR_POLLING", None)
-211:     try:
-212:         now_local = datetime.now(tz_for_polling) if tz_for_polling else datetime.now()
-213:     except Exception:
-214:         now_local = datetime.now()
-215: 
-216:     detector_val = None
-217:     delivery_time_val = None
-218:     desabo_is_urgent = False
-219:     try:
-220:         ms_res = pattern_matching.check_media_solution_pattern(
-221:             subject or "", body, tz_for_polling, current_app.logger
-222:         )
-223:         if isinstance(ms_res, dict) and bool(ms_res.get("matches")):
-224:             detector_val = "recadrage"
-225:             delivery_time_val = ms_res.get("delivery_time")
-226:         else:
-227:             des_res = pattern_matching.check_desabo_conditions(
-228:                 subject or "", body, current_app.logger
-229:             )
-230:             if isinstance(des_res, dict) and bool(des_res.get("matches")):
-231:                 detector_val = "desabonnement_journee_tarifs"
-232:                 desabo_is_urgent = bool(des_res.get("is_urgent"))
-233:     except Exception:
-234:         detector_val = None
-235: 
-236:     s_str, e_str = "", ""
-237:     try:
-238:         s_str, e_str = email_orchestrator._load_webhook_global_time_window()
-239:     except Exception:
-240:         s_str, e_str = "", ""
-241: 
-242:     start_t = parse_time_hhmm(s_str) if s_str else None
-243:     end_t = parse_time_hhmm(e_str) if e_str else None
-244:     within = True
-245:     if start_t and end_t:
-246:         within = is_within_time_window_local(now_local, start_t, end_t)
-247: 
-248:     if not within:
-249:         if detector_val == "desabonnement_journee_tarifs":
-250:             if desabo_is_urgent:
-251:                 return (
-252:                     jsonify({"success": False, "message": "Outside time window (DESABO urgent)"}),
-253:                     409,
-254:                 )
-255:         elif detector_val == "recadrage":
-256:             try:
-257:                 mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
-258:                 if callable(mark_processed_fn):
-259:                     mark_processed_fn(email_id)
-260:             except Exception:
-261:                 pass
-262:             return (
-263:                 jsonify({"success": True, "status": "skipped_outside_time_window", "email_id": email_id}),
-264:                 200,
-265:             )
-266:         else:
-267:             return (
-268:                 jsonify({"success": False, "message": "Outside time window"}),
-269:                 409,
-270:             )
-271: 
-272:     start_payload_val = None
-273:     try:
-274:         if start_t and end_t:
-275:             if within:
-276:                 start_payload_val = "maintenant"
-277:             else:
-278:                 if (
-279:                     detector_val == "desabonnement_journee_tarifs"
-280:                     and not desabo_is_urgent
-281:                     and now_local.time() < start_t
-282:                 ):
-283:                     start_payload_val = s_str
-284:     except Exception:
-285:         start_payload_val = None
-286: 
-287:     delivery_links = link_extraction.extract_provider_links_from_text(body)
-288: 
-289:     try:
-290:         _maybe_enrich_delivery_links_with_r2(
-291:             delivery_links=delivery_links or [],
-292:             email_id=email_id,
-293:             logger=current_app.logger,
-294:         )
-295:     except Exception:
-296:         pass
-297: 
-298:     payload_for_webhook = {
-299:         "microsoft_graph_email_id": email_id,
-300:         "subject": subject or "",
-301:         "receivedDateTime": email_date or "",
-302:         "sender_address": sender_raw,
-303:         "bodyPreview": (body or "")[:200],
-304:         "email_content": body or "",
-305:         "source": "gmail_push",
-306:     }
-307: 
-308:     try:
-309:         if detector_val:
-310:             payload_for_webhook["detector"] = detector_val
-311:         if detector_val == "recadrage" and delivery_time_val:
-312:             payload_for_webhook["delivery_time"] = delivery_time_val
-313:         payload_for_webhook["sender_email"] = sender_email
-314:     except Exception:
-315:         pass
-316: 
-317:     try:
-318:         if start_payload_val is not None:
-319:             payload_for_webhook["webhooks_time_start"] = start_payload_val
-320:         if e_str:
-321:             payload_for_webhook["webhooks_time_end"] = e_str
-322:     except Exception:
-323:         pass
-324: 
-325:     webhook_cfg = {}
-326:     try:
-327:         webhook_cfg = email_orchestrator._get_webhook_config_dict() or {}
-328:     except Exception:
-329:         webhook_cfg = {}
-330: 
-331:     webhook_url = ""
-332:     try:
-333:         webhook_url = str(webhook_cfg.get("webhook_url") or "").strip()
-334:     except Exception:
-335:         webhook_url = ""
-336:     if not webhook_url:
-337:         webhook_url = str(getattr(ar, "WEBHOOK_URL", "") or "").strip()
-338:     if not webhook_url:
-339:         return jsonify({"success": False, "message": "WEBHOOK_URL not configured"}), 500
-340: 
-341:     webhook_ssl_verify = True
-342:     try:
-343:         webhook_ssl_verify = bool(webhook_cfg.get("webhook_ssl_verify", True))
-344:     except Exception:
-345:         webhook_ssl_verify = True
-346: 
-347:     allow_without_links = bool(getattr(ar, "ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS", False))
-348:     try:
-349:         rfs = getattr(ar, "_runtime_flags_service", None)
-350:         if rfs is not None and hasattr(rfs, "get_flag"):
-351:             allow_without_links = bool(
-352:                 rfs.get_flag("allow_custom_webhook_without_links", allow_without_links)
-353:             )
-354:     except Exception:
-355:         pass
-356: 
-357:     processing_prefs = getattr(ar, "PROCESSING_PREFS", {})
-358: 
-359:     rate_limit_allow_send = getattr(ar, "_rate_limit_allow_send", None)
-360:     record_send_event = getattr(ar, "_record_send_event", None)
-361:     append_webhook_log = getattr(ar, "_append_webhook_log", None)
-362:     mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
-363: 
-364:     if not callable(rate_limit_allow_send) or not callable(record_send_event):
-365:         return jsonify({"success": False, "message": "Server misconfigured"}), 500
-366:     if not callable(append_webhook_log) or not callable(mark_processed_fn):
-367:         return jsonify({"success": False, "message": "Server misconfigured"}), 500
-368: 
-369:     import requests
-370:     import time
-371: 
-372:     try:
-373:         flow_result = email_orchestrator.send_custom_webhook_flow(
-374:             email_id=email_id,
-375:             subject=subject,
-376:             payload_for_webhook=payload_for_webhook,
-377:             delivery_links=delivery_links or [],
-378:             webhook_url=webhook_url,
-379:             webhook_ssl_verify=webhook_ssl_verify,
-380:             allow_without_links=allow_without_links,
-381:             processing_prefs=processing_prefs,
-382:             rate_limit_allow_send=rate_limit_allow_send,
-383:             record_send_event=record_send_event,
-384:             append_webhook_log=append_webhook_log,
-385:             mark_email_id_as_processed_redis=mark_processed_fn,
-386:             mark_email_as_read_imap=lambda *_a, **_kw: True,
-387:             mail=None,
-388:             email_num=None,
-389:             urlparse=None,
-390:             requests=requests,
-391:             time=time,
-392:             logger=current_app.logger,
-393:         )
-394: 
-395:         return (
-396:             jsonify(
-397:                 {
-398:                     "success": True,
-399:                     "status": "processed",
-400:                     "email_id": email_id,
-401:                     "flow_result": flow_result,
-402:                     "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-403:                 }
-404:             ),
-405:             200,
-406:         )
-407:     except Exception as e:
-408:         try:
-409:             current_app.logger.error("INGRESS: processing error for %s: %s", email_id, e)
-410:         except Exception:
-411:             pass
-412:         return jsonify({"success": False, "message": "Internal error"}), 500
-````
-
 ## File: routes/api_logs.py
 ````python
  1: from __future__ import annotations
@@ -9270,258 +6275,6 @@ requirements.txt
 68:             jsonify({"success": False, "message": "Erreur lors de la récupération des logs."}),
 69:             500,
 70:         )
-````
-
-## File: routes/api_test.py
-````python
-  1: from __future__ import annotations
-  2: 
-  3: import json
-  4: from datetime import datetime, timedelta, timezone
-  5: 
-  6: from flask import Blueprint, jsonify, request
-  7: 
-  8: from auth.helpers import testapi_authorized as _testapi_authorized
-  9: from config.webhook_time_window import (
- 10:     get_time_window_info,
- 11:     update_time_window,
- 12: )
- 13: from config.webhook_config import load_webhook_config, save_webhook_config
- 14: from config.settings import (
- 15:     WEBHOOK_CONFIG_FILE,
- 16:     WEBHOOK_LOGS_FILE,
- 17:     WEBHOOK_URL,
- 18:     WEBHOOK_SSL_VERIFY,
- 19:     POLLING_TIMEZONE_STR,
- 20:     POLLING_ACTIVE_DAYS,
- 21:     POLLING_ACTIVE_START_HOUR,
- 22:     POLLING_ACTIVE_END_HOUR,
- 23:     EMAIL_POLLING_INTERVAL_SECONDS,
- 24:     POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
- 25:     ENABLE_SUBJECT_GROUP_DEDUP,
- 26: )
- 27: from utils.validators import normalize_make_webhook_url as _normalize_make_webhook_url
- 28: 
- 29: bp = Blueprint("api_test", __name__, url_prefix="/api/test")
- 30: 
- 31: 
- 32: """Webhook config I/O helpers are centralized in config/webhook_config."""
- 33: 
- 34: 
- 35: def _mask_url(url: str | None) -> str | None:
- 36:     if not url:
- 37:         return None
- 38:     if url.startswith("http"):
- 39:         parts = url.split("/")
- 40:         if len(parts) > 3:
- 41:             return f"{parts[0]}//{parts[2]}/***"
- 42:         return url[:30] + "***"
- 43:     return None
- 44: 
- 45: 
- 46: # --- Endpoints ---
- 47: 
- 48: @bp.route("/get_webhook_time_window", methods=["GET"])
- 49: def get_webhook_time_window():
- 50:     if not _testapi_authorized(request):
- 51:         return jsonify({"success": False, "message": "Unauthorized"}), 401
- 52:     try:
- 53:         info = get_time_window_info()
- 54:         return (
- 55:             jsonify(
- 56:                 {
- 57:                     "success": True,
- 58:                     "webhooks_time_start": info.get("start") or None,
- 59:                     "webhooks_time_end": info.get("end") or None,
- 60:                     "timezone": POLLING_TIMEZONE_STR,
- 61:                 }
- 62:             ),
- 63:             200,
- 64:         )
- 65:     except Exception:
- 66:         return (
- 67:             jsonify({"success": False, "message": "Erreur lors de la récupération de la fenêtre horaire."}),
- 68:             500,
- 69:         )
- 70: 
- 71: 
- 72: @bp.route("/set_webhook_time_window", methods=["POST"])
- 73: def set_webhook_time_window():
- 74:     if not _testapi_authorized(request):
- 75:         return jsonify({"success": False, "message": "Unauthorized"}), 401
- 76:     try:
- 77:         payload = request.get_json(silent=True) or {}
- 78:         start = payload.get("start", "")
- 79:         end = payload.get("end", "")
- 80:         ok, msg = update_time_window(start, end)
- 81:         status = 200 if ok else 400
- 82:         info = get_time_window_info()
- 83:         return (
- 84:             jsonify(
- 85:                 {
- 86:                     "success": ok,
- 87:                     "message": msg,
- 88:                     "webhooks_time_start": info.get("start") or None,
- 89:                     "webhooks_time_end": info.get("end") or None,
- 90:                 }
- 91:             ),
- 92:             status,
- 93:         )
- 94:     except Exception:
- 95:         return (
- 96:             jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}),
- 97:             500,
- 98:         )
- 99: 
-100: 
-101: @bp.route("/get_webhook_config", methods=["GET"])
-102: def get_webhook_config():
-103:     if not _testapi_authorized(request):
-104:         return jsonify({"success": False, "message": "Unauthorized"}), 401
-105:     try:
-106:         persisted = load_webhook_config(WEBHOOK_CONFIG_FILE)
-107:         cfg = {
-108:             "webhook_url": persisted.get("webhook_url") or _mask_url(WEBHOOK_URL),
-109:             "webhook_ssl_verify": persisted.get("webhook_ssl_verify", WEBHOOK_SSL_VERIFY),
-110:             "polling_enabled": persisted.get("polling_enabled", False),
-111:         }
-112:         return jsonify({"success": True, "config": cfg}), 200
-113:     except Exception:
-114:         return (
-115:             jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration."}),
-116:             500,
-117:         )
-118: 
-119: 
-120: @bp.route("/update_webhook_config", methods=["POST"])
-121: def update_webhook_config():
-122:     if not _testapi_authorized(request):
-123:         return jsonify({"success": False, "message": "Unauthorized"}), 401
-124:     try:
-125:         payload = request.get_json(silent=True) or {}
-126:         config = load_webhook_config(WEBHOOK_CONFIG_FILE)
-127: 
-128:         if "webhook_url" in payload:
-129:             val = payload["webhook_url"].strip() if payload["webhook_url"] else None
-130:             if val and not val.startswith("http"):
-131:                 return (
-132:                     jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}),
-133:                     400,
-134:                 )
-135:             config["webhook_url"] = val
-136: 
-137:         if "recadrage_webhook_url" in payload:
-138:             val = payload["recadrage_webhook_url"].strip() if payload["recadrage_webhook_url"] else None
-139:             if val and not val.startswith("http"):
-140:                 return (
-141:                     jsonify({"success": False, "message": "recadrage_webhook_url doit être une URL HTTPS valide."}),
-142:                     400,
-143:                 )
-144:             config["recadrage_webhook_url"] = val
-145: 
-146:         # presence fields removed
-147: 
-148:         if "autorepondeur_webhook_url" in payload:
-149:             val = payload["autorepondeur_webhook_url"].strip() if payload["autorepondeur_webhook_url"] else None
-150:             if val:
-151:                 val = _normalize_make_webhook_url(val)
-152:             config["autorepondeur_webhook_url"] = val
-153: 
-154:         if "webhook_ssl_verify" in payload:
-155:             config["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
-156: 
-157:         if not save_webhook_config(WEBHOOK_CONFIG_FILE, config):
-158:             return (
-159:                 jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration."}),
-160:                 500,
-161:             )
-162:         return jsonify({"success": True, "message": "Configuration mise à jour avec succès."}), 200
-163:     except Exception:
-164:         return (
-165:             jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}),
-166:             500,
-167:         )
-168: 
-169: 
-170: @bp.route("/get_polling_config", methods=["GET"])
-171: def get_polling_config():
-172:     if not _testapi_authorized(request):
-173:         return jsonify({"success": False, "message": "Unauthorized"}), 401
-174:     try:
-175:         return (
-176:             jsonify(
-177:                 {
-178:                     "success": True,
-179:                     "timezone": POLLING_TIMEZONE_STR,
-180:                     "active_days": POLLING_ACTIVE_DAYS,
-181:                     "active_start_hour": POLLING_ACTIVE_START_HOUR,
-182:                     "active_end_hour": POLLING_ACTIVE_END_HOUR,
-183:                     "interval_seconds": EMAIL_POLLING_INTERVAL_SECONDS,
-184:                     "inactive_check_interval_seconds": POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
-185:                     "enable_subject_group_dedup": ENABLE_SUBJECT_GROUP_DEDUP,
-186:                 }
-187:             ),
-188:             200,
-189:         )
-190:     except Exception:
-191:         return (
-192:             jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration de polling."}),
-193:             500,
-194:         )
-195: 
-196: 
-197: @bp.route("/webhook_logs", methods=["GET"])
-198: def webhook_logs():
-199:     if not _testapi_authorized(request):
-200:         return jsonify({"success": False, "message": "Unauthorized"}), 401
-201:     try:
-202:         days = int(request.args.get("days", 7))
-203:         if days < 1:
-204:             days = 7
-205:         if days > 30:
-206:             days = 30
-207: 
-208:         if not WEBHOOK_LOGS_FILE.exists():
-209:             return jsonify({"success": True, "logs": [], "count": 0, "days_filter": days}), 200
-210:         with open(WEBHOOK_LOGS_FILE, "r", encoding="utf-8") as f:
-211:             all_logs = json.load(f) or []
-212: 
-213:         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-214:         filtered = []
-215:         for log in all_logs:
-216:             try:
-217:                 log_time = datetime.fromisoformat(log.get("timestamp", ""))
-218:                 if log_time >= cutoff:
-219:                     filtered.append(log)
-220:             except Exception:
-221:                 filtered.append(log)
-222: 
-223:         filtered = filtered[-50:]
-224:         filtered.reverse()
-225:         return (
-226:             jsonify({"success": True, "logs": filtered, "count": len(filtered), "days_filter": days}),
-227:             200,
-228:         )
-229:     except Exception:
-230:         return (
-231:             jsonify({"success": False, "message": "Erreur lors de la récupération des logs."}),
-232:             500,
-233:         )
-234: 
-235: 
-236: @bp.route("/clear_email_dedup", methods=["POST"])
-237: def clear_email_dedup():
-238:     if not _testapi_authorized(request):
-239:         return jsonify({"success": False, "message": "Unauthorized"}), 401
-240:     try:
-241:         payload = request.get_json(silent=True) or {}
-242:         email_id = str(payload.get("email_id") or "").strip()
-243:         if not email_id:
-244:             return jsonify({"success": False, "message": "email_id manquant"}), 400
-245:         # Legacy endpoint: no in-memory store to clear. Redis not used here; report not removed.
-246:         return jsonify({"success": True, "removed": False, "email_id": email_id}), 200
-247:     except Exception:
-248:         return jsonify({"success": False, "message": "Erreur interne"}), 500
 ````
 
 ## File: routes/dashboard.py
@@ -9937,6 +6690,634 @@ requirements.txt
 250:     def __repr__(self) -> str:
 251:         login_mgr = "initialized" if self._login_manager else "not initialized"
 252:         return f"<AuthService(login_manager={login_mgr})>"
+````
+
+## File: services/config_service.py
+````python
+  1: """
+  2: services.config_service
+  3: ~~~~~~~~~~~~~~~~~~~~~~~
+  4: 
+  5: Service centralisé pour accéder à la configuration applicative.
+  6: 
+  7: Ce service remplace l'accès direct aux variables de config.settings et fournit:
+  8: - Validation des valeurs de configuration
+  9: - Transformation et normalisation
+ 10: - Interface stable indépendante de l'implémentation sous-jacente
+ 11: - Méthodes typées pour accès sécurisé
+ 12: 
+ 13: Usage:
+ 14:     from services import ConfigService
+ 15:     
+ 16:     config = ConfigService()
+ 17:     
+ 18:     if config.is_email_config_valid():
+ 19:         email_cfg = config.get_email_config()
+ 20:         # ... use email_cfg
+ 21: """
+ 22: 
+ 23: from __future__ import annotations
+ 24: from typing import Optional
+ 25: 
+ 26: 
+ 27: class ConfigService:
+ 28:     """Service centralisé pour accéder à la configuration applicative.
+ 29:     
+ 30:     Attributes:
+ 31:         _settings: Module de configuration (config.settings par défaut)
+ 32:     """
+ 33:     
+ 34:     def __init__(self, settings_module=None):
+ 35:         """Initialise le service avec un module de configuration.
+ 36:         
+ 37:         Args:
+ 38:             settings_module: Module contenant la configuration (None = import dynamique)
+ 39:         """
+ 40:         if settings_module:
+ 41:             self._settings = settings_module
+ 42:         else:
+ 43:             from config import settings
+ 44:             self._settings = settings
+ 45:     
+ 46:     # Configuration IMAP / Email (legacy - kept for tests only)
+ 47:     
+ 48:     def get_email_config(self) -> dict:
+ 49:         """Retourne la configuration email complète et validée (legacy).
+ 50:         
+ 51:         Returns:
+ 52:             dict avec clés: address, password, server, port, use_ssl
+ 53:         """
+ 54:         return {
+ 55:             "address": self._settings.EMAIL_ADDRESS,
+ 56:             "password": self._settings.EMAIL_PASSWORD,
+ 57:             "server": self._settings.IMAP_SERVER,
+ 58:             "port": self._settings.IMAP_PORT,
+ 59:             "use_ssl": self._settings.IMAP_USE_SSL,
+ 60:         }
+ 61:     
+ 62:     def is_email_config_valid(self) -> bool:
+ 63:         """Vérifie si la configuration email est complète et valide.
+ 64:         
+ 65:         Returns:
+ 66:             True si tous les champs requis sont présents
+ 67:         """
+ 68:         return bool(
+ 69:             self._settings.EMAIL_ADDRESS
+ 70:             and self._settings.EMAIL_PASSWORD
+ 71:             and self._settings.IMAP_SERVER
+ 72:         )
+ 73:     
+ 74:     def get_email_address(self) -> str:
+ 75:         return self._settings.EMAIL_ADDRESS
+ 76:     
+ 77:     def get_email_password(self) -> str:
+ 78:         return self._settings.EMAIL_PASSWORD
+ 79:     
+ 80:     def get_imap_server(self) -> str:
+ 81:         return self._settings.IMAP_SERVER
+ 82:     
+ 83:     def get_imap_port(self) -> int:
+ 84:         return self._settings.IMAP_PORT
+ 85:     
+ 86:     def get_imap_use_ssl(self) -> bool:
+ 87:         return self._settings.IMAP_USE_SSL
+ 88:     
+ 89:     # Configuration Webhooks
+ 90:     
+ 91:     def get_webhook_url(self) -> str:
+ 92:         return self._settings.WEBHOOK_URL
+ 93:     
+ 94:     def get_webhook_ssl_verify(self) -> bool:
+ 95:         return self._settings.WEBHOOK_SSL_VERIFY
+ 96:     
+ 97:     def has_webhook_url(self) -> bool:
+ 98:         return bool(self._settings.WEBHOOK_URL)
+ 99:     
+100:     # Configuration API / Tokens
+101:     
+102:     def get_api_token(self) -> str:
+103:         return self._settings.EXPECTED_API_TOKEN or ""
+104:     
+105:     def verify_api_token(self, token: str) -> bool:
+106:         """Vérifie si un token correspond au token API configuré.
+107:         
+108:         Args:
+109:             token: Token à vérifier
+110:             
+111:         Returns:
+112:             True si le token est valide
+113:         """
+114:         expected = self.get_api_token()
+115:         if not expected:
+116:             return False
+117:         return token == expected
+118:     
+119:     def has_api_token(self) -> bool:
+120:         return bool(self._settings.EXPECTED_API_TOKEN)
+121:     
+122:     def get_test_api_key(self) -> str:
+123:         import os
+124:         return os.environ.get("TEST_API_KEY", "")
+125:     
+126:     def verify_test_api_key(self, key: str) -> bool:
+127:         expected = self.get_test_api_key()
+128:         if not expected:
+129:             return False
+130:         return key == expected
+131:     
+132:     # Configuration Render (Déploiement)
+133:     
+134:     def get_render_config(self) -> dict:
+135:         """Retourne la configuration Render pour déploiement.
+136:         
+137:         Returns:
+138:             dict avec api_key, service_id, deploy_hook_url, clear_cache
+139:         """
+140:         return {
+141:             "api_key": self._settings.RENDER_API_KEY,
+142:             "service_id": self._settings.RENDER_SERVICE_ID,
+143:             "deploy_hook_url": self._settings.RENDER_DEPLOY_HOOK_URL,
+144:             "clear_cache": self._settings.RENDER_DEPLOY_CLEAR_CACHE,
+145:         }
+146:     
+147:     def has_render_config(self) -> bool:
+148:         return bool(
+149:             self._settings.RENDER_API_KEY and self._settings.RENDER_SERVICE_ID
+150:         ) or bool(self._settings.RENDER_DEPLOY_HOOK_URL)
+151:     
+152:     # Présence: feature removed
+153:     
+154:     # Configuration Authentification Dashboard
+155:     
+156:     def get_dashboard_user(self) -> str:
+157:         return self._settings.TRIGGER_PAGE_USER
+158:     
+159:     def get_dashboard_password(self) -> str:
+160:         return self._settings.TRIGGER_PAGE_PASSWORD
+161:     
+162:     def verify_dashboard_credentials(self, username: str, password: str) -> bool:
+163:         """Vérifie les credentials du dashboard.
+164:         
+165:         Args:
+166:             username: Nom d'utilisateur
+167:             password: Mot de passe
+168:             
+169:         Returns:
+170:             True si credentials valides
+171:         """
+172:         return (
+173:             username == self._settings.TRIGGER_PAGE_USER
+174:             and password == self._settings.TRIGGER_PAGE_PASSWORD
+175:         )
+176:     
+177:     # Configuration Déduplication
+178:     
+179:     def is_email_id_dedup_disabled(self) -> bool:
+180:         return bool(self._settings.DISABLE_EMAIL_ID_DEDUP)
+181:     
+182:     def is_subject_group_dedup_enabled(self) -> bool:
+183:         return bool(self._settings.ENABLE_SUBJECT_GROUP_DEDUP)
+184:     
+185:     def get_dedup_redis_keys(self) -> dict:
+186:         """Retourne les clés Redis pour la déduplication.
+187:         
+188:         Returns:
+189:             dict avec email_ids_key, subject_groups_key, subject_group_prefix
+190:         """
+191:         return {
+192:             "email_ids_key": self._settings.PROCESSED_EMAIL_IDS_REDIS_KEY,
+193:             "subject_groups_key": self._settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
+194:             "subject_group_prefix": self._settings.SUBJECT_GROUP_REDIS_PREFIX,
+195:             "subject_group_ttl": self._settings.SUBJECT_GROUP_TTL_SECONDS,
+196:         }
+197:     
+198:     # Configuration Make.com
+199:     
+200:     def get_makecom_api_key(self) -> str:
+201:         return self._settings.MAKECOM_API_KEY or ""
+202:     
+203:     def has_makecom_api_key(self) -> bool:
+204:         return bool(self._settings.MAKECOM_API_KEY)
+205:     
+206:     # Configuration Tâches de Fond (legacy - background tasks disabled)
+207:     
+208:     def is_background_tasks_enabled(self) -> bool:
+209:         return bool(getattr(self._settings, "ENABLE_BACKGROUND_TASKS", False))
+210:     
+211:     def get_bg_poller_lock_file(self) -> str:
+212:         return getattr(
+213:             self._settings,
+214:             "BG_POLLER_LOCK_FILE",
+215:             "/tmp/render_signal_server_email_poller.lock",
+216:         )
+217:     
+218:     # Chemins de Fichiers
+219:     
+220:     def get_runtime_flags_file(self):
+221:         return self._settings.RUNTIME_FLAGS_FILE
+222:     
+223:     def get_trigger_signal_file(self):
+224:         return self._settings.TRIGGER_SIGNAL_FILE
+225:     
+226:     # Méthodes Utilitaires
+227:     
+228:     def get_raw_settings(self):
+229:         return self._settings
+230:     
+231:     def __repr__(self) -> str:
+232:         return f"<ConfigService(email_valid={self.is_email_config_valid()}, webhook={self.has_webhook_url()})>"
+````
+
+## File: services/deduplication_service.py
+````python
+  1: """
+  2: services.deduplication_service
+  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  4: 
+  5: Service pour la déduplication d'emails avec Redis et fallback mémoire.
+  6: 
+  7: Features:
+  8: - Déduplication par email ID (identifiant unique de l'email)
+  9: - Déduplication par subject group (regroupement par sujet)
+ 10: - Fallback automatique en mémoire si Redis indisponible
+ 11: - Scoping mensuel optionnel pour subject groups
+ 12: - Thread-safe via design immutable
+ 13: 
+ 14: Usage:
+ 15:     from services import DeduplicationService, ConfigService
+ 16:     
+ 17:     config = ConfigService()
+ 18:     
+ 19:     dedup = DeduplicationService(
+ 20:         redis_client=redis_client,
+ 21:         logger=app.logger,
+ 22:         config_service=config
+ 23:     )
+ 24:     
+ 25:     if not dedup.is_email_processed(email_id):
+ 26:         dedup.mark_email_processed(email_id)
+ 27:     
+ 28:     if not dedup.is_subject_group_processed(subject):
+ 29:         dedup.mark_subject_group_processed(subject)
+ 30: """
+ 31: 
+ 32: from __future__ import annotations
+ 33: 
+ 34: import hashlib
+ 35: import re
+ 36: from datetime import datetime
+ 37: from typing import Optional, Set, TYPE_CHECKING
+ 38: 
+ 39: if TYPE_CHECKING:
+ 40:     from services.config_service import ConfigService
+ 41: 
+ 42: from utils.text_helpers import (
+ 43:     normalize_no_accents_lower_trim,
+ 44:     strip_leading_reply_prefixes,
+ 45: )
+ 46: 
+ 47: 
+ 48: class DeduplicationService:
+ 49:     """Service pour la déduplication d'emails et subject groups.
+ 50:     
+ 51:     Attributes:
+ 52:         _redis: Client Redis optionnel
+ 53:         _logger: Logger pour diagnostics
+ 54:         _config: ConfigService pour accès à la configuration
+ 55:         _processed_email_ids: Set en mémoire (fallback)
+ 56:         _processed_subject_groups: Set en mémoire (fallback)
+ 57:     """
+ 58:     
+ 59:     def __init__(
+ 60:         self,
+ 61:         redis_client=None,
+ 62:         logger=None,
+ 63:         config_service: Optional[ConfigService] = None,
+ 64:     ):
+ 65:         """Initialise le service de déduplication.
+ 66:         
+ 67:         Args:
+ 68:             redis_client: Client Redis optionnel (None = fallback mémoire)
+ 69:             logger: Logger optionnel pour diagnostics
+ 70:             config_service: ConfigService pour configuration
+ 71:         """
+ 72:         self._redis = redis_client
+ 73:         self._logger = logger
+ 74:         self._config = config_service
+ 75:         
+ 76:         # Fallbacks en mémoire (process-local uniquement)
+ 77:         self._processed_email_ids: Set[str] = set()
+ 78:         self._processed_subject_groups: Set[str] = set()
+ 79:     
+ 80:     # =========================================================================
+ 81:     # Déduplication Email ID
+ 82:     # =========================================================================
+ 83:     
+ 84:     def is_email_processed(self, email_id: str) -> bool:
+ 85:         """Vérifie si un email a déjà été traité.
+ 86:         
+ 87:         Args:
+ 88:             email_id: Identifiant unique de l'email
+ 89:             
+ 90:         Returns:
+ 91:             True si déjà traité, False sinon
+ 92:         """
+ 93:         if not email_id:
+ 94:             return False
+ 95:         
+ 96:         if self.is_email_dedup_disabled():
+ 97:             return False
+ 98:         
+ 99:         # Essayer Redis d'abord
+100:         if self._use_redis():
+101:             try:
+102:                 keys_config = self._get_dedup_keys()
+103:                 key = keys_config["email_ids_key"]
+104:                 return bool(self._redis.sismember(key, email_id))
+105:             except Exception as e:
+106:                 if self._logger:
+107:                     self._logger.error(
+108:                         f"DEDUP: Error checking email ID '{email_id}': {e}. "
+109:                         f"Assuming NOT processed."
+110:                     )
+111:                 # Fall through to memory
+112:         
+113:         # Fallback mémoire
+114:         return email_id in self._processed_email_ids
+115:     
+116:     def mark_email_processed(self, email_id: str) -> bool:
+117:         """Marque un email comme traité.
+118:         
+119:         Args:
+120:             email_id: Identifiant unique de l'email
+121:             
+122:         Returns:
+123:             True si marqué avec succès
+124:         """
+125:         if not email_id:
+126:             return False
+127:         
+128:         # Si dédup désactivée, ne rien faire
+129:         if self.is_email_dedup_disabled():
+130:             return True  # Considéré comme succès (pas d'erreur)
+131:         
+132:         # Essayer Redis d'abord
+133:         if self._use_redis():
+134:             try:
+135:                 keys_config = self._get_dedup_keys()
+136:                 key = keys_config["email_ids_key"]
+137:                 self._redis.sadd(key, email_id)
+138:                 return True
+139:             except Exception as e:
+140:                 if self._logger:
+141:                     self._logger.error(f"DEDUP: Error marking email ID '{email_id}': {e}")
+142:                 # Fall through to memory
+143:         
+144:         # Fallback mémoire
+145:         self._processed_email_ids.add(email_id)
+146:         return True
+147:     
+148:     # =========================================================================
+149:     # Déduplication Subject Group
+150:     # =========================================================================
+151:     
+152:     def is_subject_group_processed(self, subject: str) -> bool:
+153:         """Vérifie si un subject group a été traité.
+154:         
+155:         Args:
+156:             subject: Sujet de l'email
+157:             
+158:         Returns:
+159:             True si déjà traité
+160:         """
+161:         if not subject:
+162:             return False
+163:         
+164:         if not self.is_subject_dedup_enabled():
+165:             return False
+166:         
+167:         # Générer l'ID du groupe
+168:         group_id = self.generate_subject_group_id(subject)
+169:         scoped_id = self._get_scoped_group_id(group_id)
+170:         
+171:         # Essayer Redis d'abord
+172:         if self._use_redis():
+173:             try:
+174:                 keys_config = self._get_dedup_keys()
+175:                 ttl_seconds = keys_config["subject_group_ttl"]
+176:                 ttl_prefix = keys_config["subject_group_prefix"]
+177:                 groups_key = keys_config["subject_groups_key"]
+178:                 
+179:                 if ttl_seconds and ttl_seconds > 0:
+180:                     ttl_key = ttl_prefix + scoped_id
+181:                     val = self._redis.get(ttl_key)
+182:                     if val is not None:
+183:                         return True
+184:                 
+185:                 return bool(self._redis.sismember(groups_key, scoped_id))
+186:             except Exception as e:
+187:                 if self._logger:
+188:                     self._logger.error(
+189:                         f"DEDUP: Error checking subject group '{group_id}': {e}. "
+190:                         f"Assuming NOT processed."
+191:                     )
+192:                 # Fall through to memory
+193:         
+194:         # Fallback mémoire
+195:         return scoped_id in self._processed_subject_groups
+196:     
+197:     def mark_subject_group_processed(self, subject: str) -> bool:
+198:         """Marque un subject group comme traité.
+199:         
+200:         Args:
+201:             subject: Sujet de l'email
+202:             
+203:         Returns:
+204:             True si succès
+205:         """
+206:         if not subject:
+207:             return False
+208:         
+209:         # Si dédup désactivée, ne rien faire
+210:         if not self.is_subject_dedup_enabled():
+211:             return True
+212:         
+213:         # Générer l'ID du groupe
+214:         group_id = self.generate_subject_group_id(subject)
+215:         scoped_id = self._get_scoped_group_id(group_id)
+216:         
+217:         # Essayer Redis d'abord
+218:         if self._use_redis():
+219:             try:
+220:                 keys_config = self._get_dedup_keys()
+221:                 ttl_seconds = keys_config["subject_group_ttl"]
+222:                 ttl_prefix = keys_config["subject_group_prefix"]
+223:                 groups_key = keys_config["subject_groups_key"]
+224:                 
+225:                 # Marquer avec TTL si configuré
+226:                 if ttl_seconds and ttl_seconds > 0:
+227:                     ttl_key = ttl_prefix + scoped_id
+228:                     self._redis.set(ttl_key, 1, ex=ttl_seconds)
+229:                 
+230:                 # Ajouter au set permanent
+231:                 self._redis.sadd(groups_key, scoped_id)
+232:                 return True
+233:             except Exception as e:
+234:                 if self._logger:
+235:                     self._logger.error(f"DEDUP: Error marking subject group '{group_id}': {e}")
+236:                 # Fall through to memory
+237:         
+238:         # Fallback mémoire
+239:         self._processed_subject_groups.add(scoped_id)
+240:         return True
+241:     
+242:     def generate_subject_group_id(self, subject: str) -> str:
+243:         """Génère un ID de groupe stable pour un sujet.
+244:         
+245:         Heuristique:
+246:         - Normalise le sujet (sans accents, minuscules, espaces réduits)
+247:         - Retire les préfixes Re:/Fwd:
+248:         - Si détecte "Média Solution Missions Recadrage Lot <num>" → groupe par lot
+249:         - Sinon si détecte "Lot <num>" → groupe par lot
+250:         - Sinon → hash MD5 du sujet normalisé
+251:         
+252:         Args:
+253:             subject: Sujet de l'email
+254:             
+255:         Returns:
+256:             Identifiant de groupe stable
+257:         """
+258:         # Normaliser
+259:         norm = normalize_no_accents_lower_trim(subject or "")
+260:         core = strip_leading_reply_prefixes(norm)
+261:         
+262:         # Essayer d'extraire un numéro de lot
+263:         m_lot = re.search(r"\blot\s+(\d+)\b", core)
+264:         lot_part = m_lot.group(1) if m_lot else None
+265:         
+266:         # Détecter les mots-clés Média Solution
+267:         is_media_solution = (
+268:             all(tok in core for tok in ["media solution", "missions recadrage", "lot"])
+269:             if core
+270:             else False
+271:         )
+272:         
+273:         if is_media_solution and lot_part:
+274:             return f"media_solution_missions_recadrage_lot_{lot_part}"
+275:         
+276:         if lot_part:
+277:             return f"lot_{lot_part}"
+278:         
+279:         # Fallback: hash du sujet normalisé
+280:         subject_hash = hashlib.md5(core.encode("utf-8")).hexdigest()
+281:         return f"subject_hash_{subject_hash}"
+282:     
+283:     # =========================================================================
+284:     # Configuration
+285:     # =========================================================================
+286:     
+287:     def is_email_dedup_disabled(self) -> bool:
+288:         """Vérifie si la déduplication par email ID est désactivée.
+289:         
+290:         Returns:
+291:             True si désactivée
+292:         """
+293:         if self._config:
+294:             return self._config.is_email_id_dedup_disabled()
+295:         return False
+296:     
+297:     def is_subject_dedup_enabled(self) -> bool:
+298:         """Vérifie si la déduplication par subject group est activée.
+299:         
+300:         Returns:
+301:             True si activée
+302:         """
+303:         if self._config:
+304:             return self._config.is_subject_group_dedup_enabled()
+305:         return False
+306:     
+307:     # =========================================================================
+308:     # Helpers Internes
+309:     # =========================================================================
+310:     
+311:     def _get_scoped_group_id(self, group_id: str) -> str:
+312:         """Applique le scoping mensuel si activé.
+313:         
+314:         Args:
+315:             group_id: ID de base du groupe
+316:             
+317:         Returns:
+318:             ID scopé (ex: "2025-11:lot_42") si scoping activé, sinon ID original
+319:         """
+320:         if not self.is_subject_dedup_enabled():
+321:             return group_id
+322:         
+323:         # Scoping mensuel basé sur le timezone de polling (Europe/Paris par défaut)
+324:         try:
+325:             import pytz
+326:             tz = pytz.timezone('Europe/Paris')
+327:             now_local = datetime.now(tz)
+328:         except Exception:
+329:             now_local = datetime.now()
+330:         
+331:         month_prefix = now_local.strftime("%Y-%m")
+332:         return f"{month_prefix}:{group_id}"
+333:     
+334:     def _use_redis(self) -> bool:
+335:         """Vérifie si Redis est disponible.
+336:         
+337:         Returns:
+338:             True si Redis peut être utilisé
+339:         """
+340:         return self._redis is not None
+341:     
+342:     def _get_dedup_keys(self) -> dict:
+343:         """Récupère les clés Redis depuis la configuration.
+344:         
+345:         Returns:
+346:             dict avec email_ids_key, subject_groups_key, etc.
+347:         """
+348:         if self._config:
+349:             return self._config.get_dedup_redis_keys()
+350:         
+351:         # Fallback sur valeurs par défaut
+352:         return {
+353:             "email_ids_key": "r:ss:processed_email_ids:v1",
+354:             "subject_groups_key": "r:ss:processed_subject_groups:v1",
+355:             "subject_group_prefix": "r:ss:subj_grp:",
+356:             "subject_group_ttl": 2592000,  # 30 jours
+357:         }
+358:     
+359:     # =========================================================================
+360:     # Diagnostic & Stats
+361:     # =========================================================================
+362:     
+363:     def get_memory_stats(self) -> dict:
+364:         """Retourne les statistiques du fallback mémoire.
+365:         
+366:         Returns:
+367:             dict avec email_ids_count, subject_groups_count
+368:         """
+369:         return {
+370:             "email_ids_count": len(self._processed_email_ids),
+371:             "subject_groups_count": len(self._processed_subject_groups),
+372:             "using_redis": self._use_redis(),
+373:         }
+374:     
+375:     def clear_memory_cache(self) -> None:
+376:         """Vide le cache mémoire (pour tests ou débogage)."""
+377:         self._processed_email_ids.clear()
+378:         self._processed_subject_groups.clear()
+379:     
+380:     def __repr__(self) -> str:
+381:         """Représentation du service."""
+382:         backend = "Redis" if self._use_redis() else "Memory"
+383:         email_dedup = "disabled" if self.is_email_dedup_disabled() else "enabled"
+384:         subject_dedup = "enabled" if self.is_subject_dedup_enabled() else "disabled"
+385:         return (
+386:             f"<DeduplicationService(backend={backend}, "
+387:             f"email_dedup={email_dedup}, subject_dedup={subject_dedup})>"
+388:         )
 ````
 
 ## File: static/css/components.css
@@ -10510,6 +7891,1249 @@ requirements.txt
 118: }
 ````
 
+## File: static/dashboard_legacy.js
+````javascript
+   1: // static/dashboard.js
+   2: // Dashboard de contrôle des webhooks
+   3: window.DASHBOARD_BUILD = 'tabs-2025-10-05-15h29';
+   4: if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+   5:     console.log('[build] static/dashboard.js loaded:', window.DASHBOARD_BUILD);
+   6: }
+   7: 
+   8: // Utilitaires
+   9: function showMessage(elementId, message, type) {
+  10:     const el = document.getElementById(elementId);
+  11:     if (!el) return; // Safe-guard: element may be absent in some contexts
+  12:     el.textContent = message;
+  13:     el.className = 'status-msg ' + type;
+  14:     setTimeout(() => {
+  15:         if (!el) return;
+  16:         el.className = 'status-msg';
+  17:     }, 5000);
+  18: }
+  19: 
+  20: // Client API centralisé pour la gestion des erreurs
+  21: class ApiClient {
+  22:     static async handleResponse(res) {
+  23:         if (res.status === 401) {
+  24:             window.location.href = '/login';
+  25:             throw new Error('Session expirée');
+  26:         }
+  27:         if (res.status === 403) {
+  28:             throw new Error('Accès refusé');
+  29:         }
+  30:         if (res.status >= 500) {
+  31:             throw new Error('Erreur serveur');
+  32:         }
+  33:         return res;
+  34:     }
+  35:     
+  36:     static async request(url, options = {}) {
+  37:         const res = await fetch(url, options);
+  38:         return ApiClient.handleResponse(res);
+  39:     }
+  40: }
+  41: 
+  42: 
+  43: async function generateMagicLink() {
+  44:     const btn = document.getElementById('generateMagicLinkBtn');
+  45:     const output = document.getElementById('magicLinkOutput');
+  46:     const unlimitedToggle = document.getElementById('magicLinkUnlimitedToggle');
+  47:     if (!btn || !output) return;
+  48:     output.textContent = '';
+  49:     try {
+  50:         btn.disabled = true;
+  51:         const payload = unlimitedToggle && unlimitedToggle.checked ? { unlimited: true } : {};
+  52:         const res = await ApiClient.request('/api/auth/magic-link', {
+  53:             method: 'POST',
+  54:             headers: { 'Content-Type': 'application/json' },
+  55:             body: JSON.stringify(payload),
+  56:         });
+  57:         const data = await res.json();
+  58:         if (res.status === 401) {
+  59:             output.textContent = "Session expirée. Merci de vous reconnecter.";
+  60:             output.className = 'status-msg error';
+  61:             return;
+  62:         }
+  63:         if (!data.success || !data.magic_link) {
+  64:             output.textContent = data.message || 'Impossible de générer le magic link.';
+  65:             output.className = 'status-msg error';
+  66:             return;
+  67:         }
+  68:         const expiresText = data.unlimited ? 'aucune expiration' : (data.expires_at || 'bientôt');
+  69:         output.textContent = data.magic_link + ' (exp. ' + expiresText + ')';
+  70:         output.className = 'status-msg success';
+  71:         try {
+  72:             await navigator.clipboard.writeText(data.magic_link);
+  73:             output.textContent += ' — Copié dans le presse-papiers';
+  74:         } catch (clipErr) {
+  75:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+  76:                 console.warn('Clipboard write failed', clipErr);
+  77:             }
+  78:         }
+  79:     } catch (e) {
+  80:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+  81:             console.error('generateMagicLink error', e);
+  82:         }
+  83:         output.textContent = 'Erreur de génération du magic link.';
+  84:         output.className = 'status-msg error';
+  85:     } finally {
+  86:         if (btn) btn.disabled = false;
+  87:         setTimeout(() => {
+  88:             if (output) output.className = 'status-msg';
+  89:         }, 7000);
+  90:     }
+  91: }
+  92: 
+  93: // -------------------- Runtime Flags (Debug) --------------------
+  94: async function loadRuntimeFlags() {
+  95:     try {
+  96:         const res = await ApiClient.request('/api/get_runtime_flags');
+  97:         const data = await res.json();
+  98:         if (!data.success || !data.flags) return;
+  99:         const f = data.flags;
+ 100:         const dedupToggle = document.getElementById('disableEmailIdDedupToggle');
+ 101:         const allowCustomToggle = document.getElementById('allowCustomWithoutLinksToggle');
+ 102:         if (dedupToggle) dedupToggle.checked = !!f.disable_email_id_dedup;
+ 103:         if (allowCustomToggle) allowCustomToggle.checked = !!f.allow_custom_webhook_without_links;
+ 104:     } catch (e) {
+ 105:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 106:             console.warn('loadRuntimeFlags error', e);
+ 107:         }
+ 108:     }
+ 109: }
+ 110: 
+ 111: async function saveRuntimeFlags() {
+ 112:     const msgId = 'runtimeFlagsMsg';
+ 113:     const btn = document.getElementById('runtimeFlagsSaveBtn');
+ 114:     try {
+ 115:         btn && (btn.disabled = true);
+ 116:         const payload = {
+ 117:             disable_email_id_dedup: !!document.getElementById('disableEmailIdDedupToggle')?.checked,
+ 118:             allow_custom_webhook_without_links: !!document.getElementById('allowCustomWithoutLinksToggle')?.checked,
+ 119:         };
+ 120:         const res = await ApiClient.request('/api/update_runtime_flags', {
+ 121:             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+ 122:         });
+ 123:         const data = await res.json();
+ 124:         if (data.success) {
+ 125:             showMessage(msgId, 'Flags runtime enregistrés.', 'success');
+ 126:         } else {
+ 127:             showMessage(msgId, data.message || 'Erreur lors de la sauvegarde des flags.', 'error');
+ 128:         }
+ 129:     } catch (e) {
+ 130:         showMessage(msgId, 'Erreur de communication avec le serveur.', 'error');
+ 131:     } finally {
+ 132:         btn && (btn.disabled = false);
+ 133:     }
+ 134: }
+ 135: 
+ 136: // --- Bootstrap: attach handlers after DOM load ---
+ 137: window.addEventListener('DOMContentLoaded', () => {
+ 138:     // Existing initializers
+ 139:     loadWebhookConfig();
+ 140:     loadTimeWindow();
+ 141:     loadProcessingPrefsFromServer();
+ 142:     computeAndRenderMetrics();
+ 143:     loadPollingConfig();
+ 144:     // Note: global Make toggle and vacation controls removed from UI
+ 145:     // New: runtime flags
+ 146:     loadRuntimeFlags();
+ 147:     initMagicLinkTools();
+ 148: 
+ 149:     // Buttons
+ 150:     const rfBtn = document.getElementById('runtimeFlagsSaveBtn');
+ 151:     if (rfBtn) rfBtn.addEventListener('click', saveRuntimeFlags);
+ 152: });
+ 153: 
+ 154: 
+ 155: function initMagicLinkTools() {
+ 156:     const btn = document.getElementById('generateMagicLinkBtn');
+ 157:     if (btn) {
+ 158:         btn.addEventListener('click', generateMagicLink);
+ 159:     }
+ 160: }
+ 161: 
+ 162: // --- Processing Prefs (server) ---
+ 163: async function loadProcessingPrefsFromServer() {
+ 164:     try {
+ 165:         const res = await ApiClient.request('/api/get_processing_prefs');
+ 166:         if (!res.ok) { 
+ 167:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 168:                 console.warn('loadProcessingPrefsFromServer: non-200', res.status);
+ 169:             }
+ 170:             return; 
+ 171:         }
+ 172:         const data = await res.json();
+ 173:         if (!data.success) return;
+ 174:         const p = data.prefs || {};
+ 175:         // Backward compatibility: legacy single list + new per-webhook lists
+ 176:         const legacy = Array.isArray(p.exclude_keywords) ? p.exclude_keywords : [];
+ 177:         const rec = Array.isArray(p.exclude_keywords_recadrage) ? p.exclude_keywords_recadrage : [];
+ 178:         const aut = Array.isArray(p.exclude_keywords_autorepondeur) ? p.exclude_keywords_autorepondeur : [];
+ 179:         const recEl = document.getElementById('excludeKeywordsRecadrage');
+ 180:         const autEl = document.getElementById('excludeKeywordsAutorepondeur');
+ 181:         if (recEl) {
+ 182:             recEl.value = rec.join('\n');
+ 183:             recEl.placeholder = (rec.length ? rec : ['ex: annulation', 'ex: rappel']).join('\n');
+ 184:         }
+ 185:         if (autEl) {
+ 186:             autEl.value = aut.join('\n');
+ 187:             autEl.placeholder = (aut.length ? aut : ['ex: facture', 'ex: hors périmètre']).join('\n');
+ 188:         }
+ 189:         // Keep legacy field if present in DOM
+ 190:         setIfPresent('excludeKeywords', legacy.join('\n'), v => v);
+ 191:         const att = document.getElementById('attachmentDetectionToggle');
+ 192:         if (att) att.checked = !!p.require_attachments;
+ 193:         const maxSz = document.getElementById('maxEmailSizeMB');
+ 194:         if (maxSz) maxSz.value = p.max_email_size_mb ?? '';
+ 195:         const sp = document.getElementById('senderPriority');
+ 196:         if (sp) sp.value = JSON.stringify(p.sender_priority || {}, null, 2);
+ 197:         const rc = document.getElementById('retryCount'); if (rc) rc.value = p.retry_count ?? '';
+ 198:         const rd = document.getElementById('retryDelaySec'); if (rd) rd.value = p.retry_delay_sec ?? '';
+ 199:         const to = document.getElementById('webhookTimeoutSec'); if (to) to.value = p.webhook_timeout_sec ?? '';
+ 200:         const rl = document.getElementById('rateLimitPerHour'); if (rl) rl.value = p.rate_limit_per_hour ?? '';
+ 201:         const nf = document.getElementById('notifyOnFailureToggle'); if (nf) nf.checked = !!p.notify_on_failure;
+ 202:     } catch (e) {
+ 203:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 204:             console.warn('loadProcessingPrefsFromServer error', e);
+ 205:         }
+ 206:     }
+ 207: }
+ 208: 
+ 209: async function saveProcessingPrefsToServer() {
+ 210:     const btn = document.getElementById('processingPrefsSaveBtn');
+ 211:     const msgId = 'processingPrefsMsg';
+ 212:     try {
+ 213:         btn && (btn.disabled = true);
+ 214:         // Build payload from UI
+ 215:         const excludeKeywordsRaw = (document.getElementById('excludeKeywords')?.value || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
+ 216:         const excludeKeywordsRecadrage = (document.getElementById('excludeKeywordsRecadrage')?.value || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
+ 217:         const excludeKeywordsAutorepondeur = (document.getElementById('excludeKeywordsAutorepondeur')?.value || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
+ 218:         const requireAttachments = !!document.getElementById('attachmentDetectionToggle')?.checked;
+ 219:         const maxEmailSize = document.getElementById('maxEmailSizeMB')?.value.trim();
+ 220:         let senderPriorityObj = {};
+ 221:         const senderPriorityStr = (document.getElementById('senderPriority')?.value || '').trim();
+ 222:         if (senderPriorityStr) {
+ 223:             try { senderPriorityObj = JSON.parse(senderPriorityStr); } catch { senderPriorityObj = {}; }
+ 224:         }
+ 225:         const retryCount = document.getElementById('retryCount')?.value.trim();
+ 226:         const retryDelaySec = document.getElementById('retryDelaySec')?.value.trim();
+ 227:         const webhookTimeoutSec = document.getElementById('webhookTimeoutSec')?.value.trim();
+ 228:         const rateLimitPerHour = document.getElementById('rateLimitPerHour')?.value.trim();
+ 229:         const notifyOnFailure = !!document.getElementById('notifyOnFailureToggle')?.checked;
+ 230: 
+ 231:         const payload = {
+ 232:             // keep legacy for backward compatibility
+ 233:             exclude_keywords: excludeKeywordsRaw,
+ 234:             // new per-webhook lists
+ 235:             exclude_keywords_recadrage: excludeKeywordsRecadrage,
+ 236:             exclude_keywords_autorepondeur: excludeKeywordsAutorepondeur,
+ 237:             require_attachments: requireAttachments,
+ 238:             max_email_size_mb: maxEmailSize === '' ? null : parseInt(maxEmailSize, 10),
+ 239:             sender_priority: senderPriorityObj,
+ 240:             retry_count: retryCount === '' ? 0 : parseInt(retryCount, 10),
+ 241:             retry_delay_sec: retryDelaySec === '' ? 0 : parseInt(retryDelaySec, 10),
+ 242:             webhook_timeout_sec: webhookTimeoutSec === '' ? 30 : parseInt(webhookTimeoutSec, 10),
+ 243:             rate_limit_per_hour: rateLimitPerHour === '' ? 0 : parseInt(rateLimitPerHour, 10),
+ 244:             notify_on_failure: notifyOnFailure,
+ 245:         };
+ 246: 
+ 247:         const res = await ApiClient.request('/api/update_processing_prefs', {
+ 248:             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+ 249:         });
+ 250:         const data = await res.json();
+ 251:         if (data.success) {
+ 252:             showMessage(msgId, 'Préférences enregistrées.', 'success');
+ 253:             // Recharger pour refléter la normalisation côté serveur
+ 254:             loadProcessingPrefsFromServer();
+ 255:         } else {
+ 256:             showMessage(msgId, data.message || 'Erreur lors de la sauvegarde.', 'error');
+ 257:         }
+ 258:     } catch (e) {
+ 259:         showMessage(msgId, 'Erreur de communication avec le serveur.', 'error');
+ 260:     } finally {
+ 261:         btn && (btn.disabled = false);
+ 262:     }
+ 263: }
+ 264: 
+ 265: // -------------------- Nouvelles fonctionnalités UI (client-side only) --------------------
+ 266: 
+ 267: function loadLocalPreferences() {
+ 268:     try {
+ 269:         const raw = localStorage.getItem('dashboard_prefs_v1');
+ 270:         if (!raw) return;
+ 271:         const prefs = JSON.parse(raw);
+ 272:         setIfPresent('excludeKeywords', prefs.excludeKeywords, v => v);
+ 273:         setIfPresent('excludeKeywordsRecadrage', prefs.excludeKeywordsRecadrage, v => v);
+ 274:         setIfPresent('excludeKeywordsAutorepondeur', prefs.excludeKeywordsAutorepondeur, v => v);
+ 275:         setIfPresent('attachmentDetectionToggle', prefs.attachmentDetection, (v, el) => el.checked = !!v);
+ 276:         setIfPresent('maxEmailSizeMB', prefs.maxEmailSizeMB, v => v);
+ 277:         setIfPresent('senderPriority', prefs.senderPriorityJson, v => v);
+ 278:         setIfPresent('retryCount', prefs.retryCount, v => v);
+ 279:         setIfPresent('retryDelaySec', prefs.retryDelaySec, v => v);
+ 280:         setIfPresent('webhookTimeoutSec', prefs.webhookTimeoutSec, v => v);
+ 281:         setIfPresent('rateLimitPerHour', prefs.rateLimitPerHour, v => v);
+ 282:         setIfPresent('notifyOnFailureToggle', prefs.notifyOnFailure, (v, el) => el.checked = !!v);
+ 283:         setIfPresent('enableMetricsToggle', prefs.enableMetrics, (v, el) => el.checked = !!v);
+ 284:     } catch (e) {
+ 285:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 286:             console.warn('Prefs load error', e);
+ 287:         }
+ 288:     }
+ 289: }
+ 290: 
+ 291: function setIfPresent(id, value, setter) {
+ 292:     if (value === undefined) return;
+ 293:     const el = document.getElementById(id);
+ 294:     if (!el) return;
+ 295:     if (typeof setter === 'function') {
+ 296:         const ret = setter(value, el);
+ 297:         if (ret !== undefined && el.value !== undefined) el.value = ret;
+ 298:     } else {
+ 299:         el.value = value;
+ 300:     }
+ 301: }
+ 302: 
+ 303: function saveLocalPreferences() {
+ 304:     try {
+ 305:         const prefs = {
+ 306:             excludeKeywords: (document.getElementById('excludeKeywords')?.value || ''),
+ 307:             excludeKeywordsRecadrage: (document.getElementById('excludeKeywordsRecadrage')?.value || ''),
+ 308:             excludeKeywordsAutorepondeur: (document.getElementById('excludeKeywordsAutorepondeur')?.value || ''),
+ 309:             attachmentDetection: !!document.getElementById('attachmentDetectionToggle')?.checked,
+ 310:             maxEmailSizeMB: parseInt(document.getElementById('maxEmailSizeMB')?.value || '0', 10) || undefined,
+ 311:             senderPriorityJson: (document.getElementById('senderPriority')?.value || ''),
+ 312:             retryCount: parseInt(document.getElementById('retryCount')?.value || '0', 10) || undefined,
+ 313:             retryDelaySec: parseInt(document.getElementById('retryDelaySec')?.value || '0', 10) || undefined,
+ 314:             webhookTimeoutSec: parseInt(document.getElementById('webhookTimeoutSec')?.value || '0', 10) || undefined,
+ 315:             rateLimitPerHour: parseInt(document.getElementById('rateLimitPerHour')?.value || '0', 10) || undefined,
+ 316:             notifyOnFailure: !!document.getElementById('notifyOnFailureToggle')?.checked,
+ 317:             enableMetrics: !!document.getElementById('enableMetricsToggle')?.checked,
+ 318:         };
+ 319:         localStorage.setItem('dashboard_prefs_v1', JSON.stringify(prefs));
+ 320:     } catch (e) {
+ 321:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 322:             console.warn('Prefs save error', e);
+ 323:         }
+ 324:     }
+ 325: }
+ 326: 
+ 327: async function computeAndRenderMetrics() {
+ 328:     try {
+ 329:         const res = await ApiClient.request('/api/webhook_logs?days=1');
+ 330:         if (!res.ok) { 
+ 331:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 332:                 console.warn('metrics: non-200', res.status);
+ 333:             }
+ 334:             clearMetrics(); return; 
+ 335:         }
+ 336:         const data = await res.json();
+ 337:         const logs = (data.success && Array.isArray(data.logs)) ? data.logs : [];
+ 338:         const total = logs.length;
+ 339:         const sent = logs.filter(l => l.status === 'success').length;
+ 340:         const errors = logs.filter(l => l.status === 'error').length;
+ 341:         const successRate = total ? Math.round((sent / total) * 100) : 0;
+ 342:         setMetric('metricEmailsProcessed', String(total));
+ 343:         setMetric('metricWebhooksSent', String(sent));
+ 344:         setMetric('metricErrors', String(errors));
+ 345:         setMetric('metricSuccessRate', String(successRate));
+ 346:         renderMiniChart(logs);
+ 347:     } catch (e) {
+ 348:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 349:             console.warn('metrics error', e);
+ 350:         }
+ 351:         clearMetrics();
+ 352:     }
+ 353: }
+ 354: 
+ 355: function clearMetrics() {
+ 356:     setMetric('metricEmailsProcessed', '—');
+ 357:     setMetric('metricWebhooksSent', '—');
+ 358:     setMetric('metricErrors', '—');
+ 359:     setMetric('metricSuccessRate', '—');
+ 360:     const chart = document.getElementById('metricsMiniChart');
+ 361:     if (chart) chart.innerHTML = '';
+ 362: }
+ 363: 
+ 364: function setMetric(id, text) {
+ 365:     const el = document.getElementById(id);
+ 366:     if (el) el.textContent = text;
+ 367: }
+ 368: 
+ 369: function renderMiniChart(logs) {
+ 370:     const chart = document.getElementById('metricsMiniChart');
+ 371:     if (!chart) return;
+ 372:     chart.innerHTML = '';
+ 373:     const width = chart.clientWidth || 300;
+ 374:     const height = chart.clientHeight || 60;
+ 375:     const canvas = document.createElement('canvas');
+ 376:     canvas.width = width; canvas.height = height;
+ 377:     chart.appendChild(canvas);
+ 378:     const ctx = canvas.getContext('2d');
+ 379:     // Simple timeline: success=1, error=0
+ 380:     const n = Math.min(logs.length, Math.floor(width / 4));
+ 381:     const step = width / (n || 1);
+ 382:     ctx.strokeStyle = '#22c98f';
+ 383:     ctx.lineWidth = 2;
+ 384:     ctx.beginPath();
+ 385:     for (let i = 0; i < n; i++) {
+ 386:         const log = logs[logs.length - n + i];
+ 387:         const val = (log && log.status === 'success') ? 1 : 0;
+ 388:         const x = i * step + 1;
+ 389:         const y = height - (val * (height - 4)) - 2;
+ 390:         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+ 391:     }
+ 392:     ctx.stroke();
+ 393: }
+ 394: 
+ 395: async function exportFullConfiguration() {
+ 396:     try {
+ 397:         // Gather server-side configs
+ 398:         const [webhookCfgRes, timeWinRes] = await Promise.all([
+ 399:             ApiClient.request('/api/webhooks/config'),
+ 400:             ApiClient.request('/api/get_webhook_time_window')
+ 401:         ]);
+ 402:         const [webhookCfg, timeWin] = await Promise.all([
+ 403:             webhookCfgRes.json(), timeWinRes.json()
+ 404:         ]);
+ 405:         const prefsRaw = localStorage.getItem('dashboard_prefs_v1');
+ 406:         const exportObj = {
+ 407:             exported_at: new Date().toISOString(),
+ 408:             webhook_config: webhookCfg,
+ 409:             time_window: timeWin,
+ 410:             ui_preferences: prefsRaw ? JSON.parse(prefsRaw) : {}
+ 411:         };
+ 412:         const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
+ 413:         const a = document.createElement('a');
+ 414:         a.href = URL.createObjectURL(blob);
+ 415:         a.download = 'render_signal_dashboard_config.json';
+ 416:         a.click();
+ 417:         URL.revokeObjectURL(a.href);
+ 418:         showMessage('configMgmtMsg', 'Export réalisé avec succès.', 'success');
+ 419:     } catch (e) {
+ 420:         showMessage('configMgmtMsg', 'Erreur lors de l\'export.', 'error');
+ 421:     }
+ 422: }
+ 423: 
+ 424: function handleImportConfigFile(evt) {
+ 425:     const file = evt.target.files && evt.target.files[0];
+ 426:     if (!file) return;
+ 427:     const reader = new FileReader();
+ 428:     reader.onload = async () => {
+ 429:         try {
+ 430:             const obj = JSON.parse(String(reader.result || '{}'));
+ 431:             // Apply server-supported parts
+ 432:             await applyImportedServerConfig(obj);
+ 433:             // Store UI preferences
+ 434:             if (obj.ui_preferences) {
+ 435:                 localStorage.setItem('dashboard_prefs_v1', JSON.stringify(obj.ui_preferences));
+ 436:                 loadLocalPreferences();
+ 437:             }
+ 438:             showMessage('configMgmtMsg', 'Import appliqué.', 'success');
+ 439:         } catch (e) {
+ 440:             showMessage('configMgmtMsg', 'Fichier invalide.', 'error');
+ 441:         }
+ 442:     };
+ 443:     reader.readAsText(file);
+ 444:     // reset input so consecutive imports fire change
+ 445:     evt.target.value = '';
+ 446: }
+ 447: 
+ 448: async function applyImportedServerConfig(obj) {
+ 449:     // webhook config
+ 450:     if (obj?.webhook_config?.config) {
+ 451:         const cfg = obj.webhook_config.config;
+ 452:         const payload = {};
+ 453:         if (cfg.webhook_url) payload.webhook_url = cfg.webhook_url;
+ 454:         if (typeof cfg.webhook_ssl_verify === 'boolean') payload.webhook_ssl_verify = cfg.webhook_ssl_verify;
+ 455:         if (Object.keys(payload).length) {
+ 456:             await ApiClient.request('/api/webhooks/config', {
+ 457:                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+ 458:             });
+ 459:             await loadWebhookConfig();
+ 460:         }
+ 461:     }
+ 462:     // polling config removed
+ 463:     // time window
+ 464:     if (obj?.time_window) {
+ 465:         const start = obj.time_window.webhooks_time_start ?? '';
+ 466:         const end = obj.time_window.webhooks_time_end ?? '';
+ 467:         await ApiClient.request('/api/set_webhook_time_window', {
+ 468:             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start, end })
+ 469:         });
+ 470:         await loadTimeWindow();
+ 471:     }
+ 472: }
+ 473: 
+ 474: function validateWebhookUrlFromInput() {
+ 475:     const inp = document.getElementById('testWebhookUrl');
+ 476:     const msgId = 'webhookUrlValidationMsg';
+ 477:     const val = (inp?.value || '').trim();
+ 478:     if (!val) return showMessage(msgId, 'Veuillez saisir une URL ou un alias.', 'error');
+ 479:     const ok = isValidMakeWebhookUrl(val) || isValidHttpsUrl(val);
+ 480:     if (ok) showMessage(msgId, 'Format valide.', 'success'); else showMessage(msgId, 'Format invalide.', 'error');
+ 481: }
+ 482: 
+ 483: function isValidHttpsUrl(url) {
+ 484:     try {
+ 485:         const u = new URL(url);
+ 486:         return u.protocol === 'https:' && !!u.hostname;
+ 487:     } catch { return false; }
+ 488: }
+ 489: 
+ 490: function isValidMakeWebhookUrl(value) {
+ 491:     // Accept either full https URL or alias token@hook.eu2.make.com
+ 492:     if (isValidHttpsUrl(value)) return /hook\.eu\d+\.make\.com/i.test(value);
+ 493:     return /^[A-Za-z0-9_-]{10,}@[Hh]ook\.eu\d+\.make\.com$/.test(value);
+ 494: }
+ 495: 
+ 496: function buildPayloadPreview() {
+ 497:     const subject = (document.getElementById('previewSubject')?.value || '').trim();
+ 498:     const sender = (document.getElementById('previewSender')?.value || '').trim();
+ 499:     const body = (document.getElementById('previewBody')?.value || '').trim();
+ 500:     const payload = {
+ 501:         subject,
+ 502:         sender_email: sender,
+ 503:         body_excerpt: body.slice(0, 500),
+ 504:         delivery_links: [],
+ 505:         first_direct_download_url: null,
+ 506:         meta: { preview: true, generated_at: new Date().toISOString() }
+ 507:     };
+ 508:     const pre = document.getElementById('payloadPreview');
+ 509:     if (pre) pre.textContent = JSON.stringify(payload, null, 2);
+ 510: }
+ 511: 
+ 512: 
+ 513: // Nouvelle approche: gestion via cases à cocher (0=Mon .. 6=Sun)
+ 514: 
+ 515: 
+ 516: // Affiche le statut des vacances sous les sélecteurs de dates
+ 517: // vacation helpers removed with UI
+ 518: 
+ 519: function formatTimestamp(isoString) {
+ 520:     try {
+ 521:         const date = new Date(isoString);
+ 522:         return date.toLocaleString('fr-FR', {
+ 523:             year: 'numeric',
+ 524:             month: '2-digit',
+ 525:             day: '2-digit',
+ 526:             hour: '2-digit',
+ 527:             minute: '2-digit',
+ 528:             second: '2-digit'
+ 529:         });
+ 530:     } catch (e) {
+ 531:         return isoString;
+ 532:     }
+ 533: }
+ 534: 
+ 535: // Affichage convivial de la dernière fenêtre horaire enregistrée
+ 536: function renderTimeWindowDisplay(start, end) {
+ 537:     const displayEl = document.getElementById('timeWindowDisplay');
+ 538:     if (!displayEl) return;
+ 539:     const hasStart = Boolean(start && String(start).trim());
+ 540:     const hasEnd = Boolean(end && String(end).trim());
+ 541:     if (!hasStart && !hasEnd) {
+ 542:         displayEl.textContent = 'Dernière fenêtre enregistrée: aucune contrainte horaire active';
+ 543:         return;
+ 544:     }
+ 545:     const startText = hasStart ? String(start) : '—';
+ 546:     const endText = hasEnd ? String(end) : '—';
+ 547:     displayEl.textContent = `Dernière fenêtre enregistrée: ${startText} → ${endText}`;
+ 548: }
+ 549: 
+ 550: // Section 1: Fenêtre horaire
+ 551: async function loadTimeWindow() {
+ 552:     try {
+ 553:         const res = await ApiClient.request('/api/get_webhook_time_window');
+ 554:         const data = await res.json();
+ 555:         
+ 556:         if (data.success) {
+ 557:             if (data.webhooks_time_start) {
+ 558:                 document.getElementById('webhooksTimeStart').value = data.webhooks_time_start;
+ 559:             }
+ 560:             if (data.webhooks_time_end) {
+ 561:                 document.getElementById('webhooksTimeEnd').value = data.webhooks_time_end;
+ 562:             }
+ 563:             // Mettre à jour l'affichage sous le bouton
+ 564:             renderTimeWindowDisplay(data.webhooks_time_start || '', data.webhooks_time_end || '');
+ 565:         }
+ 566:     } catch (e) {
+ 567:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 568:             console.error('Erreur chargement fenêtre horaire:', e);
+ 569:         }
+ 570:     }
+ 571: }
+ 572: 
+ 573: async function saveTimeWindow() {
+ 574:     const start = document.getElementById('webhooksTimeStart').value.trim();
+ 575:     const end = document.getElementById('webhooksTimeEnd').value.trim();
+ 576:     
+ 577:     try {
+ 578:         const res = await ApiClient.request('/api/set_webhook_time_window', {
+ 579:             method: 'POST',
+ 580:             headers: { 'Content-Type': 'application/json' },
+ 581:             body: JSON.stringify({ start, end })
+ 582:         });
+ 583:         const data = await res.json();
+ 584:         
+ 585:         if (data.success) {
+ 586:             showMessage('timeWindowMsg', 'Fenêtre horaire enregistrée avec succès !', 'success');
+ 587:             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
+ 588:             if (Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
+ 589:                 document.getElementById('webhooksTimeStart').value = data.webhooks_time_start || '';
+ 590:             }
+ 591:             if (Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
+ 592:                 document.getElementById('webhooksTimeEnd').value = data.webhooks_time_end || '';
+ 593:             }
+ 594:             // Mettre à jour l'affichage sous le bouton
+ 595:             renderTimeWindowDisplay(data.webhooks_time_start || start, data.webhooks_time_end || end);
+ 596:         } else {
+ 597:             showMessage('timeWindowMsg', data.message || 'Erreur lors de la sauvegarde.', 'error');
+ 598:         }
+ 599:     } catch (e) {
+ 600:         showMessage('timeWindowMsg', 'Erreur de communication avec le serveur.', 'error');
+ 601:     }
+ 602: }
+ 603: 
+ 604: 
+ 605: // Section 3: Configuration des webhooks
+ 606: async function loadWebhookConfig() {
+ 607:     try {
+ 608:         const res = await ApiClient.request('/api/webhooks/config');
+ 609:         const data = await res.json();
+ 610:         
+ 611:         if (data.success) {
+ 612:             const config = data.config;
+ 613:             
+ 614:             // Afficher les valeurs (masquées partiellement pour sécurité)
+ 615:             const wh = document.getElementById('webhookUrl');
+ 616:             if (wh) wh.placeholder = config.webhook_url || 'Non configuré';
+ 617:             
+ 618:             const ssl = document.getElementById('sslVerifyToggle');
+ 619:             if (ssl) ssl.checked = !!config.webhook_ssl_verify;
+ 620:             const sending = document.getElementById('webhookSendingToggle');
+ 621:             if (sending) sending.checked = !!config.webhook_sending_enabled;
+ 622:             
+ 623:             // Absence pause
+ 624:             const absenceToggle = document.getElementById('absencePauseToggle');
+ 625:             if (absenceToggle) absenceToggle.checked = !!config.absence_pause_enabled;
+ 626:             
+ 627:             // Jours d'absence pause
+ 628:             const absenceDays = Array.isArray(config.absence_pause_days) ? config.absence_pause_days : [];
+ 629:             const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]');
+ 630:             dayCheckboxes.forEach(cb => {
+ 631:                 cb.checked = absenceDays.includes(cb.value);
+ 632:             });
+ 633:             
+ 634:             // Charger la fenêtre horaire dédiée
+ 635:             await loadGlobalWebhookTimeWindow();
+ 636:         }
+ 637:     } catch (e) {
+ 638:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 639:             console.error('Erreur chargement config webhooks:', e);
+ 640:         }
+ 641:     }
+ 642: }
+ 643: 
+ 644: // Charge la fenêtre horaire dédiée aux webhooks
+ 645: async function loadGlobalWebhookTimeWindow() {
+ 646:     try {
+ 647:         const res = await ApiClient.request('/api/webhooks/time-window');
+ 648:         const data = await res.json();
+ 649:         if (!data.success) return;
+ 650: 
+ 651:         const startEl = document.getElementById('globalWebhookTimeStart');
+ 652:         const endEl = document.getElementById('globalWebhookTimeEnd');
+ 653:         
+ 654:         if (startEl) startEl.value = data.webhooks_time_start || '';
+ 655:         if (endEl) endEl.value = data.webhooks_time_end || '';
+ 656:         
+ 657:         // Mettre à jour l'affichage
+ 658:         renderGlobalWebhookTimeWindowDisplay(data.webhooks_time_start, data.webhooks_time_end);
+ 659:     } catch (e) {
+ 660:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 661:             console.error('Erreur chargement fenêtre horaire webhooks:', e);
+ 662:         }
+ 663:     }
+ 664: }
+ 665: 
+ 666: // Enregistre la fenêtre horaire dédiée aux webhooks
+ 667: async function saveGlobalWebhookTimeWindow() {
+ 668:     const start = document.getElementById('globalWebhookTimeStart').value.trim();
+ 669:     const end = document.getElementById('globalWebhookTimeEnd').value.trim();
+ 670:     const msgEl = document.getElementById('globalWebhookTimeMsg');
+ 671:     const btn = document.getElementById('saveGlobalWebhookTimeBtn');
+ 672:     
+ 673:     if (!msgEl || !btn) return;
+ 674:     
+ 675:     try {
+ 676:         btn.disabled = true;
+ 677:         msgEl.textContent = 'Enregistrement en cours...';
+ 678:         msgEl.className = 'status-msg info';
+ 679:         
+ 680:         const res = await ApiClient.request('/api/webhooks/time-window', {
+ 681:             method: 'POST',
+ 682:             headers: { 'Content-Type': 'application/json' },
+ 683:             body: JSON.stringify({ start, end })
+ 684:         });
+ 685:         const data = await res.json();
+ 686:         if (data.success) {
+ 687:             msgEl.textContent = 'Fenêtre horaire enregistrée avec succès !';
+ 688:             msgEl.className = 'status-msg success';
+ 689:             // Mettre à jour l'affichage avec les valeurs normalisées
+ 690:             renderGlobalWebhookTimeWindowDisplay(
+ 691:                 data.webhooks_time_start || start,
+ 692:                 data.webhooks_time_end || end
+ 693:             );
+ 694:         } else {
+ 695:             msgEl.textContent = data.message || 'Erreur lors de la sauvegarde';
+ 696:             msgEl.className = 'status-msg error';
+ 697:         }
+ 698:     } catch (e) {
+ 699:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 700:             console.error('Erreur sauvegarde fenêtre horaire webhooks:', e);
+ 701:         }
+ 702:         msgEl.textContent = 'Erreur de communication avec le serveur';
+ 703:         msgEl.className = 'status-msg error';
+ 704:     } finally {
+ 705:         btn.disabled = false;
+ 706:         setTimeout(() => {
+ 707:             msgEl.className = 'status-msg';
+ 708:         }, 5000);
+ 709:     }
+ 710: }
+ 711: 
+ 712: // Affiche la fenêtre horaire dédiée
+ 713: function renderGlobalWebhookTimeWindowDisplay(start, end) {
+ 714:     const displayEl = document.getElementById('globalWebhookTimeMsg');
+ 715:     if (!displayEl) return;
+ 716:     
+ 717:     const hasStart = start && start.trim();
+ 718:     const hasEnd = end && end.trim();
+ 719:     
+ 720:     if (!hasStart && !hasEnd) {
+ 721:         displayEl.textContent = 'Aucune contrainte horaire définie';
+ 722:         return;
+ 723:     }
+ 724:     
+ 725:     const startText = hasStart ? String(start) : '—';
+ 726:     const endText = hasEnd ? String(end) : '—';
+ 727:     displayEl.textContent = `Fenêtre active : ${startText} → ${endText}`;
+ 728: }
+ 729: 
+ 730: async function saveWebhookConfig() {
+ 731:     const payload = {};
+ 732:     // Collecter seulement les champs pertinents
+ 733:     const webhookUrlEl = document.getElementById('webhookUrl');
+ 734:     const sslEl = document.getElementById('sslVerifyToggle');
+ 735:     const sendingEl = document.getElementById('webhookSendingToggle');
+ 736:     const absenceToggle = document.getElementById('absencePauseToggle');
+ 737:     
+ 738:     const webhookUrl = (webhookUrlEl?.value || '').trim();
+ 739:     
+ 740:     // Validation: bloquer l'envoi si le champ est vide ou contient uniquement le placeholder
+ 741:     if (webhookUrl) {
+ 742:         // Vérifier que ce n'est pas le placeholder masqué
+ 743:         const placeholder = webhookUrlEl?.placeholder || '';
+ 744:         if (webhookUrl === placeholder || webhookUrl === 'Non configuré') {
+ 745:             showMessage('configMsg', 'Veuillez saisir une URL webhook valide.', 'error');
+ 746:             return;
+ 747:         }
+ 748:         payload.webhook_url = webhookUrl;
+ 749:     }
+ 750:     
+ 751:     if (sslEl) payload.webhook_ssl_verify = !!sslEl.checked;
+ 752:     if (sendingEl) payload.webhook_sending_enabled = !!sendingEl.checked;
+ 753:     
+ 754:     // Absence pause
+ 755:     if (absenceToggle) {
+ 756:         payload.absence_pause_enabled = !!absenceToggle.checked;
+ 757:         
+ 758:         // Collecter les jours sélectionnés
+ 759:         const selectedDays = [];
+ 760:         const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]:checked');
+ 761:         dayCheckboxes.forEach(cb => selectedDays.push(cb.value));
+ 762:         payload.absence_pause_days = selectedDays;
+ 763:         
+ 764:         // Validation: si le toggle est activé, au moins un jour doit être sélectionné
+ 765:         if (absenceToggle.checked && selectedDays.length === 0) {
+ 766:             showMessage('configMsg', 'Au moins un jour doit être sélectionné pour activer l\'absence.', 'error');
+ 767:             return;
+ 768:         }
+ 769:     }
+ 770:     
+ 771:     try {
+ 772:         const res = await ApiClient.request('/api/webhooks/config', {
+ 773:             method: 'POST',
+ 774:             headers: { 'Content-Type': 'application/json' },
+ 775:             body: JSON.stringify(payload)
+ 776:         });
+ 777:         const data = await res.json();
+ 778:         
+ 779:         if (data.success) {
+ 780:             showMessage('configMsg', 'Configuration sauvegardée avec succès !', 'success');
+ 781:             // Recharger pour afficher les nouvelles valeurs masquées
+ 782:             setTimeout(() => {
+ 783:                 // Vider le champ pour montrer le placeholder masqué
+ 784:                 const wh2 = document.getElementById('webhookUrl');
+ 785:                 if (wh2) wh2.value = '';
+ 786:                 loadWebhookConfig();
+ 787:             }, 1000);
+ 788:         } else {
+ 789:             showMessage('configMsg', data.message || 'Erreur lors de la sauvegarde.', 'error');
+ 790:         }
+ 791:     } catch (e) {
+ 792:         showMessage('configMsg', 'Erreur de communication avec le serveur.', 'error');
+ 793:     }
+ 794: }
+ 795: 
+ 796: // Section 4: Logs des webhooks
+ 797: async function loadWebhookLogs() {
+ 798:     const logsContainer = document.getElementById('logsContainer');
+ 799:     logsContainer.innerHTML = '<div class="log-empty">Chargement des logs...</div>';
+ 800:     
+ 801:     try {
+ 802:         const res = await ApiClient.request('/api/webhook_logs?days=7');
+ 803:         const data = await res.json();
+ 804:         
+ 805:         if (data.success && data.logs && data.logs.length > 0) {
+ 806:             logsContainer.innerHTML = '';
+ 807:             
+ 808:             data.logs.forEach(log => {
+ 809:                 const logEntry = document.createElement('div');
+ 810:                 logEntry.className = 'log-entry ' + log.status;
+ 811:                 
+ 812:                 const timeDiv = document.createElement('div');
+ 813:                 timeDiv.className = 'log-entry-time';
+ 814:                 timeDiv.textContent = formatTimestamp(log.timestamp);
+ 815:                 logEntry.appendChild(timeDiv);
+ 816:                 
+ 817:                 const typeSpan = document.createElement('span');
+ 818:                 typeSpan.className = 'log-entry-type ' + (log.type === 'custom' ? 'custom' : 'makecom');
+ 819:                 typeSpan.textContent = log.type === 'custom' ? 'CUSTOM' : 'MAKE.COM';
+ 820:                 logEntry.appendChild(typeSpan);
+ 821:                 
+ 822:                 const statusStrong = document.createElement('strong');
+ 823:                 statusStrong.textContent = log.status === 'success' ? '✅ Succès' : '❌ Erreur';
+ 824:                 logEntry.appendChild(statusStrong);
+ 825:                 
+ 826:                 if (log.subject) {
+ 827:                     const subjectDiv = document.createElement('div');
+ 828:                     subjectDiv.textContent = 'Sujet: ' + log.subject;
+ 829:                     logEntry.appendChild(subjectDiv);
+ 830:                 }
+ 831:                 
+ 832:                 if (log.target_url) {
+ 833:                     const urlDiv = document.createElement('div');
+ 834:                     urlDiv.textContent = 'URL: ' + log.target_url;
+ 835:                     logEntry.appendChild(urlDiv);
+ 836:                 }
+ 837:                 
+ 838:                 if (log.status_code) {
+ 839:                     const statusDiv = document.createElement('div');
+ 840:                     statusDiv.textContent = 'Code HTTP: ' + log.status_code;
+ 841:                     logEntry.appendChild(statusDiv);
+ 842:                 }
+ 843:                 
+ 844:                 if (log.error) {
+ 845:                     const errorDiv = document.createElement('div');
+ 846:                     errorDiv.style.color = 'var(--cork-danger)';
+ 847:                     errorDiv.style.marginTop = '5px';
+ 848:                     errorDiv.textContent = 'Erreur: ' + log.error;
+ 849:                     logEntry.appendChild(errorDiv);
+ 850:                 }
+ 851:                 
+ 852:                 if (log.email_id) {
+ 853:                     const emailIdDiv = document.createElement('div');
+ 854:                     emailIdDiv.style.fontSize = '0.8em';
+ 855:                     emailIdDiv.style.color = 'var(--cork-text-secondary)';
+ 856:                     emailIdDiv.style.marginTop = '5px';
+ 857:                     emailIdDiv.textContent = 'Email ID: ' + log.email_id;
+ 858:                     logEntry.appendChild(emailIdDiv);
+ 859:                 }
+ 860:                 
+ 861:                 logsContainer.appendChild(logEntry);
+ 862:             });
+ 863:         } else {
+ 864:             logsContainer.innerHTML = '<div class="log-empty">Aucun log webhook trouvé pour les 7 derniers jours.</div>';
+ 865:         }
+ 866:     } catch (e) {
+ 867:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 868:             console.error('Erreur chargement logs:', e);
+ 869:         }
+ 870:         logsContainer.innerHTML = '<div class="log-empty">Erreur lors du chargement des logs.</div>';
+ 871:     }
+ 872: }
+ 873: 
+ 874: // Utilitaire pour échapper le HTML
+ 875: function escapeHtml(text) {
+ 876:     const div = document.createElement('div');
+ 877:     div.textContent = text;
+ 878:     return div.innerHTML;
+ 879: }
+ 880: 
+ 881: // -------------------- Navigation par onglets --------------------
+ 882: function initTabs() {
+ 883:     if (window.__tabsInitialized) { 
+ 884:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 885:             console.log('[tabs] initTabs: already initialized');
+ 886:         }
+ 887:         return; 
+ 888:     }
+ 889:     window.__tabsInitialized = true;
+ 890:     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 891:         console.log('[tabs] initTabs: starting');
+ 892:     }
+ 893:     const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
+ 894:     const panels = Array.from(document.querySelectorAll('.section-panel'));
+ 895:     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 896:         console.log(`[tabs] found buttons=${tabButtons.length}, panels=${panels.length}`);
+ 897:     }
+ 898: 
+ 899:     const mapHashToId = {
+ 900:         '#overview': '#sec-overview',
+ 901:         '#webhooks': '#sec-webhooks',
+ 902:         '#preferences': '#sec-preferences',
+ 903:         '#tools': '#sec-tools',
+ 904:     };
+ 905: 
+ 906:     function activate(targetSelector) {
+ 907:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 908:             console.log('[tabs] activate called for target:', targetSelector);
+ 909:         }
+ 910:         // Toggle active class on panels
+ 911:         panels.forEach(p => { p.classList.remove('active'); p.style.display = 'none'; });
+ 912:         const panel = document.querySelector(targetSelector);
+ 913:         if (panel) {
+ 914:             panel.classList.add('active');
+ 915:             panel.style.display = 'block';
+ 916:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 917:                 console.log('[tabs] panel activated:', panel.id);
+ 918:             }
+ 919:         } else {
+ 920:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 921:                 console.warn('[tabs] panel not found for selector:', targetSelector);
+ 922:             }
+ 923:         }
+ 924: 
+ 925:         // Toggle active class on buttons
+ 926:         tabButtons.forEach(btn => btn.classList.remove('active'));
+ 927:         const btn = tabButtons.find(b => b.getAttribute('data-target') === targetSelector);
+ 928:         if (btn) {
+ 929:             btn.classList.add('active');
+ 930:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 931:                 console.log('[tabs] button activated (data-target):', targetSelector);
+ 932:             }
+ 933:         } else {
+ 934:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 935:                 console.warn('[tabs] button not found for selector:', targetSelector);
+ 936:             }
+ 937:         }
+ 938: 
+ 939:         // Optional: refresh section data on show
+ 940:         if (targetSelector === '#sec-overview') {
+ 941:             const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+ 942:             if (enableMetricsToggle && enableMetricsToggle.checked) {
+ 943:                 computeAndRenderMetrics();
+ 944:             }
+ 945:             loadWebhookLogs();
+ 946:         } else if (targetSelector === '#sec-webhooks') {
+ 947:             loadTimeWindow();
+ 948:             loadWebhookConfig();
+ 949:         }
+ 950:     }
+ 951: 
+ 952:     // Wire click handlers
+ 953:     tabButtons.forEach(btn => {
+ 954:         btn.addEventListener('click', () => {
+ 955:             const target = btn.getAttribute('data-target');
+ 956:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 957:                 console.log('[tabs] click on tab-btn, target=', target);
+ 958:             }
+ 959:             if (target) {
+ 960:                 // Update URL hash for deep-linking (without scrolling)
+ 961:                 // Prefer canonical hash for the target
+ 962:                 const preferred = (target === '#sec-overview') ? '#overview' :
+ 963:                                   (target === '#sec-webhooks') ? '#webhooks' :
+ 964:                                   (target === '#sec-preferences') ? '#preferences' :
+ 965:                                   (target === '#sec-tools') ? '#tools' : '';
+ 966:                 if (preferred) history.replaceState(null, '', preferred);
+ 967:                 activate(target);
+ 968:             }
+ 969:         });
+ 970:     });
+ 971: 
+ 972:     // Determine initial tab: from hash or default to overview
+ 973:     const initialHash = window.location.hash;
+ 974:     const initialTarget = mapHashToId[initialHash] || '#sec-overview';
+ 975:     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 976:         console.log('[tabs] initialHash=', initialHash, ' -> initialTarget=', initialTarget);
+ 977:     }
+ 978:     activate(initialTarget);
+ 979: 
+ 980:     // React to hash changes (e.g., manual URL edit)
+ 981:     window.addEventListener('hashchange', () => {
+ 982:         const t = mapHashToId[window.location.hash];
+ 983:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 984:             console.log('[tabs] hashchange ->', window.location.hash, ' mapped to ', t);
+ 985:         }
+ 986:         if (t) activate(t);
+ 987:     });
+ 988:     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 989:         console.log('[tabs] initTabs: ready');
+ 990:     }
+ 991: }
+ 992: 
+ 993: // Gestionnaire pour le bouton de sauvegarde de la fenêtre horaire webhook
+ 994: document.addEventListener('DOMContentLoaded', () => {
+ 995:     const saveGlobalTimeBtn = document.getElementById('saveGlobalWebhookTimeBtn');
+ 996:     if (saveGlobalTimeBtn) {
+ 997:         saveGlobalTimeBtn.addEventListener('click', saveGlobalWebhookTimeWindow);
+ 998:     }
+ 999:     
+1000:     // Raccourci Entrée dans les champs de la fenêtre horaire
+1001:     const timeInputs = ['globalWebhookTimeStart', 'globalWebhookTimeEnd'];
+1002:     timeInputs.forEach(id => {
+1003:         const el = document.getElementById(id);
+1004:         if (el) {
+1005:             el.addEventListener('keypress', (e) => {
+1006:                 if (e.key === 'Enter') saveGlobalWebhookTimeWindow();
+1007:             });
+1008:         }
+1009:     });
+1010: });
+1011: 
+1012: // Initialisation au chargement de la page
+1013: document.addEventListener('DOMContentLoaded', () => {
+1014:     console.log('📊 DOMContentLoaded: init start');
+1015:     // Hide non-active panels immediately (not relying only on CSS)
+1016:     try {
+1017:         const allPanels = document.querySelectorAll('.section-panel');
+1018:         allPanels.forEach(p => {
+1019:             if (!p.classList.contains('active')) p.style.display = 'none';
+1020:             else p.style.display = 'block';
+1021:         });
+1022:         console.log(`[tabs] initial panel visibility set (count=${allPanels.length})`);
+1023:     } catch (e) {
+1024:         console.warn('[tabs] initial hide panels failed:', e);
+1025:     }
+1026:     // Initialiser les onglets en premier pour garantir l'UX même si des erreurs surviennent après
+1027:     try {
+1028:         console.log('[tabs] calling initTabs early');
+1029:         initTabs();
+1030:         console.log('[tabs] initTabs completed');
+1031:     } catch (e) {
+1032:         console.error('[tabs] initTabs threw (early):', e);
+1033:     }
+1034: 
+1035:     // Fallback: programmer un appel asynchrone très tôt pour contourner d'éventuels ordres d'exécution
+1036:     try {
+1037:         setTimeout(() => {
+1038:             try {
+1039:                 console.log('[tabs] setTimeout fallback: calling initTabs');
+1040:                 initTabs();
+1041:             } catch (err) {
+1042:                 console.error('[tabs] setTimeout fallback failed:', err);
+1043:             }
+1044:         }, 0);
+1045:     } catch (e) {
+1046:         console.warn('[tabs] setTimeout fallback scheduling failed:', e);
+1047:     }
+1048: 
+1049:     // Charger les données initiales (protégées)
+1050:     try { console.log('[init] loadTimeWindow'); loadTimeWindow(); } catch (e) { console.error('[init] loadTimeWindow failed', e); }
+1051:     try { console.log('[init] loadWebhookLogs'); loadWebhookLogs(); } catch (e) { console.error('[init] loadWebhookLogs failed', e); }
+1052:     
+1053:     // Attacher les gestionnaires d'événements (avec garde)
+1054:     const elSaveTimeWindow = document.getElementById('saveTimeWindowBtn');
+1055:     elSaveTimeWindow && elSaveTimeWindow.addEventListener('click', saveTimeWindow);
+1056:     // old togglePollingBtn removed
+1057:     const elSaveConfig = document.getElementById('saveConfigBtn');
+1058:     elSaveConfig && elSaveConfig.addEventListener('click', saveWebhookConfig);
+1059:     const elRefreshLogs = document.getElementById('refreshLogsBtn');
+1060:     elRefreshLogs && elRefreshLogs.addEventListener('click', loadWebhookLogs);
+1061:     // Mettre à jour le statut vacances quand l'utilisateur change les dates
+1062:     // vacation inputs removed
+1063:     
+1064:     // Auto-refresh des logs toutes les 30 secondes
+1065:     setInterval(loadWebhookLogs, 30000);
+1066:     
+1067:     console.log('📊 Dashboard Webhooks initialisé.');
+1068: 
+1069:     // --- Préférences UI locales (localStorage) ---
+1070:     loadLocalPreferences();
+1071: 
+1072:     // --- Events: Filtres Email Avancés ---
+1073:     const excludeKeywords = document.getElementById('excludeKeywords');
+1074:     const attachmentDetectionToggle = document.getElementById('attachmentDetectionToggle');
+1075:     const maxEmailSizeMB = document.getElementById('maxEmailSizeMB');
+1076:     const senderPriority = document.getElementById('senderPriority');
+1077:     ;[excludeKeywords, attachmentDetectionToggle, maxEmailSizeMB, senderPriority]
+1078:       .forEach(el => el && el.addEventListener('change', saveLocalPreferences));
+1079: 
+1080:     // --- Events: Fiabilité ---
+1081:     const retryCount = document.getElementById('retryCount');
+1082:     const retryDelaySec = document.getElementById('retryDelaySec');
+1083:     const webhookTimeoutSec = document.getElementById('webhookTimeoutSec');
+1084:     const rateLimitPerHour = document.getElementById('rateLimitPerHour');
+1085:     const notifyOnFailureToggle = document.getElementById('notifyOnFailureToggle');
+1086:     ;[retryCount, retryDelaySec, webhookTimeoutSec, rateLimitPerHour, notifyOnFailureToggle]
+1087:       .forEach(el => el && el.addEventListener('change', saveLocalPreferences));
+1088: 
+1089:     // --- Events: Metrics ---
+1090:     const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+1091:     if (enableMetricsToggle) {
+1092:         enableMetricsToggle.addEventListener('change', async () => {
+1093:             saveLocalPreferences();
+1094:             if (enableMetricsToggle.checked) {
+1095:                 await computeAndRenderMetrics();
+1096:             } else {
+1097:                 clearMetrics();
+1098:             }
+1099:         });
+1100:     }
+1101: 
+1102:     // --- Export / Import de configuration ---
+1103:     const exportBtn = document.getElementById('exportConfigBtn');
+1104:     const importBtn = document.getElementById('importConfigBtn');
+1105:     const importFile = document.getElementById('importConfigFile');
+1106:     exportBtn && exportBtn.addEventListener('click', exportFullConfiguration);
+1107:     importBtn && importBtn.addEventListener('click', () => importFile && importFile.click());
+1108:     importFile && importFile.addEventListener('change', handleImportConfigFile);
+1109: 
+1110:     // --- Outils de test --- 
+1111:     const validateWebhookUrlBtn = document.getElementById('validateWebhookUrlBtn');
+1112:     validateWebhookUrlBtn && validateWebhookUrlBtn.addEventListener('click', validateWebhookUrlFromInput);
+1113:     const buildPayloadPreviewBtn = document.getElementById('buildPayloadPreviewBtn');
+1114:     buildPayloadPreviewBtn && buildPayloadPreviewBtn.addEventListener('click', buildPayloadPreview);
+1115: 
+1116: 
+1117:     // --- Ouvrir une page de téléchargement (manuel) ---
+1118:     const openDownloadPageBtn = document.getElementById('openDownloadPageBtn');
+1119:     if (openDownloadPageBtn) {
+1120:         openDownloadPageBtn.addEventListener('click', () => {
+1121:             const msgId = 'openDownloadMsg';
+1122:             try {
+1123:                 const input = document.getElementById('downloadPageUrl');
+1124:                 const val = (input?.value || '').trim();
+1125:                 if (!val) {
+1126:                     showMessage(msgId, 'Veuillez saisir une URL.', 'error');
+1127:                     return;
+1128:                 }
+1129:                 // Vérification basique HTTPS + domaine attendu (optionnelle, on reste permissif)
+1130:                 let ok = false;
+1131:                 try {
+1132:                     const u = new URL(val);
+1133:                     ok = (u.protocol === 'https:');
+1134:                 } catch (_) {
+1135:                     ok = false;
+1136:                 }
+1137:                 if (!ok) {
+1138:                     showMessage(msgId, 'URL invalide. Utilisez un lien HTTPS.', 'error');
+1139:                     return;
+1140:                 }
+1141:                 window.open(val, '_blank', 'noopener');
+1142:                 showMessage(msgId, 'Ouverture dans un nouvel onglet…', 'info');
+1143:             } catch (e) {
+1144:                 showMessage(msgId, 'Impossible d’ouvrir l’URL.', 'error');
+1145:             }
+1146:         });
+1147:     }
+1148: 
+1149:     // --- Charger les préférences serveur au démarrage ---
+1150:     loadProcessingPrefsFromServer();
+1151: 
+1152:     // --- Sauvegarder préférences de traitement ---
+1153:     const processingPrefsSaveBtn = document.getElementById('processingPrefsSaveBtn');
+1154:     processingPrefsSaveBtn && processingPrefsSaveBtn.addEventListener('click', saveProcessingPrefsToServer);
+1155: 
+1156:     // --- Déploiement application ---
+1157:     const restartBtn = document.getElementById('restartServerBtn');
+1158:     if (restartBtn) {
+1159:         restartBtn.addEventListener('click', async () => {
+1160:             const msgId = 'restartMsg';
+1161:             try {
+1162:                 if (!confirm('Confirmez-vous le déploiement de l\'application ? Elle peut être indisponible quelques secondes.')) return;
+1163:                 restartBtn.disabled = true;
+1164:                 showMessage(msgId, 'Déploiement en cours...', 'info');
+1165:                 const res = await ApiClient.request('/api/deploy_application', { method: 'POST' });
+1166:                 const data = await res.json().catch(() => ({}));
+1167:                 if (res.ok && data.success) {
+1168:                     showMessage(msgId, data.message || 'Déploiement planifié. Vérification de disponibilité…', 'success');
+1169:                     // Poll health endpoint jusqu'à disponibilité puis recharger
+1170:                     try {
+1171:                         await pollHealthCheck({ attempts: 10, intervalMs: 1500, timeoutMs: 25000 });
+1172:                         try { location.reload(); } catch {}
+1173:                     } catch (e) {
+1174:                         // Si la vérification échoue, proposer un rechargement manuel
+1175:                         showMessage(msgId, 'Le service ne répond pas encore. Réessayez plus tard ou rechargez la page.', 'error');
+1176:                     }
+1177:                 } else {
+1178:                     showMessage(msgId, data.message || 'Échec du déploiement (vérifiez permissions sudoers).', 'error');
+1179:                 }
+1180:             } catch (e) {
+1181:                 showMessage(msgId, 'Erreur de communication avec le serveur.', 'error');
+1182:             } finally {
+1183:                 restartBtn.disabled = false;
+1184:             }
+1185:         });
+1186:     }
+1187: 
+1188:     /**
+1189:      * Vérifie la disponibilité du serveur en appelant /health à intervalles réguliers.
+1190:      * @param {{attempts:number, intervalMs:number, timeoutMs:number}} opts
+1191:      */
+1192:     async function pollHealthCheck(opts) {
+1193:         const attempts = Math.max(1, Number(opts?.attempts || 8));
+1194:         const intervalMs = Math.max(250, Number(opts?.intervalMs || 1000));
+1195:         const timeoutMs = Math.max(intervalMs, Number(opts?.timeoutMs || 15000));
+1196: 
+1197:         const controller = new AbortController();
+1198:         const id = setTimeout(() => controller.abort(), timeoutMs);
+1199:         try {
+1200:             for (let i = 0; i < attempts; i++) {
+1201:                 try {
+1202:                     const res = await ApiClient.request('/health', { signal: controller.signal, cache: 'no-store' });
+1203:                     if (res.ok) {
+1204:                         clearTimeout(id);
+1205:                         return true;
+1206:                     }
+1207:                 } catch (_) { /* service peut être indisponible pendant le reload */ }
+1208:                 await new Promise(r => setTimeout(r, intervalMs));
+1209:             }
+1210:             throw new Error('healthcheck failed');
+1211:         } finally {
+1212:             clearTimeout(id);
+1213:         }
+1214:     }
+1215: 
+1216:     // --- Délégation de clic (fallback) pour .tab-btn ---
+1217:     document.addEventListener('click', (evt) => {
+1218:         const btn = evt.target && evt.target.closest && evt.target.closest('.tab-btn');
+1219:         if (!btn) return;
+1220:         const target = btn.getAttribute('data-target');
+1221:         console.log('[tabs-fallback] click captured on', target);
+1222:         if (!target) return;
+1223:         // Activer/désactiver manuellement sans dépendre d'initTabs
+1224:         try {
+1225:             const panels = Array.from(document.querySelectorAll('.section-panel'));
+1226:             panels.forEach(p => { p.classList.remove('active'); p.style.display = 'none'; });
+1227:             const panel = document.querySelector(target);
+1228:             if (panel) { panel.classList.add('active'); panel.style.display = 'block'; }
+1229:             const allBtns = Array.from(document.querySelectorAll('.tab-btn'));
+1230:             allBtns.forEach(b => b.classList.remove('active'));
+1231:             btn.classList.add('active');
+1232:             // Mettre à jour le hash pour deep-linking
+1233:             const map = { '#sec-overview': '#overview', '#sec-webhooks': '#webhooks', '#sec-preferences': '#preferences', '#sec-tools': '#tools' };
+1234:             const hash = map[target]; if (hash) history.replaceState(null, '', hash);
+1235:         } catch (e) {
+1236:             console.error('[tabs-fallback] activation failed:', e);
+1237:         }
+1238:     });
+1239: });
+````
+
 ## File: login.html
 ````html
   1: <!DOCTYPE html>
@@ -10728,27 +9352,6 @@ requirements.txt
 73:         finally:
 74:             BG_LOCK_FH = None
 75:         return False
-````
-
-## File: routes/__init__.py
-````python
- 1: # routes package initializer
- 2: 
- 3: from .health import bp as health_bp  # noqa: F401
- 4: from .api_webhooks import bp as api_webhooks_bp  # noqa: F401
- 5: from .api_polling import bp as api_polling_bp  # noqa: F401
- 6: from .api_processing import bp as api_processing_bp  # noqa: F401
- 7: from .api_processing import legacy_bp as api_processing_legacy_bp  # noqa: F401
- 8: from .api_test import bp as api_test_bp  # noqa: F401
- 9: from .dashboard import bp as dashboard_bp  # noqa: F401
-10: from .api_logs import bp as api_logs_bp  # noqa: F401
-11: from .api_admin import bp as api_admin_bp  # noqa: F401
-12: from .api_utility import bp as api_utility_bp  # noqa: F401
-13: from .api_config import bp as api_config_bp  # noqa: F401
-14: from .api_make import bp as api_make_bp  # noqa: F401
-15: from .api_auth import bp as api_auth_bp  # noqa: F401
-16: from .api_routing_rules import bp as api_routing_rules_bp  # noqa: F401
-17: from .api_ingress import bp as api_ingress_bp  # noqa: F401
 ````
 
 ## File: routes/api_admin.py
@@ -11144,517 +9747,645 @@ requirements.txt
 389:         return jsonify({"status": "error", "message": str(e)}), 500
 ````
 
-## File: routes/api_config.py
+## File: routes/api_ingress.py
+````python
+  1: from __future__ import annotations
+  2: 
+  3: import hashlib
+  4: import sys
+  5: from datetime import datetime, timezone
+  6: from email.utils import parseaddr
+  7: 
+  8: from flask import Blueprint, current_app, jsonify, request
+  9: 
+ 10: from email_processing import link_extraction
+ 11: from email_processing import orchestrator as email_orchestrator
+ 12: from email_processing import pattern_matching
+ 13: from services import AuthService, ConfigService
+ 14: from utils.text_helpers import mask_sensitive_data
+ 15: from utils.time_helpers import is_within_time_window_local, parse_time_hhmm
+ 16: 
+ 17: try:
+ 18:     from services import R2TransferService
+ 19: except Exception:
+ 20:     R2TransferService = None
+ 21: 
+ 22: bp = Blueprint("api_ingress", __name__, url_prefix="/api/ingress")
+ 23: 
+ 24: _config_service = ConfigService()
+ 25: _auth_service = AuthService(_config_service)
+ 26: 
+ 27: 
+ 28: def _maybe_enrich_delivery_links_with_r2(
+ 29:     *, delivery_links: list, email_id: str, logger
+ 30: ) -> None:
+ 31:     if not delivery_links:
+ 32:         return
+ 33: 
+ 34:     try:
+ 35:         if R2TransferService is None:
+ 36:             return
+ 37: 
+ 38:         r2_service = R2TransferService.get_instance()
+ 39:         if not r2_service.is_enabled():
+ 40:             return
+ 41:     except Exception:
+ 42:         return
+ 43: 
+ 44:     for item in delivery_links:
+ 45:         if not isinstance(item, dict):
+ 46:             continue
+ 47: 
+ 48:         raw_url = item.get("raw_url")
+ 49:         provider = item.get("provider")
+ 50:         if not isinstance(raw_url, str) or not raw_url.strip():
+ 51:             continue
+ 52:         if not isinstance(provider, str) or not provider.strip():
+ 53:             continue
+ 54: 
+ 55:         if not isinstance(item.get("direct_url"), str) or not item.get("direct_url"):
+ 56:             item["direct_url"] = raw_url
+ 57: 
+ 58:         try:
+ 59:             normalized_source_url = r2_service.normalize_source_url(raw_url, provider)
+ 60:         except Exception:
+ 61:             normalized_source_url = raw_url
+ 62: 
+ 63:         remote_fetch_timeout = 15
+ 64:         try:
+ 65:             if provider == "dropbox" and "/scl/fo/" in normalized_source_url.lower():
+ 66:                 remote_fetch_timeout = 120
+ 67:         except Exception:
+ 68:             remote_fetch_timeout = 15
+ 69: 
+ 70:         try:
+ 71:             r2_url, original_filename = r2_service.request_remote_fetch(
+ 72:                 source_url=normalized_source_url,
+ 73:                 provider=provider,
+ 74:                 email_id=email_id,
+ 75:                 timeout=remote_fetch_timeout,
+ 76:             )
+ 77:         except Exception:
+ 78:             continue
+ 79: 
+ 80:         if not isinstance(r2_url, str) or not r2_url.strip():
+ 81:             continue
+ 82: 
+ 83:         item["r2_url"] = r2_url
+ 84:         if isinstance(original_filename, str) and original_filename.strip():
+ 85:             item["original_filename"] = original_filename.strip()
+ 86: 
+ 87:         try:
+ 88:             logger.info(
+ 89:                 "R2_TRANSFER: Successfully transferred %s link to R2 for email %s",
+ 90:                 provider,
+ 91:                 email_id,
+ 92:             )
+ 93:         except Exception:
+ 94:             pass
+ 95: 
+ 96:         try:
+ 97:             r2_service.persist_link_pair(
+ 98:                 source_url=normalized_source_url,
+ 99:                 r2_url=r2_url,
+100:                 provider=provider,
+101:                 original_filename=(original_filename if isinstance(original_filename, str) else None),
+102:             )
+103:         except Exception as ex:
+104:             try:
+105:                 logger.debug("R2_TRANSFER: persist_link_pair failed for email %s: %s", email_id, ex)
+106:             except Exception:
+107:                 pass
+108: 
+109: 
+110: def _compute_email_id(*, subject: str, sender: str, date: str) -> str:
+111:     unique_str = f"{subject}|{sender}|{date}"
+112:     return hashlib.md5(unique_str.encode("utf-8")).hexdigest()
+113: 
+114: 
+115: def _extract_sender_email(sender_raw: str) -> str:
+116:     try:
+117:         _, addr = parseaddr(sender_raw or "")
+118:         if isinstance(addr, str) and addr.strip():
+119:             return addr.strip()
+120:     except Exception:
+121:         pass
+122:     return (sender_raw or "").strip()
+123: 
+124: 
+125: @bp.route("/gmail", methods=["POST"])
+126: def ingest_gmail():
+127:     if not _auth_service.verify_api_key_from_request(request):
+128:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+129: 
+130:     payload = request.get_json(silent=True)
+131:     if not isinstance(payload, dict):
+132:         return jsonify({"success": False, "message": "Invalid JSON payload"}), 400
+133: 
+134:     subject = payload.get("subject")
+135:     sender_raw = payload.get("sender")
+136:     body = payload.get("body")
+137:     email_date = payload.get("date")
+138: 
+139:     if not isinstance(subject, str):
+140:         subject = ""
+141:     if not isinstance(sender_raw, str):
+142:         sender_raw = ""
+143:     if not isinstance(body, str):
+144:         body = ""
+145:     if not isinstance(email_date, str):
+146:         email_date = ""
+147: 
+148:     if not sender_raw:
+149:         return jsonify({"success": False, "message": "Missing field: sender"}), 400
+150:     if not body:
+151:         return jsonify({"success": False, "message": "Missing field: body"}), 400
+152: 
+153:     ar = sys.modules.get("app_render")
+154:     if ar is None:
+155:         return jsonify({"success": False, "message": "Server not ready"}), 503
+156: 
+157:     try:
+158:         sender_email = _extract_sender_email(sender_raw)
+159:     except Exception:
+160:         sender_email = sender_raw
+161: 
+162:     sender_email = (sender_email or sender_raw).strip().lower()
+163: 
+164:     email_id = _compute_email_id(subject=subject, sender=sender_email, date=email_date)
+165: 
+166:     try:
+167:         current_app.logger.info(
+168:             "INGRESS: gmail payload received (email_id=%s sender=%s subject=%s)",
+169:             email_id,
+170:             mask_sensitive_data(sender_email, "email"),
+171:             mask_sensitive_data(subject, "subject"),
+172:         )
+173:     except Exception:
+174:         pass
+175: 
+176:     try:
+177:         is_processed_fn = getattr(ar, "is_email_id_processed_redis", None)
+178:         if callable(is_processed_fn) and is_processed_fn(email_id):
+179:             return (
+180:                 jsonify({"success": True, "status": "already_processed", "email_id": email_id}),
+181:                 200,
+182:             )
+183:     except Exception:
+184:         pass
+185: 
+186:     try:
+187:         gmail_sender_list = getattr(ar, "GMAIL_SENDER_ALLOWLIST", [])
+188:         allowed = [
+189:             str(s).strip().lower()
+190:             for s in (gmail_sender_list if isinstance(gmail_sender_list, list) else [])
+191:             if isinstance(s, str) and s.strip()
+192:         ]
+193:         if allowed and sender_email not in allowed:
+194:             try:
+195:                 mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
+196:                 if callable(mark_processed_fn):
+197:                     mark_processed_fn(email_id)
+198:             except Exception:
+199:                 pass
+200:             return (
+201:                 jsonify({"success": True, "status": "skipped_sender_not_allowed", "email_id": email_id}),
+202:                 200,
+203:             )
+204:     except Exception:
+205:         pass
+206: 
+207:     try:
+208:         if not email_orchestrator._is_webhook_sending_enabled():
+209:             return (
+210:                 jsonify({"success": False, "message": "Webhook sending disabled"}),
+211:                 409,
+212:             )
+213:     except Exception:
+214:         pass
+215: 
+216:     tz_for_polling = getattr(ar, "TZ_FOR_POLLING", None)
+217:     try:
+218:         now_local = datetime.now(tz_for_polling) if tz_for_polling else datetime.now()
+219:     except Exception:
+220:         now_local = datetime.now()
+221: 
+222:     detector_val = None
+223:     delivery_time_val = None
+224:     desabo_is_urgent = False
+225:     try:
+226:         ms_res = pattern_matching.check_media_solution_pattern(
+227:             subject or "", body, tz_for_polling, current_app.logger
+228:         )
+229:         if isinstance(ms_res, dict) and bool(ms_res.get("matches")):
+230:             detector_val = "recadrage"
+231:             delivery_time_val = ms_res.get("delivery_time")
+232:         else:
+233:             des_res = pattern_matching.check_desabo_conditions(
+234:                 subject or "", body, current_app.logger
+235:             )
+236:             if isinstance(des_res, dict) and bool(des_res.get("matches")):
+237:                 detector_val = "desabonnement_journee_tarifs"
+238:                 desabo_is_urgent = bool(des_res.get("is_urgent"))
+239:     except Exception:
+240:         detector_val = None
+241: 
+242:     s_str, e_str = "", ""
+243:     try:
+244:         s_str, e_str = email_orchestrator._load_webhook_global_time_window()
+245:     except Exception:
+246:         s_str, e_str = "", ""
+247: 
+248:     start_t = parse_time_hhmm(s_str) if s_str else None
+249:     end_t = parse_time_hhmm(e_str) if e_str else None
+250:     within = True
+251:     if start_t and end_t:
+252:         within = is_within_time_window_local(now_local, start_t, end_t)
+253: 
+254:     if not within:
+255:         if detector_val == "desabonnement_journee_tarifs":
+256:             if desabo_is_urgent:
+257:                 return (
+258:                     jsonify({"success": False, "message": "Outside time window (DESABO urgent)"}),
+259:                     409,
+260:                 )
+261:         elif detector_val == "recadrage":
+262:             try:
+263:                 mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
+264:                 if callable(mark_processed_fn):
+265:                     mark_processed_fn(email_id)
+266:             except Exception:
+267:                 pass
+268:             return (
+269:                 jsonify({"success": True, "status": "skipped_outside_time_window", "email_id": email_id}),
+270:                 200,
+271:             )
+272:         else:
+273:             return (
+274:                 jsonify({"success": False, "message": "Outside time window"}),
+275:                 409,
+276:             )
+277: 
+278:     start_payload_val = None
+279:     try:
+280:         if start_t and end_t:
+281:             if within:
+282:                 start_payload_val = "maintenant"
+283:             else:
+284:                 if (
+285:                     detector_val == "desabonnement_journee_tarifs"
+286:                     and not desabo_is_urgent
+287:                     and now_local.time() < start_t
+288:                 ):
+289:                     start_payload_val = s_str
+290:     except Exception:
+291:         start_payload_val = None
+292: 
+293:     delivery_links = link_extraction.extract_provider_links_from_text(body)
+294: 
+295:     try:
+296:         _maybe_enrich_delivery_links_with_r2(
+297:             delivery_links=delivery_links or [],
+298:             email_id=email_id,
+299:             logger=current_app.logger,
+300:         )
+301:     except Exception:
+302:         pass
+303: 
+304:     payload_for_webhook = {
+305:         "microsoft_graph_email_id": email_id,
+306:         "subject": subject or "",
+307:         "receivedDateTime": email_date or "",
+308:         "sender_address": sender_raw,
+309:         "bodyPreview": (body or "")[:200],
+310:         "email_content": body or "",
+311:         "source": "gmail_push",
+312:     }
+313: 
+314:     try:
+315:         if detector_val:
+316:             payload_for_webhook["detector"] = detector_val
+317:         if detector_val == "recadrage" and delivery_time_val:
+318:             payload_for_webhook["delivery_time"] = delivery_time_val
+319:         payload_for_webhook["sender_email"] = sender_email
+320:     except Exception:
+321:         pass
+322: 
+323:     try:
+324:         if start_payload_val is not None:
+325:             payload_for_webhook["webhooks_time_start"] = start_payload_val
+326:         if e_str:
+327:             payload_for_webhook["webhooks_time_end"] = e_str
+328:     except Exception:
+329:         pass
+330: 
+331:     webhook_cfg = {}
+332:     try:
+333:         webhook_cfg = email_orchestrator._get_webhook_config_dict() or {}
+334:     except Exception:
+335:         webhook_cfg = {}
+336: 
+337:     webhook_url = ""
+338:     try:
+339:         webhook_url = str(webhook_cfg.get("webhook_url") or "").strip()
+340:     except Exception:
+341:         webhook_url = ""
+342:     if not webhook_url:
+343:         webhook_url = str(getattr(ar, "WEBHOOK_URL", "") or "").strip()
+344:     if not webhook_url:
+345:         return jsonify({"success": False, "message": "WEBHOOK_URL not configured"}), 500
+346: 
+347:     webhook_ssl_verify = True
+348:     try:
+349:         webhook_ssl_verify = bool(webhook_cfg.get("webhook_ssl_verify", True))
+350:     except Exception:
+351:         webhook_ssl_verify = True
+352: 
+353:     allow_without_links = bool(getattr(ar, "ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS", False))
+354:     try:
+355:         rfs = getattr(ar, "_runtime_flags_service", None)
+356:         if rfs is not None and hasattr(rfs, "get_flag"):
+357:             allow_without_links = bool(
+358:                 rfs.get_flag("allow_custom_webhook_without_links", allow_without_links)
+359:             )
+360:     except Exception:
+361:         pass
+362: 
+363:     processing_prefs = getattr(ar, "PROCESSING_PREFS", {})
+364: 
+365:     rate_limit_allow_send = getattr(ar, "_rate_limit_allow_send", None)
+366:     record_send_event = getattr(ar, "_record_send_event", None)
+367:     append_webhook_log = getattr(ar, "_append_webhook_log", None)
+368:     mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
+369: 
+370:     if not callable(rate_limit_allow_send) or not callable(record_send_event):
+371:         return jsonify({"success": False, "message": "Server misconfigured"}), 500
+372:     if not callable(append_webhook_log) or not callable(mark_processed_fn):
+373:         return jsonify({"success": False, "message": "Server misconfigured"}), 500
+374: 
+375:     import requests
+376:     import time
+377: 
+378:     try:
+379:         flow_result = email_orchestrator.send_custom_webhook_flow(
+380:             email_id=email_id,
+381:             subject=subject,
+382:             payload_for_webhook=payload_for_webhook,
+383:             delivery_links=delivery_links or [],
+384:             webhook_url=webhook_url,
+385:             webhook_ssl_verify=webhook_ssl_verify,
+386:             allow_without_links=allow_without_links,
+387:             processing_prefs=processing_prefs,
+388:             rate_limit_allow_send=rate_limit_allow_send,
+389:             record_send_event=record_send_event,
+390:             append_webhook_log=append_webhook_log,
+391:             mark_email_id_as_processed_redis=mark_processed_fn,
+392:             mark_email_as_read_imap=lambda *_a, **_kw: True,
+393:             mail=None,
+394:             email_num=None,
+395:             urlparse=None,
+396:             requests=requests,
+397:             time=time,
+398:             logger=current_app.logger,
+399:         )
+400: 
+401:         return (
+402:             jsonify(
+403:                 {
+404:                     "success": True,
+405:                     "status": "processed",
+406:                     "email_id": email_id,
+407:                     "flow_result": flow_result,
+408:                     "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+409:                 }
+410:             ),
+411:             200,
+412:         )
+413:     except Exception as e:
+414:         try:
+415:             current_app.logger.error("INGRESS: processing error for %s: %s", email_id, e)
+416:         except Exception:
+417:             pass
+418:         return jsonify({"success": False, "message": "Internal error"}), 500
+````
+
+## File: routes/api_test.py
 ````python
   1: from __future__ import annotations
   2: 
   3: import json
-  4: import re
-  5: from datetime import datetime
-  6: from typing import Tuple
+  4: from datetime import datetime, timedelta, timezone
+  5: 
+  6: from flask import Blueprint, jsonify, request
   7: 
-  8: from flask import Blueprint, jsonify, request
-  9: from flask_login import login_required
- 10: 
- 11: from config import webhook_time_window, polling_config, settings
- 12: from config import app_config_store as _store
- 13: from config.settings import (
- 14:     RUNTIME_FLAGS_FILE,
- 15:     DISABLE_EMAIL_ID_DEDUP as DEFAULT_DISABLE_EMAIL_ID_DEDUP,
- 16:     ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS as DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS,
- 17:     POLLING_TIMEZONE_STR,
- 18:     EMAIL_POLLING_INTERVAL_SECONDS,
- 19:     POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
- 20:     POLLING_CONFIG_FILE,
- 21: )
- 22: from services import RuntimeFlagsService
- 23: 
- 24: bp = Blueprint("api_config", __name__, url_prefix="/api")
- 25: 
- 26: # Récupérer l'instance RuntimeFlagsService (Singleton)
- 27: # L'instance est déjà initialisée dans app_render.py
- 28: try:
- 29:     _runtime_flags_service = RuntimeFlagsService.get_instance()
- 30: except ValueError:
- 31:     # Fallback: initialiser si pas encore fait (cas tests)
- 32:     _runtime_flags_service = RuntimeFlagsService.get_instance(
- 33:         file_path=RUNTIME_FLAGS_FILE,
- 34:         defaults={
- 35:             "disable_email_id_dedup": bool(DEFAULT_DISABLE_EMAIL_ID_DEDUP),
- 36:             "allow_custom_webhook_without_links": bool(DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
- 37:         }
- 38:     )
- 39: 
- 40: 
- 41: # Wrappers legacy supprimés - Appels directs aux services
- 42: 
- 43: 
- 44: # ---- Time window (session-protected) ----
- 45: 
- 46: @bp.route("/get_webhook_time_window", methods=["GET"])
- 47: @login_required
- 48: def get_webhook_time_window():
- 49:     try:
- 50:         # Best-effort: pull latest values from external store to reflect remote edits
- 51:         try:
- 52:             cfg = _store.get_config_json("webhook_config") or {}
- 53:             gs = (cfg.get("global_time_start") or "").strip()
- 54:             ge = (cfg.get("global_time_end") or "").strip()
- 55:             # Only sync when BOTH values are provided (non-empty). Do NOT clear on double-empty here.
- 56:             if (gs != "" and ge != ""):
- 57:                 webhook_time_window.update_time_window(gs, ge)
- 58:         except Exception:
- 59:             pass
- 60:         info = webhook_time_window.get_time_window_info()
- 61:         return (
- 62:             jsonify(
- 63:                 {
- 64:                     "success": True,
- 65:                     "webhooks_time_start": info.get("start") or None,
- 66:                     "webhooks_time_end": info.get("end") or None,
- 67:                     "timezone": POLLING_TIMEZONE_STR,
- 68:                 }
- 69:             ),
- 70:             200,
- 71:         )
- 72:     except Exception:
- 73:         return jsonify({"success": False, "message": "Erreur lors de la récupération de la fenêtre horaire."}), 500
- 74: 
- 75: 
- 76: @bp.route("/set_webhook_time_window", methods=["POST"])
- 77: @login_required
- 78: def set_webhook_time_window():
- 79:     try:
- 80:         payload = request.get_json(silent=True) or {}
- 81:         start = payload.get("start", "")
- 82:         end = payload.get("end", "")
- 83:         ok, msg = webhook_time_window.update_time_window(start, end)
- 84:         status = 200 if ok else 400
- 85:         info = webhook_time_window.get_time_window_info()
- 86:         # Best-effort: mirror the global time window to external config store under
- 87:         # webhook_config as global_time_start/global_time_end so that
- 88:         # https://webhook.kidpixel.fr/data/app_config/webhook_config.json reflects it too.
- 89:         try:
- 90:             cfg = _store.get_config_json("webhook_config") or {}
- 91:             cfg["global_time_start"] = (info.get("start") or "") or None
- 92:             cfg["global_time_end"] = (info.get("end") or "") or None
- 93:             # Do not fail the request if external store is unavailable
- 94:             _store.set_config_json("webhook_config", cfg)
- 95:         except Exception:
- 96:             pass
- 97:         return (
- 98:             jsonify(
- 99:                 {
-100:                     "success": ok,
-101:                     "message": msg,
-102:                     "webhooks_time_start": info.get("start") or None,
-103:                     "webhooks_time_end": info.get("end") or None,
-104:                 }
-105:             ),
-106:             status,
-107:         )
-108:     except Exception:
-109:         return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}), 500
-110: 
-111: 
-112: # ---- Runtime flags (session-protected) ----
-113: 
-114: @bp.route("/get_runtime_flags", methods=["GET"])
-115: @login_required
-116: def get_runtime_flags():
-117:     """Récupère les flags runtime.
-118:     
-119:     Appel direct à RuntimeFlagsService (cache intelligent 60s).
-120:     """
-121:     try:
-122:         # Appel direct au service (cache si valide, sinon reload)
-123:         data = _runtime_flags_service.get_all_flags()
-124:         return jsonify({"success": True, "flags": data}), 200
-125:     except Exception:
-126:         return jsonify({"success": False, "message": "Erreur interne"}), 500
-127: 
-128: 
-129: @bp.route("/update_runtime_flags", methods=["POST"])
-130: @login_required
-131: def update_runtime_flags():
-132:     """Met à jour les flags runtime.
-133:     
-134:     Appel direct à RuntimeFlagsService.update_flags() - Atomic update + invalidation cache.
-135:     """
-136:     try:
-137:         payload = request.get_json(silent=True) or {}
-138:         
-139:         # Préparer les mises à jour (validation)
-140:         updates = {}
-141:         if "disable_email_id_dedup" in payload:
-142:             updates["disable_email_id_dedup"] = bool(payload.get("disable_email_id_dedup"))
-143:         if "allow_custom_webhook_without_links" in payload:
-144:             updates["allow_custom_webhook_without_links"] = bool(payload.get("allow_custom_webhook_without_links"))
-145:         
-146:         # Appel direct au service (mise à jour atomique + persiste + invalide cache)
-147:         if not _runtime_flags_service.update_flags(updates):
-148:             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
-149:         
-150:         # Récupérer les flags à jour
-151:         data = _runtime_flags_service.get_all_flags()
-152:         return jsonify({
-153:             "success": True,
-154:             "flags": data,
-155:             "message": "Modifications enregistrées. Un redémarrage peut être nécessaire."
-156:         }), 200
-157:     except Exception:
-158:         return jsonify({"success": False, "message": "Erreur interne"}), 500
-159: 
-160: 
-161: # ---- Polling configuration (session-protected) ----
-162: 
-163: @bp.route("/get_polling_config", methods=["GET"])
-164: @login_required
-165: def get_polling_config():
-166:     try:
-167:         # Read live settings at call time to honor pytest patch.object overrides
-168:         # Prefer values from external store/file if available to reflect persisted UI choices
-169:         persisted = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
-170:         cfg = {
-171:             "active_days": persisted.get("active_days", getattr(polling_config, 'POLLING_ACTIVE_DAYS', settings.POLLING_ACTIVE_DAYS)),
-172:             "active_start_hour": persisted.get("active_start_hour", getattr(polling_config, 'POLLING_ACTIVE_START_HOUR', settings.POLLING_ACTIVE_START_HOUR)),
-173:             "active_end_hour": persisted.get("active_end_hour", getattr(polling_config, 'POLLING_ACTIVE_END_HOUR', settings.POLLING_ACTIVE_END_HOUR)),
-174:             "enable_subject_group_dedup": persisted.get(
-175:                 "enable_subject_group_dedup",
-176:                 getattr(polling_config, 'ENABLE_SUBJECT_GROUP_DEDUP', settings.ENABLE_SUBJECT_GROUP_DEDUP),
-177:             ),
-178:             "timezone": getattr(polling_config, 'POLLING_TIMEZONE_STR', POLLING_TIMEZONE_STR),
-179:             # Still expose persisted sender list if present, else settings default
-180:             "sender_of_interest_for_polling": persisted.get("sender_of_interest_for_polling", getattr(polling_config, 'SENDER_LIST_FOR_POLLING', settings.SENDER_LIST_FOR_POLLING)),
-181:             "vacation_start": persisted.get("vacation_start", polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None),
-182:             "vacation_end": persisted.get("vacation_end", polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None),
-183:             # Global enable toggle: prefer persisted, fallback helper
-184:             "enable_polling": persisted.get("enable_polling", True),
-185:         }
-186:         # Pourquoi : si store vide, retomber sur les settings patchés par pytest
-187:         if not persisted:
-188:             # Utiliser settings importé au niveau fichier (pytest le patche directement)
-189:             cfg = {
-190:                 "active_days": getattr(settings, 'POLLING_ACTIVE_DAYS', settings.POLLING_ACTIVE_DAYS),
-191:                 "active_start_hour": getattr(settings, 'POLLING_ACTIVE_START_HOUR', settings.POLLING_ACTIVE_START_HOUR),
-192:                 "active_end_hour": getattr(settings, 'POLLING_ACTIVE_END_HOUR', settings.POLLING_ACTIVE_END_HOUR),
-193:                 "enable_subject_group_dedup": getattr(settings, 'ENABLE_SUBJECT_GROUP_DEDUP', settings.ENABLE_SUBJECT_GROUP_DEDUP),
-194:                 "timezone": getattr(settings, 'POLLING_TIMEZONE_STR', POLLING_TIMEZONE_STR),
-195:                 "sender_of_interest_for_polling": getattr(settings, 'SENDER_LIST_FOR_POLLING', settings.SENDER_LIST_FOR_POLLING),
-196:                 "vacation_start": polling_config.POLLING_VACATION_START_DATE.isoformat() if polling_config.POLLING_VACATION_START_DATE else None,
-197:                 "vacation_end": polling_config.POLLING_VACATION_END_DATE.isoformat() if polling_config.POLLING_VACATION_END_DATE else None,
-198:                 "enable_polling": True,
-199:             }
-200:         return jsonify({"success": True, "config": cfg}), 200
-201:     except Exception:
-202:         return jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration polling."}), 500
-203: 
-204: 
-205: @bp.route("/update_polling_config", methods=["POST"])
-206: @login_required
-207: def update_polling_config():
-208:     try:
-209:         payload = request.get_json(silent=True) or {}
-210:         # Charger l'existant depuis le store (fallback fichier)
-211:         existing: dict = _store.get_config_json("polling_config", file_fallback=POLLING_CONFIG_FILE) or {}
-212: 
-213:         # Normalisation des champs
-214:         new_days = None
-215:         if 'active_days' in payload:
-216:             days_val = payload['active_days']
-217:             parsed_days: list[int] = []
-218:             if isinstance(days_val, str):
-219:                 parts = [p.strip() for p in days_val.split(',') if p.strip()]
-220:                 for p in parts:
-221:                     if p.isdigit():
-222:                         d = int(p)
-223:                         if 0 <= d <= 6:
-224:                             parsed_days.append(d)
-225:             elif isinstance(days_val, list):
-226:                 for p in days_val:
-227:                     try:
-228:                         d = int(p)
-229:                         if 0 <= d <= 6:
-230:                             parsed_days.append(d)
-231:                     except Exception:
-232:                         continue
-233:             if parsed_days:
-234:                 new_days = sorted(set(parsed_days))
-235:             else:
-236:                 new_days = [0, 1, 2, 3, 4]
-237: 
-238:         new_start = None
-239:         if 'active_start_hour' in payload:
-240:             try:
-241:                 v = int(payload['active_start_hour'])
-242:                 if 0 <= v <= 23:
-243:                     new_start = v
-244:                 else:
-245:                     return jsonify({"success": False, "message": "active_start_hour doit être entre 0 et 23."}), 400
-246:             except Exception:
-247:                 return jsonify({"success": False, "message": "active_start_hour invalide (entier attendu)."}), 400
-248: 
-249:         new_end = None
-250:         if 'active_end_hour' in payload:
-251:             try:
-252:                 v = int(payload['active_end_hour'])
-253:                 if 0 <= v <= 23:
-254:                     new_end = v
-255:                 else:
-256:                     return jsonify({"success": False, "message": "active_end_hour doit être entre 0 et 23."}), 400
-257:             except Exception:
-258:                 return jsonify({"success": False, "message": "active_end_hour invalide (entier attendu)."}), 400
-259: 
-260:         new_dedup = None
-261:         if 'enable_subject_group_dedup' in payload:
-262:             new_dedup = bool(payload['enable_subject_group_dedup'])
-263: 
-264:         new_senders = None
-265:         if 'sender_of_interest_for_polling' in payload:
-266:             candidates = payload['sender_of_interest_for_polling']
-267:             normalized: list[str] = []
-268:             if isinstance(candidates, str):
-269:                 parts = [p.strip() for p in candidates.split(',') if p.strip()]
-270:             elif isinstance(candidates, list):
-271:                 parts = [str(p).strip() for p in candidates if str(p).strip()]
-272:             else:
-273:                 parts = []
-274:             email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-275:             for p in parts:
-276:                 low = p.lower()
-277:                 if email_re.match(low):
-278:                     normalized.append(low)
-279:             seen = set()
-280:             unique_norm = []
-281:             for s in normalized:
-282:                 if s not in seen:
-283:                     seen.add(s)
-284:                     unique_norm.append(s)
-285:             new_senders = unique_norm
-286: 
-287:         # Vacation dates (ISO YYYY-MM-DD)
-288:         new_vac_start = None
-289:         if 'vacation_start' in payload:
-290:             vs = payload['vacation_start']
-291:             if vs in (None, ""):
-292:                 new_vac_start = None
-293:             else:
-294:                 try:
-295:                     new_vac_start = datetime.fromisoformat(str(vs)).date()
-296:                 except Exception:
-297:                     return jsonify({"success": False, "message": "vacation_start invalide (format YYYY-MM-DD)."}), 400
-298: 
-299:         new_vac_end = None
-300:         if 'vacation_end' in payload:
-301:             ve = payload['vacation_end']
-302:             if ve in (None, ""):
-303:                 new_vac_end = None
-304:             else:
-305:                 try:
-306:                     new_vac_end = datetime.fromisoformat(str(ve)).date()
-307:                 except Exception:
-308:                     return jsonify({"success": False, "message": "vacation_end invalide (format YYYY-MM-DD)."}), 400
-309: 
-310:         if new_vac_start is not None and new_vac_end is not None and new_vac_start > new_vac_end:
-311:             return jsonify({"success": False, "message": "vacation_start doit être <= vacation_end."}), 400
-312: 
-313:         # Global enable (boolean)
-314:         new_enable_polling = None
-315:         if 'enable_polling' in payload:
-316:             try:
-317:                 val = payload.get('enable_polling')
-318:                 if isinstance(val, bool):
-319:                     new_enable_polling = val
-320:                 elif isinstance(val, (int, float)):
-321:                     new_enable_polling = bool(val)
-322:                 elif isinstance(val, str):
-323:                     s = val.strip().lower()
-324:                     if s in {"1", "true", "yes", "y", "on"}:
-325:                         new_enable_polling = True
-326:                     elif s in {"0", "false", "no", "n", "off"}:
-327:                         new_enable_polling = False
-328:             except Exception:
-329:                 new_enable_polling = None
-330: 
-331:         # Persistance via store (avec fallback fichier)
-332:         merged = dict(existing)
-333:         if new_days is not None:
-334:             merged['active_days'] = new_days
-335:         if new_start is not None:
-336:             merged['active_start_hour'] = new_start
-337:         if new_end is not None:
-338:             merged['active_end_hour'] = new_end
-339:         if new_dedup is not None:
-340:             merged['enable_subject_group_dedup'] = new_dedup
-341:         if new_senders is not None:
-342:             merged['sender_of_interest_for_polling'] = new_senders
-343:         if 'vacation_start' in payload:
-344:             merged['vacation_start'] = new_vac_start.isoformat() if new_vac_start else None
-345:         if 'vacation_end' in payload:
-346:             merged['vacation_end'] = new_vac_end.isoformat() if new_vac_end else None
-347:         if new_enable_polling is not None:
-348:             merged['enable_polling'] = new_enable_polling
-349: 
-350:         try:
-351:             ok = _store.set_config_json("polling_config", merged, file_fallback=POLLING_CONFIG_FILE)
-352:             if not ok:
-353:                 return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
-354:         except Exception:
-355:             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration polling."}), 500
-356: 
-357:         return jsonify({
-358:             "success": True,
-359:             "config": {
-360:                 "active_days": merged.get('active_days', settings.POLLING_ACTIVE_DAYS),
-361:                 "active_start_hour": merged.get('active_start_hour', settings.POLLING_ACTIVE_START_HOUR),
-362:                 "active_end_hour": merged.get('active_end_hour', settings.POLLING_ACTIVE_END_HOUR),
-363:                 "enable_subject_group_dedup": merged.get('enable_subject_group_dedup', settings.ENABLE_SUBJECT_GROUP_DEDUP),
-364:                 "sender_of_interest_for_polling": merged.get('sender_of_interest_for_polling', settings.SENDER_LIST_FOR_POLLING),
-365:                 "vacation_start": merged.get('vacation_start'),
-366:                 "vacation_end": merged.get('vacation_end'),
-367:                 "enable_polling": merged.get('enable_polling', polling_config.get_enable_polling(True)),
-368:             },
-369:             "message": "Configuration polling mise à jour. Un redémarrage peut être nécessaire pour prise en compte complète."
-370:         }), 200
-371:     except Exception:
-372:         return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour du polling."}), 500
-````
-
-## File: scripts/check_config_store.py
-````python
-  1: """CLI utilitaire pour vérifier les configurations stockées dans Redis.
-  2: 
-  3: Usage:
-  4:     python -m scripts.check_config_store --keys processing_prefs webhook_config
-  5: """
-  6: 
-  7: from __future__ import annotations
-  8: 
-  9: import argparse
- 10: import json
- 11: import sys
- 12: from typing import Any, Dict, Iterable, Sequence, Tuple
- 13: 
- 14: from config import app_config_store
- 15: 
- 16: KEY_CHOICES: Tuple[str, ...] = (
- 17:     "magic_link_tokens",
- 18:     "polling_config",
- 19:     "processing_prefs",
- 20:     "routing_rules",
- 21:     "webhook_config",
- 22: )
- 23: 
+  8: from auth.helpers import testapi_authorized as _testapi_authorized
+  9: from config.webhook_time_window import (
+ 10:     get_time_window_info,
+ 11:     update_time_window,
+ 12: )
+ 13: from config.webhook_config import load_webhook_config, save_webhook_config
+ 14: from config.settings import (
+ 15:     WEBHOOK_CONFIG_FILE,
+ 16:     WEBHOOK_LOGS_FILE,
+ 17:     WEBHOOK_URL,
+ 18:     WEBHOOK_SSL_VERIFY,
+ 19:     POLLING_TIMEZONE_STR,
+ 20: )
+ 21: from utils.validators import normalize_make_webhook_url as _normalize_make_webhook_url
+ 22: 
+ 23: bp = Blueprint("api_test", __name__, url_prefix="/api/test")
  24: 
- 25: def _validate_payload(key: str, payload: Dict[str, Any]) -> Tuple[bool, str]:
- 26:     if not isinstance(payload, dict):
- 27:         return False, "payload is not a dict"
- 28:     if key == "routing_rules" and not payload:
- 29:         return True, "empty (allowed)"
- 30:     if not payload:
- 31:         return False, "payload is empty"
- 32:     if key != "magic_link_tokens" and "_updated_at" not in payload:
- 33:         return False, "missing _updated_at"
- 34:     return True, "ok"
- 35: 
- 36: 
- 37: def _summarize_dict(payload: Dict[str, Any]) -> str:
- 38:     parts: list[str] = []
- 39:     updated_at = payload.get("_updated_at")
- 40:     if isinstance(updated_at, str):
- 41:         parts.append(f"_updated_at={updated_at}")
- 42: 
- 43:     dict_sizes = {
- 44:         k: len(v) for k, v in payload.items() if isinstance(v, dict)
- 45:     }
- 46:     if dict_sizes:
- 47:         formatted = ", ".join(f"{k}:{size}" for k, size in sorted(dict_sizes.items()))
- 48:         parts.append(f"dict_sizes={formatted}")
- 49: 
- 50:     list_sizes = {
- 51:         k: len(v) for k, v in payload.items() if isinstance(v, list)
- 52:     }
- 53:     if list_sizes:
- 54:         formatted = ", ".join(f"{k}:{size}" for k, size in sorted(list_sizes.items()))
- 55:         parts.append(f"list_sizes={formatted}")
- 56: 
- 57:     if not parts:
- 58:         parts.append(f"keys={len(payload)}")
- 59:     return "; ".join(parts)
- 60: 
- 61: 
- 62: def _format_payload(payload: Dict[str, Any], raw: bool) -> str:
- 63:     if raw:
- 64:         return json.dumps(payload, indent=2, ensure_ascii=False)
- 65:     return _summarize_dict(payload)
- 66: 
- 67: 
- 68: def _fetch(key: str) -> Dict[str, Any]:
- 69:     return app_config_store.get_config_json(key)
- 70: 
- 71: 
- 72: def inspect_configs(keys: Sequence[str], raw: bool = False) -> Tuple[int, list[dict[str, Any]]]:
- 73:     """Inspecte les clés demandées et retourne (exit_code, résultats structurés)."""
- 74:     exit_code = 0
- 75:     results: list[dict[str, Any]] = []
- 76:     for key in keys:
- 77:         payload = _fetch(key)
- 78:         has_payload = bool(payload)
- 79:         valid, reason = _validate_payload(key, payload)
- 80:         summary = _format_payload(payload, raw) if has_payload else "<vide>"
- 81:         if not valid:
- 82:             exit_code = 1
- 83:         results.append(
- 84:             {
- 85:                 "key": key,
- 86:                 "valid": bool(valid),
- 87:                 "status": "OK" if valid else "INVALID",
- 88:                 "message": reason,
- 89:                 "summary": summary,
- 90:                 "payload_present": has_payload,
- 91:                 "payload": payload if raw and has_payload else None,
- 92:             }
- 93:         )
- 94:     return exit_code, results
- 95: 
- 96: 
- 97: def _run(keys: Sequence[str], raw: bool) -> int:
- 98:     exit_code, results = inspect_configs(keys, raw)
- 99:     for entry in results:
-100:         status = entry["status"] if entry["valid"] else f"INVALID ({entry['message']})"
-101:         print(f"{entry['key']}: {status}")
-102:         print(entry["summary"])
-103:         print("-" * 40)
-104:     return exit_code
-105: 
-106: 
-107: def build_parser() -> argparse.ArgumentParser:
-108:     parser = argparse.ArgumentParser(
-109:         description="Inspecter les configs persistées dans Redis."
-110:     )
-111:     parser.add_argument(
-112:         "--keys",
-113:         nargs="+",
-114:         choices=KEY_CHOICES,
-115:         default=KEY_CHOICES,
-116:         help="Liste des clés à vérifier.",
-117:     )
-118:     parser.add_argument(
-119:         "--raw",
-120:         action="store_true",
-121:         help="Afficher le JSON complet (indent=2).",
-122:     )
-123:     return parser
-124: 
-125: 
-126: def main(argv: Iterable[str] | None = None) -> int:
-127:     parser = build_parser()
-128:     args = parser.parse_args(list(argv) if argv is not None else None)
-129:     return _run(tuple(args.keys), args.raw)
+ 25: 
+ 26: """Webhook config I/O helpers are centralized in config/webhook_config."""
+ 27: 
+ 28: 
+ 29: def _mask_url(url: str | None) -> str | None:
+ 30:     if not url:
+ 31:         return None
+ 32:     if url.startswith("http"):
+ 33:         parts = url.split("/")
+ 34:         if len(parts) > 3:
+ 35:             return f"{parts[0]}//{parts[2]}/***"
+ 36:         return url[:30] + "***"
+ 37:     return None
+ 38: 
+ 39: 
+ 40: # --- Endpoints ---
+ 41: 
+ 42: @bp.route("/get_webhook_time_window", methods=["GET"])
+ 43: def get_webhook_time_window():
+ 44:     if not _testapi_authorized(request):
+ 45:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+ 46:     try:
+ 47:         info = get_time_window_info()
+ 48:         return (
+ 49:             jsonify(
+ 50:                 {
+ 51:                     "success": True,
+ 52:                     "webhooks_time_start": info.get("start") or None,
+ 53:                     "webhooks_time_end": info.get("end") or None,
+ 54:                     "timezone": POLLING_TIMEZONE_STR,
+ 55:                 }
+ 56:             ),
+ 57:             200,
+ 58:         )
+ 59:     except Exception:
+ 60:         return (
+ 61:             jsonify({"success": False, "message": "Erreur lors de la récupération de la fenêtre horaire."}),
+ 62:             500,
+ 63:         )
+ 64: 
+ 65: 
+ 66: @bp.route("/set_webhook_time_window", methods=["POST"])
+ 67: def set_webhook_time_window():
+ 68:     if not _testapi_authorized(request):
+ 69:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+ 70:     try:
+ 71:         payload = request.get_json(silent=True) or {}
+ 72:         start = payload.get("start", "")
+ 73:         end = payload.get("end", "")
+ 74:         ok, msg = update_time_window(start, end)
+ 75:         status = 200 if ok else 400
+ 76:         info = get_time_window_info()
+ 77:         return (
+ 78:             jsonify(
+ 79:                 {
+ 80:                     "success": ok,
+ 81:                     "message": msg,
+ 82:                     "webhooks_time_start": info.get("start") or None,
+ 83:                     "webhooks_time_end": info.get("end") or None,
+ 84:                 }
+ 85:             ),
+ 86:             status,
+ 87:         )
+ 88:     except Exception:
+ 89:         return (
+ 90:             jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}),
+ 91:             500,
+ 92:         )
+ 93: 
+ 94: 
+ 95: @bp.route("/get_webhook_config", methods=["GET"])
+ 96: def get_webhook_config():
+ 97:     if not _testapi_authorized(request):
+ 98:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+ 99:     try:
+100:         persisted = load_webhook_config(WEBHOOK_CONFIG_FILE)
+101:         cfg = {
+102:             "webhook_url": persisted.get("webhook_url") or _mask_url(WEBHOOK_URL),
+103:             "webhook_ssl_verify": persisted.get("webhook_ssl_verify", WEBHOOK_SSL_VERIFY),
+104:             "polling_enabled": persisted.get("polling_enabled", False),
+105:         }
+106:         return jsonify({"success": True, "config": cfg}), 200
+107:     except Exception:
+108:         return (
+109:             jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration."}),
+110:             500,
+111:         )
+112: 
+113: 
+114: @bp.route("/update_webhook_config", methods=["POST"])
+115: def update_webhook_config():
+116:     if not _testapi_authorized(request):
+117:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+118:     try:
+119:         payload = request.get_json(silent=True) or {}
+120:         config = load_webhook_config(WEBHOOK_CONFIG_FILE)
+121: 
+122:         if "webhook_url" in payload:
+123:             val = payload["webhook_url"].strip() if payload["webhook_url"] else None
+124:             if val and not val.startswith("http"):
+125:                 return (
+126:                     jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}),
+127:                     400,
+128:                 )
+129:             config["webhook_url"] = val
 130: 
-131: 
-132: if __name__ == "__main__":
-133:     sys.exit(main())
+131:         if "recadrage_webhook_url" in payload:
+132:             val = payload["recadrage_webhook_url"].strip() if payload["recadrage_webhook_url"] else None
+133:             if val and not val.startswith("http"):
+134:                 return (
+135:                     jsonify({"success": False, "message": "recadrage_webhook_url doit être une URL HTTPS valide."}),
+136:                     400,
+137:                 )
+138:             config["recadrage_webhook_url"] = val
+139: 
+140:         # presence fields removed
+141: 
+142:         if "autorepondeur_webhook_url" in payload:
+143:             val = payload["autorepondeur_webhook_url"].strip() if payload["autorepondeur_webhook_url"] else None
+144:             if val:
+145:                 val = _normalize_make_webhook_url(val)
+146:             config["autorepondeur_webhook_url"] = val
+147: 
+148:         if "webhook_ssl_verify" in payload:
+149:             config["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
+150: 
+151:         if not save_webhook_config(WEBHOOK_CONFIG_FILE, config):
+152:             return (
+153:                 jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration."}),
+154:                 500,
+155:             )
+156:         return jsonify({"success": True, "message": "Configuration mise à jour avec succès."}), 200
+157:     except Exception:
+158:         return (
+159:             jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}),
+160:             500,
+161:         )
+162: 
+163: 
+164: @bp.route("/webhook_logs", methods=["GET"])
+165: def webhook_logs():
+166:     if not _testapi_authorized(request):
+167:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+168:     try:
+169:         days = int(request.args.get("days", 7))
+170:         if days < 1:
+171:             days = 7
+172:         if days > 30:
+173:             days = 30
+174: 
+175:         if not WEBHOOK_LOGS_FILE.exists():
+176:             return jsonify({"success": True, "logs": [], "count": 0, "days_filter": days}), 200
+177:         with open(WEBHOOK_LOGS_FILE, "r", encoding="utf-8") as f:
+178:             all_logs = json.load(f) or []
+179: 
+180:         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+181:         filtered = []
+182:         for log in all_logs:
+183:             try:
+184:                 log_time = datetime.fromisoformat(log.get("timestamp", ""))
+185:                 if log_time >= cutoff:
+186:                     filtered.append(log)
+187:             except Exception:
+188:                 filtered.append(log)
+189: 
+190:         filtered = filtered[-50:]
+191:         filtered.reverse()
+192:         return (
+193:             jsonify({"success": True, "logs": filtered, "count": len(filtered), "days_filter": days}),
+194:             200,
+195:         )
+196:     except Exception:
+197:         return (
+198:             jsonify({"success": False, "message": "Erreur lors de la récupération des logs."}),
+199:             500,
+200:         )
+201: 
+202: 
+203: @bp.route("/clear_email_dedup", methods=["POST"])
+204: def clear_email_dedup():
+205:     if not _testapi_authorized(request):
+206:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+207:     try:
+208:         payload = request.get_json(silent=True) or {}
+209:         email_id = str(payload.get("email_id") or "").strip()
+210:         if not email_id:
+211:             return jsonify({"success": False, "message": "email_id manquant"}), 400
+212:         # Legacy endpoint: no in-memory store to clear. Redis not used here; report not removed.
+213:         return jsonify({"success": True, "removed": False, "email_id": email_id}), 200
+214:     except Exception:
+215:         return jsonify({"success": False, "message": "Erreur interne"}), 500
 ````
 
 ## File: services/__init__.py
@@ -11815,162 +10546,568 @@ requirements.txt
 49:     app_render:app
 ````
 
-## File: config/settings.py
+## File: routes/__init__.py
 ````python
-  1: """
-  2: Centralized configuration for render_signal_server.
-  3: Contains all reference constants and environment variables.
-  4: """
+ 1: # routes package initializer
+ 2: 
+ 3: from .health import bp as health_bp  # noqa: F401
+ 4: from .api_webhooks import bp as api_webhooks_bp  # noqa: F401
+ 5: from .api_processing import bp as api_processing_bp  # noqa: F401
+ 6: from .api_processing import legacy_bp as api_processing_legacy_bp  # noqa: F401
+ 7: from .api_test import bp as api_test_bp  # noqa: F401
+ 8: from .dashboard import bp as dashboard_bp  # noqa: F401
+ 9: from .api_logs import bp as api_logs_bp  # noqa: F401
+10: from .api_admin import bp as api_admin_bp  # noqa: F401
+11: from .api_utility import bp as api_utility_bp  # noqa: F401
+12: from .api_config import bp as api_config_bp  # noqa: F401
+13: from .api_make import bp as api_make_bp  # noqa: F401
+14: from .api_auth import bp as api_auth_bp  # noqa: F401
+15: from .api_routing_rules import bp as api_routing_rules_bp  # noqa: F401
+16: from .api_ingress import bp as api_ingress_bp  # noqa: F401
+````
+
+## File: routes/api_config.py
+````python
+  1: from __future__ import annotations
+  2: 
+  3: from flask import Blueprint, jsonify, request
+  4: from flask_login import login_required
   5: 
-  6: import os
-  7: from pathlib import Path
-  8: from utils.validators import env_bool
-  9: 
- 10: 
- 11: REF_TRIGGER_PAGE_USER = "admin"
- 12: REF_POLLING_TIMEZONE = "Europe/Paris"
- 13: REF_POLLING_ACTIVE_START_HOUR = 9
- 14: REF_POLLING_ACTIVE_END_HOUR = 23
- 15: REF_POLLING_ACTIVE_DAYS = "0,1,2,3,4"
- 16: REF_EMAIL_POLLING_INTERVAL_SECONDS = 30
+  6: from config import webhook_time_window
+  7: from config import app_config_store as _store
+  8: from config.settings import (
+  9:     RUNTIME_FLAGS_FILE,
+ 10:     DISABLE_EMAIL_ID_DEDUP as DEFAULT_DISABLE_EMAIL_ID_DEDUP,
+ 11:     ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS as DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS,
+ 12:     POLLING_TIMEZONE_STR,
+ 13: )
+ 14: from services import RuntimeFlagsService
+ 15: 
+ 16: bp = Blueprint("api_config", __name__, url_prefix="/api")
  17: 
- 18: 
- 19: # --- Environment Variables ---
- 20: def _get_required_env(name: str) -> str:
- 21:     value = os.environ.get(name, "").strip()
- 22:     if not value:
- 23:         raise ValueError(f"Missing required environment variable: {name}")
- 24:     return value
- 25: 
- 26: 
- 27: FLASK_SECRET_KEY = _get_required_env("FLASK_SECRET_KEY")
- 28: 
- 29: TRIGGER_PAGE_USER = os.environ.get("TRIGGER_PAGE_USER", REF_TRIGGER_PAGE_USER)
- 30: TRIGGER_PAGE_PASSWORD = _get_required_env("TRIGGER_PAGE_PASSWORD")
+ 18: # Récupérer l'instance RuntimeFlagsService (Singleton)
+ 19: # L'instance est déjà initialisée dans app_render.py
+ 20: try:
+ 21:     _runtime_flags_service = RuntimeFlagsService.get_instance()
+ 22: except ValueError:
+ 23:     # Fallback: initialiser si pas encore fait (cas tests)
+ 24:     _runtime_flags_service = RuntimeFlagsService.get_instance(
+ 25:         file_path=RUNTIME_FLAGS_FILE,
+ 26:         defaults={
+ 27:             "disable_email_id_dedup": bool(DEFAULT_DISABLE_EMAIL_ID_DEDUP),
+ 28:             "allow_custom_webhook_without_links": bool(DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
+ 29:         }
+ 30:     )
  31: 
- 32: EMAIL_ADDRESS = _get_required_env("EMAIL_ADDRESS")
- 33: EMAIL_PASSWORD = _get_required_env("EMAIL_PASSWORD")
- 34: IMAP_SERVER = _get_required_env("IMAP_SERVER")
- 35: IMAP_PORT = int(os.environ.get("IMAP_PORT", 993))
- 36: IMAP_USE_SSL = env_bool("IMAP_USE_SSL", True)
+ 32: 
+ 33: # Wrappers legacy supprimés - Appels directs aux services
+ 34: 
+ 35: 
+ 36: # ---- Time window (session-protected) ----
  37: 
- 38: EXPECTED_API_TOKEN = _get_required_env("PROCESS_API_TOKEN")
- 39: 
- 40: WEBHOOK_URL = _get_required_env("WEBHOOK_URL")
- 41: MAKECOM_API_KEY = _get_required_env("MAKECOM_API_KEY")
- 42: WEBHOOK_SSL_VERIFY = env_bool("WEBHOOK_SSL_VERIFY", default=True)
- 43: 
- 44: # --- Render API Configuration ---
- 45: RENDER_API_KEY = os.environ.get("RENDER_API_KEY", "")
- 46: RENDER_SERVICE_ID = os.environ.get("RENDER_SERVICE_ID", "")
- 47: _CLEAR_DEFAULT = "do_not_clear"
- 48: RENDER_DEPLOY_CLEAR_CACHE = os.environ.get("RENDER_DEPLOY_CLEAR_CACHE", _CLEAR_DEFAULT)
- 49: if RENDER_DEPLOY_CLEAR_CACHE not in ("clear", "do_not_clear"):
- 50:     RENDER_DEPLOY_CLEAR_CACHE = _CLEAR_DEFAULT
- 51: 
- 52: RENDER_DEPLOY_HOOK_URL = os.environ.get("RENDER_DEPLOY_HOOK_URL", "")
- 53: 
- 54: 
- 55: SENDER_OF_INTEREST_FOR_POLLING_RAW = os.environ.get(
- 56:     "SENDER_OF_INTEREST_FOR_POLLING",
- 57:     "",
- 58: )
- 59: SENDER_LIST_FOR_POLLING = [
- 60:     e.strip().lower() for e in SENDER_OF_INTEREST_FOR_POLLING_RAW.split(',') 
- 61:     if e.strip()
- 62: ] if SENDER_OF_INTEREST_FOR_POLLING_RAW else []
- 63: 
- 64: POLLING_TIMEZONE_STR = os.environ.get("POLLING_TIMEZONE", REF_POLLING_TIMEZONE)
- 65: POLLING_ACTIVE_START_HOUR = int(os.environ.get("POLLING_ACTIVE_START_HOUR", REF_POLLING_ACTIVE_START_HOUR))
- 66: POLLING_ACTIVE_END_HOUR = int(os.environ.get("POLLING_ACTIVE_END_HOUR", REF_POLLING_ACTIVE_END_HOUR))
+ 38: @bp.route("/get_webhook_time_window", methods=["GET"])
+ 39: @login_required
+ 40: def get_webhook_time_window():
+ 41:     try:
+ 42:         # Best-effort: pull latest values from external store to reflect remote edits
+ 43:         try:
+ 44:             cfg = _store.get_config_json("webhook_config") or {}
+ 45:             gs = (cfg.get("global_time_start") or "").strip()
+ 46:             ge = (cfg.get("global_time_end") or "").strip()
+ 47:             # Only sync when BOTH values are provided (non-empty). Do NOT clear on double-empty here.
+ 48:             if (gs != "" and ge != ""):
+ 49:                 webhook_time_window.update_time_window(gs, ge)
+ 50:         except Exception:
+ 51:             pass
+ 52:         info = webhook_time_window.get_time_window_info()
+ 53:         return (
+ 54:             jsonify(
+ 55:                 {
+ 56:                     "success": True,
+ 57:                     "webhooks_time_start": info.get("start") or None,
+ 58:                     "webhooks_time_end": info.get("end") or None,
+ 59:                     "timezone": POLLING_TIMEZONE_STR,
+ 60:                 }
+ 61:             ),
+ 62:             200,
+ 63:         )
+ 64:     except Exception:
+ 65:         return jsonify({"success": False, "message": "Erreur lors de la récupération de la fenêtre horaire."}), 500
+ 66: 
  67: 
- 68: POLLING_ACTIVE_DAYS_RAW = os.environ.get("POLLING_ACTIVE_DAYS", REF_POLLING_ACTIVE_DAYS)
- 69: POLLING_ACTIVE_DAYS = []
- 70: if POLLING_ACTIVE_DAYS_RAW:
+ 68: @bp.route("/set_webhook_time_window", methods=["POST"])
+ 69: @login_required
+ 70: def set_webhook_time_window():
  71:     try:
- 72:         POLLING_ACTIVE_DAYS = [
- 73:             int(d.strip()) for d in POLLING_ACTIVE_DAYS_RAW.split(',') 
- 74:             if d.strip().isdigit() and 0 <= int(d.strip()) <= 6
- 75:         ]
- 76:     except ValueError:
- 77:         POLLING_ACTIVE_DAYS = [0, 1, 2, 3, 4]
- 78: if not POLLING_ACTIVE_DAYS:
- 79:     POLLING_ACTIVE_DAYS = [0, 1, 2, 3, 4]
- 80: 
- 81: EMAIL_POLLING_INTERVAL_SECONDS = int(
- 82:     os.environ.get("EMAIL_POLLING_INTERVAL_SECONDS", REF_EMAIL_POLLING_INTERVAL_SECONDS)
- 83: )
- 84: POLLING_INACTIVE_CHECK_INTERVAL_SECONDS = int(
- 85:     os.environ.get("POLLING_INACTIVE_CHECK_INTERVAL_SECONDS", 600)
- 86: )
- 87: 
- 88: ENABLE_BACKGROUND_TASKS = env_bool("ENABLE_BACKGROUND_TASKS", False)
- 89: BG_POLLER_LOCK_FILE = os.environ.get(
- 90:     "BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock"
- 91: )
- 92: 
- 93: ENABLE_SUBJECT_GROUP_DEDUP = env_bool("ENABLE_SUBJECT_GROUP_DEDUP", True)
- 94: DISABLE_EMAIL_ID_DEDUP = env_bool("DISABLE_EMAIL_ID_DEDUP", False)
- 95: ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = env_bool("ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS", False)
- 96: 
- 97: BASE_DIR = Path(__file__).resolve().parent.parent
- 98: DEBUG_DIR = BASE_DIR / "debug"
- 99: WEBHOOK_CONFIG_FILE = DEBUG_DIR / "webhook_config.json"
-100: WEBHOOK_LOGS_FILE = DEBUG_DIR / "webhook_logs.json"
-101: PROCESSING_PREFS_FILE = DEBUG_DIR / "processing_prefs.json"
-102: TIME_WINDOW_OVERRIDE_FILE = DEBUG_DIR / "webhook_time_window.json"
-103: POLLING_CONFIG_FILE = DEBUG_DIR / "polling_config.json"
-104: RUNTIME_FLAGS_FILE = DEBUG_DIR / "runtime_flags.json"
-105: SIGNAL_DIR = BASE_DIR / "signal_data_app_render"
-106: TRIGGER_SIGNAL_FILE = SIGNAL_DIR / "local_workflow_trigger_signal.json"
-107: _MAGIC_LINK_FILE_DEFAULT = DEBUG_DIR / "magic_links.json"
-108: MAGIC_LINK_TOKENS_FILE = Path(os.environ.get("MAGIC_LINK_TOKENS_FILE", str(_MAGIC_LINK_FILE_DEFAULT)))
-109: 
-110: R2_FETCH_ENABLED = env_bool("R2_FETCH_ENABLED", False)
-111: R2_FETCH_ENDPOINT = os.environ.get("R2_FETCH_ENDPOINT", "")
-112: R2_PUBLIC_BASE_URL = os.environ.get("R2_PUBLIC_BASE_URL", "")
-113: R2_BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "")
-114: WEBHOOK_LINKS_FILE = os.environ.get(
-115:     "WEBHOOK_LINKS_FILE",
-116:     str(BASE_DIR / "deployment" / "data" / "webhook_links.json")
-117: )
-118: R2_LINKS_MAX_ENTRIES = int(os.environ.get("R2_LINKS_MAX_ENTRIES", 1000))
+ 72:         payload = request.get_json(silent=True) or {}
+ 73:         start = payload.get("start", "")
+ 74:         end = payload.get("end", "")
+ 75:         ok, msg = webhook_time_window.update_time_window(start, end)
+ 76:         status = 200 if ok else 400
+ 77:         info = webhook_time_window.get_time_window_info()
+ 78:         # Best-effort: mirror the global time window to external config store under
+ 79:         # webhook_config as global_time_start/global_time_end so that
+ 80:         # https://webhook.kidpixel.fr/data/app_config/webhook_config.json reflects it too.
+ 81:         try:
+ 82:             cfg = _store.get_config_json("webhook_config") or {}
+ 83:             cfg["global_time_start"] = (info.get("start") or "") or None
+ 84:             cfg["global_time_end"] = (info.get("end") or "") or None
+ 85:             # Do not fail the request if external store is unavailable
+ 86:             _store.set_config_json("webhook_config", cfg)
+ 87:         except Exception:
+ 88:             pass
+ 89:         return (
+ 90:             jsonify(
+ 91:                 {
+ 92:                     "success": ok,
+ 93:                     "message": msg,
+ 94:                     "webhooks_time_start": info.get("start") or None,
+ 95:                     "webhooks_time_end": info.get("end") or None,
+ 96:                 }
+ 97:             ),
+ 98:             status,
+ 99:         )
+100:     except Exception:
+101:         return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}), 500
+102: 
+103: 
+104: # ---- Runtime flags (session-protected) ----
+105: 
+106: @bp.route("/get_runtime_flags", methods=["GET"])
+107: @login_required
+108: def get_runtime_flags():
+109:     """Récupère les flags runtime.
+110:     
+111:     Appel direct à RuntimeFlagsService (cache intelligent 60s).
+112:     """
+113:     try:
+114:         # Appel direct au service (cache si valide, sinon reload)
+115:         data = _runtime_flags_service.get_all_flags()
+116:         return jsonify({"success": True, "flags": data}), 200
+117:     except Exception:
+118:         return jsonify({"success": False, "message": "Erreur interne"}), 500
 119: 
-120: # Magic link TTL (seconds)
-121: MAGIC_LINK_TTL_SECONDS = int(os.environ.get("MAGIC_LINK_TTL_SECONDS", 900))
-122: 
-123: WEBHOOK_LOGS_REDIS_KEY = "r:ss:webhook_logs:v1"
+120: 
+121: @bp.route("/update_runtime_flags", methods=["POST"])
+122: @login_required
+123: def update_runtime_flags():
+124:     """Met à jour les flags runtime.
+125:     
+126:     Appel direct à RuntimeFlagsService.update_flags() - Atomic update + invalidation cache.
+127:     """
+128:     try:
+129:         payload = request.get_json(silent=True) or {}
+130:         
+131:         # Préparer les mises à jour (validation)
+132:         updates = {}
+133:         if "disable_email_id_dedup" in payload:
+134:             updates["disable_email_id_dedup"] = bool(payload.get("disable_email_id_dedup"))
+135:         if "allow_custom_webhook_without_links" in payload:
+136:             updates["allow_custom_webhook_without_links"] = bool(payload.get("allow_custom_webhook_without_links"))
+137:         
+138:         # Appel direct au service (mise à jour atomique + persiste + invalide cache)
+139:         if not _runtime_flags_service.update_flags(updates):
+140:             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
+141:         
+142:         # Récupérer les flags à jour
+143:         data = _runtime_flags_service.get_all_flags()
+144:         return jsonify({
+145:             "success": True,
+146:             "flags": data,
+147:             "message": "Modifications enregistrées. Un redémarrage peut être nécessaire."
+148:         }), 200
+149:     except Exception:
+150:         return jsonify({"success": False, "message": "Erreur interne"}), 500
+````
+
+## File: scripts/check_config_store.py
+````python
+  1: """CLI utilitaire pour vérifier les configurations stockées dans Redis.
+  2: 
+  3: Usage:
+  4:     python -m scripts.check_config_store --keys processing_prefs webhook_config
+  5: """
+  6: 
+  7: from __future__ import annotations
+  8: 
+  9: import argparse
+ 10: import json
+ 11: import sys
+ 12: from typing import Any, Dict, Iterable, Sequence, Tuple
+ 13: 
+ 14: from config import app_config_store
+ 15: 
+ 16: KEY_CHOICES: Tuple[str, ...] = (
+ 17:     "magic_link_tokens",
+ 18:     "processing_prefs",
+ 19:     "routing_rules",
+ 20:     "webhook_config",
+ 21: )
+ 22: 
+ 23: 
+ 24: def _validate_payload(key: str, payload: Dict[str, Any]) -> Tuple[bool, str]:
+ 25:     if not isinstance(payload, dict):
+ 26:         return False, "payload is not a dict"
+ 27:     if key == "routing_rules" and not payload:
+ 28:         return True, "empty (allowed)"
+ 29:     if not payload:
+ 30:         return False, "payload is empty"
+ 31:     if key != "magic_link_tokens" and "_updated_at" not in payload:
+ 32:         return False, "missing _updated_at"
+ 33:     return True, "ok"
+ 34: 
+ 35: 
+ 36: def _summarize_dict(payload: Dict[str, Any]) -> str:
+ 37:     parts: list[str] = []
+ 38:     updated_at = payload.get("_updated_at")
+ 39:     if isinstance(updated_at, str):
+ 40:         parts.append(f"_updated_at={updated_at}")
+ 41: 
+ 42:     dict_sizes = {
+ 43:         k: len(v) for k, v in payload.items() if isinstance(v, dict)
+ 44:     }
+ 45:     if dict_sizes:
+ 46:         formatted = ", ".join(f"{k}:{size}" for k, size in sorted(dict_sizes.items()))
+ 47:         parts.append(f"dict_sizes={formatted}")
+ 48: 
+ 49:     list_sizes = {
+ 50:         k: len(v) for k, v in payload.items() if isinstance(v, list)
+ 51:     }
+ 52:     if list_sizes:
+ 53:         formatted = ", ".join(f"{k}:{size}" for k, size in sorted(list_sizes.items()))
+ 54:         parts.append(f"list_sizes={formatted}")
+ 55: 
+ 56:     if not parts:
+ 57:         parts.append(f"keys={len(payload)}")
+ 58:     return "; ".join(parts)
+ 59: 
+ 60: 
+ 61: def _format_payload(payload: Dict[str, Any], raw: bool) -> str:
+ 62:     if raw:
+ 63:         return json.dumps(payload, indent=2, ensure_ascii=False)
+ 64:     return _summarize_dict(payload)
+ 65: 
+ 66: 
+ 67: def _fetch(key: str) -> Dict[str, Any]:
+ 68:     return app_config_store.get_config_json(key)
+ 69: 
+ 70: 
+ 71: def inspect_configs(keys: Sequence[str], raw: bool = False) -> Tuple[int, list[dict[str, Any]]]:
+ 72:     """Inspecte les clés demandées et retourne (exit_code, résultats structurés)."""
+ 73:     exit_code = 0
+ 74:     results: list[dict[str, Any]] = []
+ 75:     for key in keys:
+ 76:         payload = _fetch(key)
+ 77:         has_payload = bool(payload)
+ 78:         valid, reason = _validate_payload(key, payload)
+ 79:         summary = _format_payload(payload, raw) if has_payload else "<vide>"
+ 80:         if not valid:
+ 81:             exit_code = 1
+ 82:         results.append(
+ 83:             {
+ 84:                 "key": key,
+ 85:                 "valid": bool(valid),
+ 86:                 "status": "OK" if valid else "INVALID",
+ 87:                 "message": reason,
+ 88:                 "summary": summary,
+ 89:                 "payload_present": has_payload,
+ 90:                 "payload": payload if raw and has_payload else None,
+ 91:             }
+ 92:         )
+ 93:     return exit_code, results
+ 94: 
+ 95: 
+ 96: def _run(keys: Sequence[str], raw: bool) -> int:
+ 97:     exit_code, results = inspect_configs(keys, raw)
+ 98:     for entry in results:
+ 99:         status = entry["status"] if entry["valid"] else f"INVALID ({entry['message']})"
+100:         print(f"{entry['key']}: {status}")
+101:         print(entry["summary"])
+102:         print("-" * 40)
+103:     return exit_code
+104: 
+105: 
+106: def build_parser() -> argparse.ArgumentParser:
+107:     parser = argparse.ArgumentParser(
+108:         description="Inspecter les configs persistées dans Redis."
+109:     )
+110:     parser.add_argument(
+111:         "--keys",
+112:         nargs="+",
+113:         choices=KEY_CHOICES,
+114:         default=KEY_CHOICES,
+115:         help="Liste des clés à vérifier.",
+116:     )
+117:     parser.add_argument(
+118:         "--raw",
+119:         action="store_true",
+120:         help="Afficher le JSON complet (indent=2).",
+121:     )
+122:     return parser
+123: 
 124: 
-125: PROCESSED_EMAIL_IDS_REDIS_KEY = os.environ.get("PROCESSED_EMAIL_IDS_REDIS_KEY", "r:ss:processed_email_ids:v1")
-126: PROCESSED_SUBJECT_GROUPS_REDIS_KEY = os.environ.get(
-127:     "PROCESSED_SUBJECT_GROUPS_REDIS_KEY", "r:ss:processed_subject_groups:v1"
-128: )
-129: SUBJECT_GROUP_REDIS_PREFIX = os.environ.get("SUBJECT_GROUP_REDIS_PREFIX", "r:ss:subject_group_ttl:")
+125: def main(argv: Iterable[str] | None = None) -> int:
+126:     parser = build_parser()
+127:     args = parser.parse_args(list(argv) if argv is not None else None)
+128:     return _run(tuple(args.keys), args.raw)
+129: 
 130: 
-131: SUBJECT_GROUP_TTL_SECONDS = int(os.environ.get("SUBJECT_GROUP_TTL_SECONDS", 0))
-132: 
-133: 
-134: def log_configuration(logger):
-135:     logger.info(f"CFG WEBHOOK: Custom webhook URL configured to: {WEBHOOK_URL}")
-136:     logger.info(f"CFG WEBHOOK: SSL verification = {WEBHOOK_SSL_VERIFY}")
-137:     
-138:     if SENDER_LIST_FOR_POLLING:
-139:         logger.info(
-140:             f"CFG POLL: Monitoring emails from {len(SENDER_LIST_FOR_POLLING)} senders: {SENDER_LIST_FOR_POLLING}"
-141:         )
-142:     else:
-143:         logger.warning("CFG POLL: SENDER_OF_INTEREST_FOR_POLLING not set. Email polling likely ineffective.")
-144:     
-145:     if not EXPECTED_API_TOKEN:
-146:         logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
-147:     else:
-148:         logger.info("CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured.")
-149:     
-150:     logger.info(f"CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP={ENABLE_SUBJECT_GROUP_DEDUP}")
-151:     logger.info(f"CFG DEDUP: DISABLE_EMAIL_ID_DEDUP={DISABLE_EMAIL_ID_DEDUP}")
-152:     
-153:     logger.info(f"CFG BG: ENABLE_BACKGROUND_TASKS={ENABLE_BACKGROUND_TASKS}")
-154:     logger.info(f"CFG BG: BG_POLLER_LOCK_FILE={BG_POLLER_LOCK_FILE}")
+131: if __name__ == "__main__":
+132:     sys.exit(main())
+````
+
+## File: routes/api_webhooks.py
+````python
+  1: from __future__ import annotations
+  2: 
+  3: import os
+  4: import json
+  5: from pathlib import Path
+  6: 
+  7: from flask import Blueprint, jsonify, request
+  8: from flask_login import login_required, current_user
+  9: 
+ 10: from utils.time_helpers import parse_time_hhmm
+ 11: from config import app_config_store as _store
+ 12: 
+ 13: from services import WebhookConfigService
+ 14: 
+ 15: bp = Blueprint("api_webhooks", __name__, url_prefix="/api/webhooks")
+ 16: 
+ 17: # Storage path kept compatible with legacy location used in app_render.py
+ 18: WEBHOOK_CONFIG_FILE = (
+ 19:     Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
+ 20: )
+ 21: 
+ 22: try:
+ 23:     _webhook_service = WebhookConfigService.get_instance()
+ 24: except ValueError:
+ 25:     # Fallback: initialiser si pas encore fait (cas tests)
+ 26:     _webhook_service = WebhookConfigService.get_instance(
+ 27:         file_path=WEBHOOK_CONFIG_FILE,
+ 28:         external_store=_store
+ 29:     )
+ 30: 
+ 31: 
+ 32: def _load_webhook_config() -> dict:
+ 33:     """Load persisted config from DB if available, else file fallback.
+ 34:     
+ 35:     Uses WebhookConfigService (cache + validation).
+ 36:     """
+ 37:     # Force a reload to avoid serving stale values when another endpoint
+ 38:     # or external store updated the data recently (cache TTL = 60s).
+ 39:     _webhook_service.reload()
+ 40:     return _webhook_service.get_all_config()
+ 41: 
+ 42: 
+ 43: def _save_webhook_config(config: dict) -> bool:
+ 44:     """Persist config to DB with file fallback.
+ 45:     
+ 46:     Uses WebhookConfigService (validation automatique + cache invalidation).
+ 47:     """
+ 48:     success, _ = _webhook_service.update_config(config)
+ 49:     return success
+ 50: 
+ 51: 
+ 52: def _mask_url(url: str | None) -> str | None:
+ 53:     if not url:
+ 54:         return None
+ 55:     if url.startswith("http"):
+ 56:         parts = url.split("/")
+ 57:         if len(parts) > 3:
+ 58:             return f"{parts[0]}//{parts[2]}/***"
+ 59:         return url[:30] + "***"
+ 60:     return None
+ 61: 
+ 62: 
+ 63: @bp.route("/config", methods=["GET"])
+ 64: @login_required
+ 65: def get_webhook_config():
+ 66:     persisted = _load_webhook_config()
+ 67: 
+ 68:     # Environment defaults for webhook configuration
+ 69:     webhook_url = persisted.get("webhook_url") or os.environ.get("WEBHOOK_URL")
+ 70:     webhook_ssl_verify = persisted.get(
+ 71:         "webhook_ssl_verify",
+ 72:         os.environ.get("WEBHOOK_SSL_VERIFY", "true").strip().lower()
+ 73:         in ("1", "true", "yes", "on"),
+ 74:     )
+ 75:     # New: global enable/disable for sending webhooks (default: true)
+ 76:     webhook_sending_enabled = persisted.get(
+ 77:         "webhook_sending_enabled",
+ 78:         os.environ.get("WEBHOOK_SENDING_ENABLED", "true").strip().lower()
+ 79:         in ("1", "true", "yes", "on"),
+ 80:     )
+ 81:     # Time window for global webhook toggle (may be empty strings)
+ 82:     webhook_time_start = (persisted.get("webhook_time_start") or "").strip()
+ 83:     webhook_time_end = (persisted.get("webhook_time_end") or "").strip()
+ 84:     
+ 85:     # Absence pause configuration
+ 86:     absence_pause_enabled = persisted.get("absence_pause_enabled", False)
+ 87:     absence_pause_days = persisted.get("absence_pause_days", [])
+ 88:     if not isinstance(absence_pause_days, list):
+ 89:         absence_pause_days = []
+ 90: 
+ 91:     config = {
+ 92:         # Always mask webhook_url in API response for safety
+ 93:         "webhook_url": _mask_url(webhook_url),
+ 94:         "webhook_ssl_verify": webhook_ssl_verify,
+ 95:         "webhook_sending_enabled": bool(webhook_sending_enabled),
+ 96:         # Expose as None when empty to be explicit in API response
+ 97:         "webhook_time_start": webhook_time_start or None,
+ 98:         "webhook_time_end": webhook_time_end or None,
+ 99:         "absence_pause_enabled": bool(absence_pause_enabled),
+100:         "absence_pause_days": absence_pause_days,
+101:     }
+102:     return jsonify({"success": True, "config": config}), 200
+103: 
+104: 
+105: @bp.route("/config", methods=["POST"])
+106: @login_required
+107: def update_webhook_config():
+108:     payload = request.get_json(silent=True) or {}
+109:     # Build a minimal updates dict to avoid clobbering unrelated fields with
+110:     # potentially stale cached values.
+111:     updates = {}
+112: 
+113:     if "webhook_url" in payload:
+114:         val = payload["webhook_url"].strip() if payload["webhook_url"] else None
+115:         # Exiger HTTPS strict
+116:         if val and not val.startswith("https://"):
+117:             return (
+118:                 jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}),
+119:                 400,
+120:             )
+121:         updates["webhook_url"] = val
+122: 
+123:     if "webhook_ssl_verify" in payload:
+124:         updates["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
+125: 
+126:     # New flag: webhook_sending_enabled
+127:     if "webhook_sending_enabled" in payload:
+128:         updates["webhook_sending_enabled"] = bool(payload["webhook_sending_enabled"])
+129:     
+130:     # Absence pause configuration
+131:     if "absence_pause_enabled" in payload:
+132:         updates["absence_pause_enabled"] = bool(payload["absence_pause_enabled"])
+133:     
+134:     if "absence_pause_days" in payload:
+135:         days = payload["absence_pause_days"]
+136:         if not isinstance(days, list):
+137:             return jsonify({"success": False, "message": "absence_pause_days doit être une liste."}), 400
+138:         
+139:         # Valider les jours
+140:         valid_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+141:         normalized_days = [str(d).strip().lower() for d in days if isinstance(d, str)]
+142:         invalid_days = [d for d in normalized_days if d not in valid_days]
+143:         
+144:         if invalid_days:
+145:             return jsonify({"success": False, "message": f"Jours invalides: {', '.join(invalid_days)}"}), 400
+146:         
+147:         updates["absence_pause_days"] = normalized_days
+148:     
+149:     # Validation: si absence_pause_enabled est True, vérifier qu'au moins un jour est sélectionné
+150:     if updates.get("absence_pause_enabled") and not updates.get("absence_pause_days"):
+151:         return jsonify({"success": False, "message": "Au moins un jour doit être sélectionné pour activer la pause absence."}), 400
+152: 
+153:     # Optional: accept time window fields here too, for convenience
+154:     # Validate format using parse_time_hhmm when provided and non-empty
+155:     if "webhook_time_start" in payload or "webhook_time_end" in payload:
+156:         start = (str(payload.get("webhook_time_start", "")) or "").strip()
+157:         end = (str(payload.get("webhook_time_end", "")) or "").strip()
+158:         # If both empty -> clear
+159:         if start == "" and end == "":
+160:             updates["webhook_time_start"] = ""
+161:             updates["webhook_time_end"] = ""
+162:         else:
+163:             # Require both if one is provided
+164:             if not start or not end:
+165:                 return jsonify({"success": False, "message": "Both webhook_time_start and webhook_time_end are required (or both empty to clear)."}), 400
+166:             if parse_time_hhmm(start) is None or parse_time_hhmm(end) is None:
+167:                 return jsonify({"success": False, "message": "Invalid time format. Use HHhMM or HH:MM (e.g., 11h30, 17:45)."}), 400
+168:             updates["webhook_time_start"] = start
+169:             updates["webhook_time_end"] = end
+170: 
+171:     # Nettoyer les champs obsolètes s'ils existent (ne pas supprimer presence_* gérés ci-dessus)
+172:     obsolete_fields = [
+173:         "recadrage_webhook_url",
+174:         "autorepondeur_webhook_url",
+175:         "polling_enabled",
+176:     ]
+177:     for field in obsolete_fields:
+178:         if field in updates:
+179:             try:
+180:                 del updates[field]
+181:             except Exception:
+182:                 pass
+183: 
+184:     success, _msg = _webhook_service.update_config(updates)
+185:     if not success:
+186:         return (
+187:             jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration."}),
+188:             500,
+189:         )
+190: 
+191:     return jsonify({"success": True, "message": "Configuration mise à jour avec succès."}), 200
+192: 
+193: 
+194: # ---- Dedicated time window for global webhook toggle ----
+195: 
+196: @bp.route("/time-window", methods=["GET"])
+197: @login_required
+198: def get_webhook_global_time_window():
+199:     cfg = _load_webhook_config()
+200:     start = (cfg.get("webhook_time_start") or "").strip()
+201:     end = (cfg.get("webhook_time_end") or "").strip()
+202:     return jsonify({
+203:         "success": True,
+204:         "webhooks_time_start": start or None,
+205:         "webhooks_time_end": end or None,
+206:     }), 200
+207: 
+208: 
+209: @bp.route("/time-window", methods=["POST"])
+210: @login_required
+211: def set_webhook_global_time_window():
+212:     payload = request.get_json(silent=True) or {}
+213:     start = (payload.get("start") or "").strip()
+214:     end = (payload.get("end") or "").strip()
+215: 
+216:     # Clear both -> disable constraint
+217:     if start == "" and end == "":
+218:         success, _ = _webhook_service.update_config({
+219:             "webhook_time_start": "",
+220:             "webhook_time_end": "",
+221:         })
+222:         if not success:
+223:             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
+224:         return jsonify({
+225:             "success": True,
+226:             "message": "Time window cleared (no constraints).",
+227:             "webhooks_time_start": None,
+228:             "webhooks_time_end": None,
+229:         }), 200
+230: 
+231:     # Require both values when not clearing
+232:     if not start or not end:
+233:         return jsonify({"success": False, "message": "Both start and end are required (or both empty to clear)."}), 400
+234: 
+235:     # Validate format using parse_time_hhmm
+236:     if parse_time_hhmm(start) is None or parse_time_hhmm(end) is None:
+237:         return jsonify({"success": False, "message": "Invalid time format. Use HHhMM or HH:MM (e.g., 11h30, 17:45)."}), 400
+238: 
+239:     success, _ = _webhook_service.update_config({
+240:         "webhook_time_start": start,
+241:         "webhook_time_end": end,
+242:     })
+243:     if not success:
+244:         return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
+245:     return jsonify({
+246:         "success": True,
+247:         "message": "Time window updated.",
+248:         "webhooks_time_start": start,
+249:         "webhooks_time_end": end,
+250:     }), 200
 ````
 
 ## File: services/r2_transfer_service.py
@@ -12520,1225 +11657,6 @@ requirements.txt
 543:         return f"<R2TransferService(status={status}, bucket={self._bucket_name or 'N/A'})>"
 ````
 
-## File: static/components/TabManager.js
-````javascript
-  1: export class TabManager {
-  2:     constructor() {
-  3:         this.tabs = [];
-  4:         this.activeTab = null;
-  5:         this.tabButtons = [];
-  6:         this.tabContents = [];
-  7:     }
-  8: 
-  9:     /**
- 10:      * Initialise le système d'onglets
- 11:      */
- 12:     init() {
- 13:         this.findTabElements();
- 14:         this.bindEvents();
- 15:         this.showInitialTab();
- 16:     }
- 17: 
- 18:     /**
- 19:      * Trouve tous les éléments d'onglets dans la page
- 20:      */
- 21:     findTabElements() {
- 22:         this.tabButtons = document.querySelectorAll('.tab-btn');
- 23:         this.tabContents = document.querySelectorAll('.section-panel');
- 24:         
- 25:         this.tabButtons.forEach((button, index) => {
- 26:             const targetId = button.dataset.target;
- 27:             const targetContent = document.querySelector(targetId);
- 28:             
- 29:             if (targetContent) {
- 30:                 this.tabs.push({
- 31:                     button: button,
- 32:                     content: targetContent,
- 33:                     id: targetId.replace('#', ''),
- 34:                     index: index
- 35:                 });
- 36:             }
- 37:         });
- 38:     }
- 39: 
- 40:     /**
- 41:      * Lie les événements aux boutons d'onglets
- 42:      */
- 43:     bindEvents() {
- 44:         this.tabButtons.forEach(button => {
- 45:             button.addEventListener('click', (e) => {
- 46:                 e.preventDefault();
- 47:                 const targetId = button.dataset.target;
- 48:                 this.showTab(targetId);
- 49:             });
- 50:         });
- 51:     }
- 52: 
- 53:     /**
- 54:      * Affiche l'onglet initial (premier onglet ou celui marqué comme actif)
- 55:      */
- 56:     showInitialTab() {
- 57:         // Chercher d'abord un onglet marqué comme actif
- 58:         const activeButton = document.querySelector('.tab-btn.active');
- 59:         if (activeButton) {
- 60:             const targetId = activeButton.dataset.target;
- 61:             this.showTab(targetId);
- 62:             return;
- 63:         }
- 64:         
- 65:         // Sinon, afficher le premier onglet
- 66:         if (this.tabs.length > 0) {
- 67:             const firstTab = this.tabs[0];
- 68:             this.showTab(`#${firstTab.id}`);
- 69:         }
- 70:     }
- 71: 
- 72:     /**
- 73:      * Affiche un onglet spécifique avec lazy loading
- 74:      * @param {string} targetId - ID de la cible (ex: "#sec-overview")
- 75:      */
- 76:     showTab(targetId) {
- 77:         // Masquer tous les contenus d'onglets
- 78:         this.tabContents.forEach(content => {
- 79:             content.classList.remove('active');
- 80:             content.style.display = 'none';
- 81:         });
- 82:         
- 83:         // Désactiver tous les boutons
- 84:         this.tabButtons.forEach(button => {
- 85:             button.classList.remove('active');
- 86:             button.setAttribute('aria-selected', 'false');
- 87:         });
- 88:         
- 89:         // Afficher le contenu cible avec animation
- 90:         const targetContent = document.querySelector(targetId);
- 91:         if (targetContent) {
- 92:             targetContent.classList.add('active');
- 93:             targetContent.style.display = 'block';
- 94:             
- 95:             // Lazy loading: charger les données de l'onglet seulement lors du premier affichage
- 96:             this.lazyLoadTabContent(targetId.replace('#', ''));
- 97:         }
- 98:         
- 99:         // Activer le bouton cible
-100:         const targetButton = document.querySelector(`[data-target="${targetId}"]`);
-101:         if (targetButton) {
-102:             targetButton.classList.add('active');
-103:             targetButton.setAttribute('aria-selected', 'true');
-104:         }
-105:         
-106:         // Mettre à jour l'onglet actif
-107:         this.activeTab = targetId.replace('#', '');
-108:         
-109:         // Déclencher un événement personnalisé pour le changement d'onglet
-110:         this.dispatchTabChange(targetId);
-111:     }
-112: 
-113:     /**
-114:      * Déclenche un événement de changement d'onglet
-115:      * @param {string} targetId - ID de l'onglet affiché
-116:      */
-117:     dispatchTabChange(targetId) {
-118:         const event = new CustomEvent('tabchange', {
-119:             detail: {
-120:                 tabId: targetId.replace('#', ''),
-121:                 targetId: targetId
-122:             }
-123:         });
-124:         document.dispatchEvent(event);
-125:     }
-126: 
-127:     /**
-128:      * Signale une erreur lors du chargement d'un onglet via un événement personnalisé
-129:      * @param {string} tabId
-130:      * @param {Error} error
-131:      */
-132:     dispatchTabLoadError(tabId, error) {
-133:         document.dispatchEvent(new CustomEvent('tabloaderror', {
-134:             detail: {
-135:                 tabId,
-136:                 error
-137:             }
-138:         }));
-139:     }
-140: 
-141:     /**
-142:      * Obtient l'onglet actuellement actif
-143:      * @returns {string|null} ID de l'onglet actif
-144:      */
-145:     getActiveTab() {
-146:         return this.activeTab;
-147:     }
-148: 
-149:     /**
-150:      * Vérifie si un onglet spécifique est actif
-151:      * @param {string} tabId - ID de l'onglet à vérifier
-152:      * @returns {boolean} True si l'onglet est actif
-153:      */
-154:     isTabActive(tabId) {
-155:         return this.activeTab === tabId;
-156:     }
-157: 
-158:     /**
-159:      * Ajoute des attributs ARIA pour l'accessibilité
-160:      */
-161:     enhanceAccessibility() {
-162:         this.tabButtons.forEach((button, index) => {
-163:             button.setAttribute('role', 'tab');
-164:             button.setAttribute('aria-controls', button.dataset.target.replace('#', ''));
-165:             button.setAttribute('aria-selected', button.classList.contains('active'));
-166:             button.setAttribute('tabindex', button.classList.contains('active') ? '0' : '-1');
-167:         });
-168:         
-169:         this.tabContents.forEach(content => {
-170:             const contentId = content.id || content.getAttribute('id');
-171:             if (contentId) {
-172:                 content.setAttribute('role', 'tabpanel');
-173:                 content.setAttribute('aria-labelledby', contentId.replace('sec-', 'tab-'));
-174:             }
-175:         });
-176:         
-177:         // Gestion du clavier
-178:         this.bindKeyboardEvents();
-179:     }
-180: 
-181:     /**
-182:      * Lie les événements clavier pour la navigation au clavier
-183:      */
-184:     bindKeyboardEvents() {
-185:         this.tabButtons.forEach((button, index) => {
-186:             button.addEventListener('keydown', (e) => {
-187:                 let targetIndex = index;
-188:                 
-189:                 switch (e.key) {
-190:                     case 'ArrowLeft':
-191:                     case 'ArrowUp':
-192:                         e.preventDefault();
-193:                         targetIndex = index > 0 ? index - 1 : this.tabButtons.length - 1;
-194:                         break;
-195:                     case 'ArrowRight':
-196:                     case 'ArrowDown':
-197:                         e.preventDefault();
-198:                         targetIndex = index < this.tabButtons.length - 1 ? index + 1 : 0;
-199:                         break;
-200:                     case 'Home':
-201:                         e.preventDefault();
-202:                         targetIndex = 0;
-203:                         break;
-204:                     case 'End':
-205:                         e.preventDefault();
-206:                         targetIndex = this.tabButtons.length - 1;
-207:                         break;
-208:                     default:
-209:                         return;
-210:                 }
-211:                 
-212:                 const targetButton = this.tabButtons[targetIndex];
-213:                 if (targetButton) {
-214:                     targetButton.focus();
-215:                     const targetId = targetButton.dataset.target;
-216:                     this.showTab(targetId);
-217:                 }
-218:             });
-219:         });
-220:     }
-221: 
-222:     /**
-223:      * Détruit le gestionnaire d'onglets et nettoie les événements
-224:      */
-225:     destroy() {
-226:         this.tabButtons.forEach(button => {
-227:             button.removeEventListener('click', this.handleTabClick);
-228:             button.removeEventListener('keydown', this.handleKeyDown);
-229:         });
-230:         
-231:         this.tabs = [];
-232:         this.activeTab = null;
-233:         this.tabButtons = [];
-234:         this.tabContents = [];
-235:         this.loadedTabs = null;
-236:     }
-237: 
-238:     /**
-239:      * Charge les données d'un onglet de manière paresseuse
-240:      * @param {string} tabId - ID de l'onglet à charger
-241:      */
-242:     async lazyLoadTabContent(tabId) {
-243:         // Vérifier si l'onglet a déjà été chargé
-244:         if (this.isTabLoaded(tabId)) {
-245:             return;
-246:         }
-247:         
-248:         try {
-249:             switch (tabId) {
-250:                 case 'sec-overview':
-251:                     // Les logs sont déjà chargés via LogService
-252:                     break;
-253:                 case 'sec-webhooks':
-254:                     // La configuration webhooks est chargée au démarrage
-255:                     break;
-256:                 case 'sec-email':
-257:                     // Charger les préférences email si nécessaire
-258:                     await this.loadEmailPreferences();
-259:                     break;
-260:                 case 'sec-preferences':
-261:                     // Charger les préférences de traitement si nécessaire
-262:                     await this.loadProcessingPreferences();
-263:                     break;
-264:                 case 'sec-tools':
-265:                     // Les outils n'ont pas besoin de chargement supplémentaire
-266:                     break;
-267:             }
-268:             
-269:             // Marquer l'onglet comme chargé
-270:             this.markTabAsLoaded(tabId);
-271:         } catch (error) {
-272:             this.dispatchTabLoadError(tabId, error);
-273:         }
-274:     }
-275: 
-276:     /**
-277:      * Vérifie si un onglet a déjà été chargé
-278:      * @param {string} tabId - ID de l'onglet
-279:      * @returns {boolean} True si déjà chargé
-280:      */
-281:     isTabLoaded(tabId) {
-282:         return this.loadedTabs && this.loadedTabs.has(tabId);
-283:     }
-284: 
-285:     /**
-286:      * Marque un onglet comme chargé
-287:      * @param {string} tabId - ID de l'onglet
-288:      */
-289:     markTabAsLoaded(tabId) {
-290:         if (!this.loadedTabs) {
-291:             this.loadedTabs = new Set();
-292:         }
-293:         this.loadedTabs.add(tabId);
-294:     }
-295: 
-296:     /**
-297:      * Charge les préférences email (lazy loading)
-298:      */
-299:     async loadEmailPreferences() {
-300:         // Cette fonction sera implémentée dans dashboard.js
-301:         if (typeof window.loadPollingConfig === 'function') {
-302:             await window.loadPollingConfig();
-303:         }
-304:     }
-305: 
-306:     /**
-307:      * Charge les préférences de traitement (lazy loading)
-308:      */
-309:     async loadProcessingPreferences() {
-310:         // Cette fonction sera implémentée dans dashboard.js
-311:         if (typeof window.loadProcessingPrefsFromServer === 'function') {
-312:             await window.loadProcessingPrefsFromServer();
-313:         }
-314:     }
-315: }
-````
-
-## File: static/services/LogService.js
-````javascript
-  1: import { ApiService } from './ApiService.js';
-  2: import { MessageHelper } from '../utils/MessageHelper.js';
-  3: 
-  4: export class LogService {
-  5:     static logPollingInterval = null;
-  6:     static currentLogDays = 7;
-  7: 
-  8:     /**
-  9:      * Démarre le polling automatique des logs
- 10:      * @param {number} intervalMs - Intervalle en millisecondes (défaut: 30000)
- 11:      */
- 12:     static startLogPolling(intervalMs = 30000) {
- 13:         this.stopLogPolling();
- 14:         
- 15:         this.loadAndRenderLogs();
- 16:         
- 17:         this.logPollingInterval = setInterval(() => {
- 18:             this.loadAndRenderLogs();
- 19:         }, intervalMs);
- 20:         
- 21:         document.addEventListener('visibilitychange', this.handleVisibilityChange);
- 22:     }
- 23: 
- 24:     /**
- 25:      * Arrête le polling des logs
- 26:      */
- 27:     static stopLogPolling() {
- 28:         if (this.logPollingInterval) {
- 29:             clearInterval(this.logPollingInterval);
- 30:             this.logPollingInterval = null;
- 31:         }
- 32:         
- 33:         document.removeEventListener('visibilitychange', this.handleVisibilityChange);
- 34:     }
- 35: 
- 36:     /**
- 37:      * Gère les changements de visibilité de la page
- 38:      */
- 39:     static handleVisibilityChange() {
- 40:         if (document.hidden) {
- 41:             LogService.stopLogPolling();
- 42:         } else {
- 43:             LogService.startLogPolling();
- 44:         }
- 45:     }
- 46: 
- 47:     /**
- 48:      * Charge et affiche les logs
- 49:      * @param {number} days - Nombre de jours de logs à charger
- 50:      */
- 51:     static async loadAndRenderLogs(days = null) {
- 52:         const daysToLoad = days || this.currentLogDays;
- 53:         
- 54:         try {
- 55:             const logs = await ApiService.get(`/api/webhook_logs?days=${daysToLoad}`);
- 56:             this.renderLogs(logs.logs || []);
- 57:         } catch (e) {
- 58:             MessageHelper.showError('logMsg', 'Erreur lors du chargement des logs.');
- 59:             this.renderLogs([]);
- 60:         }
- 61:     }
- 62: 
- 63:     /**
- 64:      * Affiche les logs dans l'interface
- 65:      * @param {Array} logs - Liste des logs à afficher
- 66:      */
- 67:     static renderLogs(logs) {
- 68:         const container = document.getElementById('webhookLogs');
- 69:         if (!container) return;
- 70:         
- 71:         container.innerHTML = '';
- 72:         
- 73:         if (!logs || logs.length === 0) {
- 74:             container.innerHTML = '<div class="timeline-item"><div class="timeline-content">Aucun log trouvé pour cette période.</div></div>';
- 75:             return;
- 76:         }
- 77:         
- 78:         const timelineContainer = document.createElement('div');
- 79:         timelineContainer.className = 'timeline-container';
- 80:         
- 81:         const timelineLine = document.createElement('div');
- 82:         timelineLine.className = 'timeline-line';
- 83:         timelineContainer.appendChild(timelineLine);
- 84:         
- 85:         const sparkline = this.createSparkline(logs);
- 86:         if (sparkline) {
- 87:             timelineContainer.appendChild(sparkline);
- 88:         }
- 89:         
- 90:         logs.forEach((log, index) => {
- 91:             const timelineItem = document.createElement('div');
- 92:             timelineItem.className = 'timeline-item';
- 93:             timelineItem.style.animationDelay = `${index * 0.1}s`;
- 94:             
- 95:             const marker = document.createElement('div');
- 96:             marker.className = `timeline-marker ${log.status}`;
- 97:             marker.textContent = log.status === 'success' ? '✓' : '⚠';
- 98:             timelineItem.appendChild(marker);
- 99:             
-100:             const content = document.createElement('div');
-101:             content.className = 'timeline-content';
-102:             
-103:             const header = document.createElement('div');
-104:             header.className = 'timeline-header';
-105:             
-106:             const timeDiv = document.createElement('div');
-107:             timeDiv.className = 'timeline-time';
-108:             timeDiv.textContent = this.formatTimestamp(log.timestamp);
-109:             header.appendChild(timeDiv);
-110:             
-111:             const statusDiv = document.createElement('div');
-112:             statusDiv.className = `timeline-status ${log.status}`;
-113:             statusDiv.textContent = log.status.toUpperCase();
-114:             header.appendChild(statusDiv);
-115:             
-116:             content.appendChild(header);
-117:             
-118:             const details = document.createElement('div');
-119:             details.className = 'timeline-details';
-120:             
-121:             if (log.subject) {
-122:                 const subjectDiv = document.createElement('div');
-123:                 subjectDiv.textContent = `Sujet: ${this.escapeHtml(log.subject)}`;
-124:                 details.appendChild(subjectDiv);
-125:             }
-126:             
-127:             if (log.webhook_url) {
-128:                 const urlDiv = document.createElement('div');
-129:                 urlDiv.textContent = `URL: ${this.escapeHtml(log.webhook_url)}`;
-130:                 details.appendChild(urlDiv);
-131:             }
-132:             
-133:             if (log.error_message) {
-134:                 const errorDiv = document.createElement('div');
-135:                 errorDiv.style.color = 'var(--cork-danger)';
-136:                 errorDiv.textContent = `Erreur: ${this.escapeHtml(log.error_message)}`;
-137:                 details.appendChild(errorDiv);
-138:             }
-139:             
-140:             content.appendChild(details);
-141:             timelineItem.appendChild(content);
-142:             timelineContainer.appendChild(timelineItem);
-143:         });
-144:         
-145:         container.innerHTML = '';
-146:         container.appendChild(timelineContainer);
-147:     }
-148: 
-149:     /**
-150:      * Change la période des logs et recharge
-151:      * @param {number} days - Nouvelle période en jours
-152:      */
-153:     static changeLogPeriod(days) {
-154:         this.currentLogDays = days;
-155:         this.loadAndRenderLogs(days);
-156:     }
-157: 
-158:     /**
-159:      * Vide l'affichage des logs
-160:      */
-161:     static clearLogs() {
-162:         const container = document.getElementById('webhookLogs');
-163:         if (container) {
-164:             container.innerHTML = '<div class="log-entry">Logs vidés.</div>';
-165:         }
-166:     }
-167: 
-168:     /**
-169:      * Exporte les logs au format JSON
-170:      * @param {number} days - Nombre de jours à exporter
-171:      */
-172:     static async exportLogs(days = null) {
-173:         const daysToExport = days || this.currentLogDays;
-174:         
-175:         try {
-176:             const data = await ApiService.get(`/api/webhook_logs?days=${daysToExport}`);
-177:             const logs = data.logs || [];
-178:             
-179:             const exportObj = {
-180:                 exported_at: new Date().toISOString(),
-181:                 period_days: daysToExport,
-182:                 count: logs.length,
-183:                 logs: logs
-184:             };
-185:             
-186:             const blob = new Blob([JSON.stringify(exportObj, null, 2)], { 
-187:                 type: 'application/json' 
-188:             });
-189:             const url = URL.createObjectURL(blob);
-190:             const a = document.createElement('a');
-191:             a.href = url;
-192:             a.download = `webhook_logs_${daysToExport}days_${new Date().toISOString().split('T')[0]}.json`;
-193:             a.click();
-194:             URL.revokeObjectURL(url);
-195:             
-196:             MessageHelper.showSuccess('logMsg', `Exporté ${logs.length} logs sur ${daysToExport} jours.`);
-197:         } catch (e) {
-198:             MessageHelper.showError('logMsg', 'Erreur lors de l\'export des logs.');
-199:         }
-200:     }
-201: 
-202:     /**
-203:      * Formatage d'horodatage
-204:      * @param {string} isoString - Timestamp ISO
-205:      * @returns {string} Timestamp formaté
-206:      */
-207:     static formatTimestamp(isoString) {
-208:         try {
-209:             const date = new Date(isoString);
-210:             return date.toLocaleString('fr-FR', {
-211:                 year: 'numeric',
-212:                 month: '2-digit',
-213:                 day: '2-digit',
-214:                 hour: '2-digit',
-215:                 minute: '2-digit',
-216:                 second: '2-digit'
-217:             });
-218:         } catch (e) {
-219:             return isoString;
-220:         }
-221:     }
-222: 
-223:     /**
-224:      * Échappement HTML pour éviter les XSS
-225:      * @param {string} text - Texte à échapper
-226:      * @returns {string} Texte échappé
-227:      */
-228:     static escapeHtml(text) {
-229:         const div = document.createElement('div');
-230:         div.textContent = text;
-231:         return div.innerHTML;
-232:     }
-233: 
-234:     /**
-235:      * Obtient des statistiques sur les logs
-236:      * @param {number} days - Période en jours
-237:      * @returns {Promise<object>} Statistiques des logs
-238:      */
-239:     static async getLogStats(days = null) {
-240:         const daysToAnalyze = days || this.currentLogDays;
-241:         
-242:         try {
-243:             const data = await ApiService.get(`/api/webhook_logs?days=${daysToAnalyze}`);
-244:             const logs = data.logs || [];
-245:             
-246:             const stats = {
-247:                 total: logs.length,
-248:                 success: 0,
-249:                 error: 0,
-250:                 by_status: {},
-251:                 latest_error: null,
-252:                 period_days: daysToAnalyze
-253:             };
-254:             
-255:             logs.forEach(log => {
-256:                 stats.by_status[log.status] = (stats.by_status[log.status] || 0) + 1;
-257:                 
-258:                 if (log.status === 'success') {
-259:                     stats.success++;
-260:                 } else if (log.status === 'error') {
-261:                     stats.error++;
-262:                     if (!stats.latest_error || new Date(log.timestamp) > new Date(stats.latest_error.timestamp)) {
-263:                         stats.latest_error = log;
-264:                     }
-265:                 }
-266:             });
-267:             
-268:             return stats;
-269:         } catch (e) {
-270:             return {
-271:                 total: 0,
-272:                 success: 0,
-273:                 error: 0,
-274:                 by_status: {},
-275:                 latest_error: null,
-276:                 period_days: daysToAnalyze
-277:             };
-278:         }
-279:     }
-280:     
-281:     /**
-282:      * Crée une sparkline pour visualiser les tendances des logs
-283:      * @param {Array} logs - Liste des logs
-284:      * @returns {HTMLElement|null} Élément DOM de la sparkline
-285:      */
-286:     static createSparkline(logs) {
-287:         if (!logs || logs.length < 2) return null;
-288:         
-289:         const hourlyData = {};
-290:         const now = new Date();
-291:         
-292:         logs.forEach(log => {
-293:             const logTime = new Date(log.timestamp);
-294:             const hourKey = new Date(logTime.getFullYear(), logTime.getMonth(), logTime.getDate(), logTime.getHours()).getTime();
-295:             
-296:             if (!hourlyData[hourKey]) {
-297:                 hourlyData[hourKey] = { success: 0, error: 0, total: 0 };
-298:             }
-299:             
-300:             hourlyData[hourKey].total++;
-301:             if (log.status === 'success') {
-302:                 hourlyData[hourKey].success++;
-303:             } else if (log.status === 'error') {
-304:                 hourlyData[hourKey].error++;
-305:             }
-306:         });
-307:         
-308:         const sparklineContainer = document.createElement('div');
-309:         sparklineContainer.className = 'timeline-sparkline';
-310:         
-311:         const canvas = document.createElement('canvas');
-312:         canvas.className = 'sparkline-canvas';
-313:         canvas.width = 200;
-314:         canvas.height = 40;
-315:         
-316:         const ctx = canvas.getContext('2d');
-317:         
-318:         const hours = 24;
-319:         const data = [];
-320:         const maxCount = Math.max(...Object.values(hourlyData).map(d => d.total), 1);
-321:         
-322:         for (let i = hours - 1; i >= 0; i--) {
-323:             const hourTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() - i).getTime();
-324:             const hourData = hourlyData[hourTime] || { success: 0, error: 0, total: 0 };
-325:             data.push(hourData.total);
-326:         }
-327:         
-328:         // Dessiner la sparkline
-329:         ctx.strokeStyle = '#4361ee';
-330:         ctx.lineWidth = 2;
-331:         ctx.fillStyle = 'rgba(67, 97, 238, 0.1)';
-332:         
-333:         const width = canvas.width;
-334:         const height = canvas.height;
-335:         const stepX = width / (data.length - 1);
-336:         
-337:         ctx.beginPath();
-338:         data.forEach((value, index) => {
-339:             const x = index * stepX;
-340:             const y = height - (value / maxCount) * height * 0.8 - 5;
-341:             
-342:             if (index === 0) {
-343:                 ctx.moveTo(x, y);
-344:             } else {
-345:                 ctx.lineTo(x, y);
-346:             }
-347:         });
-348:         ctx.stroke();
-349:         
-350:         ctx.lineTo(width, height);
-351:         ctx.lineTo(0, height);
-352:         ctx.closePath();
-353:         ctx.fill();
-354:         
-355:         sparklineContainer.appendChild(canvas);
-356:         
-357:         const legend = document.createElement('div');
-358:         legend.style.cssText = 'position: absolute; top: 5px; right: 10px; font-size: 0.7em; color: var(--cork-text-secondary);';
-359:         legend.textContent = `24h - Max: ${maxCount}`;
-360:         sparklineContainer.appendChild(legend);
-361:         
-362:         return sparklineContainer;
-363:     }
-364: }
-````
-
-## File: routes/api_routing_rules.py
-````python
-  1: from __future__ import annotations
-  2: 
-  3: from pathlib import Path
-  4: import re
-  5: 
-  6: from flask import Blueprint, jsonify, request
-  7: from flask_login import login_required
-  8: 
-  9: from config import app_config_store as _store
- 10: from services.routing_rules_service import RoutingRulesService
- 11: 
- 12: bp = Blueprint("api_routing_rules", __name__, url_prefix="/api/routing_rules")
- 13: 
- 14: ROUTING_RULES_FILE = Path(__file__).resolve().parents[1] / "debug" / "routing_rules.json"
- 15: WEBHOOK_CONFIG_FILE = Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
- 16: 
- 17: try:
- 18:     _routing_rules_service = RoutingRulesService.get_instance()
- 19: except ValueError:
- 20:     _routing_rules_service = RoutingRulesService.get_instance(
- 21:         file_path=ROUTING_RULES_FILE,
- 22:         external_store=_store,
- 23:     )
- 24: 
- 25: 
- 26: def _load_routing_rules() -> dict:
- 27:     """Charge les règles persistées (cache rechargé)."""
- 28:     _routing_rules_service.reload()
- 29:     return _routing_rules_service.get_payload()
- 30: 
- 31: 
- 32: def _resolve_backend_webhook_url() -> str | None:
- 33:     try:
- 34:         persisted = _store.get_config_json("webhook_config", file_fallback=WEBHOOK_CONFIG_FILE) or {}
- 35:     except Exception:
- 36:         persisted = {}
- 37:     if isinstance(persisted, dict):
- 38:         webhook_url = persisted.get("webhook_url")
- 39:         if isinstance(webhook_url, str) and webhook_url.strip():
- 40:             return webhook_url.strip()
- 41: 
- 42:     try:
- 43:         from config import settings as _settings
- 44: 
- 45:         fallback_url = getattr(_settings, "WEBHOOK_URL", "")
- 46:         if isinstance(fallback_url, str) and fallback_url.strip():
- 47:             return fallback_url.strip()
- 48:     except Exception:
- 49:         return None
- 50:     return None
- 51: 
- 52: 
- 53: def _resolve_sender_allowlist_pattern() -> str | None:
- 54:     try:
- 55:         from config import polling_config as _polling_config
- 56:         from config import settings as _settings
- 57: 
- 58:         service = _polling_config.PollingConfigService(
- 59:             settings_module=_settings,
- 60:             config_store=_store,
- 61:         )
- 62:         senders = service.get_sender_list()
- 63:     except Exception:
- 64:         senders = []
- 65: 
- 66:     cleaned = []
- 67:     for sender in senders or []:
- 68:         if isinstance(sender, str) and sender.strip():
- 69:             cleaned.append(re.escape(sender.strip().lower()))
- 70: 
- 71:     if not cleaned:
- 72:         return None
- 73:     return rf"^({'|'.join(cleaned)})$"
- 74: 
- 75: 
- 76: def _build_backend_fallback_rules() -> list[dict] | None:
- 77:     webhook_url = _resolve_backend_webhook_url()
- 78:     if not webhook_url:
- 79:         return None
- 80: 
- 81:     sender_pattern = _resolve_sender_allowlist_pattern()
- 82:     sender_condition = None
- 83:     if sender_pattern:
- 84:         sender_condition = {
- 85:             "field": "sender",
- 86:             "operator": "regex",
- 87:             "value": sender_pattern,
- 88:             "case_sensitive": False,
- 89:         }
- 90: 
- 91:     recadrage_conditions = []
- 92:     if sender_condition:
- 93:         recadrage_conditions.append(dict(sender_condition))
- 94:     recadrage_conditions.extend(
- 95:         [
- 96:             {
- 97:                 "field": "subject",
- 98:                 "operator": "regex",
- 99:                 "value": r"m[ée]dia solution.*missions recadrage.*\blot\b",
-100:                 "case_sensitive": False,
-101:             },
-102:             {
-103:                 "field": "body",
-104:                 "operator": "regex",
-105:                 "value": r"(dropbox\.com/scl/fo|fromsmash\.com/|swisstransfer\.com/d/)",
-106:                 "case_sensitive": False,
-107:             },
-108:         ]
-109:     )
-110: 
-111:     desabo_subject_conditions = []
-112:     if sender_condition:
-113:         desabo_subject_conditions.append(dict(sender_condition))
-114:     desabo_subject_conditions.extend(
-115:         [
-116:             {
-117:                 "field": "subject",
-118:                 "operator": "regex",
-119:                 "value": r"d[ée]sabonn",
-120:                 "case_sensitive": False,
-121:             },
-122:             {
-123:                 "field": "body",
-124:                 "operator": "contains",
-125:                 "value": "journee",
-126:                 "case_sensitive": False,
-127:             },
-128:             {
-129:                 "field": "body",
-130:                 "operator": "contains",
-131:                 "value": "tarifs habituels",
-132:                 "case_sensitive": False,
-133:             },
-134:         ]
-135:     )
-136: 
-137:     desabo_body_conditions = []
-138:     if sender_condition:
-139:         desabo_body_conditions.append(dict(sender_condition))
-140:     desabo_body_conditions.extend(
-141:         [
-142:             {
-143:                 "field": "body",
-144:                 "operator": "regex",
-145:                 "value": r"(d[ée]sabonn|dropbox\.com/request/)",
-146:                 "case_sensitive": False,
-147:             },
-148:             {
-149:                 "field": "body",
-150:                 "operator": "contains",
-151:                 "value": "journee",
-152:                 "case_sensitive": False,
-153:             },
-154:             {
-155:                 "field": "body",
-156:                 "operator": "contains",
-157:                 "value": "tarifs habituels",
-158:                 "case_sensitive": False,
-159:             },
-160:         ]
-161:     )
-162: 
-163:     # Pourquoi : exposer la logique Recadrage/Désabo existante en règles UI modifiables.
-164:     return [
-165:         {
-166:             "id": "backend-recadrage",
-167:             "name": "Confirmation Mission Recadrage (backend)",
-168:             "conditions": recadrage_conditions,
-169:             "actions": {
-170:                 "webhook_url": webhook_url,
-171:                 "priority": "normal",
-172:                 "stop_processing": False,
-173:             },
-174:         },
-175:         {
-176:             "id": "backend-desabo-subject",
-177:             "name": "Confirmation Disponibilité Mission Recadrage (backend - sujet)",
-178:             "conditions": desabo_subject_conditions,
-179:             "actions": {
-180:                 "webhook_url": webhook_url,
-181:                 "priority": "normal",
-182:                 "stop_processing": False,
-183:             },
-184:         },
-185:         {
-186:             "id": "backend-desabo-body",
-187:             "name": "Confirmation Disponibilité Mission Recadrage (backend - corps)",
-188:             "conditions": desabo_body_conditions,
-189:             "actions": {
-190:                 "webhook_url": webhook_url,
-191:                 "priority": "normal",
-192:                 "stop_processing": False,
-193:             },
-194:         },
-195:     ]
-196: 
-197: 
-198: def _is_falsey_flag(value: object) -> bool:
-199:     if value is None:
-200:         return True
-201:     if isinstance(value, bool):
-202:         return value is False
-203:     if isinstance(value, (int, float)):
-204:         return value == 0
-205:     if isinstance(value, str):
-206:         return value.strip().lower() in {"", "false", "0", "no", "off"}
-207:     return False
-208: 
-209: 
-210: def _is_legacy_backend_default_rule(rule: dict) -> bool:
-211:     if not isinstance(rule, dict):
-212:         return False
-213:     rule_id = str(rule.get("id") or "").strip()
-214:     rule_name = str(rule.get("name") or "").strip()
-215:     is_id_match = rule_id == "backend-default"
-216:     normalized_name = rule_name.strip().lower()
-217:     is_name_match = normalized_name == "webhook par défaut (backend)" or normalized_name == "webhook par defaut (backend)"
-218:     if not is_id_match and not is_name_match:
-219:         return False
-220:     if is_id_match:
-221:         return True
-222:     if is_name_match:
-223:         return True
-224:     conditions = rule.get("conditions")
-225:     if not isinstance(conditions, list) or len(conditions) != 1:
-226:         return False
-227:     condition = conditions[0]
-228:     if not isinstance(condition, dict):
-229:         return False
-230:     wildcard_values = {".*", "^.*$", "(?s).*"}
-231:     value = str(condition.get("value") or "").strip()
-232:     return (
-233:         str(condition.get("field") or "").strip().lower() == "subject"
-234:         and str(condition.get("operator") or "").strip().lower() == "regex"
-235:         and value in wildcard_values
-236:         and _is_falsey_flag(condition.get("case_sensitive"))
-237:     )
-238: 
-239: 
-240: @bp.route("", methods=["GET"])
-241: @login_required
-242: def get_routing_rules():
-243:     try:
-244:         payload = _load_routing_rules()
-245:         rules = payload.get("rules") if isinstance(payload, dict) else None
-246:         response_config = payload if isinstance(payload, dict) else {}
-247:         if isinstance(rules, list) and len(rules) == 1 and _is_legacy_backend_default_rule(rules[0]):
-248:             response_config = dict(response_config)
-249:             response_config["rules"] = []
-250:             rules = []
-251:         fallback_rules = None
-252:         if not isinstance(rules, list) or not rules:
-253:             fallback_rules = _build_backend_fallback_rules()
-254:         response_payload = {"success": True, "config": response_config}
-255:         if fallback_rules:
-256:             response_payload["fallback_rules"] = fallback_rules
-257:             response_payload["fallback_rule"] = fallback_rules[0]
-258:         return jsonify(response_payload), 200
-259:     except Exception as exc:
-260:         return jsonify({"success": False, "message": str(exc)}), 500
-261: 
-262: 
-263: @bp.route("", methods=["POST"])
-264: @login_required
-265: def update_routing_rules():
-266:     try:
-267:         payload = request.get_json(silent=True) or {}
-268:         rules_raw = payload.get("rules")
-269:         ok, msg, updated = _routing_rules_service.update_rules(rules_raw)  # type: ignore[arg-type]
-270:         if not ok:
-271:             return jsonify({"success": False, "message": msg}), 400
-272:         return jsonify({"success": True, "message": msg, "config": updated}), 200
-273:     except Exception as exc:
-274:         return jsonify({"success": False, "message": str(exc)}), 500
-````
-
-## File: routes/api_webhooks.py
-````python
-  1: from __future__ import annotations
-  2: 
-  3: import os
-  4: import json
-  5: from pathlib import Path
-  6: 
-  7: from flask import Blueprint, jsonify, request
-  8: from flask_login import login_required, current_user
-  9: 
- 10: from utils.time_helpers import parse_time_hhmm
- 11: from config import app_config_store as _store
- 12: 
- 13: from services import WebhookConfigService
- 14: 
- 15: bp = Blueprint("api_webhooks", __name__, url_prefix="/api/webhooks")
- 16: 
- 17: # Storage path kept compatible with legacy location used in app_render.py
- 18: WEBHOOK_CONFIG_FILE = (
- 19:     Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
- 20: )
- 21: 
- 22: try:
- 23:     _webhook_service = WebhookConfigService.get_instance()
- 24: except ValueError:
- 25:     # Fallback: initialiser si pas encore fait (cas tests)
- 26:     _webhook_service = WebhookConfigService.get_instance(
- 27:         file_path=WEBHOOK_CONFIG_FILE,
- 28:         external_store=_store
- 29:     )
- 30: 
- 31: 
- 32: def _load_webhook_config() -> dict:
- 33:     """Load persisted config from DB if available, else file fallback.
- 34:     
- 35:     Uses WebhookConfigService (cache + validation).
- 36:     """
- 37:     # Force a reload to avoid serving stale values when another endpoint
- 38:     # or external store updated the data recently (cache TTL = 60s).
- 39:     _webhook_service.reload()
- 40:     return _webhook_service.get_all_config()
- 41: 
- 42: 
- 43: def _save_webhook_config(config: dict) -> bool:
- 44:     """Persist config to DB with file fallback.
- 45:     
- 46:     Uses WebhookConfigService (validation automatique + cache invalidation).
- 47:     """
- 48:     success, _ = _webhook_service.update_config(config)
- 49:     return success
- 50: 
- 51: 
- 52: def _mask_url(url: str | None) -> str | None:
- 53:     if not url:
- 54:         return None
- 55:     if url.startswith("http"):
- 56:         parts = url.split("/")
- 57:         if len(parts) > 3:
- 58:             return f"{parts[0]}//{parts[2]}/***"
- 59:         return url[:30] + "***"
- 60:     return None
- 61: 
- 62: 
- 63: @bp.route("/config", methods=["GET"])
- 64: @login_required
- 65: def get_webhook_config():
- 66:     persisted = _load_webhook_config()
- 67: 
- 68:     # Environment defaults for webhook configuration
- 69:     webhook_url = persisted.get("webhook_url") or os.environ.get("WEBHOOK_URL")
- 70:     webhook_ssl_verify = persisted.get(
- 71:         "webhook_ssl_verify",
- 72:         os.environ.get("WEBHOOK_SSL_VERIFY", "true").strip().lower()
- 73:         in ("1", "true", "yes", "on"),
- 74:     )
- 75:     # New: global enable/disable for sending webhooks (default: true)
- 76:     webhook_sending_enabled = persisted.get(
- 77:         "webhook_sending_enabled",
- 78:         os.environ.get("WEBHOOK_SENDING_ENABLED", "true").strip().lower()
- 79:         in ("1", "true", "yes", "on"),
- 80:     )
- 81:     # Time window for global webhook toggle (may be empty strings)
- 82:     webhook_time_start = (persisted.get("webhook_time_start") or "").strip()
- 83:     webhook_time_end = (persisted.get("webhook_time_end") or "").strip()
- 84:     
- 85:     # Absence pause configuration
- 86:     absence_pause_enabled = persisted.get("absence_pause_enabled", False)
- 87:     absence_pause_days = persisted.get("absence_pause_days", [])
- 88:     if not isinstance(absence_pause_days, list):
- 89:         absence_pause_days = []
- 90: 
- 91:     config = {
- 92:         # Always mask webhook_url in API response for safety
- 93:         "webhook_url": _mask_url(webhook_url),
- 94:         "webhook_ssl_verify": webhook_ssl_verify,
- 95:         "webhook_sending_enabled": bool(webhook_sending_enabled),
- 96:         # Expose as None when empty to be explicit in API response
- 97:         "webhook_time_start": webhook_time_start or None,
- 98:         "webhook_time_end": webhook_time_end or None,
- 99:         "absence_pause_enabled": bool(absence_pause_enabled),
-100:         "absence_pause_days": absence_pause_days,
-101:     }
-102:     return jsonify({"success": True, "config": config}), 200
-103: 
-104: 
-105: @bp.route("/config", methods=["POST"])
-106: @login_required
-107: def update_webhook_config():
-108:     payload = request.get_json(silent=True) or {}
-109:     # Build a minimal updates dict to avoid clobbering unrelated fields with
-110:     # potentially stale cached values.
-111:     updates = {}
-112: 
-113:     if "webhook_url" in payload:
-114:         val = payload["webhook_url"].strip() if payload["webhook_url"] else None
-115:         # Exiger HTTPS strict
-116:         if val and not val.startswith("https://"):
-117:             return (
-118:                 jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}),
-119:                 400,
-120:             )
-121:         updates["webhook_url"] = val
-122: 
-123:     if "webhook_ssl_verify" in payload:
-124:         updates["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
-125: 
-126:     # New flag: webhook_sending_enabled
-127:     if "webhook_sending_enabled" in payload:
-128:         updates["webhook_sending_enabled"] = bool(payload["webhook_sending_enabled"])
-129:     
-130:     # Absence pause configuration
-131:     if "absence_pause_enabled" in payload:
-132:         updates["absence_pause_enabled"] = bool(payload["absence_pause_enabled"])
-133:     
-134:     if "absence_pause_days" in payload:
-135:         days = payload["absence_pause_days"]
-136:         if not isinstance(days, list):
-137:             return jsonify({"success": False, "message": "absence_pause_days doit être une liste."}), 400
-138:         
-139:         # Valider les jours
-140:         valid_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-141:         normalized_days = [str(d).strip().lower() for d in days if isinstance(d, str)]
-142:         invalid_days = [d for d in normalized_days if d not in valid_days]
-143:         
-144:         if invalid_days:
-145:             return jsonify({"success": False, "message": f"Jours invalides: {', '.join(invalid_days)}"}), 400
-146:         
-147:         updates["absence_pause_days"] = normalized_days
-148:     
-149:     # Validation: si absence_pause_enabled est True, vérifier qu'au moins un jour est sélectionné
-150:     if updates.get("absence_pause_enabled") and not updates.get("absence_pause_days"):
-151:         return jsonify({"success": False, "message": "Au moins un jour doit être sélectionné pour activer la pause absence."}), 400
-152: 
-153:     # Optional: accept time window fields here too, for convenience
-154:     # Validate format using parse_time_hhmm when provided and non-empty
-155:     if "webhook_time_start" in payload or "webhook_time_end" in payload:
-156:         start = (str(payload.get("webhook_time_start", "")) or "").strip()
-157:         end = (str(payload.get("webhook_time_end", "")) or "").strip()
-158:         # If both empty -> clear
-159:         if start == "" and end == "":
-160:             updates["webhook_time_start"] = ""
-161:             updates["webhook_time_end"] = ""
-162:         else:
-163:             # Require both if one is provided
-164:             if not start or not end:
-165:                 return jsonify({"success": False, "message": "Both webhook_time_start and webhook_time_end are required (or both empty to clear)."}), 400
-166:             if parse_time_hhmm(start) is None or parse_time_hhmm(end) is None:
-167:                 return jsonify({"success": False, "message": "Invalid time format. Use HHhMM or HH:MM (e.g., 11h30, 17:45)."}), 400
-168:             updates["webhook_time_start"] = start
-169:             updates["webhook_time_end"] = end
-170: 
-171:     # Nettoyer les champs obsolètes s'ils existent (ne pas supprimer presence_* gérés ci-dessus)
-172:     obsolete_fields = [
-173:         "recadrage_webhook_url",
-174:         "autorepondeur_webhook_url",
-175:         "polling_enabled",
-176:     ]
-177:     for field in obsolete_fields:
-178:         if field in updates:
-179:             try:
-180:                 del updates[field]
-181:             except Exception:
-182:                 pass
-183: 
-184:     success, _msg = _webhook_service.update_config(updates)
-185:     if not success:
-186:         return (
-187:             jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration."}),
-188:             500,
-189:         )
-190: 
-191:     return jsonify({"success": True, "message": "Configuration mise à jour avec succès."}), 200
-192: 
-193: 
-194: # ---- Dedicated time window for global webhook toggle ----
-195: 
-196: @bp.route("/time-window", methods=["GET"])
-197: @login_required
-198: def get_webhook_global_time_window():
-199:     cfg = _load_webhook_config()
-200:     start = (cfg.get("webhook_time_start") or "").strip()
-201:     end = (cfg.get("webhook_time_end") or "").strip()
-202:     return jsonify({
-203:         "success": True,
-204:         "webhooks_time_start": start or None,
-205:         "webhooks_time_end": end or None,
-206:     }), 200
-207: 
-208: 
-209: @bp.route("/time-window", methods=["POST"])
-210: @login_required
-211: def set_webhook_global_time_window():
-212:     payload = request.get_json(silent=True) or {}
-213:     start = (payload.get("start") or "").strip()
-214:     end = (payload.get("end") or "").strip()
-215: 
-216:     # Clear both -> disable constraint
-217:     if start == "" and end == "":
-218:         success, _ = _webhook_service.update_config({
-219:             "webhook_time_start": "",
-220:             "webhook_time_end": "",
-221:         })
-222:         if not success:
-223:             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
-224:         return jsonify({
-225:             "success": True,
-226:             "message": "Time window cleared (no constraints).",
-227:             "webhooks_time_start": None,
-228:             "webhooks_time_end": None,
-229:         }), 200
-230: 
-231:     # Require both values when not clearing
-232:     if not start or not end:
-233:         return jsonify({"success": False, "message": "Both start and end are required (or both empty to clear)."}), 400
-234: 
-235:     # Validate format using parse_time_hhmm
-236:     if parse_time_hhmm(start) is None or parse_time_hhmm(end) is None:
-237:         return jsonify({"success": False, "message": "Invalid time format. Use HHhMM or HH:MM (e.g., 11h30, 17:45)."}), 400
-238: 
-239:     success, _ = _webhook_service.update_config({
-240:         "webhook_time_start": start,
-241:         "webhook_time_end": end,
-242:     })
-243:     if not success:
-244:         return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
-245:     return jsonify({
-246:         "success": True,
-247:         "message": "Time window updated.",
-248:         "webhooks_time_start": start,
-249:         "webhooks_time_end": end,
-250:     }), 200
-````
-
 ## File: services/webhook_config_service.py
 ````python
   1: """
@@ -14215,6 +12133,1138 @@ requirements.txt
 472:         """Représentation du service."""
 473:         has_url = "yes" if self.has_webhook_url() else "no"
 474:         return f"<WebhookConfigService(file={self._file_path.name}, has_url={has_url})>"
+````
+
+## File: static/services/LogService.js
+````javascript
+  1: import { ApiService } from './ApiService.js';
+  2: import { MessageHelper } from '../utils/MessageHelper.js';
+  3: 
+  4: export class LogService {
+  5:     static logPollingInterval = null;
+  6:     static currentLogDays = 7;
+  7: 
+  8:     /**
+  9:      * Démarre le polling automatique des logs
+ 10:      * @param {number} intervalMs - Intervalle en millisecondes (défaut: 30000)
+ 11:      */
+ 12:     static startLogPolling(intervalMs = 30000) {
+ 13:         this.stopLogPolling();
+ 14:         
+ 15:         this.loadAndRenderLogs();
+ 16:         
+ 17:         this.logPollingInterval = setInterval(() => {
+ 18:             this.loadAndRenderLogs();
+ 19:         }, intervalMs);
+ 20:         
+ 21:         document.addEventListener('visibilitychange', this.handleVisibilityChange);
+ 22:     }
+ 23: 
+ 24:     /**
+ 25:      * Arrête le polling des logs
+ 26:      */
+ 27:     static stopLogPolling() {
+ 28:         if (this.logPollingInterval) {
+ 29:             clearInterval(this.logPollingInterval);
+ 30:             this.logPollingInterval = null;
+ 31:         }
+ 32:         
+ 33:         document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+ 34:     }
+ 35: 
+ 36:     /**
+ 37:      * Gère les changements de visibilité de la page
+ 38:      */
+ 39:     static handleVisibilityChange() {
+ 40:         if (document.hidden) {
+ 41:             LogService.stopLogPolling();
+ 42:         } else {
+ 43:             LogService.startLogPolling();
+ 44:         }
+ 45:     }
+ 46: 
+ 47:     /**
+ 48:      * Charge et affiche les logs
+ 49:      * @param {number} days - Nombre de jours de logs à charger
+ 50:      */
+ 51:     static async loadAndRenderLogs(days = null) {
+ 52:         const daysToLoad = days || this.currentLogDays;
+ 53:         
+ 54:         try {
+ 55:             const logs = await ApiService.get(`/api/webhook_logs?days=${daysToLoad}`);
+ 56:             this.renderLogs(logs.logs || []);
+ 57:         } catch (e) {
+ 58:             MessageHelper.showError('logMsg', 'Erreur lors du chargement des logs.');
+ 59:             this.renderLogs([]);
+ 60:         }
+ 61:     }
+ 62: 
+ 63:     /**
+ 64:      * Affiche les logs dans l'interface
+ 65:      * @param {Array} logs - Liste des logs à afficher
+ 66:      */
+ 67:     static renderLogs(logs) {
+ 68:         const container = document.getElementById('webhookLogs');
+ 69:         if (!container) return;
+ 70:         
+ 71:         container.innerHTML = '';
+ 72:         
+ 73:         if (!logs || logs.length === 0) {
+ 74:             container.innerHTML = '<div class="timeline-item"><div class="timeline-content">Aucun log trouvé pour cette période.</div></div>';
+ 75:             return;
+ 76:         }
+ 77:         
+ 78:         const timelineContainer = document.createElement('div');
+ 79:         timelineContainer.className = 'timeline-container';
+ 80:         
+ 81:         const timelineLine = document.createElement('div');
+ 82:         timelineLine.className = 'timeline-line';
+ 83:         timelineContainer.appendChild(timelineLine);
+ 84:         
+ 85:         const sparkline = this.createSparkline(logs);
+ 86:         if (sparkline) {
+ 87:             timelineContainer.appendChild(sparkline);
+ 88:         }
+ 89:         
+ 90:         logs.forEach((log, index) => {
+ 91:             const timelineItem = document.createElement('div');
+ 92:             timelineItem.className = 'timeline-item';
+ 93:             timelineItem.style.animationDelay = `${index * 0.1}s`;
+ 94:             
+ 95:             const marker = document.createElement('div');
+ 96:             marker.className = `timeline-marker ${log.status}`;
+ 97:             marker.textContent = log.status === 'success' ? '✓' : '⚠';
+ 98:             timelineItem.appendChild(marker);
+ 99:             
+100:             const content = document.createElement('div');
+101:             content.className = 'timeline-content';
+102:             
+103:             const header = document.createElement('div');
+104:             header.className = 'timeline-header';
+105:             
+106:             const timeDiv = document.createElement('div');
+107:             timeDiv.className = 'timeline-time';
+108:             timeDiv.textContent = this.formatTimestamp(log.timestamp);
+109:             header.appendChild(timeDiv);
+110:             
+111:             const statusDiv = document.createElement('div');
+112:             statusDiv.className = `timeline-status ${log.status}`;
+113:             statusDiv.textContent = log.status.toUpperCase();
+114:             header.appendChild(statusDiv);
+115:             
+116:             content.appendChild(header);
+117:             
+118:             const details = document.createElement('div');
+119:             details.className = 'timeline-details';
+120:             
+121:             if (log.subject) {
+122:                 const subjectDiv = document.createElement('div');
+123:                 subjectDiv.textContent = `Sujet: ${this.escapeHtml(log.subject)}`;
+124:                 details.appendChild(subjectDiv);
+125:             }
+126:             
+127:             if (log.webhook_url) {
+128:                 const urlDiv = document.createElement('div');
+129:                 urlDiv.textContent = `URL: ${this.escapeHtml(log.webhook_url)}`;
+130:                 details.appendChild(urlDiv);
+131:             }
+132:             
+133:             if (log.error_message) {
+134:                 const errorDiv = document.createElement('div');
+135:                 errorDiv.style.color = 'var(--cork-danger)';
+136:                 errorDiv.textContent = `Erreur: ${this.escapeHtml(log.error_message)}`;
+137:                 details.appendChild(errorDiv);
+138:             }
+139:             
+140:             content.appendChild(details);
+141:             timelineItem.appendChild(content);
+142:             timelineContainer.appendChild(timelineItem);
+143:         });
+144:         
+145:         container.innerHTML = '';
+146:         container.appendChild(timelineContainer);
+147:     }
+148: 
+149:     /**
+150:      * Change la période des logs et recharge
+151:      * @param {number} days - Nouvelle période en jours
+152:      */
+153:     static changeLogPeriod(days) {
+154:         this.currentLogDays = days;
+155:         this.loadAndRenderLogs(days);
+156:     }
+157: 
+158:     /**
+159:      * Vide l'affichage des logs
+160:      */
+161:     static clearLogs() {
+162:         const container = document.getElementById('webhookLogs');
+163:         if (container) {
+164:             container.innerHTML = '<div class="log-entry">Logs vidés.</div>';
+165:         }
+166:     }
+167: 
+168:     /**
+169:      * Exporte les logs au format JSON
+170:      * @param {number} days - Nombre de jours à exporter
+171:      */
+172:     static async exportLogs(days = null) {
+173:         const daysToExport = days || this.currentLogDays;
+174:         
+175:         try {
+176:             const data = await ApiService.get(`/api/webhook_logs?days=${daysToExport}`);
+177:             const logs = data.logs || [];
+178:             
+179:             const exportObj = {
+180:                 exported_at: new Date().toISOString(),
+181:                 period_days: daysToExport,
+182:                 count: logs.length,
+183:                 logs: logs
+184:             };
+185:             
+186:             const blob = new Blob([JSON.stringify(exportObj, null, 2)], { 
+187:                 type: 'application/json' 
+188:             });
+189:             const url = URL.createObjectURL(blob);
+190:             const a = document.createElement('a');
+191:             a.href = url;
+192:             a.download = `webhook_logs_${daysToExport}days_${new Date().toISOString().split('T')[0]}.json`;
+193:             a.click();
+194:             URL.revokeObjectURL(url);
+195:             
+196:             MessageHelper.showSuccess('logMsg', `Exporté ${logs.length} logs sur ${daysToExport} jours.`);
+197:         } catch (e) {
+198:             MessageHelper.showError('logMsg', 'Erreur lors de l\'export des logs.');
+199:         }
+200:     }
+201: 
+202:     /**
+203:      * Formatage d'horodatage
+204:      * @param {string} isoString - Timestamp ISO
+205:      * @returns {string} Timestamp formaté
+206:      */
+207:     static formatTimestamp(isoString) {
+208:         try {
+209:             const date = new Date(isoString);
+210:             return date.toLocaleString('fr-FR', {
+211:                 year: 'numeric',
+212:                 month: '2-digit',
+213:                 day: '2-digit',
+214:                 hour: '2-digit',
+215:                 minute: '2-digit',
+216:                 second: '2-digit'
+217:             });
+218:         } catch (e) {
+219:             return isoString;
+220:         }
+221:     }
+222: 
+223:     /**
+224:      * Échappement HTML pour éviter les XSS
+225:      * @param {string} text - Texte à échapper
+226:      * @returns {string} Texte échappé
+227:      */
+228:     static escapeHtml(text) {
+229:         const div = document.createElement('div');
+230:         div.textContent = text;
+231:         return div.innerHTML;
+232:     }
+233: 
+234:     /**
+235:      * Obtient des statistiques sur les logs
+236:      * @param {number} days - Période en jours
+237:      * @returns {Promise<object>} Statistiques des logs
+238:      */
+239:     static async getLogStats(days = null) {
+240:         const daysToAnalyze = days || this.currentLogDays;
+241:         
+242:         try {
+243:             const data = await ApiService.get(`/api/webhook_logs?days=${daysToAnalyze}`);
+244:             const logs = data.logs || [];
+245:             
+246:             const stats = {
+247:                 total: logs.length,
+248:                 success: 0,
+249:                 error: 0,
+250:                 by_status: {},
+251:                 latest_error: null,
+252:                 period_days: daysToAnalyze
+253:             };
+254:             
+255:             logs.forEach(log => {
+256:                 stats.by_status[log.status] = (stats.by_status[log.status] || 0) + 1;
+257:                 
+258:                 if (log.status === 'success') {
+259:                     stats.success++;
+260:                 } else if (log.status === 'error') {
+261:                     stats.error++;
+262:                     if (!stats.latest_error || new Date(log.timestamp) > new Date(stats.latest_error.timestamp)) {
+263:                         stats.latest_error = log;
+264:                     }
+265:                 }
+266:             });
+267:             
+268:             return stats;
+269:         } catch (e) {
+270:             return {
+271:                 total: 0,
+272:                 success: 0,
+273:                 error: 0,
+274:                 by_status: {},
+275:                 latest_error: null,
+276:                 period_days: daysToAnalyze
+277:             };
+278:         }
+279:     }
+280:     
+281:     /**
+282:      * Crée une sparkline pour visualiser les tendances des logs
+283:      * @param {Array} logs - Liste des logs
+284:      * @returns {HTMLElement|null} Élément DOM de la sparkline
+285:      */
+286:     static createSparkline(logs) {
+287:         if (!logs || logs.length < 2) return null;
+288:         
+289:         const hourlyData = {};
+290:         const now = new Date();
+291:         
+292:         logs.forEach(log => {
+293:             const logTime = new Date(log.timestamp);
+294:             const hourKey = new Date(logTime.getFullYear(), logTime.getMonth(), logTime.getDate(), logTime.getHours()).getTime();
+295:             
+296:             if (!hourlyData[hourKey]) {
+297:                 hourlyData[hourKey] = { success: 0, error: 0, total: 0 };
+298:             }
+299:             
+300:             hourlyData[hourKey].total++;
+301:             if (log.status === 'success') {
+302:                 hourlyData[hourKey].success++;
+303:             } else if (log.status === 'error') {
+304:                 hourlyData[hourKey].error++;
+305:             }
+306:         });
+307:         
+308:         const sparklineContainer = document.createElement('div');
+309:         sparklineContainer.className = 'timeline-sparkline';
+310:         
+311:         const canvas = document.createElement('canvas');
+312:         canvas.className = 'sparkline-canvas';
+313:         canvas.width = 200;
+314:         canvas.height = 40;
+315:         
+316:         const ctx = canvas.getContext('2d');
+317:         
+318:         const hours = 24;
+319:         const data = [];
+320:         const maxCount = Math.max(...Object.values(hourlyData).map(d => d.total), 1);
+321:         
+322:         for (let i = hours - 1; i >= 0; i--) {
+323:             const hourTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() - i).getTime();
+324:             const hourData = hourlyData[hourTime] || { success: 0, error: 0, total: 0 };
+325:             data.push(hourData.total);
+326:         }
+327:         
+328:         // Dessiner la sparkline
+329:         ctx.strokeStyle = '#4361ee';
+330:         ctx.lineWidth = 2;
+331:         ctx.fillStyle = 'rgba(67, 97, 238, 0.1)';
+332:         
+333:         const width = canvas.width;
+334:         const height = canvas.height;
+335:         const stepX = width / (data.length - 1);
+336:         
+337:         ctx.beginPath();
+338:         data.forEach((value, index) => {
+339:             const x = index * stepX;
+340:             const y = height - (value / maxCount) * height * 0.8 - 5;
+341:             
+342:             if (index === 0) {
+343:                 ctx.moveTo(x, y);
+344:             } else {
+345:                 ctx.lineTo(x, y);
+346:             }
+347:         });
+348:         ctx.stroke();
+349:         
+350:         ctx.lineTo(width, height);
+351:         ctx.lineTo(0, height);
+352:         ctx.closePath();
+353:         ctx.fill();
+354:         
+355:         sparklineContainer.appendChild(canvas);
+356:         
+357:         const legend = document.createElement('div');
+358:         legend.style.cssText = 'position: absolute; top: 5px; right: 10px; font-size: 0.7em; color: var(--cork-text-secondary);';
+359:         legend.textContent = `24h - Max: ${maxCount}`;
+360:         sparklineContainer.appendChild(legend);
+361:         
+362:         return sparklineContainer;
+363:     }
+364: }
+````
+
+## File: config/settings.py
+````python
+  1: """
+  2: Centralized configuration for render_signal_server.
+  3: Contains all reference constants and environment variables.
+  4: """
+  5: 
+  6: import os
+  7: from pathlib import Path
+  8: from utils.validators import env_bool
+  9: 
+ 10: 
+ 11: REF_TRIGGER_PAGE_USER = "admin"
+ 12: REF_POLLING_TIMEZONE = "Europe/Paris"
+ 13: REF_POLLING_ACTIVE_START_HOUR = 9
+ 14: REF_POLLING_ACTIVE_END_HOUR = 23
+ 15: REF_POLLING_ACTIVE_DAYS = "0,1,2,3,4"
+ 16: REF_EMAIL_POLLING_INTERVAL_SECONDS = 30
+ 17: 
+ 18: 
+ 19: # --- Environment Variables ---
+ 20: def _get_required_env(name: str) -> str:
+ 21:     value = os.environ.get(name, "").strip()
+ 22:     if not value:
+ 23:         raise ValueError(f"Missing required environment variable: {name}")
+ 24:     return value
+ 25: 
+ 26: 
+ 27: FLASK_SECRET_KEY = _get_required_env("FLASK_SECRET_KEY")
+ 28: 
+ 29: TRIGGER_PAGE_USER = os.environ.get("TRIGGER_PAGE_USER", REF_TRIGGER_PAGE_USER)
+ 30: TRIGGER_PAGE_PASSWORD = _get_required_env("TRIGGER_PAGE_PASSWORD")
+ 31: 
+ 32: # Email/IMAP credentials (legacy - not used by Gmail Push)
+ 33: # These are kept for tests and legacy compatibility only
+ 34: EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS", "")
+ 35: EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD", "")
+ 36: IMAP_SERVER = os.environ.get("IMAP_SERVER", "")
+ 37: IMAP_PORT = int(os.environ.get("IMAP_PORT", 993))
+ 38: IMAP_USE_SSL = env_bool("IMAP_USE_SSL", True)
+ 39: 
+ 40: EXPECTED_API_TOKEN = _get_required_env("PROCESS_API_TOKEN")
+ 41: 
+ 42: WEBHOOK_URL = _get_required_env("WEBHOOK_URL")
+ 43: MAKECOM_API_KEY = _get_required_env("MAKECOM_API_KEY")
+ 44: WEBHOOK_SSL_VERIFY = env_bool("WEBHOOK_SSL_VERIFY", default=True)
+ 45: 
+ 46: # --- Render API Configuration ---
+ 47: RENDER_API_KEY = os.environ.get("RENDER_API_KEY", "")
+ 48: RENDER_SERVICE_ID = os.environ.get("RENDER_SERVICE_ID", "")
+ 49: _CLEAR_DEFAULT = "do_not_clear"
+ 50: RENDER_DEPLOY_CLEAR_CACHE = os.environ.get("RENDER_DEPLOY_CLEAR_CACHE", _CLEAR_DEFAULT)
+ 51: if RENDER_DEPLOY_CLEAR_CACHE not in ("clear", "do_not_clear"):
+ 52:     RENDER_DEPLOY_CLEAR_CACHE = _CLEAR_DEFAULT
+ 53: 
+ 54: RENDER_DEPLOY_HOOK_URL = os.environ.get("RENDER_DEPLOY_HOOK_URL", "")
+ 55: 
+ 56: 
+ 57: # Gmail Push sender allowlist (comma-separated emails)
+ 58: # If empty, all senders are allowed (PROCESS_API_TOKEN is the primary security control)
+ 59: GMAIL_SENDER_ALLOWLIST_RAW = os.environ.get("GMAIL_SENDER_ALLOWLIST", "")
+ 60: GMAIL_SENDER_ALLOWLIST = [
+ 61:     e.strip().lower() for e in GMAIL_SENDER_ALLOWLIST_RAW.split(',') 
+ 62:     if e.strip()
+ 63: ] if GMAIL_SENDER_ALLOWLIST_RAW else []
+ 64: 
+ 65: # Legacy polling configuration (kept for tests only)
+ 66: SENDER_OF_INTEREST_FOR_POLLING_RAW = os.environ.get(
+ 67:     "SENDER_OF_INTEREST_FOR_POLLING",
+ 68:     "",
+ 69: )
+ 70: SENDER_LIST_FOR_POLLING = [
+ 71:     e.strip().lower() for e in SENDER_OF_INTEREST_FOR_POLLING_RAW.split(',') 
+ 72:     if e.strip()
+ 73: ] if SENDER_OF_INTEREST_FOR_POLLING_RAW else []
+ 74: 
+ 75: POLLING_TIMEZONE_STR = os.environ.get("POLLING_TIMEZONE", REF_POLLING_TIMEZONE)
+ 76: POLLING_ACTIVE_START_HOUR = int(os.environ.get("POLLING_ACTIVE_START_HOUR", REF_POLLING_ACTIVE_START_HOUR))
+ 77: POLLING_ACTIVE_END_HOUR = int(os.environ.get("POLLING_ACTIVE_END_HOUR", REF_POLLING_ACTIVE_END_HOUR))
+ 78: 
+ 79: POLLING_ACTIVE_DAYS_RAW = os.environ.get("POLLING_ACTIVE_DAYS", REF_POLLING_ACTIVE_DAYS)
+ 80: POLLING_ACTIVE_DAYS = []
+ 81: if POLLING_ACTIVE_DAYS_RAW:
+ 82:     try:
+ 83:         POLLING_ACTIVE_DAYS = [
+ 84:             int(d.strip()) for d in POLLING_ACTIVE_DAYS_RAW.split(',') 
+ 85:             if d.strip().isdigit() and 0 <= int(d.strip()) <= 6
+ 86:         ]
+ 87:     except ValueError:
+ 88:         POLLING_ACTIVE_DAYS = [0, 1, 2, 3, 4]
+ 89: if not POLLING_ACTIVE_DAYS:
+ 90:     POLLING_ACTIVE_DAYS = [0, 1, 2, 3, 4]
+ 91: 
+ 92: EMAIL_POLLING_INTERVAL_SECONDS = int(
+ 93:     os.environ.get("EMAIL_POLLING_INTERVAL_SECONDS", REF_EMAIL_POLLING_INTERVAL_SECONDS)
+ 94: )
+ 95: POLLING_INACTIVE_CHECK_INTERVAL_SECONDS = int(
+ 96:     os.environ.get("POLLING_INACTIVE_CHECK_INTERVAL_SECONDS", 600)
+ 97: )
+ 98: 
+ 99: # Background tasks (disabled - Gmail Push is the only ingestion method)
+100: ENABLE_BACKGROUND_TASKS = env_bool("ENABLE_BACKGROUND_TASKS", False)
+101: BG_POLLER_LOCK_FILE = os.environ.get(
+102:     "BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock"
+103: )
+104: 
+105: ENABLE_SUBJECT_GROUP_DEDUP = env_bool("ENABLE_SUBJECT_GROUP_DEDUP", True)
+106: DISABLE_EMAIL_ID_DEDUP = env_bool("DISABLE_EMAIL_ID_DEDUP", False)
+107: ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = env_bool("ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS", False)
+108: 
+109: BASE_DIR = Path(__file__).resolve().parent.parent
+110: DEBUG_DIR = BASE_DIR / "debug"
+111: WEBHOOK_CONFIG_FILE = DEBUG_DIR / "webhook_config.json"
+112: WEBHOOK_LOGS_FILE = DEBUG_DIR / "webhook_logs.json"
+113: PROCESSING_PREFS_FILE = DEBUG_DIR / "processing_prefs.json"
+114: TIME_WINDOW_OVERRIDE_FILE = DEBUG_DIR / "webhook_time_window.json"
+115: POLLING_CONFIG_FILE = DEBUG_DIR / "polling_config.json"
+116: RUNTIME_FLAGS_FILE = DEBUG_DIR / "runtime_flags.json"
+117: SIGNAL_DIR = BASE_DIR / "signal_data_app_render"
+118: TRIGGER_SIGNAL_FILE = SIGNAL_DIR / "local_workflow_trigger_signal.json"
+119: _MAGIC_LINK_FILE_DEFAULT = DEBUG_DIR / "magic_links.json"
+120: MAGIC_LINK_TOKENS_FILE = Path(os.environ.get("MAGIC_LINK_TOKENS_FILE", str(_MAGIC_LINK_FILE_DEFAULT)))
+121: 
+122: R2_FETCH_ENABLED = env_bool("R2_FETCH_ENABLED", False)
+123: R2_FETCH_ENDPOINT = os.environ.get("R2_FETCH_ENDPOINT", "")
+124: R2_PUBLIC_BASE_URL = os.environ.get("R2_PUBLIC_BASE_URL", "")
+125: R2_BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "")
+126: WEBHOOK_LINKS_FILE = os.environ.get(
+127:     "WEBHOOK_LINKS_FILE",
+128:     str(BASE_DIR / "deployment" / "data" / "webhook_links.json")
+129: )
+130: R2_LINKS_MAX_ENTRIES = int(os.environ.get("R2_LINKS_MAX_ENTRIES", 1000))
+131: 
+132: # Magic link TTL (seconds)
+133: MAGIC_LINK_TTL_SECONDS = int(os.environ.get("MAGIC_LINK_TTL_SECONDS", 900))
+134: 
+135: WEBHOOK_LOGS_REDIS_KEY = "r:ss:webhook_logs:v1"
+136: 
+137: PROCESSED_EMAIL_IDS_REDIS_KEY = os.environ.get("PROCESSED_EMAIL_IDS_REDIS_KEY", "r:ss:processed_email_ids:v1")
+138: PROCESSED_SUBJECT_GROUPS_REDIS_KEY = os.environ.get(
+139:     "PROCESSED_SUBJECT_GROUPS_REDIS_KEY", "r:ss:processed_subject_groups:v1"
+140: )
+141: SUBJECT_GROUP_REDIS_PREFIX = os.environ.get("SUBJECT_GROUP_REDIS_PREFIX", "r:ss:subject_group_ttl:")
+142: 
+143: SUBJECT_GROUP_TTL_SECONDS = int(os.environ.get("SUBJECT_GROUP_TTL_SECONDS", 0))
+144: 
+145: 
+146: def log_configuration(logger):
+147:     logger.info(f"CFG WEBHOOK: Custom webhook URL configured to: {WEBHOOK_URL}")
+148:     logger.info(f"CFG WEBHOOK: SSL verification = {WEBHOOK_SSL_VERIFY}")
+149:     
+150:     # Gmail Push sender allowlist
+151:     if GMAIL_SENDER_ALLOWLIST:
+152:         logger.info(
+153:             f"CFG GMAIL: Allowing emails from {len(GMAIL_SENDER_ALLOWLIST)} senders: {GMAIL_SENDER_ALLOWLIST}"
+154:         )
+155:     else:
+156:         logger.debug("CFG GMAIL: GMAIL_SENDER_ALLOWLIST not set (all senders allowed)")
+157:     
+158:     # Legacy polling configuration (kept for tests only)
+159:     if SENDER_LIST_FOR_POLLING:
+160:         logger.info(
+161:             f"CFG POLL: Monitoring emails from {len(SENDER_LIST_FOR_POLLING)} senders: {SENDER_LIST_FOR_POLLING}"
+162:         )
+163:     else:
+164:         logger.debug("CFG POLL: SENDER_OF_INTEREST_FOR_POLLING not set (legacy polling disabled)")
+165:     
+166:     if not EXPECTED_API_TOKEN:
+167:         logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
+168:     else:
+169:         logger.info("CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured.")
+170:     
+171:     logger.info(f"CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP={ENABLE_SUBJECT_GROUP_DEDUP}")
+172:     logger.info(f"CFG DEDUP: DISABLE_EMAIL_ID_DEDUP={DISABLE_EMAIL_ID_DEDUP}")
+173:     
+174:     logger.info(f"CFG BG: ENABLE_BACKGROUND_TASKS={ENABLE_BACKGROUND_TASKS}")
+175:     logger.info(f"CFG BG: BG_POLLER_LOCK_FILE={BG_POLLER_LOCK_FILE}")
+````
+
+## File: static/components/TabManager.js
+````javascript
+  1: export class TabManager {
+  2:     constructor() {
+  3:         this.tabs = [];
+  4:         this.activeTab = null;
+  5:         this.tabButtons = [];
+  6:         this.tabContents = [];
+  7:     }
+  8: 
+  9:     /**
+ 10:      * Initialise le système d'onglets
+ 11:      */
+ 12:     init() {
+ 13:         this.findTabElements();
+ 14:         this.bindEvents();
+ 15:         this.showInitialTab();
+ 16:     }
+ 17: 
+ 18:     /**
+ 19:      * Trouve tous les éléments d'onglets dans la page
+ 20:      */
+ 21:     findTabElements() {
+ 22:         this.tabButtons = document.querySelectorAll('.tab-btn');
+ 23:         this.tabContents = document.querySelectorAll('.section-panel');
+ 24:         
+ 25:         this.tabButtons.forEach((button, index) => {
+ 26:             const targetId = button.dataset.target;
+ 27:             const targetContent = document.querySelector(targetId);
+ 28:             
+ 29:             if (targetContent) {
+ 30:                 this.tabs.push({
+ 31:                     button: button,
+ 32:                     content: targetContent,
+ 33:                     id: targetId.replace('#', ''),
+ 34:                     index: index
+ 35:                 });
+ 36:             }
+ 37:         });
+ 38:     }
+ 39: 
+ 40:     /**
+ 41:      * Lie les événements aux boutons d'onglets
+ 42:      */
+ 43:     bindEvents() {
+ 44:         this.tabButtons.forEach(button => {
+ 45:             button.addEventListener('click', (e) => {
+ 46:                 e.preventDefault();
+ 47:                 const targetId = button.dataset.target;
+ 48:                 this.showTab(targetId);
+ 49:             });
+ 50:         });
+ 51:     }
+ 52: 
+ 53:     /**
+ 54:      * Affiche l'onglet initial (premier onglet ou celui marqué comme actif)
+ 55:      */
+ 56:     showInitialTab() {
+ 57:         // Chercher d'abord un onglet marqué comme actif
+ 58:         const activeButton = document.querySelector('.tab-btn.active');
+ 59:         if (activeButton) {
+ 60:             const targetId = activeButton.dataset.target;
+ 61:             this.showTab(targetId);
+ 62:             return;
+ 63:         }
+ 64:         
+ 65:         // Sinon, afficher le premier onglet
+ 66:         if (this.tabs.length > 0) {
+ 67:             const firstTab = this.tabs[0];
+ 68:             this.showTab(`#${firstTab.id}`);
+ 69:         }
+ 70:     }
+ 71: 
+ 72:     /**
+ 73:      * Affiche un onglet spécifique avec lazy loading
+ 74:      * @param {string} targetId - ID de la cible (ex: "#sec-overview")
+ 75:      */
+ 76:     showTab(targetId) {
+ 77:         // Masquer tous les contenus d'onglets
+ 78:         this.tabContents.forEach(content => {
+ 79:             content.classList.remove('active');
+ 80:             content.style.display = 'none';
+ 81:         });
+ 82:         
+ 83:         // Désactiver tous les boutons
+ 84:         this.tabButtons.forEach(button => {
+ 85:             button.classList.remove('active');
+ 86:             button.setAttribute('aria-selected', 'false');
+ 87:         });
+ 88:         
+ 89:         // Afficher le contenu cible avec animation
+ 90:         const targetContent = document.querySelector(targetId);
+ 91:         if (targetContent) {
+ 92:             targetContent.classList.add('active');
+ 93:             targetContent.style.display = 'block';
+ 94:             
+ 95:             // Lazy loading: charger les données de l'onglet seulement lors du premier affichage
+ 96:             this.lazyLoadTabContent(targetId.replace('#', ''));
+ 97:         }
+ 98:         
+ 99:         // Activer le bouton cible
+100:         const targetButton = document.querySelector(`[data-target="${targetId}"]`);
+101:         if (targetButton) {
+102:             targetButton.classList.add('active');
+103:             targetButton.setAttribute('aria-selected', 'true');
+104:         }
+105:         
+106:         // Mettre à jour l'onglet actif
+107:         this.activeTab = targetId.replace('#', '');
+108:         
+109:         // Déclencher un événement personnalisé pour le changement d'onglet
+110:         this.dispatchTabChange(targetId);
+111:     }
+112: 
+113:     /**
+114:      * Déclenche un événement de changement d'onglet
+115:      * @param {string} targetId - ID de l'onglet affiché
+116:      */
+117:     dispatchTabChange(targetId) {
+118:         const event = new CustomEvent('tabchange', {
+119:             detail: {
+120:                 tabId: targetId.replace('#', ''),
+121:                 targetId: targetId
+122:             }
+123:         });
+124:         document.dispatchEvent(event);
+125:     }
+126: 
+127:     /**
+128:      * Signale une erreur lors du chargement d'un onglet via un événement personnalisé
+129:      * @param {string} tabId
+130:      * @param {Error} error
+131:      */
+132:     dispatchTabLoadError(tabId, error) {
+133:         document.dispatchEvent(new CustomEvent('tabloaderror', {
+134:             detail: {
+135:                 tabId,
+136:                 error
+137:             }
+138:         }));
+139:     }
+140: 
+141:     /**
+142:      * Obtient l'onglet actuellement actif
+143:      * @returns {string|null} ID de l'onglet actif
+144:      */
+145:     getActiveTab() {
+146:         return this.activeTab;
+147:     }
+148: 
+149:     /**
+150:      * Vérifie si un onglet spécifique est actif
+151:      * @param {string} tabId - ID de l'onglet à vérifier
+152:      * @returns {boolean} True si l'onglet est actif
+153:      */
+154:     isTabActive(tabId) {
+155:         return this.activeTab === tabId;
+156:     }
+157: 
+158:     /**
+159:      * Ajoute des attributs ARIA pour l'accessibilité
+160:      */
+161:     enhanceAccessibility() {
+162:         this.tabButtons.forEach((button, index) => {
+163:             button.setAttribute('role', 'tab');
+164:             button.setAttribute('aria-controls', button.dataset.target.replace('#', ''));
+165:             button.setAttribute('aria-selected', button.classList.contains('active'));
+166:             button.setAttribute('tabindex', button.classList.contains('active') ? '0' : '-1');
+167:         });
+168:         
+169:         this.tabContents.forEach(content => {
+170:             const contentId = content.id || content.getAttribute('id');
+171:             if (contentId) {
+172:                 content.setAttribute('role', 'tabpanel');
+173:                 content.setAttribute('aria-labelledby', contentId.replace('sec-', 'tab-'));
+174:             }
+175:         });
+176:         
+177:         // Gestion du clavier
+178:         this.bindKeyboardEvents();
+179:     }
+180: 
+181:     /**
+182:      * Lie les événements clavier pour la navigation au clavier
+183:      */
+184:     bindKeyboardEvents() {
+185:         this.tabButtons.forEach((button, index) => {
+186:             button.addEventListener('keydown', (e) => {
+187:                 let targetIndex = index;
+188:                 
+189:                 switch (e.key) {
+190:                     case 'ArrowLeft':
+191:                     case 'ArrowUp':
+192:                         e.preventDefault();
+193:                         targetIndex = index > 0 ? index - 1 : this.tabButtons.length - 1;
+194:                         break;
+195:                     case 'ArrowRight':
+196:                     case 'ArrowDown':
+197:                         e.preventDefault();
+198:                         targetIndex = index < this.tabButtons.length - 1 ? index + 1 : 0;
+199:                         break;
+200:                     case 'Home':
+201:                         e.preventDefault();
+202:                         targetIndex = 0;
+203:                         break;
+204:                     case 'End':
+205:                         e.preventDefault();
+206:                         targetIndex = this.tabButtons.length - 1;
+207:                         break;
+208:                     default:
+209:                         return;
+210:                 }
+211:                 
+212:                 const targetButton = this.tabButtons[targetIndex];
+213:                 if (targetButton) {
+214:                     targetButton.focus();
+215:                     const targetId = targetButton.dataset.target;
+216:                     this.showTab(targetId);
+217:                 }
+218:             });
+219:         });
+220:     }
+221: 
+222:     /**
+223:      * Détruit le gestionnaire d'onglets et nettoie les événements
+224:      */
+225:     destroy() {
+226:         this.tabButtons.forEach(button => {
+227:             button.removeEventListener('click', this.handleTabClick);
+228:             button.removeEventListener('keydown', this.handleKeyDown);
+229:         });
+230:         
+231:         this.tabs = [];
+232:         this.activeTab = null;
+233:         this.tabButtons = [];
+234:         this.tabContents = [];
+235:         this.loadedTabs = null;
+236:     }
+237: 
+238:     /**
+239:      * Charge les données d'un onglet de manière paresseuse
+240:      * @param {string} tabId - ID de l'onglet à charger
+241:      */
+242:     async lazyLoadTabContent(tabId) {
+243:         // Vérifier si l'onglet a déjà été chargé
+244:         if (this.isTabLoaded(tabId)) {
+245:             return;
+246:         }
+247:         
+248:         try {
+249:             switch (tabId) {
+250:                 case 'sec-overview':
+251:                     // Les logs sont déjà chargés via LogService
+252:                     break;
+253:                 case 'sec-webhooks':
+254:                     // La configuration webhooks est chargée au démarrage
+255:                     break;
+256:                 case 'sec-preferences':
+257:                     // Charger les préférences de traitement si nécessaire
+258:                     await this.loadProcessingPreferences();
+259:                     break;
+260:                 case 'sec-tools':
+261:                     // Les outils n'ont pas besoin de chargement supplémentaire
+262:                     break;
+263:             }
+264:             
+265:             // Marquer l'onglet comme chargé
+266:             this.markTabAsLoaded(tabId);
+267:         } catch (error) {
+268:             this.dispatchTabLoadError(tabId, error);
+269:         }
+270:     }
+271: 
+272:     /**
+273:      * Vérifie si un onglet a déjà été chargé
+274:      * @param {string} tabId - ID de l'onglet
+275:      * @returns {boolean} True si déjà chargé
+276:      */
+277:     isTabLoaded(tabId) {
+278:         return this.loadedTabs && this.loadedTabs.has(tabId);
+279:     }
+280: 
+281:     /**
+282:      * Marque un onglet comme chargé
+283:      * @param {string} tabId - ID de l'onglet
+284:      */
+285:     markTabAsLoaded(tabId) {
+286:         if (!this.loadedTabs) {
+287:             this.loadedTabs = new Set();
+288:         }
+289:         this.loadedTabs.add(tabId);
+290:     }
+291: 
+292:     /**
+293:      * Charge les préférences email (lazy loading)
+294:      */
+295:     async loadEmailPreferences() {
+296:         // Polling configuration retired - no-op
+297:     }
+298: 
+299:     /**
+300:      * Charge les préférences de traitement (lazy loading)
+301:      */
+302:     async loadProcessingPreferences() {
+303:         // Cette fonction sera implémentée dans dashboard.js
+304:         if (typeof window.loadProcessingPrefsFromServer === 'function') {
+305:             await window.loadProcessingPrefsFromServer();
+306:         }
+307:     }
+308: }
+````
+
+## File: routes/api_routing_rules.py
+````python
+  1: from __future__ import annotations
+  2: 
+  3: from pathlib import Path
+  4: import re
+  5: 
+  6: from flask import Blueprint, jsonify, request
+  7: from flask_login import login_required
+  8: 
+  9: from config import app_config_store as _store
+ 10: from services.routing_rules_service import RoutingRulesService
+ 11: 
+ 12: bp = Blueprint("api_routing_rules", __name__, url_prefix="/api/routing_rules")
+ 13: 
+ 14: ROUTING_RULES_FILE = Path(__file__).resolve().parents[1] / "debug" / "routing_rules.json"
+ 15: WEBHOOK_CONFIG_FILE = Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
+ 16: 
+ 17: try:
+ 18:     _routing_rules_service = RoutingRulesService.get_instance()
+ 19: except ValueError:
+ 20:     _routing_rules_service = RoutingRulesService.get_instance(
+ 21:         file_path=ROUTING_RULES_FILE,
+ 22:         external_store=_store,
+ 23:     )
+ 24: 
+ 25: 
+ 26: def _load_routing_rules() -> dict:
+ 27:     """Charge les règles persistées (cache rechargé)."""
+ 28:     _routing_rules_service.reload()
+ 29:     return _routing_rules_service.get_payload()
+ 30: 
+ 31: 
+ 32: def _resolve_backend_webhook_url() -> str | None:
+ 33:     try:
+ 34:         persisted = _store.get_config_json("webhook_config", file_fallback=WEBHOOK_CONFIG_FILE) or {}
+ 35:     except Exception:
+ 36:         persisted = {}
+ 37:     if isinstance(persisted, dict):
+ 38:         webhook_url = persisted.get("webhook_url")
+ 39:         if isinstance(webhook_url, str) and webhook_url.strip():
+ 40:             return webhook_url.strip()
+ 41: 
+ 42:     try:
+ 43:         from config import settings as _settings
+ 44: 
+ 45:         fallback_url = getattr(_settings, "WEBHOOK_URL", "")
+ 46:         if isinstance(fallback_url, str) and fallback_url.strip():
+ 47:             return fallback_url.strip()
+ 48:     except Exception:
+ 49:         return None
+ 50:     return None
+ 51: 
+ 52: 
+ 53: def _resolve_sender_allowlist_pattern() -> str | None:
+ 54:     try:
+ 55:         from config import settings as _settings
+ 56: 
+ 57:         senders = getattr(_settings, "SENDER_LIST_FOR_POLLING", [])
+ 58:     except Exception:
+ 59:         senders = []
+ 60: 
+ 61:     cleaned = []
+ 62:     for sender in senders or []:
+ 63:         if isinstance(sender, str) and sender.strip():
+ 64:             cleaned.append(re.escape(sender.strip().lower()))
+ 65: 
+ 66:     if not cleaned:
+ 67:         return None
+ 68:     return rf"^({'|'.join(cleaned)})$"
+ 69: 
+ 70: 
+ 71: def _build_backend_fallback_rules() -> list[dict] | None:
+ 72:     webhook_url = _resolve_backend_webhook_url()
+ 73:     if not webhook_url:
+ 74:         return None
+ 75: 
+ 76:     sender_pattern = _resolve_sender_allowlist_pattern()
+ 77:     sender_condition = None
+ 78:     if sender_pattern:
+ 79:         sender_condition = {
+ 80:             "field": "sender",
+ 81:             "operator": "regex",
+ 82:             "value": sender_pattern,
+ 83:             "case_sensitive": False,
+ 84:         }
+ 85: 
+ 86:     recadrage_conditions = []
+ 87:     if sender_condition:
+ 88:         recadrage_conditions.append(dict(sender_condition))
+ 89:     recadrage_conditions.extend(
+ 90:         [
+ 91:             {
+ 92:                 "field": "subject",
+ 93:                 "operator": "regex",
+ 94:                 "value": r"m[ée]dia solution.*missions recadrage.*\blot\b",
+ 95:                 "case_sensitive": False,
+ 96:             },
+ 97:             {
+ 98:                 "field": "body",
+ 99:                 "operator": "regex",
+100:                 "value": r"(dropbox\.com/scl/fo|fromsmash\.com/|swisstransfer\.com/d/)",
+101:                 "case_sensitive": False,
+102:             },
+103:         ]
+104:     )
+105: 
+106:     desabo_subject_conditions = []
+107:     if sender_condition:
+108:         desabo_subject_conditions.append(dict(sender_condition))
+109:     desabo_subject_conditions.extend(
+110:         [
+111:             {
+112:                 "field": "subject",
+113:                 "operator": "regex",
+114:                 "value": r"d[ée]sabonn",
+115:                 "case_sensitive": False,
+116:             },
+117:             {
+118:                 "field": "body",
+119:                 "operator": "contains",
+120:                 "value": "journee",
+121:                 "case_sensitive": False,
+122:             },
+123:             {
+124:                 "field": "body",
+125:                 "operator": "contains",
+126:                 "value": "tarifs habituels",
+127:                 "case_sensitive": False,
+128:             },
+129:         ]
+130:     )
+131: 
+132:     desabo_body_conditions = []
+133:     if sender_condition:
+134:         desabo_body_conditions.append(dict(sender_condition))
+135:     desabo_body_conditions.extend(
+136:         [
+137:             {
+138:                 "field": "body",
+139:                 "operator": "regex",
+140:                 "value": r"(d[ée]sabonn|dropbox\.com/request/)",
+141:                 "case_sensitive": False,
+142:             },
+143:             {
+144:                 "field": "body",
+145:                 "operator": "contains",
+146:                 "value": "journee",
+147:                 "case_sensitive": False,
+148:             },
+149:             {
+150:                 "field": "body",
+151:                 "operator": "contains",
+152:                 "value": "tarifs habituels",
+153:                 "case_sensitive": False,
+154:             },
+155:         ]
+156:     )
+157: 
+158:     # Pourquoi : exposer la logique Recadrage/Désabo existante en règles UI modifiables.
+159:     return [
+160:         {
+161:             "id": "backend-recadrage",
+162:             "name": "Confirmation Mission Recadrage (backend)",
+163:             "conditions": recadrage_conditions,
+164:             "actions": {
+165:                 "webhook_url": webhook_url,
+166:                 "priority": "normal",
+167:                 "stop_processing": False,
+168:             },
+169:         },
+170:         {
+171:             "id": "backend-desabo-subject",
+172:             "name": "Confirmation Disponibilité Mission Recadrage (backend - sujet)",
+173:             "conditions": desabo_subject_conditions,
+174:             "actions": {
+175:                 "webhook_url": webhook_url,
+176:                 "priority": "normal",
+177:                 "stop_processing": False,
+178:             },
+179:         },
+180:         {
+181:             "id": "backend-desabo-body",
+182:             "name": "Confirmation Disponibilité Mission Recadrage (backend - corps)",
+183:             "conditions": desabo_body_conditions,
+184:             "actions": {
+185:                 "webhook_url": webhook_url,
+186:                 "priority": "normal",
+187:                 "stop_processing": False,
+188:             },
+189:         },
+190:     ]
+191: 
+192: 
+193: def _is_falsey_flag(value: object) -> bool:
+194:     if value is None:
+195:         return True
+196:     if isinstance(value, bool):
+197:         return value is False
+198:     if isinstance(value, (int, float)):
+199:         return value == 0
+200:     if isinstance(value, str):
+201:         return value.strip().lower() in {"", "false", "0", "no", "off"}
+202:     return False
+203: 
+204: 
+205: def _is_legacy_backend_default_rule(rule: dict) -> bool:
+206:     if not isinstance(rule, dict):
+207:         return False
+208:     rule_id = str(rule.get("id") or "").strip()
+209:     rule_name = str(rule.get("name") or "").strip()
+210:     is_id_match = rule_id == "backend-default"
+211:     normalized_name = rule_name.strip().lower()
+212:     is_name_match = normalized_name == "webhook par défaut (backend)" or normalized_name == "webhook par defaut (backend)"
+213:     if not is_id_match and not is_name_match:
+214:         return False
+215:     if is_id_match:
+216:         return True
+217:     if is_name_match:
+218:         return True
+219:     conditions = rule.get("conditions")
+220:     if not isinstance(conditions, list) or len(conditions) != 1:
+221:         return False
+222:     condition = conditions[0]
+223:     if not isinstance(condition, dict):
+224:         return False
+225:     wildcard_values = {".*", "^.*$", "(?s).*"}
+226:     value = str(condition.get("value") or "").strip()
+227:     return (
+228:         str(condition.get("field") or "").strip().lower() == "subject"
+229:         and str(condition.get("operator") or "").strip().lower() == "regex"
+230:         and value in wildcard_values
+231:         and _is_falsey_flag(condition.get("case_sensitive"))
+232:     )
+233: 
+234: 
+235: @bp.route("", methods=["GET"])
+236: @login_required
+237: def get_routing_rules():
+238:     try:
+239:         payload = _load_routing_rules()
+240:         rules = payload.get("rules") if isinstance(payload, dict) else None
+241:         response_config = payload if isinstance(payload, dict) else {}
+242:         if isinstance(rules, list) and len(rules) == 1 and _is_legacy_backend_default_rule(rules[0]):
+243:             response_config = dict(response_config)
+244:             response_config["rules"] = []
+245:             rules = []
+246:         fallback_rules = None
+247:         if not isinstance(rules, list) or not rules:
+248:             fallback_rules = _build_backend_fallback_rules()
+249:         response_payload = {"success": True, "config": response_config}
+250:         if fallback_rules:
+251:             response_payload["fallback_rules"] = fallback_rules
+252:             response_payload["fallback_rule"] = fallback_rules[0]
+253:         return jsonify(response_payload), 200
+254:     except Exception as exc:
+255:         return jsonify({"success": False, "message": str(exc)}), 500
+256: 
+257: 
+258: @bp.route("", methods=["POST"])
+259: @login_required
+260: def update_routing_rules():
+261:     try:
+262:         payload = request.get_json(silent=True) or {}
+263:         rules_raw = payload.get("rules")
+264:         ok, msg, updated = _routing_rules_service.update_rules(rules_raw)  # type: ignore[arg-type]
+265:         if not ok:
+266:             return jsonify({"success": False, "message": msg}), 400
+267:         return jsonify({"success": True, "message": msg, "config": updated}), 200
+268:     except Exception as exc:
+269:         return jsonify({"success": False, "message": str(exc)}), 500
 ````
 
 ## File: services/magic_link_service.py
@@ -17568,29 +16618,29 @@ requirements.txt
 ````python
   1: redis_client = None
   2: 
-  3: from background.lock import acquire_singleton_lock
-  4: from flask import Flask, jsonify, request
-  5: from flask_login import login_required
-  6: from flask_cors import CORS
-  7: import os
-  8: import threading
-  9: import time
- 10: from pathlib import Path
- 11: import json
- 12: import logging
- 13: from datetime import datetime, timedelta, timezone
- 14: import urllib3
- 15: import signal
- 16: from collections import deque
- 17: from utils.time_helpers import parse_time_hhmm as _parse_time_hhmm
- 18: from utils.validators import normalize_make_webhook_url as _normalize_make_webhook_url
- 19: 
- 20: from config import settings
- 21: from config import polling_config
- 22: from config.polling_config import PollingConfigService
- 23: from config import webhook_time_window
- 24: from config.app_config_store import get_config_json as _config_get
- 25: from config.app_config_store import set_config_json as _config_set
+  3: from flask import Flask, jsonify, request
+  4: from flask_login import login_required
+  5: from flask_cors import CORS
+  6: import os
+  7: import threading
+  8: import time
+  9: from pathlib import Path
+ 10: import json
+ 11: import logging
+ 12: from datetime import datetime, timedelta, timezone
+ 13: import urllib3
+ 14: import signal
+ 15: from collections import deque
+ 16: from utils.time_helpers import parse_time_hhmm as _parse_time_hhmm
+ 17: from utils.validators import normalize_make_webhook_url as _normalize_make_webhook_url
+ 18: 
+ 19: from config import settings
+ 20: from config import webhook_time_window
+ 21: from config.app_config_store import get_config_json as _config_get
+ 22: from config.app_config_store import set_config_json as _config_set
+ 23: 
+ 24: # Expose Gmail Push allowlist to ingress endpoint
+ 25: GMAIL_SENDER_ALLOWLIST = settings.GMAIL_SENDER_ALLOWLIST
  26: 
  27: from services import (
  28:     ConfigService,
@@ -17604,746 +16654,488 @@ requirements.txt
  36: from auth import helpers as auth_helpers
  37: from auth.helpers import testapi_authorized as _testapi_authorized
  38: 
- 39: from email_processing import imap_client as email_imap_client
- 40: from email_processing import pattern_matching as email_pattern_matching
- 41: from email_processing import webhook_sender as email_webhook_sender
- 42: from email_processing import orchestrator as email_orchestrator
- 43: from email_processing import link_extraction as email_link_extraction
- 44: from email_processing import payloads as email_payloads
- 45: from app_logging.webhook_logger import (
- 46:     append_webhook_log as _append_webhook_log_helper,
- 47:     fetch_webhook_logs as _fetch_webhook_logs_helper,
- 48: )
- 49: from utils.rate_limit import (
- 50:     prune_and_allow_send as _rate_prune_and_allow,
- 51:     record_send_event as _rate_record_event,
- 52: )
- 53: from preferences import processing_prefs as _processing_prefs
- 54: from deduplication import redis_client as _dedup
- 55: from deduplication.subject_group import generate_subject_group_id as _gen_subject_group_id
- 56: from routes import (
- 57:     health_bp,
- 58:     api_webhooks_bp,
- 59:     api_polling_bp,
- 60:     api_processing_bp,
- 61:     api_processing_legacy_bp,
- 62:     api_test_bp,
- 63:     dashboard_bp,
- 64:     api_logs_bp,
- 65:     api_admin_bp,
- 66:     api_utility_bp,
- 67:     api_config_bp,
- 68:     api_make_bp,
- 69:     api_auth_bp,
- 70:     api_routing_rules_bp,
- 71:     api_ingress_bp,
- 72: )
- 73: from routes.api_processing import DEFAULT_PROCESSING_PREFS as _DEFAULT_PROCESSING_PREFS
- 74: DEFAULT_PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS
- 75: from background.polling_thread import background_email_poller_loop
- 76: 
- 77: 
- 78: def append_webhook_log(webhook_id: str, webhook_url: str, webhook_status_code: int, webhook_response: str):
- 79:     """Append a webhook log entry to the webhook log file."""
- 80:     return _append_webhook_log_helper(webhook_id, webhook_url, webhook_status_code, webhook_response)
- 81: 
- 82: try:
- 83:     from zoneinfo import ZoneInfo
- 84: except ImportError:
- 85:     ZoneInfo = None
+ 39: from email_processing import pattern_matching as email_pattern_matching
+ 40: from email_processing import webhook_sender as email_webhook_sender
+ 41: from email_processing import orchestrator as email_orchestrator
+ 42: from email_processing import link_extraction as email_link_extraction
+ 43: from email_processing import payloads as email_payloads
+ 44: from app_logging.webhook_logger import (
+ 45:     append_webhook_log as _append_webhook_log_helper,
+ 46:     fetch_webhook_logs as _fetch_webhook_logs_helper,
+ 47: )
+ 48: from utils.rate_limit import (
+ 49:     prune_and_allow_send as _rate_prune_and_allow,
+ 50:     record_send_event as _rate_record_event,
+ 51: )
+ 52: from preferences import processing_prefs as _processing_prefs
+ 53: from deduplication import redis_client as _dedup
+ 54: from deduplication.subject_group import generate_subject_group_id as _gen_subject_group_id
+ 55: from routes import (
+ 56:     health_bp,
+ 57:     api_webhooks_bp,
+ 58:     api_processing_bp,
+ 59:     api_processing_legacy_bp,
+ 60:     api_test_bp,
+ 61:     dashboard_bp,
+ 62:     api_logs_bp,
+ 63:     api_admin_bp,
+ 64:     api_utility_bp,
+ 65:     api_config_bp,
+ 66:     api_make_bp,
+ 67:     api_auth_bp,
+ 68:     api_routing_rules_bp,
+ 69:     api_ingress_bp,
+ 70: )
+ 71: from routes.api_processing import DEFAULT_PROCESSING_PREFS as _DEFAULT_PROCESSING_PREFS
+ 72: DEFAULT_PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS
+ 73: 
+ 74: 
+ 75: def append_webhook_log(webhook_id: str, webhook_url: str, webhook_status_code: int, webhook_response: str):
+ 76:     """Append a webhook log entry to the webhook log file."""
+ 77:     return _append_webhook_log_helper(webhook_id, webhook_url, webhook_status_code, webhook_response)
+ 78: 
+ 79: try:
+ 80:     from zoneinfo import ZoneInfo
+ 81: except ImportError:
+ 82:     ZoneInfo = None
+ 83: 
+ 84: try:
+ 85:     import redis
  86: 
- 87: try:
- 88:     import redis
- 89: 
- 90:     REDIS_AVAILABLE = True
- 91: except ImportError:
- 92:     REDIS_AVAILABLE = False
- 93: 
- 94: 
- 95: def _init_redis_client(logger: logging.Logger | None = None):
- 96:     if not REDIS_AVAILABLE:
+ 87:     REDIS_AVAILABLE = True
+ 88: except ImportError:
+ 89:     REDIS_AVAILABLE = False
+ 90: 
+ 91: 
+ 92: def _init_redis_client(logger: logging.Logger | None = None):
+ 93:     if not REDIS_AVAILABLE:
+ 94:         return None
+ 95:     redis_url = os.environ.get("REDIS_URL", "").strip()
+ 96:     if not redis_url:
  97:         return None
- 98:     redis_url = os.environ.get("REDIS_URL", "").strip()
- 99:     if not redis_url:
-100:         return None
-101:     try:
-102:         import redis
-103: 
-104:         return redis.Redis.from_url(redis_url, decode_responses=True)
-105:     except Exception as e:
-106:         if logger:
-107:             logger.warning("CFG REDIS: failed to initialize redis client: %s", e)
-108:         return None
-109: 
+ 98:     try:
+ 99:         import redis
+100: 
+101:         return redis.Redis.from_url(redis_url, decode_responses=True)
+102:     except Exception as e:
+103:         if logger:
+104:             logger.warning("CFG REDIS: failed to initialize redis client: %s", e)
+105:         return None
+106: 
+107: 
+108: app = Flask(__name__, template_folder='.', static_folder='static')
+109: app.secret_key = settings.FLASK_SECRET_KEY
 110: 
-111: app = Flask(__name__, template_folder='.', static_folder='static')
-112: app.secret_key = settings.FLASK_SECRET_KEY
-113: 
-114: _config_service = ConfigService()
-115: 
-116: _runtime_flags_service = RuntimeFlagsService.get_instance(...)
-117: 
-118: _webhook_service = WebhookConfigService.get_instance(...)
+111: _config_service = ConfigService()
+112: 
+113: _runtime_flags_service = None
+114: 
+115: _webhook_service = None
+116: 
+117: _auth_service = AuthService(_config_service)
+118: 
 119: 
-120: _auth_service = AuthService(_config_service)
-121: 
-122: 
-123: app.register_blueprint(health_bp)
-124: app.register_blueprint(api_webhooks_bp)
-125: app.register_blueprint(api_polling_bp)
-126: app.register_blueprint(api_processing_bp)
-127: app.register_blueprint(api_processing_legacy_bp)
-128: app.register_blueprint(api_test_bp)
-129: app.register_blueprint(dashboard_bp)
-130: app.register_blueprint(api_logs_bp)
-131: app.register_blueprint(api_admin_bp)
-132: app.register_blueprint(api_utility_bp)
-133: app.register_blueprint(api_config_bp)
-134: app.register_blueprint(api_make_bp)
-135: app.register_blueprint(api_auth_bp)
-136: app.register_blueprint(api_routing_rules_bp)
-137: app.register_blueprint(api_ingress_bp)
-138: 
-139: _cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
-140: if _cors_origins:
-141:     CORS(
-142:         app,
-143:         resources={
-144:             r"/api/test/*": {
-145:                 "origins": _cors_origins,
-146:                 "supports_credentials": False,
-147:                 "methods": ["GET", "POST", "OPTIONS"],
-148:                 "allow_headers": ["Content-Type", "X-API-Key"],
-149:                 "max_age": 600,
-150:             }
-151:         },
-152:     )
+120: app.register_blueprint(health_bp)
+121: app.register_blueprint(api_webhooks_bp)
+122: app.register_blueprint(api_processing_bp)
+123: app.register_blueprint(api_processing_legacy_bp)
+124: app.register_blueprint(api_test_bp)
+125: app.register_blueprint(dashboard_bp)
+126: app.register_blueprint(api_logs_bp)
+127: app.register_blueprint(api_admin_bp)
+128: app.register_blueprint(api_utility_bp)
+129: app.register_blueprint(api_config_bp)
+130: app.register_blueprint(api_make_bp)
+131: app.register_blueprint(api_auth_bp)
+132: app.register_blueprint(api_routing_rules_bp)
+133: app.register_blueprint(api_ingress_bp)
+134: 
+135: _cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+136: if _cors_origins:
+137:     CORS(
+138:         app,
+139:         resources={
+140:             r"/api/test/*": {
+141:                 "origins": _cors_origins,
+142:                 "supports_credentials": False,
+143:                 "methods": ["GET", "POST", "OPTIONS"],
+144:                 "allow_headers": ["Content-Type", "X-API-Key"],
+145:                 "max_age": 600,
+146:             }
+147:         },
+148:     )
+149: 
+150: login_manager = _auth_service.init_flask_login(app, login_view='dashboard.login')
+151: 
+152: auth_user.init_login_manager(app, login_view='dashboard.login')
 153: 
-154: login_manager = _auth_service.init_flask_login(app, login_view='dashboard.login')
-155: 
-156: auth_user.init_login_manager(app, login_view='dashboard.login')
+154: WEBHOOK_URL = settings.WEBHOOK_URL
+155: MAKECOM_API_KEY = settings.MAKECOM_API_KEY
+156: WEBHOOK_SSL_VERIFY = settings.WEBHOOK_SSL_VERIFY
 157: 
-158: WEBHOOK_URL = settings.WEBHOOK_URL
-159: MAKECOM_API_KEY = settings.MAKECOM_API_KEY
-160: WEBHOOK_SSL_VERIFY = settings.WEBHOOK_SSL_VERIFY
-161: 
-162: EMAIL_ADDRESS = settings.EMAIL_ADDRESS
-163: EMAIL_PASSWORD = settings.EMAIL_PASSWORD
-164: IMAP_SERVER = settings.IMAP_SERVER
-165: IMAP_PORT = settings.IMAP_PORT
-166: IMAP_USE_SSL = settings.IMAP_USE_SSL
-167: 
-168: EXPECTED_API_TOKEN = settings.EXPECTED_API_TOKEN
-169: 
-170: ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
-171: SENDER_LIST_FOR_POLLING = settings.SENDER_LIST_FOR_POLLING
-172: 
-173: # Runtime flags and files
-174: DISABLE_EMAIL_ID_DEDUP = settings.DISABLE_EMAIL_ID_DEDUP
-175: ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS
-176: POLLING_CONFIG_FILE = settings.POLLING_CONFIG_FILE
-177: TRIGGER_SIGNAL_FILE = settings.TRIGGER_SIGNAL_FILE
-178: RUNTIME_FLAGS_FILE = settings.RUNTIME_FLAGS_FILE
+158: EXPECTED_API_TOKEN = settings.EXPECTED_API_TOKEN
+159: 
+160: ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
+161: SENDER_LIST_FOR_POLLING = settings.SENDER_LIST_FOR_POLLING
+162: 
+163: # Runtime flags and files
+164: DISABLE_EMAIL_ID_DEDUP = settings.DISABLE_EMAIL_ID_DEDUP
+165: ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS
+166: TRIGGER_SIGNAL_FILE = settings.TRIGGER_SIGNAL_FILE
+167: RUNTIME_FLAGS_FILE = settings.RUNTIME_FLAGS_FILE
+168: 
+169: # Configuration du logging
+170: log_level_str = os.environ.get('FLASK_LOG_LEVEL', 'INFO').upper()
+171: log_level = getattr(logging, log_level_str, logging.INFO)
+172: logging.basicConfig(level=log_level,
+173:                     format='%(asctime)s - %(levelname)s - %(name)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s')
+174: if not REDIS_AVAILABLE:
+175:     logging.warning(
+176:         "CFG REDIS (module level): 'redis' Python library not installed. Redis-based features will be disabled or use fallbacks.")
+177: 
+178: redis_client = _init_redis_client(app.logger)
 179: 
-180: # Configuration du logging
-181: log_level_str = os.environ.get('FLASK_LOG_LEVEL', 'INFO').upper()
-182: log_level = getattr(logging, log_level_str, logging.INFO)
-183: logging.basicConfig(level=log_level,
-184:                     format='%(asctime)s - %(levelname)s - %(name)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s')
-185: if not REDIS_AVAILABLE:
-186:     logging.warning(
-187:         "CFG REDIS (module level): 'redis' Python library not installed. Redis-based features will be disabled or use fallbacks.")
-188: 
-189: redis_client = _init_redis_client(app.logger)
-190: 
-191: 
-192: # Diagnostics (process start + heartbeat)
-193: try:
-194:     from datetime import datetime, timezone as _tz
-195:     PROCESS_START_TIME = datetime.now(_tz.utc)
-196: except Exception:
-197:     PROCESS_START_TIME = None
-198: 
-199: def _heartbeat_loop():
-200:     interval = 60
-201:     while True:
-202:         try:
-203:             bg = globals().get("_bg_email_poller_thread")
-204:             mk = globals().get("_make_watcher_thread")
-205:             bg_alive = bool(bg and bg.is_alive())
-206:             mk_alive = bool(mk and mk.is_alive())
-207:             app.logger.info("HEARTBEAT: alive (bg_poller=%s, make_watcher=%s)", bg_alive, mk_alive)
-208:         except Exception:
-209:             # Ignored intentionally: heartbeat logging must never crash the loop
-210:             pass
-211:         time.sleep(interval)
-212: 
-213: try:
-214:     disable_bg_hb = os.environ.get("DISABLE_BACKGROUND_TASKS", "").strip().lower() in ["1", "true", "yes"]
-215:     if getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and not disable_bg_hb:
-216:         _heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
-217:         _heartbeat_thread.start()
-218: except Exception:
-219:     pass
+180: 
+181: # Diagnostics (process start + heartbeat)
+182: try:
+183:     from datetime import datetime, timezone as _tz
+184:     PROCESS_START_TIME = datetime.now(_tz.utc)
+185: except Exception:
+186:     PROCESS_START_TIME = None
+187: 
+188: # Process signal handlers (observability)
+189: def _handle_sigterm(signum, frame):  # pragma: no cover - environment dependent
+190:     try:
+191:         app.logger.info("PROCESS: SIGTERM received; shutting down gracefully (platform restart/deploy).")
+192:     except Exception:
+193:         pass
+194: 
+195: try:
+196:     signal.signal(signal.SIGTERM, _handle_sigterm)
+197: except Exception:
+198:     # Some environments may not allow setting signal handlers (e.g., Windows)
+199:     pass
+200: 
+201: 
+202: # Configuration (log centralisé)
+203: settings.log_configuration(app.logger)
+204: if not WEBHOOK_SSL_VERIFY:
+205:     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+206:     app.logger.warning("CFG WEBHOOK: SSL verification DISABLED for webhook calls (development/legacy). Use valid certificates in production.")
+207: 
+208: TZ_FOR_POLLING = timezone.utc
+209: try:
+210:     tz_name = getattr(settings, "POLLING_TIMEZONE_STR", "UTC")
+211:     if isinstance(tz_name, str) and tz_name.strip() and tz_name.strip().upper() != "UTC":
+212:         if ZoneInfo is not None:
+213:             TZ_FOR_POLLING = ZoneInfo(tz_name.strip())
+214: except Exception:
+215:     TZ_FOR_POLLING = timezone.utc
+216: 
+217: # =============================================================================
+218: # SERVICES INITIALIZATION
+219: # =============================================================================
 220: 
-221: # Process signal handlers (observability)
-222: def _handle_sigterm(signum, frame):  # pragma: no cover - environment dependent
-223:     try:
-224:         app.logger.info("PROCESS: SIGTERM received; shutting down gracefully (platform restart/deploy).")
-225:     except Exception:
-226:         pass
-227: 
-228: try:
-229:     signal.signal(signal.SIGTERM, _handle_sigterm)
-230: except Exception:
-231:     # Some environments may not allow setting signal handlers (e.g., Windows)
-232:     pass
-233: 
+221: # 5. Runtime Flags Service (Singleton)
+222: try:
+223:     _runtime_flags_service = RuntimeFlagsService.get_instance(
+224:         file_path=settings.RUNTIME_FLAGS_FILE,
+225:         defaults={
+226:             "disable_email_id_dedup": bool(settings.DISABLE_EMAIL_ID_DEDUP),
+227:             "allow_custom_webhook_without_links": bool(settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
+228:         }
+229:     )
+230:     app.logger.info(f"SVC: RuntimeFlagsService initialized (cache_ttl={_runtime_flags_service.get_cache_ttl()}s)")
+231: except Exception as e:
+232:     app.logger.error(f"SVC: Failed to initialize RuntimeFlagsService: {e}")
+233:     _runtime_flags_service = None
 234: 
-235: # Configuration (log centralisé)
-236: settings.log_configuration(app.logger)
-237: if not WEBHOOK_SSL_VERIFY:
-238:     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-239:     app.logger.warning("CFG WEBHOOK: SSL verification DISABLED for webhook calls (development/legacy). Use valid certificates in production.")
-240:     
-241: TZ_FOR_POLLING = polling_config.initialize_polling_timezone(app.logger)
-242: 
-243: # Polling Config Service (accès centralisé à la configuration)
-244: _polling_service = PollingConfigService(settings)
-245: 
-246: # =============================================================================
-247: # SERVICES INITIALIZATION
-248: # =============================================================================
-249: 
-250: # 5. Runtime Flags Service (Singleton)
-251: try:
-252:     _runtime_flags_service = RuntimeFlagsService.get_instance(
-253:         file_path=settings.RUNTIME_FLAGS_FILE,
-254:         defaults={
-255:             "disable_email_id_dedup": bool(settings.DISABLE_EMAIL_ID_DEDUP),
-256:             "allow_custom_webhook_without_links": bool(settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
-257:         }
-258:     )
-259:     app.logger.info(f"SVC: RuntimeFlagsService initialized (cache_ttl={_runtime_flags_service.get_cache_ttl()}s)")
-260: except Exception as e:
-261:     app.logger.error(f"SVC: Failed to initialize RuntimeFlagsService: {e}")
-262:     _runtime_flags_service = None
-263: 
-264: # 6. Webhook Config Service (Singleton)
-265: try:
-266:     from config import app_config_store
-267:     _webhook_service = WebhookConfigService.get_instance(
-268:         file_path=Path(__file__).parent / "debug" / "webhook_config.json",
-269:         external_store=app_config_store
-270:     )
-271:     app.logger.info(f"SVC: WebhookConfigService initialized (has_url={_webhook_service.has_webhook_url()})")
-272: except Exception as e:
-273:     app.logger.error(f"SVC: Failed to initialize WebhookConfigService: {e}")
-274:     _webhook_service = None
-275: 
+235: # 6. Webhook Config Service (Singleton)
+236: try:
+237:     from config import app_config_store
+238:     _webhook_service = WebhookConfigService.get_instance(
+239:         file_path=Path(__file__).parent / "debug" / "webhook_config.json",
+240:         external_store=app_config_store
+241:     )
+242:     app.logger.info(f"SVC: WebhookConfigService initialized (has_url={_webhook_service.has_webhook_url()})")
+243: except Exception as e:
+244:     app.logger.error(f"SVC: Failed to initialize WebhookConfigService: {e}")
+245:     _webhook_service = None
+246: 
+247: 
+248: if not EXPECTED_API_TOKEN:
+249:     app.logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
+250: else:
+251:     app.logger.info(f"CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: '{EXPECTED_API_TOKEN[:5]}...')")
+252: 
+253: # --- Configuration des Webhooks de Présence ---
+254: # Présence: déjà fournie par settings (alias ci-dessus)
+255: 
+256: # --- Email server config validation flag (maintenant via ConfigService) ---
+257: email_config_valid = _config_service.is_email_config_valid()
+258: 
+259: # --- Webhook time window initialization (env -> then optional UI override from disk) ---
+260: try:
+261:     webhook_time_window.initialize_webhook_time_window(
+262:         start_str=(
+263:             os.environ.get("WEBHOOKS_TIME_START")
+264:             or os.environ.get("WEBHOOK_TIME_START")
+265:             or ""
+266:         ),
+267:         end_str=(
+268:             os.environ.get("WEBHOOKS_TIME_END")
+269:             or os.environ.get("WEBHOOK_TIME_END")
+270:             or ""
+271:         ),
+272:     )
+273:     webhook_time_window.reload_time_window_from_disk()
+274: except Exception:
+275:     pass
 276: 
-277: if not EXPECTED_API_TOKEN:
-278:     app.logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
-279: else:
-280:     app.logger.info(f"CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: '{EXPECTED_API_TOKEN[:5]}...')")
-281: 
-282: # --- Configuration des Webhooks de Présence ---
-283: # Présence: déjà fournie par settings (alias ci-dessus)
-284: 
-285: # --- Email server config validation flag (maintenant via ConfigService) ---
-286: email_config_valid = _config_service.is_email_config_valid()
-287: 
-288: # --- Webhook time window initialization (env -> then optional UI override from disk) ---
-289: try:
-290:     webhook_time_window.initialize_webhook_time_window(
-291:         start_str=(
-292:             os.environ.get("WEBHOOKS_TIME_START")
-293:             or os.environ.get("WEBHOOK_TIME_START")
-294:             or ""
-295:         ),
-296:         end_str=(
-297:             os.environ.get("WEBHOOKS_TIME_END")
-298:             or os.environ.get("WEBHOOK_TIME_END")
-299:             or ""
-300:         ),
-301:     )
-302:     webhook_time_window.reload_time_window_from_disk()
-303: except Exception:
-304:     pass
-305: 
-306: # --- Polling config overrides (optional UI overrides from external store with file fallback) ---
-307: try:
-308:     _poll_cfg_path = settings.POLLING_CONFIG_FILE
-309:     app.logger.info(
-310:         f"CFG POLL(file): path={_poll_cfg_path}; exists={_poll_cfg_path.exists()}"
-311:     )
-312:     _pc = {}
-313:     try:
-314:         _pc = _config_get("polling_config", file_fallback=_poll_cfg_path) or {}
-315:     except Exception:
-316:         _pc = {}
-317:     app.logger.info(
-318:         "CFG POLL(loaded): keys=%s; snippet={active_days=%s,start=%s,end=%s,enable_polling=%s}",
-319:         list(_pc.keys()),
-320:         _pc.get("active_days"),
-321:         _pc.get("active_start_hour"),
-322:         _pc.get("active_end_hour"),
-323:         _pc.get("enable_polling"),
-324:     )
-325:     try:
-326:         app.logger.info(
-327:             "CFG POLL(effective): days=%s; start=%s; end=%s; senders=%s; dedup_monthly_scope=%s; enable_polling=%s; vacation_start=%s; vacation_end=%s",
-328:             _polling_service.get_active_days(),
-329:             _polling_service.get_active_start_hour(),
-330:             _polling_service.get_active_end_hour(),
-331:             len(_polling_service.get_sender_list() or []),
-332:             _polling_service.is_subject_group_dedup_enabled(),
-333:             _polling_service.get_enable_polling(True),
-334:             (_pc.get("vacation_start") if isinstance(_pc, dict) else None),
-335:             (_pc.get("vacation_end") if isinstance(_pc, dict) else None),
-336:         )
-337:     except Exception:
-338:         pass
-339: except Exception:
-340:     pass
-341: 
-342: # --- Dedup constants mapping (from central settings) ---
-343: PROCESSED_EMAIL_IDS_REDIS_KEY = settings.PROCESSED_EMAIL_IDS_REDIS_KEY
-344: PROCESSED_SUBJECT_GROUPS_REDIS_KEY = settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY
-345: SUBJECT_GROUP_REDIS_PREFIX = settings.SUBJECT_GROUP_REDIS_PREFIX
-346: SUBJECT_GROUP_TTL_SECONDS = settings.SUBJECT_GROUP_TTL_SECONDS
+277: # --- Dedup constants mapping (from central settings) ---
+278: PROCESSED_EMAIL_IDS_REDIS_KEY = settings.PROCESSED_EMAIL_IDS_REDIS_KEY
+279: PROCESSED_SUBJECT_GROUPS_REDIS_KEY = settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY
+280: SUBJECT_GROUP_REDIS_PREFIX = settings.SUBJECT_GROUP_REDIS_PREFIX
+281: SUBJECT_GROUP_TTL_SECONDS = settings.SUBJECT_GROUP_TTL_SECONDS
+282: 
+283: # Memory fallback set for subject groups when Redis is not available
+284: SUBJECT_GROUPS_MEMORY = set()
+285: 
+286: # 7. Deduplication Service (avec Redis ou fallback mémoire)
+287: try:
+288:     _dedup_service = DeduplicationService(
+289:         redis_client=redis_client,  # None = fallback mémoire automatique
+290:         logger=app.logger,
+291:         config_service=_config_service,
+292:     )
+293:     app.logger.info(f"SVC: DeduplicationService initialized {_dedup_service}")
+294: except Exception as e:
+295:     app.logger.error(f"SVC: Failed to initialize DeduplicationService: {e}")
+296:     _dedup_service = None
+297: 
+298: 
+299: def check_media_solution_pattern(subject, email_content):
+300:     """Compatibility wrapper delegating to email_processing.pattern_matching.
+301: 
+302:     Maintains backward compatibility while centralizing pattern detection.
+303:     """
+304:     try:
+305:         return email_pattern_matching.check_media_solution_pattern(
+306:             subject=subject,
+307:             email_content=email_content,
+308:             tz_for_polling=TZ_FOR_POLLING,
+309:             logger=app.logger,
+310:         )
+311:     except Exception as e:
+312:         try:
+313:             app.logger.error(f"MEDIA_PATTERN_WRAPPER: Exception: {e}")
+314:         except Exception:
+315:             pass
+316:         return {"matches": False, "delivery_time": None}
+317: 
+318: 
+319: def send_makecom_webhook(subject, delivery_time, sender_email, email_id, override_webhook_url: str | None = None, extra_payload: dict | None = None):
+320:     """Délègue l'envoi du webhook Make.com au module email_processing.webhook_sender.
+321: 
+322:     Maintient la compatibilité tout en centralisant la logique d'envoi.
+323:     """
+324:     return email_webhook_sender.send_makecom_webhook(
+325:         subject=subject,
+326:         delivery_time=delivery_time,
+327:         sender_email=sender_email,
+328:         email_id=email_id,
+329:         override_webhook_url=override_webhook_url,
+330:         extra_payload=extra_payload,
+331:         logger=app.logger,
+332:         log_hook=_append_webhook_log,
+333:     )
+334: 
+335: 
+336: # --- Fonctions de Déduplication avec Redis ---
+337: def is_email_id_processed_redis(email_id):
+338:     """Back-compat wrapper: delegate to dedup module; returns False on errors or no Redis."""
+339:     rc = globals().get("redis_client")
+340:     return _dedup.is_email_id_processed(
+341:         rc,
+342:         email_id=email_id,
+343:         logger=app.logger,
+344:         processed_ids_key=PROCESSED_EMAIL_IDS_REDIS_KEY,
+345:     )
+346: 
 347: 
-348: # Memory fallback set for subject groups when Redis is not available
-349: SUBJECT_GROUPS_MEMORY = set()
-350: 
-351: # 7. Deduplication Service (avec Redis ou fallback mémoire)
-352: try:
-353:     _dedup_service = DeduplicationService(
-354:         redis_client=redis_client,  # None = fallback mémoire automatique
-355:         logger=app.logger,
-356:         config_service=_config_service,
-357:         polling_config_service=_polling_service,
-358:     )
-359:     app.logger.info(f"SVC: DeduplicationService initialized {_dedup_service}")
-360: except Exception as e:
-361:     app.logger.error(f"SVC: Failed to initialize DeduplicationService: {e}")
-362:     _dedup_service = None
+348: def mark_email_id_as_processed_redis(email_id):
+349:     """Back-compat wrapper: delegate to dedup module; returns False without Redis."""
+350:     rc = globals().get("redis_client")
+351:     return _dedup.mark_email_id_processed(
+352:         rc,
+353:         email_id=email_id,
+354:         logger=app.logger,
+355:         processed_ids_key=PROCESSED_EMAIL_IDS_REDIS_KEY,
+356:     )
+357: 
+358: 
+359: 
+360: def generate_subject_group_id(subject: str) -> str:
+361:     """Wrapper vers deduplication.subject_group.generate_subject_group_id."""
+362:     return _gen_subject_group_id(subject)
 363: 
-364: # --- Fonctions Utilitaires IMAP ---
-365: def create_imap_connection():
-366:     """Wrapper vers email_processing.imap_client.create_imap_connection."""
-367:     return email_imap_client.create_imap_connection(app.logger)
-368: 
-369: 
-370: def close_imap_connection(mail):
-371:     """Wrapper vers email_processing.imap_client.close_imap_connection."""
-372:     return email_imap_client.close_imap_connection(app.logger, mail)
-373: 
-374: 
-375: def generate_email_id(msg_data):
-376:     """Wrapper vers email_processing.imap_client.generate_email_id."""
-377:     return email_imap_client.generate_email_id(msg_data)
-378: 
+364: 
+365: def is_subject_group_processed(group_id: str) -> bool:
+366:     """Check subject-group dedup via Redis or memory using the centralized helper."""
+367:     rc = globals().get("redis_client")
+368:     return _dedup.is_subject_group_processed(
+369:         rc,
+370:         group_id=group_id,
+371:         logger=app.logger,
+372:         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
+373:         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
+374:         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
+375:         enable_monthly_scope=bool(ENABLE_SUBJECT_GROUP_DEDUP),
+376:         tz=TZ_FOR_POLLING,
+377:         memory_set=SUBJECT_GROUPS_MEMORY,
+378:     )
 379: 
-380: def extract_sender_email(from_header):
-381:     """Wrapper vers email_processing.imap_client.extract_sender_email."""
-382:     return email_imap_client.extract_sender_email(from_header)
-383: 
-384: 
-385: def decode_email_header(header_value):
-386:     """Wrapper vers email_processing.imap_client.decode_email_header_value."""
-387:     return email_imap_client.decode_email_header_value(header_value)
-388: 
-389: 
-390: def mark_email_as_read_imap(mail, email_num):
-391:     """Wrapper vers email_processing.imap_client.mark_email_as_read_imap."""
-392:     return email_imap_client.mark_email_as_read_imap(app.logger, mail, email_num)
-393: 
-394: 
-395: def check_media_solution_pattern(subject, email_content):
-396:     """Compatibility wrapper delegating to email_processing.pattern_matching.
+380: 
+381: def mark_subject_group_processed(group_id: str) -> bool:
+382:     """Mark subject-group as processed using centralized helper (Redis or memory)."""
+383:     rc = globals().get("redis_client")
+384:     return _dedup.mark_subject_group_processed(
+385:         rc,
+386:         group_id=group_id,
+387:         logger=app.logger,
+388:         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
+389:         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
+390:         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
+391:         enable_monthly_scope=bool(ENABLE_SUBJECT_GROUP_DEDUP),
+392:         tz=TZ_FOR_POLLING,
+393:         memory_set=SUBJECT_GROUPS_MEMORY,
+394:     )
+395: 
+396: 
 397: 
-398:     Maintains backward compatibility while centralizing pattern detection.
-399:     """
-400:     try:
-401:         return email_pattern_matching.check_media_solution_pattern(
-402:             subject=subject,
-403:             email_content=email_content,
-404:             tz_for_polling=TZ_FOR_POLLING,
-405:             logger=app.logger,
-406:         )
-407:     except Exception as e:
-408:         try:
-409:             app.logger.error(f"MEDIA_PATTERN_WRAPPER: Exception: {e}")
-410:         except Exception:
-411:             pass
-412:         return {"matches": False, "delivery_time": None}
-413: 
-414: 
-415: def send_makecom_webhook(subject, delivery_time, sender_email, email_id, override_webhook_url: str | None = None, extra_payload: dict | None = None):
-416:     """Délègue l'envoi du webhook Make.com au module email_processing.webhook_sender.
-417: 
-418:     Maintient la compatibilité tout en centralisant la logique d'envoi.
-419:     """
-420:     return email_webhook_sender.send_makecom_webhook(
-421:         subject=subject,
-422:         delivery_time=delivery_time,
-423:         sender_email=sender_email,
-424:         email_id=email_id,
-425:         override_webhook_url=override_webhook_url,
-426:         extra_payload=extra_payload,
-427:         logger=app.logger,
-428:         log_hook=_append_webhook_log,
-429:     )
+398: WEBHOOK_LOGS_FILE = Path(__file__).resolve().parent / "debug" / "webhook_logs.json"
+399: WEBHOOK_LOGS_REDIS_KEY = "r:ss:webhook_logs:v1"  # Redis list, each item is JSON string
+400: 
+401: # --- Processing Preferences (Filters, Reliability, Rate limiting) ---
+402: PROCESSING_PREFS_FILE = Path(__file__).resolve().parent / "debug" / "processing_prefs.json"
+403: PROCESSING_PREFS_REDIS_KEY = "r:ss:processing_prefs:v1"
+404: 
+405: 
+406: try:
+407:     PROCESSING_PREFS  # noqa: F401
+408: except NameError:
+409:     PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS.copy()
+410: 
+411: 
+412: def _load_processing_prefs() -> dict:
+413:     """Charge les préférences via app_config_store (Redis-first, fallback fichier)."""
+414:     try:
+415:         data = _config_get("processing_prefs", file_fallback=PROCESSING_PREFS_FILE) or {}
+416:     except Exception:
+417:         data = {}
+418: 
+419:     if isinstance(data, dict):
+420:         return {**_DEFAULT_PROCESSING_PREFS, **data}
+421:     return _DEFAULT_PROCESSING_PREFS.copy()
+422: 
+423: 
+424: def _save_processing_prefs(prefs: dict) -> bool:
+425:     """Sauvegarde via app_config_store (Redis-first, fallback fichier)."""
+426:     try:
+427:         return bool(_config_set("processing_prefs", prefs, file_fallback=PROCESSING_PREFS_FILE))
+428:     except Exception:
+429:         return False
 430: 
-431: 
-432: # --- Fonctions de Déduplication avec Redis ---
-433: def is_email_id_processed_redis(email_id):
-434:     """Back-compat wrapper: delegate to dedup module; returns False on errors or no Redis."""
-435:     rc = globals().get("redis_client")
-436:     return _dedup.is_email_id_processed(
-437:         rc,
-438:         email_id=email_id,
-439:         logger=app.logger,
-440:         processed_ids_key=PROCESSED_EMAIL_IDS_REDIS_KEY,
-441:     )
-442: 
-443: 
-444: def mark_email_id_as_processed_redis(email_id):
-445:     """Back-compat wrapper: delegate to dedup module; returns False without Redis."""
-446:     rc = globals().get("redis_client")
-447:     return _dedup.mark_email_id_processed(
-448:         rc,
-449:         email_id=email_id,
-450:         logger=app.logger,
-451:         processed_ids_key=PROCESSED_EMAIL_IDS_REDIS_KEY,
-452:     )
-453: 
-454: 
-455: 
-456: def generate_subject_group_id(subject: str) -> str:
-457:     """Wrapper vers deduplication.subject_group.generate_subject_group_id."""
-458:     return _gen_subject_group_id(subject)
-459: 
-460: 
-461: def is_subject_group_processed(group_id: str) -> bool:
-462:     """Check subject-group dedup via Redis or memory using the centralized helper."""
-463:     rc = globals().get("redis_client")
-464:     return _dedup.is_subject_group_processed(
-465:         rc,
-466:         group_id=group_id,
-467:         logger=app.logger,
-468:         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
-469:         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
-470:         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
-471:         enable_monthly_scope=_polling_service.is_subject_group_dedup_enabled(),
-472:         tz=TZ_FOR_POLLING,
-473:         memory_set=SUBJECT_GROUPS_MEMORY,
-474:     )
-475: 
-476: 
-477: def mark_subject_group_processed(group_id: str) -> bool:
-478:     """Mark subject-group as processed using centralized helper (Redis or memory)."""
-479:     rc = globals().get("redis_client")
-480:     return _dedup.mark_subject_group_processed(
-481:         rc,
-482:         group_id=group_id,
-483:         logger=app.logger,
-484:         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
-485:         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
-486:         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
-487:         enable_monthly_scope=_polling_service.is_subject_group_dedup_enabled(),
-488:         tz=TZ_FOR_POLLING,
-489:         memory_set=SUBJECT_GROUPS_MEMORY,
-490:     )
-491: 
-492: 
-493:  
-494:  
-495: def check_new_emails_and_trigger_webhook():
-496:     """Delegate to orchestrator entry-point."""
-497:     global SENDER_LIST_FOR_POLLING, ENABLE_SUBJECT_GROUP_DEDUP
-498:     try:
-499:         SENDER_LIST_FOR_POLLING = _polling_service.get_sender_list() or []
-500:     except Exception:
-501:         pass
-502:     try:
-503:         ENABLE_SUBJECT_GROUP_DEDUP = _polling_service.is_subject_group_dedup_enabled()
-504:     except Exception:
-505:         pass
-506:     return email_orchestrator.check_new_emails_and_trigger_webhook()
-507: 
-508: def background_email_poller() -> None:
-509:     """Delegate polling loop to background.polling_thread with injected deps."""
-510:     def _is_ready_to_poll() -> bool:
-511:         return all([email_config_valid, _polling_service.get_sender_list(), WEBHOOK_URL])
-512: 
-513:     def _run_cycle() -> int:
-514:         return check_new_emails_and_trigger_webhook()
-515: 
-516:     def _is_in_vacation(now_dt: datetime) -> bool:
-517:         try:
-518:             return _polling_service.is_in_vacation(now_dt)
-519:         except Exception:
-520:             return False
-521: 
-522:     background_email_poller_loop(
-523:         logger=app.logger,
-524:         tz_for_polling=_polling_service.get_tz(),
-525:         get_active_days=_polling_service.get_active_days,
-526:         get_active_start_hour=_polling_service.get_active_start_hour,
-527:         get_active_end_hour=_polling_service.get_active_end_hour,
-528:         inactive_sleep_seconds=_polling_service.get_inactive_check_interval_s(),
-529:         active_sleep_seconds=_polling_service.get_email_poll_interval_s(),
-530:         is_in_vacation=_is_in_vacation,
-531:         is_ready_to_poll=_is_ready_to_poll,
-532:         run_poll_cycle=_run_cycle,
-533:         max_consecutive_errors=5,
-534:     )
-535: 
-536: 
-537: def make_scenarios_vacation_watcher() -> None:
-538:     """Background watcher that enforces Make scenarios ON/OFF according to
-539:     - UI global toggle enable_polling (persisted via /api/update_polling_config)
-540:     - Vacation window in polling_config (POLLING_VACATION_START/END)
-541: 
-542:     Logic:
-543:     - If enable_polling is False => ensure scenarios are OFF
-544:     - If enable_polling is True and in vacation => ensure scenarios are OFF
-545:     - If enable_polling is True and not in vacation => ensure scenarios are ON
-546: 
-547:     To minimize API calls, apply only on state changes.
-548:     """
-549:     last_applied = None  # None|True|False meaning desired state last set
-550:     interval = max(60, _polling_service.get_inactive_check_interval_s())
-551:     while True:
-552:         try:
-553:             enable_ui = _polling_service.get_enable_polling(True)
-554:             in_vac = False
-555:             try:
-556:                 in_vac = _polling_service.is_in_vacation(None)
-557:             except Exception:
-558:                 in_vac = False
-559:             desired = bool(enable_ui and not in_vac)
-560:             if last_applied is None or desired != last_applied:
-561:                 try:
-562:                     from routes.api_make import toggle_all_scenarios  # local import to avoid cycles
-563:                     res = toggle_all_scenarios(desired, logger=app.logger)
-564:                     app.logger.info(
-565:                         "MAKE_WATCHER: applied desired=%s (enable_ui=%s, in_vacation=%s) results_keys=%s",
-566:                         desired, enable_ui, in_vac, list(res.keys()) if isinstance(res, dict) else 'n/a'
-567:                     )
-568:                 except Exception as e:
-569:                     app.logger.error(f"MAKE_WATCHER: toggle_all_scenarios failed: {e}")
-570:                 last_applied = desired
-571:         except Exception as e:
-572:             try:
-573:                 app.logger.error(f"MAKE_WATCHER: loop error: {e}")
-574:             except Exception:
-575:                 pass
-576:         time.sleep(interval)
-577: 
-578: 
-579: def _start_daemon_thread(target, name: str) -> threading.Thread | None:
-580:     try:
-581:         thread = threading.Thread(target=target, daemon=True, name=name)
-582:         thread.start()
-583:         app.logger.info(f"THREAD: {name} started successfully")
-584:         return thread
-585:     except Exception as e:
-586:         app.logger.error(f"THREAD: Failed to start {name}: {e}", exc_info=True)
-587:         return None
-588: 
-589: 
-590: try:
-591:     # Check legacy disable flag (priority override)
-592:     disable_bg = os.environ.get("DISABLE_BACKGROUND_TASKS", "").strip().lower() in ["1", "true", "yes"]
-593:     enable_bg = getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and not disable_bg
-594:     
-595:     # Log effective config before starting background tasks
-596:     try:
-597:         app.logger.info(
-598:             f"CFG BG: enable_polling(UI)={_polling_service.get_enable_polling(True)}; ENABLE_BACKGROUND_TASKS(env)={getattr(settings, 'ENABLE_BACKGROUND_TASKS', False)}; DISABLE_BACKGROUND_TASKS={disable_bg}"
-599:         )
-600:     except Exception:
-601:         pass
-602:     # Start background poller only if both the environment flag and the persisted
-603:     # UI-controlled switch are enabled. This avoids unexpected background work
-604:     # when the operator intentionally disabled polling from the dashboard.
-605:     if enable_bg and _polling_service.get_enable_polling(True):
-606:         lock_path = getattr(settings, "BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock")
-607:         try:
-608:             if acquire_singleton_lock(lock_path):
-609:                 app.logger.info(
-610:                     f"BG_POLLER: Singleton lock acquired on {lock_path}. Starting background thread."
-611:                 )
-612:                 _bg_email_poller_thread = _start_daemon_thread(background_email_poller, "EmailPoller")
-613:             else:
-614:                 app.logger.info(
-615:                     f"BG_POLLER: Singleton lock NOT acquired on {lock_path}. Background thread will not start."
-616:                 )
-617:         except Exception as e:
-618:             app.logger.error(
-619:                 f"BG_POLLER: Failed to start background thread: {e}", exc_info=True
-620:             )
-621:     else:
-622:         # Clarify which condition prevented starting the poller
-623:         if disable_bg:
-624:             app.logger.info(
-625:                 "BG_POLLER: DISABLE_BACKGROUND_TASKS is set. Background poller not started."
-626:             )
-627:         elif not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
-628:             app.logger.info(
-629:                 "BG_POLLER: ENABLE_BACKGROUND_TASKS is false. Background poller not started."
-630:             )
-631:         elif not _polling_service.get_enable_polling(True):
-632:             app.logger.info(
-633:                 "BG_POLLER: UI 'enable_polling' flag is false. Background poller not started."
-634:             )
-635: except Exception:
-636:     # Defensive: never block app startup because of background thread wiring
-637:     pass
-638: 
-639: try:
-640:     if enable_bg and bool(settings.MAKECOM_API_KEY):
-641:         _make_watcher_thread = _start_daemon_thread(make_scenarios_vacation_watcher, "MakeVacationWatcher")
-642:         if _make_watcher_thread:
-643:             app.logger.info("MAKE_WATCHER: vacation-aware ON/OFF watcher active")
-644:     else:
-645:         if disable_bg:
-646:             app.logger.info("MAKE_WATCHER: not started because DISABLE_BACKGROUND_TASKS is set")
-647:         elif not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
-648:             app.logger.info("MAKE_WATCHER: not started because ENABLE_BACKGROUND_TASKS is false")
-649:         elif not bool(settings.MAKECOM_API_KEY):
-650:             app.logger.info("MAKE_WATCHER: not started because MAKECOM_API_KEY is not configured (avoiding 401 noise)")
-651: except Exception as e:
-652:     app.logger.error(f"MAKE_WATCHER: failed to start thread: {e}")
-653: 
-654: 
-655: 
-656: WEBHOOK_LOGS_FILE = Path(__file__).resolve().parent / "debug" / "webhook_logs.json"
-657: WEBHOOK_LOGS_REDIS_KEY = "r:ss:webhook_logs:v1"  # Redis list, each item is JSON string
-658: 
-659: # --- Processing Preferences (Filters, Reliability, Rate limiting) ---
-660: PROCESSING_PREFS_FILE = Path(__file__).resolve().parent / "debug" / "processing_prefs.json"
-661: PROCESSING_PREFS_REDIS_KEY = "r:ss:processing_prefs:v1"
-662: 
-663: 
-664: try:
-665:     PROCESSING_PREFS  # noqa: F401
-666: except NameError:
-667:     PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS.copy()
-668: 
-669: 
-670: def _load_processing_prefs() -> dict:
-671:     """Charge les préférences via app_config_store (Redis-first, fallback fichier)."""
-672:     try:
-673:         data = _config_get("processing_prefs", file_fallback=PROCESSING_PREFS_FILE) or {}
-674:     except Exception:
-675:         data = {}
-676: 
-677:     if isinstance(data, dict):
-678:         return {**_DEFAULT_PROCESSING_PREFS, **data}
-679:     return _DEFAULT_PROCESSING_PREFS.copy()
-680: 
-681: 
-682: def _save_processing_prefs(prefs: dict) -> bool:
-683:     """Sauvegarde via app_config_store (Redis-first, fallback fichier)."""
-684:     try:
-685:         return bool(_config_set("processing_prefs", prefs, file_fallback=PROCESSING_PREFS_FILE))
-686:     except Exception:
-687:         return False
-688: 
-689: PROCESSING_PREFS = _load_processing_prefs()
-690: 
-691: def _log_webhook_config_startup():
-692:     try:
-693:         # Préférer le service si disponible, sinon fallback sur chargement direct
-694:         config = None
-695:         if _webhook_service is not None:
-696:             try:
-697:                 config = _webhook_service.get_all_config()
-698:             except Exception:
-699:                 pass
-700:         
-701:         if config is None:
-702:             from routes.api_webhooks import _load_webhook_config
-703:             config = _load_webhook_config()
-704:         
-705:         if not config:
-706:             app.logger.info("CFG WEBHOOK_CONFIG: Aucune configuration webhook trouvée (fichier vide ou inexistant)")
-707:             return
-708:             
-709:         # Liste des clés à logger avec des valeurs par défaut si absentes
-710:         keys_to_log = [
-711:             'webhook_ssl_verify',
-712:             'webhook_sending_enabled',
-713:             'webhook_time_start',
-714:             'webhook_time_end',
-715:             'global_time_start',
-716:             'global_time_end'
-717:         ]
-718:         
-719:         # Log chaque valeur individuellement pour une meilleure lisibilité
-720:         for key in keys_to_log:
-721:             value = config.get(key, 'non défini')
-722:             app.logger.info("CFG WEBHOOK_CONFIG: %s=%s", key, value)
-723:             
-724:     except Exception as e:
-725:         app.logger.warning("CFG WEBHOOK_CONFIG: Erreur lors de la lecture de la configuration: %s", str(e))
-726: 
-727: _log_webhook_config_startup()
-728: 
-729: try:
-730:     app.logger.info(
-731:         "CFG CUSTOM_WEBHOOK: WEBHOOK_URL configured=%s value=%s",
-732:         bool(WEBHOOK_URL),
-733:         (WEBHOOK_URL[:80] if WEBHOOK_URL else ""),
-734:     )
-735:     app.logger.info(
-736:         "CFG PROCESSING_PREFS: mirror_media_to_custom=%s webhook_timeout_sec=%s",
-737:         bool(PROCESSING_PREFS.get("mirror_media_to_custom")),
-738:         PROCESSING_PREFS.get("webhook_timeout_sec"),
-739:     )
-740: except Exception:
-741:     pass
-742: 
-743: WEBHOOK_SEND_EVENTS = deque()
-744: 
-745: def _rate_limit_allow_send() -> bool:
-746:     try:
-747:         limit = int(PROCESSING_PREFS.get("rate_limit_per_hour") or 0)
-748:     except Exception:
-749:         limit = 0
-750:     return _rate_prune_and_allow(WEBHOOK_SEND_EVENTS, limit)
-751: 
-752: 
-753: def _record_send_event():
-754:     _rate_record_event(WEBHOOK_SEND_EVENTS)
-755: 
-756: 
-757: def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
-758:     """Valide via module preferences en partant des valeurs courantes comme base."""
-759:     base = dict(PROCESSING_PREFS)
-760:     ok, msg, out = _processing_prefs.validate_processing_prefs(payload, base)
-761:     return ok, msg, out
-762: 
-763: 
-764: def _append_webhook_log(log_entry: dict):
-765:     """Ajoute une entrée de log webhook (Redis si dispo, sinon fichier JSON).
-766:     Délègue à app_logging.webhook_logger pour centraliser la logique. Conserve au plus 500 entrées."""
-767:     try:
-768:         rc = globals().get("redis_client")
-769:     except Exception:
-770:         rc = None
-771:     _append_webhook_log_helper(
-772:         log_entry,
-773:         redis_client=rc,
-774:         logger=app.logger,
-775:         file_path=WEBHOOK_LOGS_FILE,
-776:         redis_list_key=WEBHOOK_LOGS_REDIS_KEY,
-777:         max_entries=500,
-778:     )
+431: PROCESSING_PREFS = _load_processing_prefs()
+432: 
+433: def _log_webhook_config_startup():
+434:     try:
+435:         # Préférer le service si disponible, sinon fallback sur chargement direct
+436:         config = None
+437:         if _webhook_service is not None:
+438:             try:
+439:                 config = _webhook_service.get_all_config()
+440:             except Exception:
+441:                 pass
+442:         
+443:         if config is None:
+444:             from routes.api_webhooks import _load_webhook_config
+445:             config = _load_webhook_config()
+446:         
+447:         if not config:
+448:             app.logger.info("CFG WEBHOOK_CONFIG: Aucune configuration webhook trouvée (fichier vide ou inexistant)")
+449:             return
+450:             
+451:         # Liste des clés à logger avec des valeurs par défaut si absentes
+452:         keys_to_log = [
+453:             'webhook_ssl_verify',
+454:             'webhook_sending_enabled',
+455:             'webhook_time_start',
+456:             'webhook_time_end',
+457:             'global_time_start',
+458:             'global_time_end'
+459:         ]
+460:         
+461:         # Log chaque valeur individuellement pour une meilleure lisibilité
+462:         for key in keys_to_log:
+463:             value = config.get(key, 'non défini')
+464:             app.logger.info("CFG WEBHOOK_CONFIG: %s=%s", key, value)
+465:             
+466:     except Exception as e:
+467:         app.logger.warning("CFG WEBHOOK_CONFIG: Erreur lors de la lecture de la configuration: %s", str(e))
+468: 
+469: _log_webhook_config_startup()
+470: 
+471: try:
+472:     app.logger.info(
+473:         "CFG CUSTOM_WEBHOOK: WEBHOOK_URL configured=%s value=%s",
+474:         bool(WEBHOOK_URL),
+475:         (WEBHOOK_URL[:80] if WEBHOOK_URL else ""),
+476:     )
+477:     app.logger.info(
+478:         "CFG PROCESSING_PREFS: mirror_media_to_custom=%s webhook_timeout_sec=%s",
+479:         bool(PROCESSING_PREFS.get("mirror_media_to_custom")),
+480:         PROCESSING_PREFS.get("webhook_timeout_sec"),
+481:     )
+482: except Exception:
+483:     pass
+484: 
+485: WEBHOOK_SEND_EVENTS = deque()
+486: 
+487: def _rate_limit_allow_send() -> bool:
+488:     try:
+489:         limit = int(PROCESSING_PREFS.get("rate_limit_per_hour") or 0)
+490:     except Exception:
+491:         limit = 0
+492:     return _rate_prune_and_allow(WEBHOOK_SEND_EVENTS, limit)
+493: 
+494: 
+495: def _record_send_event():
+496:     _rate_record_event(WEBHOOK_SEND_EVENTS)
+497: 
+498: 
+499: def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
+500:     """Valide via module preferences en partant des valeurs courantes comme base."""
+501:     base = dict(PROCESSING_PREFS)
+502:     ok, msg, out = _processing_prefs.validate_processing_prefs(payload, base)
+503:     return ok, msg, out
+504: 
+505: 
+506: def _append_webhook_log(log_entry: dict):
+507:     """Ajoute une entrée de log webhook (Redis si dispo, sinon fichier JSON).
+508:     Délègue à app_logging.webhook_logger pour centraliser la logique. Conserve au plus 500 entrées."""
+509:     try:
+510:         rc = globals().get("redis_client")
+511:     except Exception:
+512:         rc = None
+513:     _append_webhook_log_helper(
+514:         log_entry,
+515:         redis_client=rc,
+516:         logger=app.logger,
+517:         file_path=WEBHOOK_LOGS_FILE,
+518:         redis_list_key=WEBHOOK_LOGS_REDIS_KEY,
+519:         max_entries=500,
+520:     )
 ````
 
 ## File: dashboard.html
@@ -18594,278 +17386,219 @@ requirements.txt
 244:       </div>
 245:       </div>
 246: 
-247:       <!-- Section: Préférences Email (expéditeurs, dédup) -->
-248:       <div id="sec-email" class="section-panel">
-249:         <div class="card">
-250:           <div class="card-title">🧩 Préférences Email (expéditeurs, dédup)</div>
-251:           <div class="inline-group" style="margin: 8px 0 12px 0;">
-252:             <label class="toggle-switch">
-253:               <input type="checkbox" id="pollingToggle">
-254:               <span class="toggle-slider"></span>
-255:             </label>
-256:             <span id="pollingStatusText" style="margin-left: 10px;">—</span>
-257:           </div>
-258:           <div id="pollingMsg" class="status-msg" style="margin-top: 6px;"></div>
-259:           <div class="form-group">
-260:             <label>SENDER_OF_INTEREST_FOR_POLLING</label>
-261:             <div id="senderOfInterestContainer" class="stack" style="gap:8px;"></div>
-262:             <button id="addSenderBtn" type="button" class="btn btn-secondary" style="margin-top:8px;">➕ Ajouter Email</button>
-263:             <div class="small-text">Ajouter / modifier / supprimer des emails individuellement. Ils seront validés et normalisés (minuscules).</div>
-264:           </div>
-265:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-266:             <div class="form-group">
-267:               <label for="pollingStartHour">POLLING_ACTIVE_START_HOUR (0-23)</label>
-268:               <select id="pollingStartHour" style="width: 100%; max-width: 100px;">
-269:                 <option value="">Sélectionner...</option>
-270:               </select>
-271:             </div>
-272:             <div class="form-group">
-273:               <label for="pollingEndHour">POLLING_ACTIVE_END_HOUR (0-23)</label>
-274:               <select id="pollingEndHour" style="width: 100%; max-width: 100px;">
-275:                 <option value="">Sélectionner...</option>
-276:               </select>
-277:             </div>
-278:           </div>
-279:           <div class="form-group" style="margin-top: 10px;">
-280:             <label>Jours actifs (POLLING_ACTIVE_DAYS)</label>
-281:             <div id="pollingActiveDaysGroup" class="inline-group" style="flex-wrap: wrap; gap: 12px; margin-top: 6px;">
-282:               <label><input type="checkbox" name="pollingDay" value="0"> Lun</label>
-283:               <label><input type="checkbox" name="pollingDay" value="1"> Mar</label>
-284:               <label><input type="checkbox" name="pollingDay" value="2"> Mer</label>
-285:               <label><input type="checkbox" name="pollingDay" value="3"> Jeu</label>
-286:               <label><input type="checkbox" name="pollingDay" value="4"> Ven</label>
-287:               <label><input type="checkbox" name="pollingDay" value="5"> Sam</label>
-288:               <label><input type="checkbox" name="pollingDay" value="6"> Dim</label>
-289:             </div>
-290:             <div class="small-text">0=Lundi ... 6=Dimanche. Sélectionnez au moins un jour.</div>
-291:           </div>
-292:           <div class="inline-group" style="margin: 8px 0 12px 0;">
-293:             <label class="toggle-switch">
-294:               <input type="checkbox" id="enableSubjectGroupDedup">
-295:               <span class="toggle-slider"></span>
-296:             </label>
-297:             <span style="margin-left: 10px;">ENABLE_SUBJECT_GROUP_DEDUP</span>
-298:           </div>
-299:           <button id="saveEmailPrefsBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer les préférences</button>
-300:           <div id="emailPrefsSaveStatus" class="status-msg" style="margin-top: 10px;"></div>
-301:           <!-- Fallback status container (legacy ID used by JS as a fallback) -->
-302:           <div id="pollingCfgMsg" class="status-msg" style="margin-top: 6px;"></div>
-303:         </div>
-304:         
-305:       </div>
-306: 
-307:       <!-- Section: Préférences (filtres + fiabilité) -->
-308:       <div id="sec-preferences" class="section-panel">
-309:         <div class="card">
-310:           <div class="card-title">🔍 Filtres Email Avancés</div>
-311:           <div class="form-group">
-312:             <label for="excludeKeywordsRecadrage">Mots-clés à exclure (Recadrage) — un par ligne</label>
-313:             <textarea id="excludeKeywordsRecadrage" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-314:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `RECADRAGE_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
-315:           </div>
-316:           <div class="form-group">
-317:             <label for="excludeKeywordsAutorepondeur">Mots-clés à exclure (Autorépondeur) — un par ligne</label>
-318:             <textarea id="excludeKeywordsAutorepondeur" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-319:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `AUTOREPONDEUR_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
-320:           </div>
-321:           <div class="form-group">
-322:             <label for="excludeKeywords">Mots-clés à exclure (global, compatibilité) — un par ligne</label>
-323:             <textarea id="excludeKeywords" rows="3" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-324:             <div class="small-text">Liste globale (héritage). S'applique avant toute logique et avant les listes spécifiques.</div>
-325:           </div>
-326:           <div class="form-group">
-327:             <label for="attachmentDetectionToggle">Détection de pièces jointes requise</label>
-328:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
-329:               <input type="checkbox" id="attachmentDetectionToggle">
-330:               <span class="toggle-slider"></span>
-331:             </label>
-332:           </div>
-333:           <div class="form-group">
-334:             <label for="maxEmailSizeMB">Taille maximale des emails à traiter (Mo)</label>
-335:             <input id="maxEmailSizeMB" type="number" min="1" max="100" placeholder="ex: 25">
-336:           </div>
-337:           <div class="form-group">
-338:             <label for="senderPriority">Priorité des expéditeurs (JSON simple)</label>
-339:             <textarea id="senderPriority" rows="3" placeholder='{"vip@example.com":"high","team@example.com":"medium"}' style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-340:             <div class="small-text">Format: { "email": "high|medium|low", ... } — Validé côté client uniquement pour l'instant.</div>
-341:           </div>
+247:       
+248:       <!-- Section: Préférences (filtres + fiabilité) -->
+249:       <div id="sec-preferences" class="section-panel">
+250:         <div class="card">
+251:           <div class="card-title">🔍 Filtres Email Avancés</div>
+252:           <div class="form-group">
+253:             <label for="excludeKeywordsRecadrage">Mots-clés à exclure (Recadrage) — un par ligne</label>
+254:             <textarea id="excludeKeywordsRecadrage" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+255:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `RECADRAGE_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
+256:           </div>
+257:           <div class="form-group">
+258:             <label for="excludeKeywordsAutorepondeur">Mots-clés à exclure (Autorépondeur) — un par ligne</label>
+259:             <textarea id="excludeKeywordsAutorepondeur" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+260:             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `AUTOREPONDEUR_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
+261:           </div>
+262:           <div class="form-group">
+263:             <label for="excludeKeywords">Mots-clés à exclure (global, compatibilité) — un par ligne</label>
+264:             <textarea id="excludeKeywords" rows="3" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+265:             <div class="small-text">Liste globale (héritage). S'applique avant toute logique et avant les listes spécifiques.</div>
+266:           </div>
+267:           <div class="form-group">
+268:             <label for="attachmentDetectionToggle">Détection de pièces jointes requise</label>
+269:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+270:               <input type="checkbox" id="attachmentDetectionToggle">
+271:               <span class="toggle-slider"></span>
+272:             </label>
+273:           </div>
+274:           <div class="form-group">
+275:             <label for="maxEmailSizeMB">Taille maximale des emails à traiter (Mo)</label>
+276:             <input id="maxEmailSizeMB" type="number" min="1" max="100" placeholder="ex: 25">
+277:           </div>
+278:           <div class="form-group">
+279:             <label for="senderPriority">Priorité des expéditeurs (JSON simple)</label>
+280:             <textarea id="senderPriority" rows="3" placeholder='{"vip@example.com":"high","team@example.com":"medium"}' style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+281:             <div class="small-text">Format: { "email": "high|medium|low", ... } — Validé côté client uniquement pour l'instant.</div>
+282:           </div>
+283:         </div>
+284:         <div class="card" style="margin-top: 20px;">
+285:           <div class="card-title">⚡ Paramètres de Fiabilité</div>
+286:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+287:             <div class="form-group">
+288:               <label for="retryCount">Nombre de tentatives (retries)</label>
+289:               <input id="retryCount" type="number" min="0" max="10" placeholder="ex: 3">
+290:             </div>
+291:             <div class="form-group">
+292:               <label for="retryDelaySec">Délai entre retries (secondes)</label>
+293:               <input id="retryDelaySec" type="number" min="0" max="600" placeholder="ex: 10">
+294:             </div>
+295:             <div class="form-group">
+296:               <label for="webhookTimeoutSec">Timeout Webhook (secondes)</label>
+297:               <input id="webhookTimeoutSec" type="number" min="1" max="120" placeholder="ex: 30">
+298:             </div>
+299:             <div class="form-group">
+300:               <label for="rateLimitPerHour">Limite d'envoi (webhooks/heure)</label>
+301:               <input id="rateLimitPerHour" type="number" min="1" max="10000" placeholder="ex: 300">
+302:             </div>
+303:           </div>
+304:           <div style="margin-top: 8px;">
+305:             <label class="toggle-switch" style="vertical-align: middle;">
+306:               <input type="checkbox" id="notifyOnFailureToggle">
+307:               <span class="toggle-slider"></span>
+308:             </label>
+309:             <span style="margin-left: 10px; vertical-align: middle;">Notifications d'échec par email (UI-only)</span>
+310:           </div>
+311:           <div style="margin-top: 12px;">
+312:             <button id="processingPrefsSaveBtn" class="btn btn-primary">💾 Enregistrer Préférences de Traitement</button>
+313:             <div id="processingPrefsMsg" class="status-msg"></div>
+314:           </div>
+315:         </div>
+316:       </div>
+317: 
+318:       <!-- Section: Vue d'ensemble (logs) -->
+319:       <div id="sec-overview" class="section-panel monitoring active">
+320:         <div class="logs-container">
+321:           <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
+322:           <div style="margin-bottom: 15px;">
+323:             <button id="refreshLogsBtn" class="btn btn-primary">🔄 Actualiser</button>
+324:           </div>
+325:           <div id="webhookLogs">
+326:             <div class="log-empty">Chargement des logs...</div>
+327:           </div>
+328:         </div>
+329:       </div>
+330: 
+331:       <!-- Section: Outils (config mgmt + outils de test) -->
+332:       <div id="sec-tools" class="section-panel">
+333:         <div class="card">
+334:           <div class="card-title">💾 Gestion des Configurations</div>
+335:           <div class="inline-group" style="margin-bottom: 10px;">
+336:             <button id="exportConfigBtn" class="btn btn-primary">⬇️ Exporter</button>
+337:             <input id="importConfigFile" type="file" accept="application/json" style="display:none;"/>
+338:             <button id="importConfigBtn" class="btn btn-primary">⬆️ Importer</button>
+339:           </div>
+340:           <div id="configMgmtMsg" class="status-msg"></div>
+341:           <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
 342:         </div>
 343:         <div class="card" style="margin-top: 20px;">
-344:           <div class="card-title">⚡ Paramètres de Fiabilité</div>
-345:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
-346:             <div class="form-group">
-347:               <label for="retryCount">Nombre de tentatives (retries)</label>
-348:               <input id="retryCount" type="number" min="0" max="10" placeholder="ex: 3">
-349:             </div>
-350:             <div class="form-group">
-351:               <label for="retryDelaySec">Délai entre retries (secondes)</label>
-352:               <input id="retryDelaySec" type="number" min="0" max="600" placeholder="ex: 10">
-353:             </div>
-354:             <div class="form-group">
-355:               <label for="webhookTimeoutSec">Timeout Webhook (secondes)</label>
-356:               <input id="webhookTimeoutSec" type="number" min="1" max="120" placeholder="ex: 30">
-357:             </div>
-358:             <div class="form-group">
-359:               <label for="rateLimitPerHour">Limite d'envoi (webhooks/heure)</label>
-360:               <input id="rateLimitPerHour" type="number" min="1" max="10000" placeholder="ex: 300">
-361:             </div>
-362:           </div>
-363:           <div style="margin-top: 8px;">
-364:             <label class="toggle-switch" style="vertical-align: middle;">
-365:               <input type="checkbox" id="notifyOnFailureToggle">
-366:               <span class="toggle-slider"></span>
-367:             </label>
-368:             <span style="margin-left: 10px; vertical-align: middle;">Notifications d'échec par email (UI-only)</span>
-369:           </div>
-370:           <div style="margin-top: 12px;">
-371:             <button id="processingPrefsSaveBtn" class="btn btn-primary">💾 Enregistrer Préférences de Traitement</button>
-372:             <div id="processingPrefsMsg" class="status-msg"></div>
-373:           </div>
+344:           <div class="card-title">🚀 Déploiement de l'application</div>
+345:           <div class="form-group">
+346:             <p class="small-text">Certaines modifications (ex: paramètres applicatifs, configuration reverse proxy) nécessitent un déploiement pour être pleinement appliquées.</p>
+347:           </div>
+348:           <div class="inline-group" style="margin-bottom: 10px;">
+349:             <button id="restartServerBtn" class="btn btn-success">🚀 Déployer l'application</button>
+350:           </div>
+351:           <div id="restartMsg" class="status-msg"></div>
+352:           <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
+353:         </div>
+354:         <div class="card" style="margin-top: 20px;">
+355:           <div class="card-title">🗂️ Migration configs → Redis</div>
+356:           <p>Rejouez le script <code>migrate_configs_to_redis.py</code> directement sur le serveur Render avec toutes les variables d'environnement de production.</p>
+357:           <div class="inline-group" style="margin-bottom: 10px;">
+358:             <button id="migrateConfigsBtn" class="btn btn-warning">📦 Migrer les configurations</button>
+359:           </div>
+360:           <div id="migrateConfigsMsg" class="status-msg"></div>
+361:           <pre id="migrateConfigsLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
+362:           <hr style="margin: 18px 0; border-color: rgba(255,255,255,0.1);">
+363:           <p style="margin-bottom:10px;">Vérifiez l'état des données persistées dans Redis (structures JSON, attributs requis, dates de mise à jour).</p>
+364:           <div class="inline-group" style="margin-bottom: 10px;">
+365:             <button id="verifyConfigStoreBtn" class="btn btn-info">🔍 Vérifier les données en Redis</button>
+366:           </div>
+367:           <label for="verifyConfigStoreRawToggle" class="small-text" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+368:             <input type="checkbox" id="verifyConfigStoreRawToggle">
+369:             <span>Inclure le JSON complet dans le log pour faciliter le debug.</span>
+370:           </label>
+371:           <div id="verifyConfigStoreMsg" class="status-msg"></div>
+372:           <pre id="verifyConfigStoreLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
+373:           <div id="verifyConfigStoreViewer" class="json-viewer-container" style="display:none;"></div>
 374:         </div>
-375:       </div>
-376: 
-377:       <!-- Section: Vue d'ensemble (logs) -->
-378:       <div id="sec-overview" class="section-panel monitoring active">
-379:         <div class="logs-container">
-380:           <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
-381:           <div style="margin-bottom: 15px;">
-382:             <button id="refreshLogsBtn" class="btn btn-primary">🔄 Actualiser</button>
-383:           </div>
-384:           <div id="webhookLogs">
-385:             <div class="log-empty">Chargement des logs...</div>
+375:         <div class="card" style="margin-top: 20px;">
+376:           <div class="card-title">🔐 Accès Magic Link</div>
+377:           <p>Générez un lien pré-authentifié à usage unique pour ouvrir rapidement le dashboard sans retaper vos identifiants. Le lien est automatiquement copié.</p>
+378:           <div class="inline-group" style="margin-bottom: 12px;">
+379:             <label class="toggle-switch">
+380:               <input type="checkbox" id="magicLinkUnlimitedToggle">
+381:               <span class="toggle-slider"></span>
+382:             </label>
+383:             <span style="margin-left: 10px;">
+384:               Mode illimité (désactivé = lien one-shot avec expiration)
+385:             </span>
 386:           </div>
-387:         </div>
-388:       </div>
-389: 
-390:       <!-- Section: Outils (config mgmt + outils de test) -->
-391:       <div id="sec-tools" class="section-panel">
-392:         <div class="card">
-393:           <div class="card-title">💾 Gestion des Configurations</div>
-394:           <div class="inline-group" style="margin-bottom: 10px;">
-395:             <button id="exportConfigBtn" class="btn btn-primary">⬇️ Exporter</button>
-396:             <input id="importConfigFile" type="file" accept="application/json" style="display:none;"/>
-397:             <button id="importConfigBtn" class="btn btn-primary">⬆️ Importer</button>
-398:           </div>
-399:           <div id="configMgmtMsg" class="status-msg"></div>
-400:           <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
-401:         </div>
-402:         <div class="card" style="margin-top: 20px;">
-403:           <div class="card-title">🚀 Déploiement de l'application</div>
-404:           <div class="form-group">
-405:             <p class="small-text">Certaines modifications (ex: paramètres applicatifs, configuration reverse proxy) nécessitent un déploiement pour être pleinement appliquées.</p>
-406:           </div>
-407:           <div class="inline-group" style="margin-bottom: 10px;">
-408:             <button id="restartServerBtn" class="btn btn-success">🚀 Déployer l'application</button>
-409:           </div>
-410:           <div id="restartMsg" class="status-msg"></div>
-411:           <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
-412:         </div>
-413:         <div class="card" style="margin-top: 20px;">
-414:           <div class="card-title">🗂️ Migration configs → Redis</div>
-415:           <p>Rejouez le script <code>migrate_configs_to_redis.py</code> directement sur le serveur Render avec toutes les variables d'environnement de production.</p>
-416:           <div class="inline-group" style="margin-bottom: 10px;">
-417:             <button id="migrateConfigsBtn" class="btn btn-warning">📦 Migrer les configurations</button>
-418:           </div>
-419:           <div id="migrateConfigsMsg" class="status-msg"></div>
-420:           <pre id="migrateConfigsLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-421:           <hr style="margin: 18px 0; border-color: rgba(255,255,255,0.1);">
-422:           <p style="margin-bottom:10px;">Vérifiez l'état des données persistées dans Redis (structures JSON, attributs requis, dates de mise à jour).</p>
-423:           <div class="inline-group" style="margin-bottom: 10px;">
-424:             <button id="verifyConfigStoreBtn" class="btn btn-info">🔍 Vérifier les données en Redis</button>
-425:           </div>
-426:           <label for="verifyConfigStoreRawToggle" class="small-text" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-427:             <input type="checkbox" id="verifyConfigStoreRawToggle">
-428:             <span>Inclure le JSON complet dans le log pour faciliter le debug.</span>
-429:           </label>
-430:           <div id="verifyConfigStoreMsg" class="status-msg"></div>
-431:           <pre id="verifyConfigStoreLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-432:           <div id="verifyConfigStoreViewer" class="json-viewer-container" style="display:none;"></div>
-433:         </div>
-434:         <div class="card" style="margin-top: 20px;">
-435:           <div class="card-title">🔐 Accès Magic Link</div>
-436:           <p>Générez un lien pré-authentifié à usage unique pour ouvrir rapidement le dashboard sans retaper vos identifiants. Le lien est automatiquement copié.</p>
-437:           <div class="inline-group" style="margin-bottom: 12px;">
-438:             <label class="toggle-switch">
-439:               <input type="checkbox" id="magicLinkUnlimitedToggle">
+387:           <button id="generateMagicLinkBtn" class="btn btn-primary">✨ Générer un magic link</button>
+388:           <div id="magicLinkOutput" class="status-msg" style="margin-top: 12px;"></div>
+389:           <div class="small-text">
+390:             Important : partagez ce lien uniquement avec des personnes autorisées.
+391:             En mode one-shot, il expire après quelques minutes et s'invalide dès qu'il est utilisé.
+392:             En mode illimité, aucun délai mais vous devez révoquer manuellement en cas de fuite.
+393:           </div>
+394:         </div>
+395:         <div class="card" style="margin-top: 20px;">
+396:           <div class="card-title">🧪 Outils de Test</div>
+397:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+398:             <div class="form-group">
+399:               <label for="testWebhookUrl">Valider une URL de webhook</label>
+400:               <input id="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
+401:               <button id="validateWebhookUrlBtn" class="btn btn-primary" style="margin-top: 8px;">Valider</button>
+402:               <div id="webhookUrlValidationMsg" class="status-msg"></div>
+403:             </div>
+404:             <div class="form-group">
+405:               <label>Prévisualiser un payload</label>
+406:               <input id="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
+407:               <input id="previewSender" type="email" placeholder="Expéditeur (ex: media@solution.fr)" style="margin-top: 6px;">
+408:               <textarea id="previewBody" rows="4" placeholder="Corps de l'email (coller du texte)" style="margin-top: 6px; width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+409:               <button id="buildPayloadPreviewBtn" class="btn btn-primary" style="margin-top: 8px;">Générer</button>
+410:               <pre id="payloadPreview" style="margin-top:8px; background: rgba(0,0,0,0.2); border:1px solid var(--cork-border-color); padding:10px; border-radius:4px; max-height:200px; overflow:auto; color: var(--cork-text-primary);"></pre>
+411:             </div>
+412:           </div>
+413:           <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
+414:         </div>
+415:         <div class="card" style="margin-top: 20px;">
+416:           <div class="card-title">🔗 Ouvrir une page de téléchargement</div>
+417:           <div class="form-group">
+418:             <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
+419:             <input id="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
+420:             <button id="openDownloadPageBtn" class="btn btn-primary" style="margin-top: 8px;">Ouvrir la page</button>
+421:             <div id="openDownloadMsg" class="status-msg"></div>
+422:             <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
+423:           </div>
+424:         </div>
+425:         <div class="card" style="margin-top: 20px;">
+426:           <div class="card-title"> Flags Runtime (Debug)</div>
+427:           <div class="form-group">
+428:             <label>Bypass déduplication par ID d’email (debug)</label>
+429:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+430:               <input type="checkbox" id="disableEmailIdDedupToggle">
+431:               <span class="toggle-slider"></span>
+432:             </label>
+433:             <div class="small-text">Quand activé, ignore la déduplication par ID d'email. À utiliser uniquement pour des tests.
+434:             </div>
+435:           </div>
+436:           <div class="form-group" style="margin-top: 10px;">
+437:             <label>Autoriser envoi CUSTOM sans liens de livraison</label>
+438:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+439:               <input type="checkbox" id="allowCustomWithoutLinksToggle">
 440:               <span class="toggle-slider"></span>
 441:             </label>
-442:             <span style="margin-left: 10px;">
-443:               Mode illimité (désactivé = lien one-shot avec expiration)
-444:             </span>
-445:           </div>
-446:           <button id="generateMagicLinkBtn" class="btn btn-primary">✨ Générer un magic link</button>
-447:           <div id="magicLinkOutput" class="status-msg" style="margin-top: 12px;"></div>
-448:           <div class="small-text">
-449:             Important : partagez ce lien uniquement avec des personnes autorisées.
-450:             En mode one-shot, il expire après quelques minutes et s'invalide dès qu'il est utilisé.
-451:             En mode illimité, aucun délai mais vous devez révoquer manuellement en cas de fuite.
-452:           </div>
-453:         </div>
-454:         <div class="card" style="margin-top: 20px;">
-455:           <div class="card-title">🧪 Outils de Test</div>
-456:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
-457:             <div class="form-group">
-458:               <label for="testWebhookUrl">Valider une URL de webhook</label>
-459:               <input id="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
-460:               <button id="validateWebhookUrlBtn" class="btn btn-primary" style="margin-top: 8px;">Valider</button>
-461:               <div id="webhookUrlValidationMsg" class="status-msg"></div>
-462:             </div>
-463:             <div class="form-group">
-464:               <label>Prévisualiser un payload</label>
-465:               <input id="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
-466:               <input id="previewSender" type="email" placeholder="Expéditeur (ex: media@solution.fr)" style="margin-top: 6px;">
-467:               <textarea id="previewBody" rows="4" placeholder="Corps de l'email (coller du texte)" style="margin-top: 6px; width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-468:               <button id="buildPayloadPreviewBtn" class="btn btn-primary" style="margin-top: 8px;">Générer</button>
-469:               <pre id="payloadPreview" style="margin-top:8px; background: rgba(0,0,0,0.2); border:1px solid var(--cork-border-color); padding:10px; border-radius:4px; max-height:200px; overflow:auto; color: var(--cork-text-primary);"></pre>
-470:             </div>
-471:           </div>
-472:           <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
-473:         </div>
-474:         <div class="card" style="margin-top: 20px;">
-475:           <div class="card-title">🔗 Ouvrir une page de téléchargement</div>
-476:           <div class="form-group">
-477:             <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
-478:             <input id="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
-479:             <button id="openDownloadPageBtn" class="btn btn-primary" style="margin-top: 8px;">Ouvrir la page</button>
-480:             <div id="openDownloadMsg" class="status-msg"></div>
-481:             <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
-482:           </div>
-483:         </div>
-484:         <div class="card" style="margin-top: 20px;">
-485:           <div class="card-title"> Flags Runtime (Debug)</div>
-486:           <div class="form-group">
-487:             <label>Bypass déduplication par ID d’email (debug)</label>
-488:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
-489:               <input type="checkbox" id="disableEmailIdDedupToggle">
-490:               <span class="toggle-slider"></span>
-491:             </label>
-492:             <div class="small-text">Quand activé, ignore la déduplication par ID d'email. À utiliser uniquement pour des tests.
-493:             </div>
-494:           </div>
-495:           <div class="form-group" style="margin-top: 10px;">
-496:             <label>Autoriser envoi CUSTOM sans liens de livraison</label>
-497:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
-498:               <input type="checkbox" id="allowCustomWithoutLinksToggle">
-499:               <span class="toggle-slider"></span>
-500:             </label>
-501:             <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu’aucun lien (Dropbox/FromSmash/SwissTransfer) n’est détecté, pour éviter les 422.</div>
-502:           </div>
-503:           <div style="margin-top: 12px;">
-504:             <button id="runtimeFlagsSaveBtn" class="btn btn-primary"> Enregistrer Flags Runtime</button>
-505:             <div id="runtimeFlagsMsg" class="status-msg"></div>
-506:           </div>
-507:         </div>
-508:       </div>
-509:     </div>
-510:     <!-- Chargement des modules JavaScript -->
-511:     <script type="module" src="{{ url_for('static', filename='utils/MessageHelper.js') }}"></script>
-512:     <script type="module" src="{{ url_for('static', filename='services/ApiService.js') }}"></script>
-513:     <script type="module" src="{{ url_for('static', filename='services/WebhookService.js') }}"></script>
-514:     <script type="module" src="{{ url_for('static', filename='services/LogService.js') }}"></script>
-515:     <script type="module" src="{{ url_for('static', filename='components/TabManager.js') }}"></script>
-516:     <script type="module" src="{{ url_for('static', filename='dashboard.js') }}?v=20260202-json-viewer"></script>
-517:   </body>
-518: </html>
+442:             <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu’aucun lien (Dropbox/FromSmash/SwissTransfer) n’est détecté, pour éviter les 422.</div>
+443:           </div>
+444:           <div style="margin-top: 12px;">
+445:             <button id="runtimeFlagsSaveBtn" class="btn btn-primary"> Enregistrer Flags Runtime</button>
+446:             <div id="runtimeFlagsMsg" class="status-msg"></div>
+447:           </div>
+448:         </div>
+449:       </div>
+450:     </div>
+451:     <!-- Chargement des modules JavaScript -->
+452:     <script type="module" src="{{ url_for('static', filename='utils/MessageHelper.js') }}"></script>
+453:     <script type="module" src="{{ url_for('static', filename='services/ApiService.js') }}"></script>
+454:     <script type="module" src="{{ url_for('static', filename='services/WebhookService.js') }}"></script>
+455:     <script type="module" src="{{ url_for('static', filename='services/LogService.js') }}"></script>
+456:     <script type="module" src="{{ url_for('static', filename='components/TabManager.js') }}"></script>
+457:     <script type="module" src="{{ url_for('static', filename='dashboard.js') }}?v=20260202-json-viewer"></script>
+458:   </body>
+459: </html>
 ````
 
 ## File: static/dashboard.js
@@ -19089,1864 +17822,1601 @@ requirements.txt
  217:         saveWebhookBtn.addEventListener('click', () => WebhookService.saveConfig());
  218:     }
  219:     
- 220:     const saveEmailPrefsBtn = document.getElementById('saveEmailPrefsBtn');
- 221:     if (saveEmailPrefsBtn) {
- 222:         saveEmailPrefsBtn.addEventListener('click', savePollingConfig);
- 223:     }
- 224:     
- 225:     const clearLogsBtn = document.getElementById('clearLogsBtn');
- 226:     if (clearLogsBtn) {
- 227:         clearLogsBtn.addEventListener('click', () => LogService.clearLogs());
- 228:     }
- 229:     
- 230:     const exportLogsBtn = document.getElementById('exportLogsBtn');
- 231:     if (exportLogsBtn) {
- 232:         exportLogsBtn.addEventListener('click', () => LogService.exportLogs());
- 233:     }
- 234:     
- 235:     const logPeriodSelect = document.getElementById('logPeriodSelect');
- 236:     if (logPeriodSelect) {
- 237:         logPeriodSelect.addEventListener('change', (e) => {
- 238:             LogService.changeLogPeriod(parseInt(e.target.value));
- 239:         });
- 240:     }
- 241:     const pollingToggle = document.getElementById('pollingToggle');
- 242:     if (pollingToggle) {
- 243:         pollingToggle.addEventListener('change', togglePolling);
- 244:     }
- 245:     
- 246:     const saveTimeWindowBtn = document.getElementById('saveTimeWindowBtn');
- 247:     if (saveTimeWindowBtn) {
- 248:         saveTimeWindowBtn.addEventListener('click', saveTimeWindow);
- 249:     }
- 250:     
- 251:     const saveGlobalWebhookTimeBtn = document.getElementById('saveGlobalWebhookTimeBtn');
- 252:     if (saveGlobalWebhookTimeBtn) {
- 253:         saveGlobalWebhookTimeBtn.addEventListener('click', saveGlobalWebhookTimeWindow);
- 254:     }
- 255:     
- 256:     const savePollingConfigBtn = document.getElementById('savePollingCfgBtn');
- 257:     if (savePollingConfigBtn) {
- 258:         savePollingConfigBtn.addEventListener('click', savePollingConfig);
- 259:     }
- 260:     
- 261:     const saveRuntimeFlagsBtn = document.getElementById('runtimeFlagsSaveBtn');
- 262:     if (saveRuntimeFlagsBtn) {
- 263:         saveRuntimeFlagsBtn.addEventListener('click', saveRuntimeFlags);
- 264:     }
- 265:     
- 266:     const saveProcessingPrefsBtn = document.getElementById('processingPrefsSaveBtn');
- 267:     if (saveProcessingPrefsBtn) {
- 268:         saveProcessingPrefsBtn.addEventListener('click', saveProcessingPrefsToServer);
+ 220:     
+ 221:     const clearLogsBtn = document.getElementById('clearLogsBtn');
+ 222:     if (clearLogsBtn) {
+ 223:         clearLogsBtn.addEventListener('click', () => LogService.clearLogs());
+ 224:     }
+ 225:     
+ 226:     const exportLogsBtn = document.getElementById('exportLogsBtn');
+ 227:     if (exportLogsBtn) {
+ 228:         exportLogsBtn.addEventListener('click', () => LogService.exportLogs());
+ 229:     }
+ 230:     
+ 231:     const logPeriodSelect = document.getElementById('logPeriodSelect');
+ 232:     if (logPeriodSelect) {
+ 233:         logPeriodSelect.addEventListener('change', (e) => {
+ 234:             LogService.changeLogPeriod(parseInt(e.target.value));
+ 235:         });
+ 236:     }
+ 237:     
+ 238:     const saveTimeWindowBtn = document.getElementById('saveTimeWindowBtn');
+ 239:     if (saveTimeWindowBtn) {
+ 240:         saveTimeWindowBtn.addEventListener('click', saveTimeWindow);
+ 241:     }
+ 242:     
+ 243:     const saveGlobalWebhookTimeBtn = document.getElementById('saveGlobalWebhookTimeBtn');
+ 244:     if (saveGlobalWebhookTimeBtn) {
+ 245:         saveGlobalWebhookTimeBtn.addEventListener('click', saveGlobalWebhookTimeWindow);
+ 246:     }
+ 247:     
+ 248:     
+ 249:     const saveRuntimeFlagsBtn = document.getElementById('runtimeFlagsSaveBtn');
+ 250:     if (saveRuntimeFlagsBtn) {
+ 251:         saveRuntimeFlagsBtn.addEventListener('click', saveRuntimeFlags);
+ 252:     }
+ 253:     
+ 254:     const saveProcessingPrefsBtn = document.getElementById('processingPrefsSaveBtn');
+ 255:     if (saveProcessingPrefsBtn) {
+ 256:         saveProcessingPrefsBtn.addEventListener('click', saveProcessingPrefsToServer);
+ 257:     }
+ 258:     
+ 259:     const exportConfigBtn = document.getElementById('exportConfigBtn');
+ 260:     if (exportConfigBtn) {
+ 261:         exportConfigBtn.addEventListener('click', exportAllConfig);
+ 262:     }
+ 263:     
+ 264:     const importConfigBtn = document.getElementById('importConfigBtn');
+ 265:     const importConfigInput = document.getElementById('importConfigFile');
+ 266:     if (importConfigBtn && importConfigInput) {
+ 267:         importConfigBtn.addEventListener('click', () => importConfigInput.click());
+ 268:         importConfigInput.addEventListener('change', handleImportConfigFile);
  269:     }
  270:     
- 271:     const exportConfigBtn = document.getElementById('exportConfigBtn');
- 272:     if (exportConfigBtn) {
- 273:         exportConfigBtn.addEventListener('click', exportAllConfig);
+ 271:     const testWebhookUrl = document.getElementById('testWebhookUrl');
+ 272:     if (testWebhookUrl) {
+ 273:         testWebhookUrl.addEventListener('input', validateWebhookUrlFromInput);
  274:     }
  275:     
- 276:     const importConfigBtn = document.getElementById('importConfigBtn');
- 277:     const importConfigInput = document.getElementById('importConfigFile');
- 278:     if (importConfigBtn && importConfigInput) {
- 279:         importConfigBtn.addEventListener('click', () => importConfigInput.click());
- 280:         importConfigInput.addEventListener('change', handleImportConfigFile);
- 281:     }
- 282:     
- 283:     const testWebhookUrl = document.getElementById('testWebhookUrl');
- 284:     if (testWebhookUrl) {
- 285:         testWebhookUrl.addEventListener('input', validateWebhookUrlFromInput);
- 286:     }
- 287:     
- 288:     const previewInputs = ['previewSubject', 'previewSender', 'previewBody'];
- 289:     previewInputs.forEach(id => {
- 290:         const el = document.getElementById(id);
- 291:         if (el) {
- 292:             el.addEventListener('input', buildPayloadPreview);
- 293:         }
- 294:     });
- 295:     
- 296:     const addEmailBtn = document.getElementById('addSenderBtn');
- 297:     if (addEmailBtn) {
- 298:         addEmailBtn.addEventListener('click', () => addEmailField(''));
- 299:     }
- 300:     
- 301:     const refreshStatusBtn = document.getElementById('refreshStatusBtn');
- 302:     if (refreshStatusBtn) {
- 303:         refreshStatusBtn.addEventListener('click', updateGlobalStatus);
- 304:     }
- 305:     
- 306:     document.querySelectorAll('.panel-save-btn[data-panel]').forEach(btn => {
- 307:         btn.addEventListener('click', () => {
- 308:             const panelType = btn.dataset.panel;
- 309:             if (panelType) {
- 310:                 saveWebhookPanel(panelType);
- 311:             }
- 312:         });
- 313:     });
- 314:     
- 315:     // Populate dropdowns with options
- 316:     const timeDropdowns = ['webhooksTimeStart', 'webhooksTimeEnd', 'globalWebhookTimeStart', 'globalWebhookTimeEnd'];
- 317:     timeDropdowns.forEach(id => {
- 318:         const select = document.getElementById(id);
- 319:         if (select) {
- 320:             select.innerHTML = generateTimeOptions(30);
- 321:         }
- 322:     });
+ 276:     const previewInputs = ['previewSubject', 'previewSender', 'previewBody'];
+ 277:     previewInputs.forEach(id => {
+ 278:         const el = document.getElementById(id);
+ 279:         if (el) {
+ 280:             el.addEventListener('input', buildPayloadPreview);
+ 281:         }
+ 282:     });
+ 283:     
+ 284:     
+ 285:     const refreshStatusBtn = document.getElementById('refreshStatusBtn');
+ 286:     if (refreshStatusBtn) {
+ 287:         refreshStatusBtn.addEventListener('click', updateGlobalStatus);
+ 288:     }
+ 289:     
+ 290:     document.querySelectorAll('.panel-save-btn[data-panel]').forEach(btn => {
+ 291:         btn.addEventListener('click', () => {
+ 292:             const panelType = btn.dataset.panel;
+ 293:             if (panelType) {
+ 294:                 saveWebhookPanel(panelType);
+ 295:             }
+ 296:         });
+ 297:     });
+ 298:     
+ 299:     // Populate dropdowns with options
+ 300:     const timeDropdowns = ['webhooksTimeStart', 'webhooksTimeEnd', 'globalWebhookTimeStart', 'globalWebhookTimeEnd'];
+ 301:     timeDropdowns.forEach(id => {
+ 302:         const select = document.getElementById(id);
+ 303:         if (select) {
+ 304:             select.innerHTML = generateTimeOptions(30);
+ 305:         }
+ 306:     });
+ 307:     
+ 308:     
+ 309:     const restartBtn = document.getElementById('restartServerBtn');
+ 310:     if (restartBtn) {
+ 311:         restartBtn.addEventListener('click', handleDeployApplication);
+ 312:     }
+ 313:     
+ 314:     const migrateBtn = document.getElementById('migrateConfigsBtn');
+ 315:     if (migrateBtn) {
+ 316:         migrateBtn.addEventListener('click', handleConfigMigration);
+ 317:     }
+ 318: 
+ 319:     const verifyBtn = document.getElementById('verifyConfigStoreBtn');
+ 320:     if (verifyBtn) {
+ 321:         verifyBtn.addEventListener('click', handleConfigVerification);
+ 322:     }
  323:     
- 324:     const hourDropdowns = ['pollingStartHour', 'pollingEndHour'];
- 325:     hourDropdowns.forEach(id => {
- 326:         const select = document.getElementById(id);
- 327:         if (select) {
- 328:             select.innerHTML = generateHourOptions();
- 329:         }
- 330:     });
- 331:     
- 332:     const restartBtn = document.getElementById('restartServerBtn');
- 333:     if (restartBtn) {
- 334:         restartBtn.addEventListener('click', handleDeployApplication);
- 335:     }
- 336:     
- 337:     const migrateBtn = document.getElementById('migrateConfigsBtn');
- 338:     if (migrateBtn) {
- 339:         migrateBtn.addEventListener('click', handleConfigMigration);
- 340:     }
- 341: 
- 342:     const verifyBtn = document.getElementById('verifyConfigStoreBtn');
- 343:     if (verifyBtn) {
- 344:         verifyBtn.addEventListener('click', handleConfigVerification);
- 345:     }
- 346:     
- 347:     // Metrics toggle event - REMOVED: Monitoring section deleted from dashboard
- 348:     // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
- 349:     // if (enableMetricsToggle) {
- 350:     //     enableMetricsToggle.addEventListener('change', async () => {
- 351:     //         saveLocalPreferences();
- 352:     //         if (enableMetricsToggle.checked) {
- 353:     //             await computeAndRenderMetrics();
- 354:     //         } else {
- 355:     //             clearMetrics();
- 356:     //         }
- 357:     //     });
- 358:     // }
- 359: }
- 360: 
- 361: async function loadInitialData() {
- 362:     try {
- 363:         await Promise.all([
- 364:             WebhookService.loadConfig(),
- 365:             loadPollingStatus(),
- 366:             loadTimeWindow(),
- 367:             loadPollingConfig(),
- 368:             loadRuntimeFlags(),
- 369:             loadProcessingPrefsFromServer(),
- 370:             loadLocalPreferences()
- 371:         ]);
- 372:         
- 373:         await loadGlobalWebhookTimeWindow();
- 374:         
- 375:         await LogService.loadAndRenderLogs();
- 376:         
- 377:         await updateGlobalStatus();
- 378:         
- 379:         // Trigger metrics computation if toggle is enabled - REMOVED: Monitoring section deleted
- 380:         // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
- 381:         // if (enableMetricsToggle && enableMetricsToggle.checked) {
- 382:         //     await computeAndRenderMetrics();
- 383:         // }
- 384:         
- 385:     } catch (e) {
- 386:         console.error('Erreur lors du chargement des données initiales:', e);
- 387:     }
- 388: }
- 389: 
- 390: // Metrics functions - REMOVED: Monitoring section deleted from dashboard
- 391: // async function computeAndRenderMetrics() {
- 392: //     try {
- 393: //         const res = await ApiService.get('/api/webhook_logs?days=1');
- 394: //         if (!res.ok) { 
- 395: //             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 396: //                 console.warn('metrics: non-200', res.status);
- 397: //             }
- 398: //             clearMetrics(); return; 
- 399: //         }
- 400: //         const data = await res.json();
- 401: //         const logs = (data.success && Array.isArray(data.logs)) ? data.logs : [];
- 402: //         const total = logs.length;
- 403: //         const sent = logs.filter(l => l.status === 'success').length;
- 404: //         const errors = logs.filter(l => l.status === 'error').length;
- 405: //         const successRate = total ? Math.round((sent / total) * 100) : 0;
- 406: //         setMetric('metricEmailsProcessed', String(total));
- 407: //         setMetric('metricWebhooksSent', String(sent));
- 408: //         setMetric('metricErrors', String(errors));
- 409: //         setMetric('metricSuccessRate', String(successRate));
- 410: //         renderMiniChart(logs);
- 411: //     } catch (e) {
- 412: //         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 413: //             console.warn('metrics error', e);
- 414: //         }
- 415: //         clearMetrics();
- 416: //     }
- 417: // }
- 418: 
- 419: // function clearMetrics() {
- 420: //     setMetric('metricEmailsProcessed', '—');
- 421: //     setMetric('metricWebhooksSent', '—');
- 422: //     setMetric('metricErrors', '—');
- 423: //     setMetric('metricSuccessRate', '—');
- 424: //     const chart = document.getElementById('metricsMiniChart');
- 425: //     if (chart) chart.innerHTML = '';
- 426: // }
- 427: 
- 428: // function setMetric(id, text) {
- 429: //     const el = document.getElementById(id);
- 430: //     if (el) el.textContent = text;
- 431: // }
- 432: 
- 433: // function renderMiniChart(logs) {
- 434: //     const chart = document.getElementById('metricsMiniChart');
- 435: //     if (!chart) return;
- 436: //     chart.innerHTML = '';
- 437: //     const width = chart.clientWidth || 300;
- 438: //     const height = chart.clientHeight || 60;
- 439: //     const canvas = document.createElement('canvas');
- 440: //     canvas.width = width; canvas.height = height;
- 441: //     const ctx = canvas.getContext('2d');
- 442:     
- 443: //     // Simple line chart implementation
- 444: //     const padding = 5;
- 445: //     const chartWidth = width - 2 * padding;
- 446: //     const chartHeight = height - 2 * padding;
- 447:     
- 448: //     // Group logs by hour
- 449: //     const hourlyData = new Array(24).fill(0);
- 450: //     logs.forEach(log => {
- 451: //         const hour = new Date(log.timestamp).getHours();
- 452: //         hourlyData[hour]++;
- 453: //     });
- 454:     
- 455: //     const maxCount = Math.max(...hourlyData, 1);
- 456: //     const stepX = chartWidth / 23;
- 457:     
- 458: //     ctx.strokeStyle = '#4CAF50';
- 459: //     ctx.lineWidth = 2;
- 460: //     ctx.beginPath();
- 461:     
- 462: //     hourlyData.forEach((count, i) => {
- 463: //         const x = padding + i * stepX;
- 464: //         const y = padding + chartHeight - (count / maxCount) * chartHeight;
- 465:         
- 466: //         if (i === 0) {
- 467: //             ctx.moveTo(x, y);
- 468: //         } else {
- 469: //             ctx.lineTo(x, y);
- 470: //         }
- 471: //     });
+ 324:     // Metrics toggle event - REMOVED: Monitoring section deleted from dashboard
+ 325:     // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+ 326:     // if (enableMetricsToggle) {
+ 327:     //     enableMetricsToggle.addEventListener('change', async () => {
+ 328:     //         saveLocalPreferences();
+ 329:     //         if (enableMetricsToggle.checked) {
+ 330:     //             await computeAndRenderMetrics();
+ 331:     //         } else {
+ 332:     //             clearMetrics();
+ 333:     //         }
+ 334:     //     });
+ 335:     // }
+ 336: }
+ 337: 
+ 338: async function loadInitialData() {
+ 339:     try {
+ 340:         await Promise.all([
+ 341:             WebhookService.loadConfig(),
+ 342:             loadTimeWindow(),
+ 343:             loadRuntimeFlags(),
+ 344:             loadProcessingPrefsFromServer(),
+ 345:             loadLocalPreferences()
+ 346:         ]);
+ 347: 
+ 348:         
+ 349:         await loadGlobalWebhookTimeWindow();
+ 350:         
+ 351:         await LogService.loadAndRenderLogs();
+ 352:         
+ 353:         await updateGlobalStatus();
+ 354:         
+ 355:         // Trigger metrics computation if toggle is enabled - REMOVED: Monitoring section deleted
+ 356:         // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+ 357:         // if (enableMetricsToggle && enableMetricsToggle.checked) {
+ 358:         //     await computeAndRenderMetrics();
+ 359:         // }
+ 360:         
+ 361:     } catch (e) {
+ 362:         console.error('Erreur lors du chargement des données initiales:', e);
+ 363:     }
+ 364: }
+ 365: 
+ 366: // Metrics functions - REMOVED: Monitoring section deleted from dashboard
+ 367: // async function computeAndRenderMetrics() {
+ 368: //     try {
+ 369: //         const res = await ApiService.get('/api/webhook_logs?days=1');
+ 370: //         if (!res.ok) { 
+ 371: //             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 372: //                 console.warn('metrics: non-200', res.status);
+ 373: //             }
+ 374: //             clearMetrics(); return; 
+ 375: //         }
+ 376: //         const data = await res.json();
+ 377: //         const logs = (data.success && Array.isArray(data.logs)) ? data.logs : [];
+ 378: //         const total = logs.length;
+ 379: //         const sent = logs.filter(l => l.status === 'success').length;
+ 380: //         const errors = logs.filter(l => l.status === 'error').length;
+ 381: //         const successRate = total ? Math.round((sent / total) * 100) : 0;
+ 382: //         setMetric('metricEmailsProcessed', String(total));
+ 383: //         setMetric('metricWebhooksSent', String(sent));
+ 384: //         setMetric('metricErrors', String(errors));
+ 385: //         setMetric('metricSuccessRate', String(successRate));
+ 386: //         renderMiniChart(logs);
+ 387: //     } catch (e) {
+ 388: //         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 389: //             console.warn('metrics error', e);
+ 390: //         }
+ 391: //         clearMetrics();
+ 392: //     }
+ 393: // }
+ 394: 
+ 395: // function clearMetrics() {
+ 396: //     setMetric('metricEmailsProcessed', '—');
+ 397: //     setMetric('metricWebhooksSent', '—');
+ 398: //     setMetric('metricErrors', '—');
+ 399: //     setMetric('metricSuccessRate', '—');
+ 400: //     const chart = document.getElementById('metricsMiniChart');
+ 401: //     if (chart) chart.innerHTML = '';
+ 402: // }
+ 403: 
+ 404: // function setMetric(id, text) {
+ 405: //     const el = document.getElementById(id);
+ 406: //     if (el) el.textContent = text;
+ 407: // }
+ 408: 
+ 409: // function renderMiniChart(logs) {
+ 410: //     const chart = document.getElementById('metricsMiniChart');
+ 411: //     if (!chart) return;
+ 412: //     chart.innerHTML = '';
+ 413: //     const width = chart.clientWidth || 300;
+ 414: //     const height = chart.clientHeight || 60;
+ 415: //     const canvas = document.createElement('canvas');
+ 416: //     canvas.width = width; canvas.height = height;
+ 417: //     const ctx = canvas.getContext('2d');
+ 418:     
+ 419: //     // Simple line chart implementation
+ 420: //     const padding = 5;
+ 421: //     const chartWidth = width - 2 * padding;
+ 422: //     const chartHeight = height - 2 * padding;
+ 423:     
+ 424: //     // Group logs by hour
+ 425: //     const hourlyData = new Array(24).fill(0);
+ 426: //     logs.forEach(log => {
+ 427: //         const hour = new Date(log.timestamp).getHours();
+ 428: //         hourlyData[hour]++;
+ 429: //     });
+ 430:     
+ 431: //     const maxCount = Math.max(...hourlyData, 1);
+ 432: //     const stepX = chartWidth / 23;
+ 433:     
+ 434: //     ctx.strokeStyle = '#4CAF50';
+ 435: //     ctx.lineWidth = 2;
+ 436: //     ctx.beginPath();
+ 437:     
+ 438: //     hourlyData.forEach((count, i) => {
+ 439: //         const x = padding + i * stepX;
+ 440: //         const y = padding + chartHeight - (count / maxCount) * chartHeight;
+ 441:         
+ 442: //         if (i === 0) {
+ 443: //             ctx.moveTo(x, y);
+ 444: //         } else {
+ 445: //             ctx.lineTo(x, y);
+ 446: //         }
+ 447: //     });
+ 448:     
+ 449: //     ctx.stroke();
+ 450: //     chart.appendChild(canvas);
+ 451: // }
+ 452: 
+ 453: function showCopiedFeedback() {
+ 454:     let toast = document.querySelector('.copied-feedback');
+ 455:     if (!toast) {
+ 456:         toast = document.createElement('div');
+ 457:         toast.className = 'copied-feedback';
+ 458:         toast.textContent = '🔗 Magic link copié dans le presse-papiers !';
+ 459:         document.body.appendChild(toast);
+ 460:     }
+ 461:     toast.classList.add('show');
+ 462:     
+ 463:     setTimeout(() => {
+ 464:         toast.classList.remove('show');
+ 465:     }, 3000);
+ 466: }
+ 467: 
+ 468: async function generateMagicLink() {
+ 469:     const btn = document.getElementById('generateMagicLinkBtn');
+ 470:     const output = document.getElementById('magicLinkOutput');
+ 471:     const unlimitedToggle = document.getElementById('magicLinkUnlimitedToggle');
  472:     
- 473: //     ctx.stroke();
- 474: //     chart.appendChild(canvas);
- 475: // }
- 476: 
- 477: function showCopiedFeedback() {
- 478:     let toast = document.querySelector('.copied-feedback');
- 479:     if (!toast) {
- 480:         toast = document.createElement('div');
- 481:         toast.className = 'copied-feedback';
- 482:         toast.textContent = '🔗 Magic link copié dans le presse-papiers !';
- 483:         document.body.appendChild(toast);
- 484:     }
- 485:     toast.classList.add('show');
- 486:     
- 487:     setTimeout(() => {
- 488:         toast.classList.remove('show');
- 489:     }, 3000);
- 490: }
- 491: 
- 492: async function generateMagicLink() {
- 493:     const btn = document.getElementById('generateMagicLinkBtn');
- 494:     const output = document.getElementById('magicLinkOutput');
- 495:     const unlimitedToggle = document.getElementById('magicLinkUnlimitedToggle');
- 496:     
- 497:     if (!btn || !output) return;
- 498:     
- 499:     output.textContent = '';
- 500:     MessageHelper.setButtonLoading(btn, true);
- 501:     
- 502:     try {
- 503:         const unlimited = unlimitedToggle?.checked ?? false;
- 504:         const data = await ApiService.post('/api/auth/magic-link', { unlimited });
- 505:         
- 506:         if (data.success && data.magic_link) {
- 507:             const expiresText = data.unlimited ? 'aucune expiration' : (data.expires_at || 'bientôt');
- 508:             output.textContent = `${data.magic_link} (exp. ${expiresText})`;
- 509:             output.className = 'status-msg success';
- 510:             
- 511:             try {
- 512:                 await navigator.clipboard.writeText(data.magic_link);
- 513:                 output.textContent += ' — Copié dans le presse-papiers';
- 514:                 showCopiedFeedback();
- 515:             } catch (clipboardError) {
- 516:                 // Silently fail clipboard copy
- 517:             }
- 518:         } else {
- 519:             output.textContent = data.message || 'Impossible de générer le magic link.';
- 520:             output.className = 'status-msg error';
- 521:         }
- 522:     } catch (e) {
- 523:         console.error('generateMagicLink error', e);
- 524:         output.textContent = 'Erreur de génération du magic link.';
- 525:         output.className = 'status-msg error';
- 526:     } finally {
- 527:         MessageHelper.setButtonLoading(btn, false);
- 528:         setTimeout(() => {
- 529:             if (output) output.className = 'status-msg';
- 530:         }, 7000);
- 531:     }
- 532: }
- 533: 
- 534: // Polling control
- 535: async function loadPollingStatus() {
- 536:     try {
- 537:         const data = await ApiService.get('/api/get_polling_config');
- 538:         
- 539:         if (data.success) {
- 540:             const isEnabled = !!data.config?.enable_polling;
- 541:             const toggle = document.getElementById('pollingToggle');
- 542:             const statusText = document.getElementById('pollingStatusText');
- 543:             
- 544:             if (toggle) toggle.checked = isEnabled;
- 545:             if (statusText) {
- 546:                 statusText.textContent = isEnabled ? '✅ Polling activé' : '❌ Polling désactivé';
- 547:             }
- 548:         }
- 549:     } catch (e) {
- 550:         console.error('Erreur chargement statut polling:', e);
- 551:         const statusText = document.getElementById('pollingStatusText');
- 552:         if (statusText) statusText.textContent = '⚠️ Erreur de chargement';
- 553:     }
- 554: }
- 555: 
- 556: async function togglePolling() {
- 557:     const enable = document.getElementById('pollingToggle').checked;
- 558:     
- 559:     try {
- 560:         const data = await ApiService.post('/api/update_polling_config', { enable_polling: enable });
- 561:         
- 562:         if (data.success) {
- 563:             MessageHelper.showInfo('pollingMsg', data.message);
- 564:             const statusText = document.getElementById('pollingStatusText');
- 565:             if (statusText) {
- 566:                 statusText.textContent = enable ? '✅ Polling activé' : '❌ Polling désactivé';
- 567:             }
- 568:         } else {
- 569:             MessageHelper.showError('pollingMsg', data.message || 'Erreur lors du changement.');
- 570:         }
- 571:     } catch (e) {
- 572:         MessageHelper.showError('pollingMsg', 'Erreur de communication avec le serveur.');
- 573:     }
- 574: }
- 575: 
- 576: // Time window helpers
- 577: function generateTimeOptions(stepMinutes = 30) {
- 578:     const options = ['<option value="">Sélectionner...</option>'];
- 579:     for (let hour = 0; hour < 24; hour++) {
- 580:         for (let minute = 0; minute < 60; minute += stepMinutes) {
- 581:             const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
- 582:             options.push(`<option value="${timeStr}">${timeStr}</option>`);
- 583:         }
- 584:     }
- 585:     return options.join('');
- 586: }
- 587: 
- 588: function generateHourOptions() {
- 589:     const options = ['<option value="">Sélectionner...</option>'];
- 590:     for (let hour = 0; hour < 24; hour++) {
- 591:         const label = `${hour.toString().padStart(2, '0')}h`;
- 592:         options.push(`<option value="${hour}">${label}</option>`);
- 593:     }
- 594:     return options.join('');
- 595: }
- 596: 
- 597: function setSelectedOption(selectElement, value) {
- 598:     if (!selectElement) return;
- 599:     // Try to find exact match first
- 600:     for (let i = 0; i < selectElement.options.length; i++) {
- 601:         if (selectElement.options[i].value === value || selectElement.options[i].value === value.toString()) {
- 602:             selectElement.selectedIndex = i;
- 603:             return;
- 604:         }
- 605:     }
- 606:     // If no match, select first (empty) option
- 607:     selectElement.selectedIndex = 0;
- 608: }
- 609: 
- 610: // Time window
- 611: async function loadTimeWindow() {
- 612:     const applyWindowValues = (startValue = '', endValue = '') => {
- 613:         const startInput = document.getElementById('webhooksTimeStart');
- 614:         const endInput = document.getElementById('webhooksTimeEnd');
- 615:         if (startInput) setSelectedOption(startInput, startValue || '');
- 616:         if (endInput) setSelectedOption(endInput, endValue || '');
- 617:         renderTimeWindowDisplay(startValue || '', endValue || '');
- 618:     };
- 619:     
- 620:     try {
- 621:         // 0) Source principale : fenêtre horaire globale (ancien endpoint)
- 622:         const globalTimeResponse = await ApiService.get('/api/get_webhook_time_window');
- 623:         if (globalTimeResponse.success) {
- 624:             applyWindowValues(
- 625:                 globalTimeResponse.webhooks_time_start || '',
- 626:                 globalTimeResponse.webhooks_time_end || ''
- 627:             );
- 628:             return;
- 629:         }
- 630:     } catch (e) {
- 631:         console.warn('Impossible de charger la fenêtre horaire globale:', e);
+ 473:     if (!btn || !output) return;
+ 474:     
+ 475:     output.textContent = '';
+ 476:     MessageHelper.setButtonLoading(btn, true);
+ 477:     
+ 478:     try {
+ 479:         const unlimited = unlimitedToggle?.checked ?? false;
+ 480:         const data = await ApiService.post('/api/auth/magic-link', { unlimited });
+ 481:         
+ 482:         if (data.success && data.magic_link) {
+ 483:             const expiresText = data.unlimited ? 'aucune expiration' : (data.expires_at || 'bientôt');
+ 484:             output.textContent = `${data.magic_link} (exp. ${expiresText})`;
+ 485:             output.className = 'status-msg success';
+ 486:             
+ 487:             try {
+ 488:                 await navigator.clipboard.writeText(data.magic_link);
+ 489:                 output.textContent += ' — Copié dans le presse-papiers';
+ 490:                 showCopiedFeedback();
+ 491:             } catch (clipboardError) {
+ 492:                 // Silently fail clipboard copy
+ 493:             }
+ 494:         } else {
+ 495:             output.textContent = data.message || 'Impossible de générer le magic link.';
+ 496:             output.className = 'status-msg error';
+ 497:         }
+ 498:     } catch (e) {
+ 499:         console.error('generateMagicLink error', e);
+ 500:         output.textContent = 'Erreur de génération du magic link.';
+ 501:         output.className = 'status-msg error';
+ 502:     } finally {
+ 503:         MessageHelper.setButtonLoading(btn, false);
+ 504:         setTimeout(() => {
+ 505:             if (output) output.className = 'status-msg';
+ 506:         }, 7000);
+ 507:     }
+ 508: }
+ 509: 
+ 510: 
+ 511: // Time window helpers
+ 512: function generateTimeOptions(stepMinutes = 30) {
+ 513:     const options = ['<option value="">Sélectionner...</option>'];
+ 514:     for (let hour = 0; hour < 24; hour++) {
+ 515:         for (let minute = 0; minute < 60; minute += stepMinutes) {
+ 516:             const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+ 517:             options.push(`<option value="${timeStr}">${timeStr}</option>`);
+ 518:         }
+ 519:     }
+ 520:     return options.join('');
+ 521: }
+ 522: 
+ 523: function generateHourOptions() {
+ 524:     const options = ['<option value="">Sélectionner...</option>'];
+ 525:     for (let hour = 0; hour < 24; hour++) {
+ 526:         const label = `${hour.toString().padStart(2, '0')}h`;
+ 527:         options.push(`<option value="${hour}">${label}</option>`);
+ 528:     }
+ 529:     return options.join('');
+ 530: }
+ 531: 
+ 532: function setSelectedOption(selectElement, value) {
+ 533:     if (!selectElement) return;
+ 534:     // Try to find exact match first
+ 535:     for (let i = 0; i < selectElement.options.length; i++) {
+ 536:         if (selectElement.options[i].value === value || selectElement.options[i].value === value.toString()) {
+ 537:             selectElement.selectedIndex = i;
+ 538:             return;
+ 539:         }
+ 540:     }
+ 541:     // If no match, select first (empty) option
+ 542:     selectElement.selectedIndex = 0;
+ 543: }
+ 544: 
+ 545: // Time window
+ 546: async function loadTimeWindow() {
+ 547:     const applyWindowValues = (startValue = '', endValue = '') => {
+ 548:         const startInput = document.getElementById('webhooksTimeStart');
+ 549:         const endInput = document.getElementById('webhooksTimeEnd');
+ 550:         if (startInput) setSelectedOption(startInput, startValue || '');
+ 551:         if (endInput) setSelectedOption(endInput, endValue || '');
+ 552:         renderTimeWindowDisplay(startValue || '', endValue || '');
+ 553:     };
+ 554:     
+ 555:     try {
+ 556:         // 0) Source principale : fenêtre horaire globale (ancien endpoint)
+ 557:         const globalTimeResponse = await ApiService.get('/api/get_webhook_time_window');
+ 558:         if (globalTimeResponse.success) {
+ 559:             applyWindowValues(
+ 560:                 globalTimeResponse.webhooks_time_start || '',
+ 561:                 globalTimeResponse.webhooks_time_end || ''
+ 562:             );
+ 563:             return;
+ 564:         }
+ 565:     } catch (e) {
+ 566:         console.warn('Impossible de charger la fenêtre horaire globale:', e);
+ 567:     }
+ 568:     
+ 569:     try {
+ 570:         // 2) Fallback: ancienne source (time window override)
+ 571:         const data = await ApiService.get('/api/get_webhook_time_window');
+ 572:         if (data.success) {
+ 573:             applyWindowValues(data.webhooks_time_start, data.webhooks_time_end);
+ 574:         }
+ 575:     } catch (e) {
+ 576:         console.error('Erreur chargement fenêtre horaire (fallback):', e);
+ 577:     }
+ 578: }
+ 579: 
+ 580: async function saveTimeWindow() {
+ 581:     const startInput = document.getElementById('webhooksTimeStart');
+ 582:     const endInput = document.getElementById('webhooksTimeEnd');
+ 583:     const start = startInput.value.trim();
+ 584:     const end = endInput.value.trim();
+ 585:     
+ 586:     // For dropdowns, validation is simpler - format is guaranteed HH:MM
+ 587:     if (start && !/^\d{2}:\d{2}$/.test(start)) {
+ 588:         MessageHelper.showError('timeWindowMsg', 'Veuillez sélectionner une heure valide.');
+ 589:         return false;
+ 590:     }
+ 591:     
+ 592:     if (end && !/^\d{2}:\d{2}$/.test(end)) {
+ 593:         MessageHelper.showError('timeWindowMsg', 'Veuillez sélectionner une heure valide.');
+ 594:         return false;
+ 595:     }
+ 596:     
+ 597:     // No normalization needed for dropdowns - format is already HH:MM
+ 598:     
+ 599:     try {
+ 600:         const data = await ApiService.post('/api/set_webhook_time_window', { 
+ 601:             start: start, 
+ 602:             end: end 
+ 603:         });
+ 604:         
+ 605:         if (data.success) {
+ 606:             MessageHelper.showSuccess('timeWindowMsg', 'Fenêtre horaire enregistrée avec succès !');
+ 607:             updatePanelStatus('time-window', true);
+ 608:             updatePanelIndicator('time-window');
+ 609:             
+ 610:             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
+ 611:             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
+ 612:                 setSelectedOption(startInput, data.webhooks_time_start || '');
+ 613:             }
+ 614:             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
+ 615:                 setSelectedOption(endInput, data.webhooks_time_end || '');
+ 616:             }
+ 617:             
+ 618:             renderTimeWindowDisplay(data.webhooks_time_start || start, data.webhooks_time_end || end);
+ 619:             
+ 620:             // S'assurer que la source persistée est rechargée
+ 621:             await loadTimeWindow();
+ 622:             return true;
+ 623:         } else {
+ 624:             MessageHelper.showError('timeWindowMsg', data.message || 'Erreur lors de la sauvegarde.');
+ 625:             updatePanelStatus('time-window', false);
+ 626:             return false;
+ 627:         }
+ 628:     } catch (e) {
+ 629:         MessageHelper.showError('timeWindowMsg', 'Erreur de communication avec le serveur.');
+ 630:         updatePanelStatus('time-window', false);
+ 631:         return false;
  632:     }
- 633:     
- 634:     try {
- 635:         // 2) Fallback: ancienne source (time window override)
- 636:         const data = await ApiService.get('/api/get_webhook_time_window');
- 637:         if (data.success) {
- 638:             applyWindowValues(data.webhooks_time_start, data.webhooks_time_end);
- 639:         }
- 640:     } catch (e) {
- 641:         console.error('Erreur chargement fenêtre horaire (fallback):', e);
- 642:     }
- 643: }
- 644: 
- 645: async function saveTimeWindow() {
- 646:     const startInput = document.getElementById('webhooksTimeStart');
- 647:     const endInput = document.getElementById('webhooksTimeEnd');
- 648:     const start = startInput.value.trim();
- 649:     const end = endInput.value.trim();
- 650:     
- 651:     // For dropdowns, validation is simpler - format is guaranteed HH:MM
- 652:     if (start && !/^\d{2}:\d{2}$/.test(start)) {
- 653:         MessageHelper.showError('timeWindowMsg', 'Veuillez sélectionner une heure valide.');
- 654:         return false;
- 655:     }
- 656:     
- 657:     if (end && !/^\d{2}:\d{2}$/.test(end)) {
- 658:         MessageHelper.showError('timeWindowMsg', 'Veuillez sélectionner une heure valide.');
- 659:         return false;
- 660:     }
- 661:     
- 662:     // No normalization needed for dropdowns - format is already HH:MM
- 663:     
- 664:     try {
- 665:         const data = await ApiService.post('/api/set_webhook_time_window', { 
- 666:             start: start, 
- 667:             end: end 
- 668:         });
- 669:         
- 670:         if (data.success) {
- 671:             MessageHelper.showSuccess('timeWindowMsg', 'Fenêtre horaire enregistrée avec succès !');
- 672:             updatePanelStatus('time-window', true);
- 673:             updatePanelIndicator('time-window');
- 674:             
- 675:             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
- 676:             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
- 677:                 setSelectedOption(startInput, data.webhooks_time_start || '');
- 678:             }
- 679:             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
- 680:                 setSelectedOption(endInput, data.webhooks_time_end || '');
- 681:             }
- 682:             
- 683:             renderTimeWindowDisplay(data.webhooks_time_start || start, data.webhooks_time_end || end);
- 684:             
- 685:             // S'assurer que la source persistée est rechargée
- 686:             await loadTimeWindow();
- 687:             return true;
- 688:         } else {
- 689:             MessageHelper.showError('timeWindowMsg', data.message || 'Erreur lors de la sauvegarde.');
- 690:             updatePanelStatus('time-window', false);
- 691:             return false;
- 692:         }
- 693:     } catch (e) {
- 694:         MessageHelper.showError('timeWindowMsg', 'Erreur de communication avec le serveur.');
- 695:         updatePanelStatus('time-window', false);
- 696:         return false;
- 697:     }
- 698: }
- 699: 
- 700: function renderTimeWindowDisplay(start, end) {
- 701:     const displayEl = document.getElementById('timeWindowDisplay');
- 702:     if (!displayEl) return;
- 703:     
- 704:     const hasStart = Boolean(start && String(start).trim());
- 705:     const hasEnd = Boolean(end && String(end).trim());
- 706:     
- 707:     if (!hasStart && !hasEnd) {
- 708:         displayEl.textContent = 'Dernière fenêtre enregistrée: aucune contrainte horaire active';
- 709:         return;
- 710:     }
- 711:     
- 712:     const startText = hasStart ? String(start) : '—';
- 713:     const endText = hasEnd ? String(end) : '—';
- 714:     displayEl.textContent = `Dernière fenêtre enregistrée: ${startText} → ${endText}`;
- 715: }
- 716: 
- 717: // Polling configuration
- 718: async function loadPollingConfig() {
- 719:     try {
- 720:         const data = await ApiService.get('/api/get_polling_config');
- 721:         
- 722:         if (data.success) {
- 723:             const cfg = data.config || {};
- 724:             
- 725:             // Déduplication
- 726:             const dedupEl = document.getElementById('enableSubjectGroupDedup');
- 727:             if (dedupEl) dedupEl.checked = !!cfg.enable_subject_group_dedup;
- 728:             
- 729:             // Senders
- 730:             const senders = Array.isArray(cfg.sender_of_interest_for_polling) ? cfg.sender_of_interest_for_polling : [];
- 731:             renderSenderInputs(senders);
- 732:             
- 733:             // Active days and hours
- 734:             try {
- 735:                 if (Array.isArray(cfg.active_days)) setDayCheckboxes(cfg.active_days);
- 736:                 
- 737:                 const sh = document.getElementById('pollingStartHour');
- 738:                 const eh = document.getElementById('pollingEndHour');
- 739:                 if (sh && Number.isInteger(cfg.active_start_hour)) setSelectedOption(sh, String(cfg.active_start_hour));
- 740:                 if (eh && Number.isInteger(cfg.active_end_hour)) setSelectedOption(eh, String(cfg.active_end_hour));
- 741:             } catch (e) {
- 742:                 console.warn('loadPollingConfig: applying days/hours failed', e);
- 743:             }
- 744:         }
- 745:     } catch (e) {
- 746:         console.error('Erreur chargement config polling:', e);
- 747:     }
- 748: }
- 749: 
- 750: async function savePollingConfig(event) {
- 751:     const btn = event?.target || document.getElementById('savePollingCfgBtn');
- 752:     if (btn) btn.disabled = true;
- 753:     
- 754:     const dedup = document.getElementById('enableSubjectGroupDedup')?.checked;
- 755:     const senders = collectSenderInputs();
- 756:     const activeDays = collectDayCheckboxes();
- 757:     const startHourStr = document.getElementById('pollingStartHour')?.value?.trim() ?? '';
- 758:     const endHourStr = document.getElementById('pollingEndHour')?.value?.trim() ?? '';
- 759:     const statusId = document.getElementById('emailPrefsSaveStatus') ? 'emailPrefsSaveStatus' : 'pollingCfgMsg';
- 760: 
- 761:     // Validation
- 762:     const startHour = startHourStr === '' ? null : Number.parseInt(startHourStr, 10);
- 763:     const endHour = endHourStr === '' ? null : Number.parseInt(endHourStr, 10);
- 764:     
- 765:     if (!activeDays || activeDays.length === 0) {
- 766:         MessageHelper.showError(statusId, 'Veuillez sélectionner au moins un jour actif.');
- 767:         if (btn) btn.disabled = false;
- 768:         return;
- 769:     }
- 770:     
- 771:     if (startHour === null || Number.isNaN(startHour) || startHour < 0 || startHour > 23) {
- 772:         MessageHelper.showError(statusId, 'Heure de début invalide (0-23).');
- 773:         if (btn) btn.disabled = false;
- 774:         return;
- 775:     }
- 776:     
- 777:     if (endHour === null || Number.isNaN(endHour) || endHour < 0 || endHour > 23) {
- 778:         MessageHelper.showError(statusId, 'Heure de fin invalide (0-23).');
- 779:         if (btn) btn.disabled = false;
- 780:         return;
- 781:     }
- 782:     
- 783:     if (startHour === endHour) {
- 784:         MessageHelper.showError(statusId, 'L\'heure de début et de fin ne peuvent pas être identiques.');
- 785:         if (btn) btn.disabled = false;
- 786:         return;
- 787:     }
- 788: 
- 789:     const payload = {
- 790:         enable_subject_group_dedup: dedup,
- 791:         sender_of_interest_for_polling: senders,
- 792:         active_days: activeDays,
- 793:         active_start_hour: startHour,
- 794:         active_end_hour: endHour
- 795:     };
- 796: 
- 797:     try {
- 798:         const data = await ApiService.post('/api/update_polling_config', payload);
- 799:         
- 800:         if (data.success) {
- 801:             MessageHelper.showSuccess(statusId, data.message || 'Préférences enregistrées avec succès !');
- 802:             await loadPollingConfig();
- 803:         } else {
- 804:             MessageHelper.showError(statusId, data.message || 'Erreur lors de la sauvegarde.');
- 805:         }
- 806:     } catch (e) {
- 807:         MessageHelper.showError(statusId, 'Erreur de communication avec le serveur.');
- 808:     } finally {
- 809:         if (btn) btn.disabled = false;
- 810:     }
- 811: }
- 812: 
- 813: // Runtime flags
- 814: async function loadRuntimeFlags() {
- 815:     try {
- 816:         const data = await ApiService.get('/api/get_runtime_flags');
- 817:         
- 818:         if (data.success) {
- 819:             const flags = data.flags || {};
- 820: 
- 821:             const disableDedup = document.getElementById('disableEmailIdDedupToggle');
- 822:             if (disableDedup && Object.prototype.hasOwnProperty.call(flags, 'disable_email_id_dedup')) {
- 823:                 disableDedup.checked = !!flags.disable_email_id_dedup;
- 824:             }
- 825: 
- 826:             const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
- 827:             if (
- 828:                 allowCustom
- 829:                 && Object.prototype.hasOwnProperty.call(flags, 'allow_custom_webhook_without_links')
- 830:             ) {
- 831:                 allowCustom.checked = !!flags.allow_custom_webhook_without_links;
- 832:             }
- 833:         }
- 834:     } catch (e) {
- 835:         console.error('loadRuntimeFlags error', e);
- 836:     }
- 837: }
- 838: 
- 839: async function saveRuntimeFlags() {
- 840:     const msgId = 'runtimeFlagsMsg';
- 841:     const btn = document.getElementById('runtimeFlagsSaveBtn');
- 842:     
- 843:     MessageHelper.setButtonLoading(btn, true);
- 844:     
- 845:     try {
- 846:         const disableDedup = document.getElementById('disableEmailIdDedupToggle');
- 847:         const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
- 848: 
- 849:         const payload = {
- 850:             disable_email_id_dedup: disableDedup?.checked ?? false,
- 851:             allow_custom_webhook_without_links: allowCustom?.checked ?? false,
- 852:         };
- 853: 
- 854:         const data = await ApiService.post('/api/update_runtime_flags', payload);
- 855:         
- 856:         if (data.success) {
- 857:             MessageHelper.showSuccess(msgId, 'Flags de débogage enregistrés avec succès !');
- 858:         } else {
- 859:             MessageHelper.showError(msgId, data.message || 'Erreur lors de la sauvegarde.');
- 860:         }
- 861:     } catch (e) {
- 862:         MessageHelper.showError(msgId, 'Erreur de communication avec le serveur.');
- 863:     } finally {
- 864:         MessageHelper.setButtonLoading(btn, false);
- 865:     }
- 866: }
- 867: 
- 868: // Processing preferences
- 869: async function loadProcessingPrefsFromServer() {
- 870:     try {
- 871:         const data = await ApiService.get('/api/processing_prefs');
- 872:         
- 873:         if (data.success) {
- 874:             const prefs = data.prefs || {};
- 875:             
- 876:             // Mapping des préférences vers les éléments UI avec les bons IDs
- 877:             const mappings = {
- 878:                 // Filtres
- 879:                 'exclude_keywords': 'excludeKeywords',
- 880:                 'exclude_keywords_recadrage': 'excludeKeywordsRecadrage', 
- 881:                 'exclude_keywords_autorepondeur': 'excludeKeywordsAutorepondeur',
- 882:                 
- 883:                 // Paramètres
- 884:                 'require_attachments': 'attachmentDetectionToggle',
- 885:                 'max_email_size_mb': 'maxEmailSizeMB',
- 886:                 'sender_priority': 'senderPriority',
- 887:                 
- 888:                 // Fiabilité
- 889:                 'retry_count': 'retryCount',
- 890:                 'retry_delay_sec': 'retryDelaySec',
- 891:                 'webhook_timeout_sec': 'webhookTimeoutSec',
- 892:                 'rate_limit_per_hour': 'rateLimitPerHour',
- 893:                 'notify_on_failure': 'notifyOnFailureToggle'
- 894:             };
- 895:             
- 896:             Object.entries(mappings).forEach(([prefKey, elementId]) => {
- 897:                 const el = document.getElementById(elementId);
- 898:                 if (el && prefs[prefKey] !== undefined) {
- 899:                     if (el.type === 'checkbox') {
- 900:                         el.checked = Boolean(prefs[prefKey]);
- 901:                     } else if (el.tagName === 'TEXTAREA' && Array.isArray(prefs[prefKey])) {
- 902:                         // Convertir les tableaux en chaînes multi-lignes pour les textarea
- 903:                         el.value = prefs[prefKey].join('\n');
- 904:                     } else if (el.tagName === 'TEXTAREA' && typeof prefs[prefKey] === 'object') {
- 905:                         // Convertir les objets JSON en chaînes formatées pour les textarea
- 906:                         el.value = JSON.stringify(prefs[prefKey], null, 2);
- 907:                     } else if (el.type === 'number' && prefs[prefKey] === null) {
- 908:                         el.value = '';
- 909:                     } else {
- 910:                         el.value = prefs[prefKey];
- 911:                     }
- 912:                 }
- 913:             });
- 914:         }
- 915:     } catch (e) {
- 916:         console.error('loadProcessingPrefs error', e);
- 917:     }
- 918: }
- 919: 
- 920: async function saveProcessingPrefsToServer() {
- 921:     const btn = document.getElementById('processingPrefsSaveBtn');
- 922:     const msgId = 'processingPrefsMsg';
- 923:     
- 924:     MessageHelper.setButtonLoading(btn, true);
- 925:     
- 926:     try {
- 927:         // Mapping des éléments UI vers les clés de préférences
- 928:         const mappings = {
- 929:             // Filtres
- 930:             'excludeKeywords': 'exclude_keywords',
- 931:             'excludeKeywordsRecadrage': 'exclude_keywords_recadrage', 
- 932:             'excludeKeywordsAutorepondeur': 'exclude_keywords_autorepondeur',
- 933:             
- 934:             // Paramètres
- 935:             'attachmentDetectionToggle': 'require_attachments',
- 936:             'maxEmailSizeMB': 'max_email_size_mb',
- 937:             'senderPriority': 'sender_priority',
- 938:             
- 939:             // Fiabilité
- 940:             'retryCount': 'retry_count',
- 941:             'retryDelaySec': 'retry_delay_sec',
- 942:             'webhookTimeoutSec': 'webhook_timeout_sec',
- 943:             'rateLimitPerHour': 'rate_limit_per_hour',
- 944:             'notifyOnFailureToggle': 'notify_on_failure'
- 945:         };
- 946:         
- 947:         // Collecter les préférences depuis les éléments UI
- 948:         const prefs = {};
- 949:         
- 950:         Object.entries(mappings).forEach(([elementId, prefKey]) => {
- 951:             const el = document.getElementById(elementId);
- 952:             if (el) {
- 953:                 if (el.type === 'checkbox') {
- 954:                     prefs[prefKey] = el.checked;
- 955:                 } else if (el.tagName === 'TEXTAREA') {
- 956:                     const value = el.value.trim();
- 957:                     if (value) {
- 958:                         // Pour les textarea de mots-clés, convertir en tableau
- 959:                         if (elementId.includes('Keywords')) {
- 960:                             prefs[prefKey] = value.split('\n').map(line => line.trim()).filter(line => line);
- 961:                         } 
- 962:                         // Pour le textarea JSON (sender_priority)
- 963:                         else if (elementId === 'senderPriority') {
- 964:                             try {
- 965:                                 prefs[prefKey] = JSON.parse(value);
- 966:                             } catch (e) {
- 967:                                 console.warn('Invalid JSON in senderPriority, using empty object');
- 968:                                 prefs[prefKey] = {};
- 969:                             }
- 970:                         }
- 971:                         // Pour les autres textarea
- 972:                         else {
- 973:                             prefs[prefKey] = value;
- 974:                         }
- 975:                     } else {
- 976:                         // Valeur vide selon le type
- 977:                         if (elementId.includes('Keywords')) {
- 978:                             prefs[prefKey] = [];
- 979:                         } else if (elementId === 'senderPriority') {
- 980:                             prefs[prefKey] = {};
- 981:                         } else {
- 982:                             prefs[prefKey] = value;
- 983:                         }
- 984:                     }
- 985:                 } else {
- 986:                     // Pour les inputs normaux
- 987:                     const value = (el.value ?? '').toString().trim();
- 988:                     if (el.type === 'number') {
- 989:                         if (value === '') {
- 990:                             if (elementId === 'maxEmailSizeMB') {
- 991:                                 prefs[prefKey] = null;
- 992:                             }
- 993:                             return;
- 994:                         }
- 995:                         prefs[prefKey] = parseInt(value, 10);
- 996:                         return;
- 997:                     }
- 998:                     prefs[prefKey] = value;
- 999:                 }
-1000:             }
-1001:         });
-1002:         
-1003:         const data = await ApiService.post('/api/processing_prefs', prefs);
-1004:         
-1005:         if (data.success) {
-1006:             MessageHelper.showSuccess(msgId, 'Préférences de traitement enregistrées avec succès !');
-1007:         } else {
-1008:             MessageHelper.showError(msgId, data.message || 'Erreur lors de la sauvegarde.');
-1009:         }
-1010:     } catch (e) {
-1011:         MessageHelper.showError(msgId, 'Erreur de communication avec le serveur.');
-1012:     } finally {
-1013:         MessageHelper.setButtonLoading(btn, false);
-1014:     }
-1015: }
-1016: 
-1017: // Local preferences
-1018: function loadLocalPreferences() {
-1019:     try {
-1020:         const raw = localStorage.getItem('dashboard_prefs_v1');
-1021:         if (!raw) {
-1022:             // Default preferences - REMOVED: enableMetricsToggle default
-1023:             // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
-1024:             // if (enableMetricsToggle) {
-1025:             //     enableMetricsToggle.checked = true;
-1026:             // }
-1027:             return;
-1028:         }
-1029:         
-1030:         const prefs = JSON.parse(raw);
-1031:         
-1032:         // Apply metrics preference if exists - REMOVED: Monitoring section deleted
-1033:         // if (prefs.hasOwnProperty('enableMetricsToggle')) {
-1034:         //     const enableMetricsToggle = document.getElementById('enableMetricsToggle');
-1035:         //     if (enableMetricsToggle) {
-1036:         //         enableMetricsToggle.checked = prefs.enableMetricsToggle;
-1037:         //     }
-1038:         // }
-1039:         
-1040:         // Appliquer les préférences locales
-1041:         Object.keys(prefs).forEach(key => {
-1042:             const el = document.getElementById(key);
-1043:             if (el) {
-1044:                 if (el.type === 'checkbox') {
-1045:                     el.checked = prefs[key];
-1046:                 } else {
-1047:                     el.value = prefs[key];
-1048:                 }
-1049:             }
-1050:         });
-1051:     } catch (e) {
-1052:         console.warn('Erreur chargement préférences locales:', e);
-1053:     }
-1054: }
-1055: 
-1056: function saveLocalPreferences() {
-1057:     try {
-1058:         const prefs = {};
-1059:         
-1060:         // Collecter les préférences locales
-1061:         const localElements = document.querySelectorAll('[data-pref="local"]');
-1062:         localElements.forEach(el => {
-1063:             const prefName = el.id;
-1064:             if (el.type === 'checkbox') {
-1065:                 prefs[prefName] = el.checked;
-1066:             } else {
-1067:                 prefs[prefName] = el.value;
-1068:             }
-1069:         });
-1070:         
-1071:         // Always save enableMetricsToggle preference - REMOVED: Monitoring section deleted
-1072:         // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
-1073:         // if (enableMetricsToggle) {
-1074:         //     prefs.enableMetricsToggle = enableMetricsToggle.checked;
-1075:         // }
-1076:         
-1077:         localStorage.setItem('dashboard_prefs_v1', JSON.stringify(prefs));
-1078:     } catch (e) {
-1079:         console.warn('Erreur sauvegarde préférences locales:', e);
-1080:     }
-1081: }
-1082: 
-1083: // Configuration management
-1084: async function exportAllConfig() {
-1085:     try {
-1086:         const [webhookCfg, pollingCfg, timeWin, processingPrefs] = await Promise.all([
-1087:             ApiService.get('/api/webhooks/config'),
-1088:             ApiService.get('/api/get_polling_config'),
-1089:             ApiService.get('/api/get_webhook_time_window'),
-1090:             ApiService.get('/api/processing_prefs')
-1091:         ]);
-1092:         
-1093:         const prefsRaw = localStorage.getItem('dashboard_prefs_v1');
-1094:         const exportObj = {
-1095:             exported_at: new Date().toISOString(),
-1096:             webhook_config: webhookCfg,
-1097:             polling_config: pollingCfg,
-1098:             time_window: timeWin,
-1099:             processing_prefs: processingPrefs,
-1100:             ui_preferences: prefsRaw ? JSON.parse(prefsRaw) : {}
-1101:         };
-1102:         
-1103:         const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
-1104:         const url = URL.createObjectURL(blob);
-1105:         const a = document.createElement('a');
-1106:         a.href = url;
-1107:         a.download = 'render_signal_dashboard_config.json';
-1108:         a.click();
-1109:         URL.revokeObjectURL(url);
-1110:         
-1111:         MessageHelper.showSuccess('configMgmtMsg', 'Export réalisé avec succès.');
-1112:     } catch (e) {
-1113:         MessageHelper.showError('configMgmtMsg', 'Erreur lors de l\'export.');
-1114:     }
-1115: }
-1116: 
-1117: function handleImportConfigFile(evt) {
-1118:     const file = evt.target.files && evt.target.files[0];
-1119:     if (!file) return;
-1120:     
-1121:     const reader = new FileReader();
-1122:     reader.onload = async () => {
-1123:         try {
-1124:             const obj = JSON.parse(String(reader.result || '{}'));
-1125:             
-1126:             // Appliquer la configuration serveur
-1127:             await applyImportedServerConfig(obj);
-1128:             
-1129:             // Appliquer les préférences UI
-1130:             if (obj.ui_preferences) {
-1131:                 localStorage.setItem('dashboard_prefs_v1', JSON.stringify(obj.ui_preferences));
-1132:                 loadLocalPreferences();
-1133:             }
-1134:             
-1135:             MessageHelper.showSuccess('configMgmtMsg', 'Import appliqué.');
-1136:         } catch (e) {
-1137:             MessageHelper.showError('configMgmtMsg', 'Fichier invalide.');
-1138:         }
-1139:     };
-1140:     reader.readAsText(file);
-1141:     
-1142:     // Reset input pour permettre les imports consécutifs
-1143:     evt.target.value = '';
-1144: }
-1145: 
-1146: async function applyImportedServerConfig(obj) {
-1147:     // Webhook config
-1148:     if (obj?.webhook_config?.config) {
-1149:         const cfg = obj.webhook_config.config;
-1150:         const payload = {};
-1151: 
-1152:         if (
-1153:             cfg.webhook_url
-1154:             && typeof cfg.webhook_url === 'string'
-1155:             && !cfg.webhook_url.includes('***')
-1156:         ) {
-1157:             payload.webhook_url = cfg.webhook_url;
-1158:         }
-1159:         if (typeof cfg.webhook_ssl_verify === 'boolean') payload.webhook_ssl_verify = cfg.webhook_ssl_verify;
-1160:         if (typeof cfg.webhook_sending_enabled === 'boolean') {
-1161:             payload.webhook_sending_enabled = cfg.webhook_sending_enabled;
-1162:         }
-1163:         if (typeof cfg.absence_pause_enabled === 'boolean') {
-1164:             payload.absence_pause_enabled = cfg.absence_pause_enabled;
-1165:         }
-1166:         if (Array.isArray(cfg.absence_pause_days)) {
-1167:             payload.absence_pause_days = cfg.absence_pause_days;
-1168:         }
-1169:         
-1170:         if (Object.keys(payload).length) {
-1171:             await ApiService.post('/api/webhooks/config', payload);
-1172:             await WebhookService.loadConfig();
-1173:         }
-1174:     }
-1175:     
-1176:     // Polling config
-1177:     if (obj?.polling_config?.config) {
-1178:         const cfg = obj.polling_config.config;
-1179:         const payload = {};
-1180:         
-1181:         if (Array.isArray(cfg.active_days)) payload.active_days = cfg.active_days;
-1182:         if (Number.isInteger(cfg.active_start_hour)) payload.active_start_hour = cfg.active_start_hour;
-1183:         if (Number.isInteger(cfg.active_end_hour)) payload.active_end_hour = cfg.active_end_hour;
-1184:         if (typeof cfg.enable_subject_group_dedup === 'boolean') payload.enable_subject_group_dedup = cfg.enable_subject_group_dedup;
-1185:         if (Array.isArray(cfg.sender_of_interest_for_polling)) payload.sender_of_interest_for_polling = cfg.sender_of_interest_for_polling;
-1186:         
-1187:         if (Object.keys(payload).length) {
-1188:             await ApiService.post('/api/update_polling_config', payload);
-1189:             await loadPollingConfig();
-1190:         }
-1191:     }
-1192:     
-1193:     // Time window
-1194:     if (obj?.time_window) {
-1195:         const start = obj.time_window.webhooks_time_start ?? '';
-1196:         const end = obj.time_window.webhooks_time_end ?? '';
-1197:         await ApiService.post('/api/set_webhook_time_window', { start, end });
-1198:         await loadTimeWindow();
-1199:     }
-1200: 
-1201:     // Processing prefs
-1202:     if (obj?.processing_prefs?.prefs && typeof obj.processing_prefs.prefs === 'object') {
-1203:         await ApiService.post('/api/processing_prefs', obj.processing_prefs.prefs);
-1204:         await loadProcessingPrefsFromServer();
-1205:     }
-1206: }
-1207: 
-1208: // Validation
-1209: function validateWebhookUrlFromInput() {
-1210:     const inp = document.getElementById('testWebhookUrl');
-1211:     const msgId = 'webhookUrlValidationMsg';
-1212:     const val = (inp?.value || '').trim();
-1213:     
-1214:     if (!val) {
-1215:         MessageHelper.showError(msgId, 'Veuillez saisir une URL ou un alias.');
-1216:         return;
-1217:     }
+ 633: }
+ 634: 
+ 635: function renderTimeWindowDisplay(start, end) {
+ 636:     const displayEl = document.getElementById('timeWindowDisplay');
+ 637:     if (!displayEl) return;
+ 638:     
+ 639:     const hasStart = Boolean(start && String(start).trim());
+ 640:     const hasEnd = Boolean(end && String(end).trim());
+ 641:     
+ 642:     if (!hasStart && !hasEnd) {
+ 643:         displayEl.textContent = 'Dernière fenêtre enregistrée: aucune contrainte horaire active';
+ 644:         return;
+ 645:     }
+ 646:     
+ 647:     const startText = hasStart ? String(start) : '—';
+ 648:     const endText = hasEnd ? String(end) : '—';
+ 649:     displayEl.textContent = `Dernière fenêtre enregistrée: ${startText} → ${endText}`;
+ 650: }
+ 651: 
+ 652: 
+ 653: // Runtime flags
+ 654: async function loadRuntimeFlags() {
+ 655:     try {
+ 656:         const data = await ApiService.get('/api/get_runtime_flags');
+ 657:         
+ 658:         if (data.success) {
+ 659:             const flags = data.flags || {};
+ 660: 
+ 661:             const disableDedup = document.getElementById('disableEmailIdDedupToggle');
+ 662:             if (disableDedup && Object.prototype.hasOwnProperty.call(flags, 'disable_email_id_dedup')) {
+ 663:                 disableDedup.checked = !!flags.disable_email_id_dedup;
+ 664:             }
+ 665: 
+ 666:             const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
+ 667:             if (
+ 668:                 allowCustom
+ 669:                 && Object.prototype.hasOwnProperty.call(flags, 'allow_custom_webhook_without_links')
+ 670:             ) {
+ 671:                 allowCustom.checked = !!flags.allow_custom_webhook_without_links;
+ 672:             }
+ 673:         }
+ 674:     } catch (e) {
+ 675:         console.error('loadRuntimeFlags error', e);
+ 676:     }
+ 677: }
+ 678: 
+ 679: async function saveRuntimeFlags() {
+ 680:     const msgId = 'runtimeFlagsMsg';
+ 681:     const btn = document.getElementById('runtimeFlagsSaveBtn');
+ 682:     
+ 683:     MessageHelper.setButtonLoading(btn, true);
+ 684:     
+ 685:     try {
+ 686:         const disableDedup = document.getElementById('disableEmailIdDedupToggle');
+ 687:         const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
+ 688: 
+ 689:         const payload = {
+ 690:             disable_email_id_dedup: disableDedup?.checked ?? false,
+ 691:             allow_custom_webhook_without_links: allowCustom?.checked ?? false,
+ 692:         };
+ 693: 
+ 694:         const data = await ApiService.post('/api/update_runtime_flags', payload);
+ 695:         
+ 696:         if (data.success) {
+ 697:             MessageHelper.showSuccess(msgId, 'Flags de débogage enregistrés avec succès !');
+ 698:         } else {
+ 699:             MessageHelper.showError(msgId, data.message || 'Erreur lors de la sauvegarde.');
+ 700:         }
+ 701:     } catch (e) {
+ 702:         MessageHelper.showError(msgId, 'Erreur de communication avec le serveur.');
+ 703:     } finally {
+ 704:         MessageHelper.setButtonLoading(btn, false);
+ 705:     }
+ 706: }
+ 707: 
+ 708: // Processing preferences
+ 709: async function loadProcessingPrefsFromServer() {
+ 710:     try {
+ 711:         const data = await ApiService.get('/api/processing_prefs');
+ 712:         
+ 713:         if (data.success) {
+ 714:             const prefs = data.prefs || {};
+ 715:             
+ 716:             // Mapping des préférences vers les éléments UI avec les bons IDs
+ 717:             const mappings = {
+ 718:                 // Filtres
+ 719:                 'exclude_keywords': 'excludeKeywords',
+ 720:                 'exclude_keywords_recadrage': 'excludeKeywordsRecadrage', 
+ 721:                 'exclude_keywords_autorepondeur': 'excludeKeywordsAutorepondeur',
+ 722:                 
+ 723:                 // Paramètres
+ 724:                 'require_attachments': 'attachmentDetectionToggle',
+ 725:                 'max_email_size_mb': 'maxEmailSizeMB',
+ 726:                 'sender_priority': 'senderPriority',
+ 727:                 
+ 728:                 // Fiabilité
+ 729:                 'retry_count': 'retryCount',
+ 730:                 'retry_delay_sec': 'retryDelaySec',
+ 731:                 'webhook_timeout_sec': 'webhookTimeoutSec',
+ 732:                 'rate_limit_per_hour': 'rateLimitPerHour',
+ 733:                 'notify_on_failure': 'notifyOnFailureToggle'
+ 734:             };
+ 735:             
+ 736:             Object.entries(mappings).forEach(([prefKey, elementId]) => {
+ 737:                 const el = document.getElementById(elementId);
+ 738:                 if (el && prefs[prefKey] !== undefined) {
+ 739:                     if (el.type === 'checkbox') {
+ 740:                         el.checked = Boolean(prefs[prefKey]);
+ 741:                     } else if (el.tagName === 'TEXTAREA' && Array.isArray(prefs[prefKey])) {
+ 742:                         // Convertir les tableaux en chaînes multi-lignes pour les textarea
+ 743:                         el.value = prefs[prefKey].join('\n');
+ 744:                     } else if (el.tagName === 'TEXTAREA' && typeof prefs[prefKey] === 'object') {
+ 745:                         // Convertir les objets JSON en chaînes formatées pour les textarea
+ 746:                         el.value = JSON.stringify(prefs[prefKey], null, 2);
+ 747:                     } else if (el.type === 'number' && prefs[prefKey] === null) {
+ 748:                         el.value = '';
+ 749:                     } else {
+ 750:                         el.value = prefs[prefKey];
+ 751:                     }
+ 752:                 }
+ 753:             });
+ 754:         }
+ 755:     } catch (e) {
+ 756:         console.error('loadProcessingPrefs error', e);
+ 757:     }
+ 758: }
+ 759: 
+ 760: async function saveProcessingPrefsToServer() {
+ 761:     const btn = document.getElementById('processingPrefsSaveBtn');
+ 762:     const msgId = 'processingPrefsMsg';
+ 763:     
+ 764:     MessageHelper.setButtonLoading(btn, true);
+ 765:     
+ 766:     try {
+ 767:         // Mapping des éléments UI vers les clés de préférences
+ 768:         const mappings = {
+ 769:             // Filtres
+ 770:             'excludeKeywords': 'exclude_keywords',
+ 771:             'excludeKeywordsRecadrage': 'exclude_keywords_recadrage', 
+ 772:             'excludeKeywordsAutorepondeur': 'exclude_keywords_autorepondeur',
+ 773:             
+ 774:             // Paramètres
+ 775:             'attachmentDetectionToggle': 'require_attachments',
+ 776:             'maxEmailSizeMB': 'max_email_size_mb',
+ 777:             'senderPriority': 'sender_priority',
+ 778:             
+ 779:             // Fiabilité
+ 780:             'retryCount': 'retry_count',
+ 781:             'retryDelaySec': 'retry_delay_sec',
+ 782:             'webhookTimeoutSec': 'webhook_timeout_sec',
+ 783:             'rateLimitPerHour': 'rate_limit_per_hour',
+ 784:             'notifyOnFailureToggle': 'notify_on_failure'
+ 785:         };
+ 786:         
+ 787:         // Collecter les préférences depuis les éléments UI
+ 788:         const prefs = {};
+ 789:         
+ 790:         Object.entries(mappings).forEach(([elementId, prefKey]) => {
+ 791:             const el = document.getElementById(elementId);
+ 792:             if (el) {
+ 793:                 if (el.type === 'checkbox') {
+ 794:                     prefs[prefKey] = el.checked;
+ 795:                 } else if (el.tagName === 'TEXTAREA') {
+ 796:                     const value = el.value.trim();
+ 797:                     if (value) {
+ 798:                         // Pour les textarea de mots-clés, convertir en tableau
+ 799:                         if (elementId.includes('Keywords')) {
+ 800:                             prefs[prefKey] = value.split('\n').map(line => line.trim()).filter(line => line);
+ 801:                         } 
+ 802:                         // Pour le textarea JSON (sender_priority)
+ 803:                         else if (elementId === 'senderPriority') {
+ 804:                             try {
+ 805:                                 prefs[prefKey] = JSON.parse(value);
+ 806:                             } catch (e) {
+ 807:                                 console.warn('Invalid JSON in senderPriority, using empty object');
+ 808:                                 prefs[prefKey] = {};
+ 809:                             }
+ 810:                         }
+ 811:                         // Pour les autres textarea
+ 812:                         else {
+ 813:                             prefs[prefKey] = value;
+ 814:                         }
+ 815:                     } else {
+ 816:                         // Valeur vide selon le type
+ 817:                         if (elementId.includes('Keywords')) {
+ 818:                             prefs[prefKey] = [];
+ 819:                         } else if (elementId === 'senderPriority') {
+ 820:                             prefs[prefKey] = {};
+ 821:                         } else {
+ 822:                             prefs[prefKey] = value;
+ 823:                         }
+ 824:                     }
+ 825:                 } else {
+ 826:                     // Pour les inputs normaux
+ 827:                     const value = (el.value ?? '').toString().trim();
+ 828:                     if (el.type === 'number') {
+ 829:                         if (value === '') {
+ 830:                             if (elementId === 'maxEmailSizeMB') {
+ 831:                                 prefs[prefKey] = null;
+ 832:                             }
+ 833:                             return;
+ 834:                         }
+ 835:                         prefs[prefKey] = parseInt(value, 10);
+ 836:                         return;
+ 837:                     }
+ 838:                     prefs[prefKey] = value;
+ 839:                 }
+ 840:             }
+ 841:         });
+ 842:         
+ 843:         const data = await ApiService.post('/api/processing_prefs', prefs);
+ 844:         
+ 845:         if (data.success) {
+ 846:             MessageHelper.showSuccess(msgId, 'Préférences de traitement enregistrées avec succès !');
+ 847:         } else {
+ 848:             MessageHelper.showError(msgId, data.message || 'Erreur lors de la sauvegarde.');
+ 849:         }
+ 850:     } catch (e) {
+ 851:         MessageHelper.showError(msgId, 'Erreur de communication avec le serveur.');
+ 852:     } finally {
+ 853:         MessageHelper.setButtonLoading(btn, false);
+ 854:     }
+ 855: }
+ 856: 
+ 857: // Local preferences
+ 858: function loadLocalPreferences() {
+ 859:     try {
+ 860:         const raw = localStorage.getItem('dashboard_prefs_v1');
+ 861:         if (!raw) {
+ 862:             // Default preferences - REMOVED: enableMetricsToggle default
+ 863:             // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+ 864:             // if (enableMetricsToggle) {
+ 865:             //     enableMetricsToggle.checked = true;
+ 866:             // }
+ 867:             return;
+ 868:         }
+ 869:         
+ 870:         const prefs = JSON.parse(raw);
+ 871:         
+ 872:         // Apply metrics preference if exists - REMOVED: Monitoring section deleted
+ 873:         // if (prefs.hasOwnProperty('enableMetricsToggle')) {
+ 874:         //     const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+ 875:         //     if (enableMetricsToggle) {
+ 876:         //         enableMetricsToggle.checked = prefs.enableMetricsToggle;
+ 877:         //     }
+ 878:         // }
+ 879:         
+ 880:         // Appliquer les préférences locales
+ 881:         Object.keys(prefs).forEach(key => {
+ 882:             const el = document.getElementById(key);
+ 883:             if (el) {
+ 884:                 if (el.type === 'checkbox') {
+ 885:                     el.checked = prefs[key];
+ 886:                 } else {
+ 887:                     el.value = prefs[key];
+ 888:                 }
+ 889:             }
+ 890:         });
+ 891:     } catch (e) {
+ 892:         console.warn('Erreur chargement préférences locales:', e);
+ 893:     }
+ 894: }
+ 895: 
+ 896: function saveLocalPreferences() {
+ 897:     try {
+ 898:         const prefs = {};
+ 899:         
+ 900:         // Collecter les préférences locales
+ 901:         const localElements = document.querySelectorAll('[data-pref="local"]');
+ 902:         localElements.forEach(el => {
+ 903:             const prefName = el.id;
+ 904:             if (el.type === 'checkbox') {
+ 905:                 prefs[prefName] = el.checked;
+ 906:             } else {
+ 907:                 prefs[prefName] = el.value;
+ 908:             }
+ 909:         });
+ 910:         
+ 911:         // Always save enableMetricsToggle preference - REMOVED: Monitoring section deleted
+ 912:         // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+ 913:         // if (enableMetricsToggle) {
+ 914:         //     prefs.enableMetricsToggle = enableMetricsToggle.checked;
+ 915:         // }
+ 916:         
+ 917:         localStorage.setItem('dashboard_prefs_v1', JSON.stringify(prefs));
+ 918:     } catch (e) {
+ 919:         console.warn('Erreur sauvegarde préférences locales:', e);
+ 920:     }
+ 921: }
+ 922: 
+ 923: // Configuration management
+ 924: async function exportAllConfig() {
+ 925:     try {
+ 926:         const [webhookCfg, timeWin, processingPrefs] = await Promise.all([
+ 927:             ApiService.get('/api/webhooks/config'),
+ 928:             ApiService.get('/api/get_webhook_time_window'),
+ 929:             ApiService.get('/api/processing_prefs')
+ 930:         ]);
+ 931:         
+ 932:         const prefsRaw = localStorage.getItem('dashboard_prefs_v1');
+ 933:         const exportObj = {
+ 934:             exported_at: new Date().toISOString(),
+ 935:             webhook_config: webhookCfg,
+ 936:             time_window: timeWin,
+ 937:             processing_prefs: processingPrefs,
+ 938:             ui_preferences: prefsRaw ? JSON.parse(prefsRaw) : {}
+ 939:         };
+ 940:         
+ 941:         const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
+ 942:         const url = URL.createObjectURL(blob);
+ 943:         const a = document.createElement('a');
+ 944:         a.href = url;
+ 945:         a.download = 'render_signal_dashboard_config.json';
+ 946:         a.click();
+ 947:         URL.revokeObjectURL(url);
+ 948:         
+ 949:         MessageHelper.showSuccess('configMgmtMsg', 'Export réalisé avec succès.');
+ 950:     } catch (e) {
+ 951:         MessageHelper.showError('configMgmtMsg', 'Erreur lors de l\'export.');
+ 952:     }
+ 953: }
+ 954: 
+ 955: function handleImportConfigFile(evt) {
+ 956:     const file = evt.target.files && evt.target.files[0];
+ 957:     if (!file) return;
+ 958:     
+ 959:     const reader = new FileReader();
+ 960:     reader.onload = async () => {
+ 961:         try {
+ 962:             const obj = JSON.parse(String(reader.result || '{}'));
+ 963:             
+ 964:             // Appliquer la configuration serveur
+ 965:             await applyImportedServerConfig(obj);
+ 966:             
+ 967:             // Appliquer les préférences UI
+ 968:             if (obj.ui_preferences) {
+ 969:                 localStorage.setItem('dashboard_prefs_v1', JSON.stringify(obj.ui_preferences));
+ 970:                 loadLocalPreferences();
+ 971:             }
+ 972:             
+ 973:             MessageHelper.showSuccess('configMgmtMsg', 'Import appliqué.');
+ 974:         } catch (e) {
+ 975:             MessageHelper.showError('configMgmtMsg', 'Fichier invalide.');
+ 976:         }
+ 977:     };
+ 978:     reader.readAsText(file);
+ 979:     
+ 980:     // Reset input pour permettre les imports consécutifs
+ 981:     evt.target.value = '';
+ 982: }
+ 983: 
+ 984: async function applyImportedServerConfig(obj) {
+ 985:     // Webhook config
+ 986:     if (obj?.webhook_config?.config) {
+ 987:         const cfg = obj.webhook_config.config;
+ 988:         const payload = {};
+ 989: 
+ 990:         if (
+ 991:             cfg.webhook_url
+ 992:             && typeof cfg.webhook_url === 'string'
+ 993:             && !cfg.webhook_url.includes('***')
+ 994:         ) {
+ 995:             payload.webhook_url = cfg.webhook_url;
+ 996:         }
+ 997:         if (typeof cfg.webhook_ssl_verify === 'boolean') payload.webhook_ssl_verify = cfg.webhook_ssl_verify;
+ 998:         if (typeof cfg.webhook_sending_enabled === 'boolean') {
+ 999:             payload.webhook_sending_enabled = cfg.webhook_sending_enabled;
+1000:         }
+1001:         if (typeof cfg.absence_pause_enabled === 'boolean') {
+1002:             payload.absence_pause_enabled = cfg.absence_pause_enabled;
+1003:         }
+1004:         if (Array.isArray(cfg.absence_pause_days)) {
+1005:             payload.absence_pause_days = cfg.absence_pause_days;
+1006:         }
+1007:         
+1008:         if (Object.keys(payload).length) {
+1009:             await ApiService.post('/api/webhooks/config', payload);
+1010:             await WebhookService.loadConfig();
+1011:         }
+1012:     }
+1013:     
+1014:     // Time window
+1015:     if (obj?.time_window) {
+1016:         const start = obj.time_window.webhooks_time_start ?? '';
+1017:         const end = obj.time_window.webhooks_time_end ?? '';
+1018:         await ApiService.post('/api/set_webhook_time_window', { start, end });
+1019:         await loadTimeWindow();
+1020:     }
+1021: 
+1022:     // Processing prefs
+1023:     if (obj?.processing_prefs?.prefs && typeof obj.processing_prefs.prefs === 'object') {
+1024:         await ApiService.post('/api/processing_prefs', obj.processing_prefs.prefs);
+1025:         await loadProcessingPrefsFromServer();
+1026:     }
+1027: }
+1028: 
+1029: // Validation
+1030: function validateWebhookUrlFromInput() {
+1031:     const inp = document.getElementById('testWebhookUrl');
+1032:     const msgId = 'webhookUrlValidationMsg';
+1033:     const val = (inp?.value || '').trim();
+1034:     
+1035:     if (!val) {
+1036:         MessageHelper.showError(msgId, 'Veuillez saisir une URL ou un alias.');
+1037:         return;
+1038:     }
+1039:     
+1040:     const ok = WebhookService.isValidWebhookUrl(val) || WebhookService.isValidHttpsUrl(val);
+1041:     if (ok) {
+1042:         MessageHelper.showSuccess(msgId, 'Format valide.');
+1043:     } else {
+1044:         MessageHelper.showError(msgId, 'Format invalide.');
+1045:     }
+1046: }
+1047: 
+1048: function buildPayloadPreview() {
+1049:     const subject = (document.getElementById('previewSubject')?.value || '').trim();
+1050:     const sender = (document.getElementById('previewSender')?.value || '').trim();
+1051:     const body = (document.getElementById('previewBody')?.value || '').trim();
+1052:     
+1053:     const payload = {
+1054:         subject,
+1055:         sender_email: sender,
+1056:         body_excerpt: body.slice(0, 500),
+1057:         delivery_links: [],
+1058:         first_direct_download_url: null,
+1059:         meta: { 
+1060:             preview: true, 
+1061:             generated_at: new Date().toISOString() 
+1062:         }
+1063:     };
+1064:     
+1065:     const pre = document.getElementById('payloadPreview');
+1066:     if (pre) pre.textContent = JSON.stringify(payload, null, 2);
+1067: }
+1068: 
+1069: 
+1070: // Fenêtre horaire global webhook
+1071: async function loadGlobalWebhookTimeWindow() {
+1072:     const applyGlobalWindowValues = (startValue = '', endValue = '') => {
+1073:         const startInput = document.getElementById('globalWebhookTimeStart');
+1074:         const endInput = document.getElementById('globalWebhookTimeEnd');
+1075:         if (startInput) setSelectedOption(startInput, startValue || '');
+1076:         if (endInput) setSelectedOption(endInput, endValue || '');
+1077:     };
+1078:     
+1079:     try {
+1080:         const timeWindowResponse = await ApiService.get('/api/webhooks/time-window');
+1081:         if (timeWindowResponse.success) {
+1082:             applyGlobalWindowValues(
+1083:                 timeWindowResponse.webhooks_time_start || '',
+1084:                 timeWindowResponse.webhooks_time_end || ''
+1085:             );
+1086:             return;
+1087:         }
+1088:     } catch (e) {
+1089:         console.warn('Impossible de charger la fenêtre horaire webhook globale:', e);
+1090:     }
+1091: }
+1092: 
+1093: async function saveGlobalWebhookTimeWindow() {
+1094:     const startInput = document.getElementById('globalWebhookTimeStart');
+1095:     const endInput = document.getElementById('globalWebhookTimeEnd');
+1096:     const start = startInput.value.trim();
+1097:     const end = endInput.value.trim();
+1098:     
+1099:     // Validation des formats - dropdowns guarantee HH:MM format
+1100:     if (start && !/^\d{2}:\d{2}$/.test(start)) {
+1101:         MessageHelper.showError('globalWebhookTimeMsg', 'Veuillez sélectionner une heure valide.');
+1102:         return false;
+1103:     }
+1104:     
+1105:     if (end && !/^\d{2}:\d{2}$/.test(end)) {
+1106:         MessageHelper.showError('globalWebhookTimeMsg', 'Veuillez sélectionner une heure valide.');
+1107:         return false;
+1108:     }
+1109:     
+1110:     // No normalization needed for dropdowns - format is already HH:MM
+1111:     
+1112:     try {
+1113:         const data = await ApiService.post('/api/webhooks/time-window', { 
+1114:             start: start, 
+1115:             end: end 
+1116:         });
+1117:         
+1118:         if (data.success) {
+1119:             MessageHelper.showSuccess('globalWebhookTimeMsg', 'Fenêtre horaire webhook enregistrée avec succès !');
+1120:             updatePanelStatus('time-window', true);
+1121:             updatePanelIndicator('time-window');
+1122:             
+1123:             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
+1124:             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
+1125:                 setSelectedOption(startInput, data.webhooks_time_start || '');
+1126:             }
+1127:             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
+1128:                 setSelectedOption(endInput, data.webhooks_time_end || '');
+1129:             }
+1130:             await loadGlobalWebhookTimeWindow();
+1131:             return true;
+1132:         } else {
+1133:             MessageHelper.showError('globalWebhookTimeMsg', data.message || 'Erreur lors de la sauvegarde.');
+1134:             updatePanelStatus('time-window', false);
+1135:             return false;
+1136:         }
+1137:     } catch (e) {
+1138:         MessageHelper.showError('globalWebhookTimeMsg', 'Erreur de communication avec le serveur.');
+1139:         updatePanelStatus('time-window', false);
+1140:         return false;
+1141:     }
+1142: }
+1143: 
+1144: // -------------------- Statut Global --------------------
+1145: /**
+1146:  * Met à jour le bandeau de statut global avec les données récentes
+1147:  */
+1148: async function updateGlobalStatus() {
+1149:     try {
+1150:         // Récupérer les logs récents pour analyser le statut
+1151:         const logsResponse = await ApiService.get('/api/webhook_logs?limit=50');
+1152:         const configResponse = await ApiService.get('/api/webhooks/config');
+1153:         
+1154:         if (!logsResponse.success || !configResponse.success) {
+1155:             console.warn('Impossible de récupérer les données pour le statut global');
+1156:             return;
+1157:         }
+1158:         
+1159:         const logs = logsResponse.logs || [];
+1160:         const config = configResponse.config || {};
+1161:         
+1162:         // Analyser les logs pour déterminer le statut
+1163:         const statusData = analyzeLogsForStatus(logs);
+1164:         
+1165:         // Mettre à jour l'interface
+1166:         updateStatusBanner(statusData, config);
+1167:         
+1168:     } catch (error) {
+1169:         console.error('Erreur lors de la mise à jour du statut global:', error);
+1170:         // Afficher un statut d'erreur
+1171:         updateStatusBanner({
+1172:             lastExecution: 'Erreur',
+1173:             recentIncidents: '—',
+1174:             criticalErrors: '—',
+1175:             activeWebhooks: config?.webhook_url ? '1' : '0',
+1176:             status: 'error'
+1177:         }, {});
+1178:     }
+1179: }
+1180: 
+1181: /**
+1182:  * Analyse les logs pour extraire les informations de statut
+1183:  */
+1184: function analyzeLogsForStatus(logs) {
+1185:     const now = new Date();
+1186:     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+1187:     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+1188:     
+1189:     let lastExecution = null;
+1190:     let recentIncidents = 0;
+1191:     let criticalErrors = 0;
+1192:     let totalWebhooks = 0;
+1193:     let successfulWebhooks = 0;
+1194:     
+1195:     logs.forEach(log => {
+1196:         const logTime = new Date(log.timestamp);
+1197:         
+1198:         // Dernière exécution
+1199:         if (!lastExecution || logTime > lastExecution) {
+1200:             lastExecution = logTime;
+1201:         }
+1202:         
+1203:         // Webhooks envoyés (dernière heure)
+1204:         if (logTime >= oneHourAgo) {
+1205:             totalWebhooks++;
+1206:             if (log.status === 'success') {
+1207:                 successfulWebhooks++;
+1208:             } else if (log.status === 'error') {
+1209:                 criticalErrors++;
+1210:             }
+1211:         }
+1212:         
+1213:         // Incidents récents (dernières 24h)
+1214:         if (logTime >= oneDayAgo && log.status === 'error') {
+1215:             recentIncidents++;
+1216:         }
+1217:     });
 1218:     
-1219:     const ok = WebhookService.isValidWebhookUrl(val) || WebhookService.isValidHttpsUrl(val);
-1220:     if (ok) {
-1221:         MessageHelper.showSuccess(msgId, 'Format valide.');
-1222:     } else {
-1223:         MessageHelper.showError(msgId, 'Format invalide.');
-1224:     }
-1225: }
-1226: 
-1227: function buildPayloadPreview() {
-1228:     const subject = (document.getElementById('previewSubject')?.value || '').trim();
-1229:     const sender = (document.getElementById('previewSender')?.value || '').trim();
-1230:     const body = (document.getElementById('previewBody')?.value || '').trim();
-1231:     
-1232:     const payload = {
-1233:         subject,
-1234:         sender_email: sender,
-1235:         body_excerpt: body.slice(0, 500),
-1236:         delivery_links: [],
-1237:         first_direct_download_url: null,
-1238:         meta: { 
-1239:             preview: true, 
-1240:             generated_at: new Date().toISOString() 
-1241:         }
-1242:     };
-1243:     
-1244:     const pre = document.getElementById('payloadPreview');
-1245:     if (pre) pre.textContent = JSON.stringify(payload, null, 2);
-1246: }
-1247: 
-1248: // UI helpers
-1249: function setDayCheckboxes(days) {
-1250:     const group = document.getElementById('pollingActiveDaysGroup');
-1251:     if (!group) return;
-1252:     
-1253:     const set = new Set(Array.isArray(days) ? days : []);
-1254:     const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
-1255:     
-1256:     boxes.forEach(cb => {
-1257:         const idx = parseInt(cb.value, 10);
-1258:         cb.checked = set.has(idx);
-1259:     });
-1260: }
-1261: 
-1262: function collectDayCheckboxes() {
-1263:     const group = document.getElementById('pollingActiveDaysGroup');
-1264:     if (!group) return [];
-1265:     
-1266:     const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
-1267:     const out = [];
-1268:     
-1269:     boxes.forEach(cb => {
-1270:         if (cb.checked) out.push(parseInt(cb.value, 10));
-1271:     });
-1272:     
-1273:     // Trier croissant et garantir l'unicité
-1274:     return Array.from(new Set(out)).sort((a, b) => a - b);
-1275: }
-1276: 
-1277: function addEmailField(value) {
-1278:     const container = document.getElementById('senderOfInterestContainer');
-1279:     if (!container) return;
-1280:     
-1281:     const row = document.createElement('div');
-1282:     row.className = 'inline-group';
-1283:     
-1284:     const input = document.createElement('input');
-1285:     input.type = 'email';
-1286:     input.placeholder = 'ex: email@example.com';
-1287:     input.value = value || '';
-1288:     input.style.flex = '1';
+1219:     // Formater la dernière exécution
+1220:     let lastExecutionText = '—';
+1221:     if (lastExecution) {
+1222:         const diffMinutes = Math.floor((now - lastExecution) / (1000 * 60));
+1223:         if (diffMinutes < 1) {
+1224:             lastExecutionText = 'À l\'instant';
+1225:         } else if (diffMinutes < 60) {
+1226:             lastExecutionText = `Il y a ${diffMinutes} min`;
+1227:         } else if (diffMinutes < 1440) {
+1228:             lastExecutionText = `Il y a ${Math.floor(diffMinutes / 60)}h`;
+1229:         } else {
+1230:             lastExecutionText = lastExecution.toLocaleDateString('fr-FR', { 
+1231:                 hour: '2-digit', 
+1232:                 minute: '2-digit' 
+1233:             });
+1234:         }
+1235:     }
+1236:     
+1237:     // Déterminer le statut global
+1238:     let status = 'success';
+1239:     if (criticalErrors > 0) {
+1240:         status = 'error';
+1241:     } else if (recentIncidents > 0) {
+1242:         status = 'warning';
+1243:     }
+1244:     
+1245:     return {
+1246:         lastExecution: lastExecutionText,
+1247:         recentIncidents: recentIncidents.toString(),
+1248:         criticalErrors: criticalErrors.toString(),
+1249:         activeWebhooks: totalWebhooks.toString(),
+1250:         status: status
+1251:     };
+1252: }
+1253: 
+1254: /**
+1255:  * Met à jour l'affichage du bandeau de statut
+1256:  */
+1257: function updateStatusBanner(statusData, config) {
+1258:     // Mettre à jour les valeurs
+1259:     document.getElementById('lastExecutionTime').textContent = statusData.lastExecution;
+1260:     document.getElementById('recentIncidents').textContent = statusData.recentIncidents;
+1261:     document.getElementById('criticalErrors').textContent = statusData.criticalErrors;
+1262:     document.getElementById('activeWebhooks').textContent = statusData.activeWebhooks;
+1263:     
+1264:     // Mettre à jour l'icône de statut
+1265:     const statusIcon = document.getElementById('globalStatusIcon');
+1266:     statusIcon.className = 'status-icon ' + statusData.status;
+1267:     
+1268:     switch (statusData.status) {
+1269:         case 'success':
+1270:             statusIcon.textContent = '🟢';
+1271:             break;
+1272:         case 'warning':
+1273:             statusIcon.textContent = '🟡';
+1274:             break;
+1275:         case 'error':
+1276:             statusIcon.textContent = '🔴';
+1277:             break;
+1278:         default:
+1279:             statusIcon.textContent = '🟢';
+1280:     }
+1281: }
+1282: 
+1283: // -------------------- Panneaux Pliables Webhooks --------------------
+1284: /**
+1285:  * Initialise les panneaux pliables des webhooks
+1286:  */
+1287: function initializeCollapsiblePanels() {
+1288:     const panels = document.querySelectorAll('.collapsible-panel');
 1289:     
-1290:     const btn = document.createElement('button');
-1291:     btn.type = 'button';
-1292:     btn.className = 'email-remove-btn';
-1293:     btn.textContent = '❌';
-1294:     btn.title = 'Supprimer cet email';
-1295:     btn.addEventListener('click', () => row.remove());
-1296:     
-1297:     row.appendChild(input);
-1298:     row.appendChild(btn);
-1299:     container.appendChild(row);
-1300: }
-1301: 
-1302: function renderSenderInputs(list) {
-1303:     const container = document.getElementById('senderOfInterestContainer');
-1304:     if (!container) return;
-1305:     
-1306:     container.innerHTML = '';
-1307:     (list || []).forEach(e => addEmailField(e));
-1308:     if (!list || list.length === 0) addEmailField('');
+1290:     panels.forEach(panel => {
+1291:         const header = panel.querySelector('.panel-header');
+1292:         const content = panel.querySelector('.panel-content');
+1293:         const toggleIcon = panel.querySelector('.toggle-icon');
+1294:         
+1295:         if (header && content && toggleIcon) {
+1296:             header.addEventListener('click', () => {
+1297:                 const isCollapsed = content.classList.contains('collapsed');
+1298:                 
+1299:                 if (isCollapsed) {
+1300:                     content.classList.remove('collapsed');
+1301:                     toggleIcon.classList.remove('rotated');
+1302:                 } else {
+1303:                     content.classList.add('collapsed');
+1304:                     toggleIcon.classList.add('rotated');
+1305:                 }
+1306:             });
+1307:         }
+1308:     });
 1309: }
 1310: 
-1311: function collectSenderInputs() {
-1312:     const container = document.getElementById('senderOfInterestContainer');
-1313:     if (!container) return [];
-1314:     
-1315:     const inputs = Array.from(container.querySelectorAll('input[type="email"]'));
-1316:     const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-1317:     const out = [];
-1318:     const seen = new Set();
-1319:     
-1320:     for (const i of inputs) {
-1321:         const v = (i.value || '').trim().toLowerCase();
-1322:         if (!v) continue;
-1323:         
-1324:         if (emailRe.test(v) && !seen.has(v)) {
-1325:             seen.add(v);
-1326:             out.push(v);
-1327:         }
-1328:     }
-1329:     
-1330:     return out;
-1331: }
-1332: 
-1333: // Fenêtre horaire global webhook
-1334: async function loadGlobalWebhookTimeWindow() {
-1335:     const applyGlobalWindowValues = (startValue = '', endValue = '') => {
-1336:         const startInput = document.getElementById('globalWebhookTimeStart');
-1337:         const endInput = document.getElementById('globalWebhookTimeEnd');
-1338:         if (startInput) setSelectedOption(startInput, startValue || '');
-1339:         if (endInput) setSelectedOption(endInput, endValue || '');
-1340:     };
-1341:     
-1342:     try {
-1343:         const timeWindowResponse = await ApiService.get('/api/webhooks/time-window');
-1344:         if (timeWindowResponse.success) {
-1345:             applyGlobalWindowValues(
-1346:                 timeWindowResponse.webhooks_time_start || '',
-1347:                 timeWindowResponse.webhooks_time_end || ''
-1348:             );
-1349:             return;
-1350:         }
-1351:     } catch (e) {
-1352:         console.warn('Impossible de charger la fenêtre horaire webhook globale:', e);
-1353:     }
-1354: }
-1355: 
-1356: async function saveGlobalWebhookTimeWindow() {
-1357:     const startInput = document.getElementById('globalWebhookTimeStart');
-1358:     const endInput = document.getElementById('globalWebhookTimeEnd');
-1359:     const start = startInput.value.trim();
-1360:     const end = endInput.value.trim();
-1361:     
-1362:     // Validation des formats - dropdowns guarantee HH:MM format
-1363:     if (start && !/^\d{2}:\d{2}$/.test(start)) {
-1364:         MessageHelper.showError('globalWebhookTimeMsg', 'Veuillez sélectionner une heure valide.');
-1365:         return false;
-1366:     }
-1367:     
-1368:     if (end && !/^\d{2}:\d{2}$/.test(end)) {
-1369:         MessageHelper.showError('globalWebhookTimeMsg', 'Veuillez sélectionner une heure valide.');
-1370:         return false;
-1371:     }
-1372:     
-1373:     // No normalization needed for dropdowns - format is already HH:MM
-1374:     
-1375:     try {
-1376:         const data = await ApiService.post('/api/webhooks/time-window', { 
-1377:             start: start, 
-1378:             end: end 
-1379:         });
-1380:         
-1381:         if (data.success) {
-1382:             MessageHelper.showSuccess('globalWebhookTimeMsg', 'Fenêtre horaire webhook enregistrée avec succès !');
-1383:             updatePanelStatus('time-window', true);
-1384:             updatePanelIndicator('time-window');
-1385:             
-1386:             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
-1387:             if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
-1388:                 setSelectedOption(startInput, data.webhooks_time_start || '');
-1389:             }
-1390:             if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
-1391:                 setSelectedOption(endInput, data.webhooks_time_end || '');
-1392:             }
-1393:             await loadGlobalWebhookTimeWindow();
-1394:             return true;
-1395:         } else {
-1396:             MessageHelper.showError('globalWebhookTimeMsg', data.message || 'Erreur lors de la sauvegarde.');
-1397:             updatePanelStatus('time-window', false);
-1398:             return false;
-1399:         }
-1400:     } catch (e) {
-1401:         MessageHelper.showError('globalWebhookTimeMsg', 'Erreur de communication avec le serveur.');
-1402:         updatePanelStatus('time-window', false);
-1403:         return false;
-1404:     }
-1405: }
-1406: 
-1407: // -------------------- Statut Global --------------------
-1408: /**
-1409:  * Met à jour le bandeau de statut global avec les données récentes
-1410:  */
-1411: async function updateGlobalStatus() {
-1412:     try {
-1413:         // Récupérer les logs récents pour analyser le statut
-1414:         const logsResponse = await ApiService.get('/api/webhook_logs?limit=50');
-1415:         const configResponse = await ApiService.get('/api/webhooks/config');
-1416:         
-1417:         if (!logsResponse.success || !configResponse.success) {
-1418:             console.warn('Impossible de récupérer les données pour le statut global');
-1419:             return;
-1420:         }
-1421:         
-1422:         const logs = logsResponse.logs || [];
-1423:         const config = configResponse.config || {};
-1424:         
-1425:         // Analyser les logs pour déterminer le statut
-1426:         const statusData = analyzeLogsForStatus(logs);
-1427:         
-1428:         // Mettre à jour l'interface
-1429:         updateStatusBanner(statusData, config);
-1430:         
-1431:     } catch (error) {
-1432:         console.error('Erreur lors de la mise à jour du statut global:', error);
-1433:         // Afficher un statut d'erreur
-1434:         updateStatusBanner({
-1435:             lastExecution: 'Erreur',
-1436:             recentIncidents: '—',
-1437:             criticalErrors: '—',
-1438:             activeWebhooks: config?.webhook_url ? '1' : '0',
-1439:             status: 'error'
-1440:         }, {});
-1441:     }
-1442: }
-1443: 
-1444: /**
-1445:  * Analyse les logs pour extraire les informations de statut
-1446:  */
-1447: function analyzeLogsForStatus(logs) {
-1448:     const now = new Date();
-1449:     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-1450:     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-1451:     
-1452:     let lastExecution = null;
-1453:     let recentIncidents = 0;
-1454:     let criticalErrors = 0;
-1455:     let totalWebhooks = 0;
-1456:     let successfulWebhooks = 0;
-1457:     
-1458:     logs.forEach(log => {
-1459:         const logTime = new Date(log.timestamp);
-1460:         
-1461:         // Dernière exécution
-1462:         if (!lastExecution || logTime > lastExecution) {
-1463:             lastExecution = logTime;
-1464:         }
-1465:         
-1466:         // Webhooks envoyés (dernière heure)
-1467:         if (logTime >= oneHourAgo) {
-1468:             totalWebhooks++;
-1469:             if (log.status === 'success') {
-1470:                 successfulWebhooks++;
-1471:             } else if (log.status === 'error') {
-1472:                 criticalErrors++;
-1473:             }
-1474:         }
-1475:         
-1476:         // Incidents récents (dernières 24h)
-1477:         if (logTime >= oneDayAgo && log.status === 'error') {
-1478:             recentIncidents++;
-1479:         }
-1480:     });
-1481:     
-1482:     // Formater la dernière exécution
-1483:     let lastExecutionText = '—';
-1484:     if (lastExecution) {
-1485:         const diffMinutes = Math.floor((now - lastExecution) / (1000 * 60));
-1486:         if (diffMinutes < 1) {
-1487:             lastExecutionText = 'À l\'instant';
-1488:         } else if (diffMinutes < 60) {
-1489:             lastExecutionText = `Il y a ${diffMinutes} min`;
-1490:         } else if (diffMinutes < 1440) {
-1491:             lastExecutionText = `Il y a ${Math.floor(diffMinutes / 60)}h`;
-1492:         } else {
-1493:             lastExecutionText = lastExecution.toLocaleDateString('fr-FR', { 
-1494:                 hour: '2-digit', 
-1495:                 minute: '2-digit' 
-1496:             });
-1497:         }
-1498:     }
-1499:     
-1500:     // Déterminer le statut global
-1501:     let status = 'success';
-1502:     if (criticalErrors > 0) {
-1503:         status = 'error';
-1504:     } else if (recentIncidents > 0) {
-1505:         status = 'warning';
-1506:     }
-1507:     
-1508:     return {
-1509:         lastExecution: lastExecutionText,
-1510:         recentIncidents: recentIncidents.toString(),
-1511:         criticalErrors: criticalErrors.toString(),
-1512:         activeWebhooks: totalWebhooks.toString(),
-1513:         status: status
-1514:     };
-1515: }
-1516: 
-1517: /**
-1518:  * Met à jour l'affichage du bandeau de statut
-1519:  */
-1520: function updateStatusBanner(statusData, config) {
-1521:     // Mettre à jour les valeurs
-1522:     document.getElementById('lastExecutionTime').textContent = statusData.lastExecution;
-1523:     document.getElementById('recentIncidents').textContent = statusData.recentIncidents;
-1524:     document.getElementById('criticalErrors').textContent = statusData.criticalErrors;
-1525:     document.getElementById('activeWebhooks').textContent = statusData.activeWebhooks;
-1526:     
-1527:     // Mettre à jour l'icône de statut
-1528:     const statusIcon = document.getElementById('globalStatusIcon');
-1529:     statusIcon.className = 'status-icon ' + statusData.status;
-1530:     
-1531:     switch (statusData.status) {
-1532:         case 'success':
-1533:             statusIcon.textContent = '🟢';
-1534:             break;
-1535:         case 'warning':
-1536:             statusIcon.textContent = '🟡';
-1537:             break;
-1538:         case 'error':
-1539:             statusIcon.textContent = '🔴';
-1540:             break;
-1541:         default:
-1542:             statusIcon.textContent = '🟢';
-1543:     }
-1544: }
-1545: 
-1546: // -------------------- Panneaux Pliables Webhooks --------------------
-1547: /**
-1548:  * Initialise les panneaux pliables des webhooks
-1549:  */
-1550: function initializeCollapsiblePanels() {
-1551:     const panels = document.querySelectorAll('.collapsible-panel');
-1552:     
-1553:     panels.forEach(panel => {
-1554:         const header = panel.querySelector('.panel-header');
-1555:         const content = panel.querySelector('.panel-content');
-1556:         const toggleIcon = panel.querySelector('.toggle-icon');
-1557:         
-1558:         if (header && content && toggleIcon) {
-1559:             header.addEventListener('click', () => {
-1560:                 const isCollapsed = content.classList.contains('collapsed');
-1561:                 
-1562:                 if (isCollapsed) {
-1563:                     content.classList.remove('collapsed');
-1564:                     toggleIcon.classList.remove('rotated');
-1565:                 } else {
-1566:                     content.classList.add('collapsed');
-1567:                     toggleIcon.classList.add('rotated');
-1568:                 }
-1569:             });
-1570:         }
-1571:     });
-1572: }
-1573: 
-1574: /**
-1575:  * Met à jour le statut d'un panneau
-1576:  * @param {string} panelType - Type de panneau
-1577:  * @param {boolean} success - Si la sauvegarde a réussi
-1578:  */
-1579: function updatePanelStatus(panelType, success) {
-1580:     const statusElement = document.getElementById(`${panelType}-status`);
-1581:     if (statusElement) {
-1582:         if (success) {
-1583:             statusElement.textContent = 'Sauvegardé';
-1584:             statusElement.classList.add('saved');
-1585:         } else {
-1586:             statusElement.textContent = 'Erreur';
-1587:             statusElement.classList.remove('saved');
-1588:         }
-1589:         
-1590:         // Réinitialiser après 3 secondes
-1591:         setTimeout(() => {
-1592:             statusElement.textContent = 'Sauvegarde requise';
-1593:             statusElement.classList.remove('saved');
-1594:         }, 3000);
-1595:     }
-1596: }
-1597: 
-1598: /**
-1599:  * Met à jour l'indicateur de dernière sauvegarde
-1600:  * @param {string} panelType - Type de panneau
-1601:  */
-1602: function updatePanelIndicator(panelType) {
-1603:     const indicator = document.getElementById(`${panelType}-indicator`);
-1604:     if (indicator) {
-1605:         const now = new Date();
-1606:         const timeString = now.toLocaleTimeString('fr-FR', { 
-1607:             hour: '2-digit', 
-1608:             minute: '2-digit' 
-1609:         });
-1610:         indicator.textContent = `Dernière sauvegarde: ${timeString}`;
-1611:     }
-1612: }
-1613: 
-1614: /**
-1615:  * Sauvegarde un panneau de configuration webhook
-1616:  * @param {string} panelType - Type de panneau (urls-ssl, absence, time-window)
-1617:  */
-1618: async function saveWebhookPanel(panelType) {
-1619:     try {
-1620:         let data;
-1621:         let endpoint;
-1622:         let successMessage;
-1623:         
-1624:         switch (panelType) {
-1625:             case 'urls-ssl':
-1626:                 data = collectUrlsData();
-1627:                 endpoint = '/api/webhooks/config';
-1628:                 successMessage = 'Configuration URLs & SSL enregistrée avec succès !';
-1629:                 break;
-1630:                 
-1631:             case 'absence':
-1632:                 data = collectAbsenceData();
-1633:                 endpoint = '/api/webhooks/config';
-1634:                 successMessage = 'Configuration Absence Globale enregistrée avec succès !';
-1635:                 break;
-1636:                 
-1637:             case 'time-window':
-1638:                 data = collectTimeWindowData();
-1639:                 endpoint = '/api/webhooks/time-window';
-1640:                 successMessage = 'Fenêtre horaire enregistrée avec succès !';
-1641:                 break;
-1642:                 
-1643:             default:
-1644:                 console.error('Type de panneau inconnu:', panelType);
-1645:                 return;
-1646:         }
-1647:         
-1648:         // Envoyer les données au serveur
-1649:         const response = await ApiService.post(endpoint, data);
-1650:         
-1651:         if (response.success) {
-1652:             MessageHelper.showSuccess(`${panelType}-msg`, successMessage);
-1653:             updatePanelStatus(panelType, true);
-1654:             updatePanelIndicator(panelType);
-1655:         } else {
-1656:             MessageHelper.showError(`${panelType}-msg`, response.message || 'Erreur lors de la sauvegarde');
-1657:             updatePanelStatus(panelType, false);
-1658:         }
-1659:         
-1660:     } catch (error) {
-1661:         console.error(`Erreur lors de la sauvegarde du panneau ${panelType}:`, error);
-1662:         MessageHelper.showError(`${panelType}-msg`, 'Erreur lors de la sauvegarde');
-1663:         updatePanelStatus(panelType, false);
-1664:     }
-1665: }
-1666: 
-1667: /**
-1668:  * Collecte les données du panneau URLs & SSL
-1669:  */
-1670: function collectUrlsData() {
-1671:     const webhookUrl = document.getElementById('webhookUrl')?.value || '';
-1672:     const webhookUrlPlaceholder = document.getElementById('webhookUrl')?.placeholder || '';
-1673:     const sslToggle = document.getElementById('sslVerifyToggle');
-1674:     const sendingToggle = document.getElementById('webhookSendingToggle');
-1675:     const sslVerify = sslToggle?.checked ?? true;
-1676:     const sendingEnabled = sendingToggle?.checked ?? true;
-1677: 
-1678:     const payload = {
-1679:         webhook_ssl_verify: sslVerify,
-1680:         webhook_sending_enabled: sendingEnabled,
-1681:     };
-1682: 
-1683:     const trimmedWebhookUrl = webhookUrl.trim();
-1684:     if (trimmedWebhookUrl && !MessageHelper.isPlaceholder(trimmedWebhookUrl, webhookUrlPlaceholder)) {
-1685:         payload.webhook_url = trimmedWebhookUrl;
-1686:     }
-1687: 
-1688:     return payload;
-1689: }
-1690: 
-1691: /**
-1692:  * Collecte les données du panneau fenêtre horaire
-1693:  */
-1694: function collectTimeWindowData() {
-1695:     const startInput = document.getElementById('globalWebhookTimeStart');
-1696:     const endInput = document.getElementById('globalWebhookTimeEnd');
-1697:     const start = startInput?.value?.trim() || '';
-1698:     const end = endInput?.value?.trim() || '';
-1699:     
-1700:     // Normaliser les formats
-1701:     const normalizedStart = start ? (MessageHelper.normalizeTimeFormat(start) || '') : '';
-1702:     const normalizedEnd = end ? (MessageHelper.normalizeTimeFormat(end) || '') : '';
-1703:     
-1704:     return {
-1705:         start: normalizedStart,
-1706:         end: normalizedEnd
-1707:     };
-1708: }
-1709: 
-1710: /**
-1711:  * Collecte les données du panneau d'absence
-1712:  */
-1713: function collectAbsenceData() {
-1714:     const toggle = document.getElementById('absencePauseToggle');
-1715:     const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]:checked');
-1716:     
-1717:     return {
-1718:         absence_pause_enabled: toggle ? toggle.checked : false,
-1719:         absence_pause_days: Array.from(dayCheckboxes).map(cb => cb.value)
-1720:     };
-1721: }
-1722: 
-1723: // -------------------- Déploiement Application --------------------
-1724: async function handleDeployApplication() {
-1725:     const button = document.getElementById('restartServerBtn');
-1726:     const messageId = 'restartMsg';
-1727:     
-1728:     if (!button) {
-1729:         MessageHelper.showError(messageId, 'Bouton de déploiement introuvable.');
-1730:         return;
-1731:     }
-1732:     
-1733:     const confirmed = window.confirm("Confirmez-vous le déploiement de l'application ? Elle peut être indisponible pendant quelques secondes.");
-1734:     if (!confirmed) {
-1735:         return;
-1736:     }
-1737:     
-1738:     button.disabled = true;
-1739:     MessageHelper.showInfo(messageId, 'Déploiement en cours...');
-1740:     
-1741:     try {
-1742:         const response = await ApiService.post('/api/deploy_application');
-1743:         if (response?.success) {
-1744:             MessageHelper.showSuccess(messageId, response.message || 'Déploiement planifié. Vérification du service…');
-1745:             try {
-1746:                 await pollHealthCheck({ attempts: 12, intervalMs: 1500, timeoutMs: 30000 });
-1747:                 window.location.reload();
-1748:             } catch (healthError) {
-1749:                 console.warn('Health check failed after deployment:', healthError);
-1750:                 MessageHelper.showError(messageId, "Le service ne répond pas encore. Réessayez dans quelques secondes ou rechargez la page.");
-1751:             }
-1752:         } else {
-1753:             MessageHelper.showError(messageId, response?.message || 'Échec du déploiement. Vérifiez les journaux serveur.');
-1754:         }
-1755:     } catch (error) {
-1756:         console.error('Erreur déploiement application:', error);
-1757:         MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
-1758:     } finally {
-1759:         button.disabled = false;
-1760:     }
-1761: }
-1762: 
-1763: async function pollHealthCheck({ attempts = 10, intervalMs = 1200, timeoutMs = 20000 } = {}) {
-1764:     const safeAttempts = Math.max(1, Number(attempts));
-1765:     const delayMs = Math.max(250, Number(intervalMs));
-1766:     const controller = new AbortController();
-1767:     const timeoutId = setTimeout(() => controller.abort(), Math.max(delayMs, Number(timeoutMs)));
-1768:     
-1769:     try {
-1770:         for (let attempt = 0; attempt < safeAttempts; attempt++) {
-1771:             try {
-1772:                 const res = await fetch('/health', { cache: 'no-store', signal: controller.signal });
-1773:                 if (res.ok) {
-1774:                     clearTimeout(timeoutId);
-1775:                     return true;
-1776:                 }
-1777:             } catch {
-1778:                 // Service peut être indisponible lors du redéploiement, ignorer
-1779:             }
-1780:             await new Promise(resolve => setTimeout(resolve, delayMs));
-1781:         }
-1782:         throw new Error('healthcheck failed');
-1783:     } finally {
-1784:         clearTimeout(timeoutId);
-1785:     }
-1786: }
-1787: 
-1788: // -------------------- Auto-sauvegarde Intelligente --------------------
-1789: /**
-1790:  * Initialise l'auto-sauvegarde intelligente
-1791:  */
-1792: function initializeAutoSave() {
-1793:     // Préférences qui peuvent être sauvegardées automatiquement
-1794:     const autoSaveFields = [
-1795:         'attachmentDetectionToggle',
-1796:         'retryCount', 
-1797:         'retryDelaySec',
-1798:         'webhookTimeoutSec',
-1799:         'rateLimitPerHour',
-1800:         'notifyOnFailureToggle'
-1801:     ];
-1802:     
-1803:     // Écouter les changements sur les champs d'auto-sauvegarde
-1804:     autoSaveFields.forEach(fieldId => {
-1805:         const field = document.getElementById(fieldId);
-1806:         if (field) {
-1807:             field.addEventListener('change', () => handleAutoSaveChange(fieldId));
-1808:             field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 2000));
-1809:         }
-1810:     });
-1811:     
-1812:     // Écouter les changements sur les textarea de préférences
-1813:     const preferenceTextareas = [
-1814:         'excludeKeywordsRecadrage',
-1815:         'excludeKeywordsAutorepondeur',
-1816:         'excludeKeywords',
-1817:         'senderPriority'
-1818:     ];
-1819:     
-1820:     preferenceTextareas.forEach(fieldId => {
-1821:         const field = document.getElementById(fieldId);
-1822:         if (field) {
-1823:             field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 3000));
-1824:         }
-1825:     });
-1826: }
-1827: 
-1828: /**
-1829:  * Gère les changements pour l'auto-sauvegarde
-1830:  * @param {string} fieldId - ID du champ modifié
-1831:  */
-1832: async function handleAutoSaveChange(fieldId) {
-1833:     try {
-1834:         // Marquer la section comme modifiée
-1835:         markSectionAsModified(fieldId);
-1836:         
-1837:         // Collecter les données de préférences
-1838:         const prefsData = collectPreferencesData();
-1839:         
-1840:         // Sauvegarder automatiquement
-1841:         const result = await ApiService.post('/api/processing_prefs', prefsData);
-1842:         
-1843:         if (result.success) {
-1844:             // Marquer la section comme sauvegardée
-1845:             markSectionAsSaved(fieldId);
-1846:             showAutoSaveFeedback(fieldId, true);
-1847:         } else {
-1848:             showAutoSaveFeedback(fieldId, false, result.message);
-1849:         }
-1850:         
-1851:     } catch (error) {
-1852:         console.error('Erreur lors de l\'auto-sauvegarde:', error);
-1853:         showAutoSaveFeedback(fieldId, false, 'Erreur de connexion');
-1854:     }
-1855: }
-1856: 
-1857: /**
-1858:  * Collecte les données des préférences
-1859:  */
-1860: function collectPreferencesData() {
-1861:     const data = {};
-1862:     
-1863:     // Préférences de filtres (tableaux)
-1864:     const excludeKeywordsRecadrage = document.getElementById('excludeKeywordsRecadrage')?.value || '';
-1865:     const excludeKeywordsAutorepondeur = document.getElementById('excludeKeywordsAutorepondeur')?.value || '';
-1866:     const excludeKeywords = document.getElementById('excludeKeywords')?.value || '';
-1867:     
-1868:     data.exclude_keywords_recadrage = excludeKeywordsRecadrage ? 
-1869:         excludeKeywordsRecadrage.split('\n').map(line => line.trim()).filter(line => line) : [];
-1870:     data.exclude_keywords_autorepondeur = excludeKeywordsAutorepondeur ? 
-1871:         excludeKeywordsAutorepondeur.split('\n').map(line => line.trim()).filter(line => line) : [];
-1872:     data.exclude_keywords = excludeKeywords ? 
-1873:         excludeKeywords.split('\n').map(line => line.trim()).filter(line => line) : [];
-1874:     
-1875:     // Préférences de fiabilité
-1876:     data.require_attachments = document.getElementById('attachmentDetectionToggle')?.checked || false;
-1877: 
-1878:     const retryCountRaw = document.getElementById('retryCount')?.value;
-1879:     if (retryCountRaw !== undefined && String(retryCountRaw).trim() !== '') {
-1880:         data.retry_count = parseInt(String(retryCountRaw).trim(), 10);
-1881:     }
-1882: 
-1883:     const retryDelayRaw = document.getElementById('retryDelaySec')?.value;
-1884:     if (retryDelayRaw !== undefined && String(retryDelayRaw).trim() !== '') {
-1885:         data.retry_delay_sec = parseInt(String(retryDelayRaw).trim(), 10);
-1886:     }
-1887: 
-1888:     const webhookTimeoutRaw = document.getElementById('webhookTimeoutSec')?.value;
-1889:     if (webhookTimeoutRaw !== undefined && String(webhookTimeoutRaw).trim() !== '') {
-1890:         data.webhook_timeout_sec = parseInt(String(webhookTimeoutRaw).trim(), 10);
-1891:     }
-1892: 
-1893:     const rateLimitRaw = document.getElementById('rateLimitPerHour')?.value;
-1894:     if (rateLimitRaw !== undefined && String(rateLimitRaw).trim() !== '') {
-1895:         data.rate_limit_per_hour = parseInt(String(rateLimitRaw).trim(), 10);
-1896:     }
-1897: 
-1898:     data.notify_on_failure = document.getElementById('notifyOnFailureToggle')?.checked || false;
-1899:     
-1900:     // Préférences de priorité (JSON)
-1901:     const senderPriorityText = document.getElementById('senderPriority')?.value || '{}';
-1902:     try {
-1903:         data.sender_priority = JSON.parse(senderPriorityText);
-1904:     } catch (e) {
-1905:         data.sender_priority = {};
-1906:     }
-1907:     
-1908:     return data;
-1909: }
-1910: 
-1911: /**
-1912:  * Marque une section comme modifiée
-1913:  * @param {string} fieldId - ID du champ modifié
-1914:  */
-1915: function markSectionAsModified(fieldId) {
-1916:     const section = getFieldSection(fieldId);
-1917:     if (section) {
-1918:         section.classList.add('modified');
-1919:         updateSectionIndicator(section, 'Modifié');
-1920:     }
-1921: }
-1922: 
-1923: /**
-1924:  * Marque une section comme sauvegardée
-1925:  * @param {string} fieldId - ID du champ sauvegardé
-1926:  */
-1927: function markSectionAsSaved(fieldId) {
-1928:     const section = getFieldSection(fieldId);
-1929:     if (section) {
-1930:         section.classList.remove('modified');
-1931:         section.classList.add('saved');
-1932:         updateSectionIndicator(section, 'Sauvegardé');
-1933:         
-1934:         // Retirer la classe 'saved' après 2 secondes
-1935:         setTimeout(() => {
-1936:             section.classList.remove('saved');
-1937:             updateSectionIndicator(section, '');
-1938:         }, 2000);
-1939:     }
-1940: }
-1941: 
-1942: /**
-1943:  * Obtient la section d'un champ
-1944:  * @param {string} fieldId - ID du champ
-1945:  * @returns {HTMLElement|null} Section parente
-1946:  */
-1947: function getFieldSection(fieldId) {
-1948:     const field = document.getElementById(fieldId);
-1949:     if (!field) return null;
-1950:     
-1951:     // Remonter jusqu'à trouver une carte ou un panneau
-1952:     let parent = field.parentElement;
-1953:     while (parent && parent !== document.body) {
-1954:         if (parent.classList.contains('card') || parent.classList.contains('collapsible-panel')) {
-1955:             return parent;
-1956:         }
-1957:         parent = parent.parentElement;
-1958:     }
-1959:     
-1960:     return null;
-1961: }
-1962: 
-1963: /**
-1964:  * Met à jour l'indicateur de section
-1965:  * @param {HTMLElement} section - Section à mettre à jour
-1966:  * @param {string} status - Statut à afficher
-1967:  */
-1968: function updateSectionIndicator(section, status) {
-1969:     let indicator = section.querySelector('.section-indicator');
-1970:     
-1971:     if (!indicator) {
-1972:         // Créer l'indicateur s'il n'existe pas
-1973:         indicator = document.createElement('div');
-1974:         indicator.className = 'section-indicator';
-1975:         
-1976:         // Insérer après le titre
-1977:         const title = section.querySelector('.card-title, .panel-title');
-1978:         if (title) {
-1979:             title.appendChild(indicator);
-1980:         }
-1981:     }
-1982:     
-1983:     if (status) {
-1984:         indicator.textContent = status;
-1985:         indicator.className = `section-indicator ${status.toLowerCase()}`;
-1986:     } else {
-1987:         indicator.textContent = '';
-1988:         indicator.className = 'section-indicator';
-1989:     }
-1990: }
-1991: 
-1992: /**
-1993:  * Affiche un feedback d'auto-sauvegarde
-1994:  * @param {string} fieldId - ID du champ
-1995:  * @param {boolean} success - Si la sauvegarde a réussi
-1996:  * @param {string} message - Message optionnel
-1997:  */
-1998: function showAutoSaveFeedback(fieldId, success, message = '') {
-1999:     const field = document.getElementById(fieldId);
-2000:     if (!field) return;
-2001:     
-2002:     // Créer ou récupérer le conteneur de feedback
-2003:     let feedback = field.parentElement.querySelector('.auto-save-feedback');
-2004:     if (!feedback) {
-2005:         feedback = document.createElement('div');
-2006:         feedback.className = 'auto-save-feedback';
-2007:         field.parentElement.appendChild(feedback);
-2008:     }
-2009:     
-2010:     // Définir le style et le message
-2011:     feedback.style.cssText = `
-2012:         font-size: 0.7em;
-2013:         margin-top: 4px;
-2014:         padding: 2px 6px;
-2015:         border-radius: 3px;
-2016:         opacity: 0;
-2017:         transition: opacity 0.3s ease;
-2018:     `;
-2019:     
-2020:     if (success) {
-2021:         feedback.style.background = 'rgba(26, 188, 156, 0.2)';
-2022:         feedback.style.color = 'var(--cork-success)';
-2023:         feedback.textContent = '✓ Auto-sauvegardé';
-2024:     } else {
-2025:         feedback.style.background = 'rgba(231, 81, 90, 0.2)';
-2026:         feedback.style.color = 'var(--cork-danger)';
-2027:         feedback.textContent = `✗ Erreur: ${message}`;
-2028:     }
-2029:     
-2030:     // Afficher le feedback
-2031:     feedback.style.opacity = '1';
-2032:     
-2033:     // Masquer après 3 secondes
-2034:     setTimeout(() => {
-2035:         feedback.style.opacity = '0';
-2036:     }, 3000);
-2037: }
-2038: 
-2039: /**
-2040:  * Fonction de debounce pour limiter les appels
-2041:  * @param {Function} func - Fonction à débouncer
-2042:  * @param {number} wait - Temps d'attente en ms
-2043:  * @returns {Function} Fonction débouncée
-2044:  */
-2045: function debounce(func, wait) {
-2046:     let timeout;
-2047:     return function executedFunction(...args) {
-2048:         const later = () => {
-2049:             clearTimeout(timeout);
-2050:             func(...args);
-2051:         };
-2052:         clearTimeout(timeout);
-2053:         timeout = setTimeout(later, wait);
-2054:     };
-2055: }
-2056: 
-2057: // -------------------- Nettoyage --------------------
-2058: window.addEventListener('beforeunload', () => {
-2059:     // Arrêter le polling des logs
-2060:     LogService.stopLogPolling();
-2061:     
-2062:     // Nettoyer le gestionnaire d'onglets
-2063:     if (tabManager) {
-2064:         tabManager.destroy();
-2065:     }
-2066:     
-2067:     // Sauvegarder les préférences locales
-2068:     saveLocalPreferences();
-2069: });
-2070: 
-2071: // -------------------- Export pour compatibilité --------------------
-2072: // Exporter les classes pour utilisation externe si nécessaire
-2073: window.DashboardServices = {
-2074:     ApiService,
-2075:     WebhookService,
-2076:     LogService,
-2077:     MessageHelper,
-2078:     TabManager
-2079: };
+1311: /**
+1312:  * Met à jour le statut d'un panneau
+1313:  * @param {string} panelType - Type de panneau
+1314:  * @param {boolean} success - Si la sauvegarde a réussi
+1315:  */
+1316: function updatePanelStatus(panelType, success) {
+1317:     const statusElement = document.getElementById(`${panelType}-status`);
+1318:     if (statusElement) {
+1319:         if (success) {
+1320:             statusElement.textContent = 'Sauvegardé';
+1321:             statusElement.classList.add('saved');
+1322:         } else {
+1323:             statusElement.textContent = 'Erreur';
+1324:             statusElement.classList.remove('saved');
+1325:         }
+1326:         
+1327:         // Réinitialiser après 3 secondes
+1328:         setTimeout(() => {
+1329:             statusElement.textContent = 'Sauvegarde requise';
+1330:             statusElement.classList.remove('saved');
+1331:         }, 3000);
+1332:     }
+1333: }
+1334: 
+1335: /**
+1336:  * Met à jour l'indicateur de dernière sauvegarde
+1337:  * @param {string} panelType - Type de panneau
+1338:  */
+1339: function updatePanelIndicator(panelType) {
+1340:     const indicator = document.getElementById(`${panelType}-indicator`);
+1341:     if (indicator) {
+1342:         const now = new Date();
+1343:         const timeString = now.toLocaleTimeString('fr-FR', { 
+1344:             hour: '2-digit', 
+1345:             minute: '2-digit' 
+1346:         });
+1347:         indicator.textContent = `Dernière sauvegarde: ${timeString}`;
+1348:     }
+1349: }
+1350: 
+1351: /**
+1352:  * Sauvegarde un panneau de configuration webhook
+1353:  * @param {string} panelType - Type de panneau (urls-ssl, absence, time-window)
+1354:  */
+1355: async function saveWebhookPanel(panelType) {
+1356:     try {
+1357:         let data;
+1358:         let endpoint;
+1359:         let successMessage;
+1360:         
+1361:         switch (panelType) {
+1362:             case 'urls-ssl':
+1363:                 data = collectUrlsData();
+1364:                 endpoint = '/api/webhooks/config';
+1365:                 successMessage = 'Configuration URLs & SSL enregistrée avec succès !';
+1366:                 break;
+1367:                 
+1368:             case 'absence':
+1369:                 data = collectAbsenceData();
+1370:                 endpoint = '/api/webhooks/config';
+1371:                 successMessage = 'Configuration Absence Globale enregistrée avec succès !';
+1372:                 break;
+1373:                 
+1374:             case 'time-window':
+1375:                 data = collectTimeWindowData();
+1376:                 endpoint = '/api/webhooks/time-window';
+1377:                 successMessage = 'Fenêtre horaire enregistrée avec succès !';
+1378:                 break;
+1379:                 
+1380:             default:
+1381:                 console.error('Type de panneau inconnu:', panelType);
+1382:                 return;
+1383:         }
+1384:         
+1385:         // Envoyer les données au serveur
+1386:         const response = await ApiService.post(endpoint, data);
+1387:         
+1388:         if (response.success) {
+1389:             MessageHelper.showSuccess(`${panelType}-msg`, successMessage);
+1390:             updatePanelStatus(panelType, true);
+1391:             updatePanelIndicator(panelType);
+1392:         } else {
+1393:             MessageHelper.showError(`${panelType}-msg`, response.message || 'Erreur lors de la sauvegarde');
+1394:             updatePanelStatus(panelType, false);
+1395:         }
+1396:         
+1397:     } catch (error) {
+1398:         console.error(`Erreur lors de la sauvegarde du panneau ${panelType}:`, error);
+1399:         MessageHelper.showError(`${panelType}-msg`, 'Erreur lors de la sauvegarde');
+1400:         updatePanelStatus(panelType, false);
+1401:     }
+1402: }
+1403: 
+1404: /**
+1405:  * Collecte les données du panneau URLs & SSL
+1406:  */
+1407: function collectUrlsData() {
+1408:     const webhookUrl = document.getElementById('webhookUrl')?.value || '';
+1409:     const webhookUrlPlaceholder = document.getElementById('webhookUrl')?.placeholder || '';
+1410:     const sslToggle = document.getElementById('sslVerifyToggle');
+1411:     const sendingToggle = document.getElementById('webhookSendingToggle');
+1412:     const sslVerify = sslToggle?.checked ?? true;
+1413:     const sendingEnabled = sendingToggle?.checked ?? true;
+1414: 
+1415:     const payload = {
+1416:         webhook_ssl_verify: sslVerify,
+1417:         webhook_sending_enabled: sendingEnabled,
+1418:     };
+1419: 
+1420:     const trimmedWebhookUrl = webhookUrl.trim();
+1421:     if (trimmedWebhookUrl && !MessageHelper.isPlaceholder(trimmedWebhookUrl, webhookUrlPlaceholder)) {
+1422:         payload.webhook_url = trimmedWebhookUrl;
+1423:     }
+1424: 
+1425:     return payload;
+1426: }
+1427: 
+1428: /**
+1429:  * Collecte les données du panneau fenêtre horaire
+1430:  */
+1431: function collectTimeWindowData() {
+1432:     const startInput = document.getElementById('globalWebhookTimeStart');
+1433:     const endInput = document.getElementById('globalWebhookTimeEnd');
+1434:     const start = startInput?.value?.trim() || '';
+1435:     const end = endInput?.value?.trim() || '';
+1436:     
+1437:     // Normaliser les formats
+1438:     const normalizedStart = start ? (MessageHelper.normalizeTimeFormat(start) || '') : '';
+1439:     const normalizedEnd = end ? (MessageHelper.normalizeTimeFormat(end) || '') : '';
+1440:     
+1441:     return {
+1442:         start: normalizedStart,
+1443:         end: normalizedEnd
+1444:     };
+1445: }
+1446: 
+1447: /**
+1448:  * Collecte les données du panneau d'absence
+1449:  */
+1450: function collectAbsenceData() {
+1451:     const toggle = document.getElementById('absencePauseToggle');
+1452:     const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]:checked');
+1453:     
+1454:     return {
+1455:         absence_pause_enabled: toggle ? toggle.checked : false,
+1456:         absence_pause_days: Array.from(dayCheckboxes).map(cb => cb.value)
+1457:     };
+1458: }
+1459: 
+1460: // -------------------- Déploiement Application --------------------
+1461: async function handleDeployApplication() {
+1462:     const button = document.getElementById('restartServerBtn');
+1463:     const messageId = 'restartMsg';
+1464:     
+1465:     if (!button) {
+1466:         MessageHelper.showError(messageId, 'Bouton de déploiement introuvable.');
+1467:         return;
+1468:     }
+1469:     
+1470:     const confirmed = window.confirm("Confirmez-vous le déploiement de l'application ? Elle peut être indisponible pendant quelques secondes.");
+1471:     if (!confirmed) {
+1472:         return;
+1473:     }
+1474:     
+1475:     button.disabled = true;
+1476:     MessageHelper.showInfo(messageId, 'Déploiement en cours...');
+1477:     
+1478:     try {
+1479:         const response = await ApiService.post('/api/deploy_application');
+1480:         if (response?.success) {
+1481:             MessageHelper.showSuccess(messageId, response.message || 'Déploiement planifié. Vérification du service…');
+1482:             try {
+1483:                 await pollHealthCheck({ attempts: 12, intervalMs: 1500, timeoutMs: 30000 });
+1484:                 window.location.reload();
+1485:             } catch (healthError) {
+1486:                 console.warn('Health check failed after deployment:', healthError);
+1487:                 MessageHelper.showError(messageId, "Le service ne répond pas encore. Réessayez dans quelques secondes ou rechargez la page.");
+1488:             }
+1489:         } else {
+1490:             MessageHelper.showError(messageId, response?.message || 'Échec du déploiement. Vérifiez les journaux serveur.');
+1491:         }
+1492:     } catch (error) {
+1493:         console.error('Erreur déploiement application:', error);
+1494:         MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
+1495:     } finally {
+1496:         button.disabled = false;
+1497:     }
+1498: }
+1499: 
+1500: async function pollHealthCheck({ attempts = 10, intervalMs = 1200, timeoutMs = 20000 } = {}) {
+1501:     const safeAttempts = Math.max(1, Number(attempts));
+1502:     const delayMs = Math.max(250, Number(intervalMs));
+1503:     const controller = new AbortController();
+1504:     const timeoutId = setTimeout(() => controller.abort(), Math.max(delayMs, Number(timeoutMs)));
+1505:     
+1506:     try {
+1507:         for (let attempt = 0; attempt < safeAttempts; attempt++) {
+1508:             try {
+1509:                 const res = await fetch('/health', { cache: 'no-store', signal: controller.signal });
+1510:                 if (res.ok) {
+1511:                     clearTimeout(timeoutId);
+1512:                     return true;
+1513:                 }
+1514:             } catch {
+1515:                 // Service peut être indisponible lors du redéploiement, ignorer
+1516:             }
+1517:             await new Promise(resolve => setTimeout(resolve, delayMs));
+1518:         }
+1519:         throw new Error('healthcheck failed');
+1520:     } finally {
+1521:         clearTimeout(timeoutId);
+1522:     }
+1523: }
+1524: 
+1525: // -------------------- Auto-sauvegarde Intelligente --------------------
+1526: /**
+1527:  * Initialise l'auto-sauvegarde intelligente
+1528:  */
+1529: function initializeAutoSave() {
+1530:     // Préférences qui peuvent être sauvegardées automatiquement
+1531:     const autoSaveFields = [
+1532:         'attachmentDetectionToggle',
+1533:         'retryCount', 
+1534:         'retryDelaySec',
+1535:         'webhookTimeoutSec',
+1536:         'rateLimitPerHour',
+1537:         'notifyOnFailureToggle'
+1538:     ];
+1539:     
+1540:     // Écouter les changements sur les champs d'auto-sauvegarde
+1541:     autoSaveFields.forEach(fieldId => {
+1542:         const field = document.getElementById(fieldId);
+1543:         if (field) {
+1544:             field.addEventListener('change', () => handleAutoSaveChange(fieldId));
+1545:             field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 2000));
+1546:         }
+1547:     });
+1548:     
+1549:     // Écouter les changements sur les textarea de préférences
+1550:     const preferenceTextareas = [
+1551:         'excludeKeywordsRecadrage',
+1552:         'excludeKeywordsAutorepondeur',
+1553:         'excludeKeywords',
+1554:         'senderPriority'
+1555:     ];
+1556:     
+1557:     preferenceTextareas.forEach(fieldId => {
+1558:         const field = document.getElementById(fieldId);
+1559:         if (field) {
+1560:             field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 3000));
+1561:         }
+1562:     });
+1563: }
+1564: 
+1565: /**
+1566:  * Gère les changements pour l'auto-sauvegarde
+1567:  * @param {string} fieldId - ID du champ modifié
+1568:  */
+1569: async function handleAutoSaveChange(fieldId) {
+1570:     try {
+1571:         // Marquer la section comme modifiée
+1572:         markSectionAsModified(fieldId);
+1573:         
+1574:         // Collecter les données de préférences
+1575:         const prefsData = collectPreferencesData();
+1576:         
+1577:         // Sauvegarder automatiquement
+1578:         const result = await ApiService.post('/api/processing_prefs', prefsData);
+1579:         
+1580:         if (result.success) {
+1581:             // Marquer la section comme sauvegardée
+1582:             markSectionAsSaved(fieldId);
+1583:             showAutoSaveFeedback(fieldId, true);
+1584:         } else {
+1585:             showAutoSaveFeedback(fieldId, false, result.message);
+1586:         }
+1587:         
+1588:     } catch (error) {
+1589:         console.error('Erreur lors de l\'auto-sauvegarde:', error);
+1590:         showAutoSaveFeedback(fieldId, false, 'Erreur de connexion');
+1591:     }
+1592: }
+1593: 
+1594: /**
+1595:  * Collecte les données des préférences
+1596:  */
+1597: function collectPreferencesData() {
+1598:     const data = {};
+1599:     
+1600:     // Préférences de filtres (tableaux)
+1601:     const excludeKeywordsRecadrage = document.getElementById('excludeKeywordsRecadrage')?.value || '';
+1602:     const excludeKeywordsAutorepondeur = document.getElementById('excludeKeywordsAutorepondeur')?.value || '';
+1603:     const excludeKeywords = document.getElementById('excludeKeywords')?.value || '';
+1604:     
+1605:     data.exclude_keywords_recadrage = excludeKeywordsRecadrage ? 
+1606:         excludeKeywordsRecadrage.split('\n').map(line => line.trim()).filter(line => line) : [];
+1607:     data.exclude_keywords_autorepondeur = excludeKeywordsAutorepondeur ? 
+1608:         excludeKeywordsAutorepondeur.split('\n').map(line => line.trim()).filter(line => line) : [];
+1609:     data.exclude_keywords = excludeKeywords ? 
+1610:         excludeKeywords.split('\n').map(line => line.trim()).filter(line => line) : [];
+1611:     
+1612:     // Préférences de fiabilité
+1613:     data.require_attachments = document.getElementById('attachmentDetectionToggle')?.checked || false;
+1614: 
+1615:     const retryCountRaw = document.getElementById('retryCount')?.value;
+1616:     if (retryCountRaw !== undefined && String(retryCountRaw).trim() !== '') {
+1617:         data.retry_count = parseInt(String(retryCountRaw).trim(), 10);
+1618:     }
+1619: 
+1620:     const retryDelayRaw = document.getElementById('retryDelaySec')?.value;
+1621:     if (retryDelayRaw !== undefined && String(retryDelayRaw).trim() !== '') {
+1622:         data.retry_delay_sec = parseInt(String(retryDelayRaw).trim(), 10);
+1623:     }
+1624: 
+1625:     const webhookTimeoutRaw = document.getElementById('webhookTimeoutSec')?.value;
+1626:     if (webhookTimeoutRaw !== undefined && String(webhookTimeoutRaw).trim() !== '') {
+1627:         data.webhook_timeout_sec = parseInt(String(webhookTimeoutRaw).trim(), 10);
+1628:     }
+1629: 
+1630:     const rateLimitRaw = document.getElementById('rateLimitPerHour')?.value;
+1631:     if (rateLimitRaw !== undefined && String(rateLimitRaw).trim() !== '') {
+1632:         data.rate_limit_per_hour = parseInt(String(rateLimitRaw).trim(), 10);
+1633:     }
+1634: 
+1635:     data.notify_on_failure = document.getElementById('notifyOnFailureToggle')?.checked || false;
+1636:     
+1637:     // Préférences de priorité (JSON)
+1638:     const senderPriorityText = document.getElementById('senderPriority')?.value || '{}';
+1639:     try {
+1640:         data.sender_priority = JSON.parse(senderPriorityText);
+1641:     } catch (e) {
+1642:         data.sender_priority = {};
+1643:     }
+1644:     
+1645:     return data;
+1646: }
+1647: 
+1648: /**
+1649:  * Marque une section comme modifiée
+1650:  * @param {string} fieldId - ID du champ modifié
+1651:  */
+1652: function markSectionAsModified(fieldId) {
+1653:     const section = getFieldSection(fieldId);
+1654:     if (section) {
+1655:         section.classList.add('modified');
+1656:         updateSectionIndicator(section, 'Modifié');
+1657:     }
+1658: }
+1659: 
+1660: /**
+1661:  * Marque une section comme sauvegardée
+1662:  * @param {string} fieldId - ID du champ sauvegardé
+1663:  */
+1664: function markSectionAsSaved(fieldId) {
+1665:     const section = getFieldSection(fieldId);
+1666:     if (section) {
+1667:         section.classList.remove('modified');
+1668:         section.classList.add('saved');
+1669:         updateSectionIndicator(section, 'Sauvegardé');
+1670:         
+1671:         // Retirer la classe 'saved' après 2 secondes
+1672:         setTimeout(() => {
+1673:             section.classList.remove('saved');
+1674:             updateSectionIndicator(section, '');
+1675:         }, 2000);
+1676:     }
+1677: }
+1678: 
+1679: /**
+1680:  * Obtient la section d'un champ
+1681:  * @param {string} fieldId - ID du champ
+1682:  * @returns {HTMLElement|null} Section parente
+1683:  */
+1684: function getFieldSection(fieldId) {
+1685:     const field = document.getElementById(fieldId);
+1686:     if (!field) return null;
+1687:     
+1688:     // Remonter jusqu'à trouver une carte ou un panneau
+1689:     let parent = field.parentElement;
+1690:     while (parent && parent !== document.body) {
+1691:         if (parent.classList.contains('card') || parent.classList.contains('collapsible-panel')) {
+1692:             return parent;
+1693:         }
+1694:         parent = parent.parentElement;
+1695:     }
+1696:     
+1697:     return null;
+1698: }
+1699: 
+1700: /**
+1701:  * Met à jour l'indicateur de section
+1702:  * @param {HTMLElement} section - Section à mettre à jour
+1703:  * @param {string} status - Statut à afficher
+1704:  */
+1705: function updateSectionIndicator(section, status) {
+1706:     let indicator = section.querySelector('.section-indicator');
+1707:     
+1708:     if (!indicator) {
+1709:         // Créer l'indicateur s'il n'existe pas
+1710:         indicator = document.createElement('div');
+1711:         indicator.className = 'section-indicator';
+1712:         
+1713:         // Insérer après le titre
+1714:         const title = section.querySelector('.card-title, .panel-title');
+1715:         if (title) {
+1716:             title.appendChild(indicator);
+1717:         }
+1718:     }
+1719:     
+1720:     if (status) {
+1721:         indicator.textContent = status;
+1722:         indicator.className = `section-indicator ${status.toLowerCase()}`;
+1723:     } else {
+1724:         indicator.textContent = '';
+1725:         indicator.className = 'section-indicator';
+1726:     }
+1727: }
+1728: 
+1729: /**
+1730:  * Affiche un feedback d'auto-sauvegarde
+1731:  * @param {string} fieldId - ID du champ
+1732:  * @param {boolean} success - Si la sauvegarde a réussi
+1733:  * @param {string} message - Message optionnel
+1734:  */
+1735: function showAutoSaveFeedback(fieldId, success, message = '') {
+1736:     const field = document.getElementById(fieldId);
+1737:     if (!field) return;
+1738:     
+1739:     // Créer ou récupérer le conteneur de feedback
+1740:     let feedback = field.parentElement.querySelector('.auto-save-feedback');
+1741:     if (!feedback) {
+1742:         feedback = document.createElement('div');
+1743:         feedback.className = 'auto-save-feedback';
+1744:         field.parentElement.appendChild(feedback);
+1745:     }
+1746:     
+1747:     // Définir le style et le message
+1748:     feedback.style.cssText = `
+1749:         font-size: 0.7em;
+1750:         margin-top: 4px;
+1751:         padding: 2px 6px;
+1752:         border-radius: 3px;
+1753:         opacity: 0;
+1754:         transition: opacity 0.3s ease;
+1755:     `;
+1756:     
+1757:     if (success) {
+1758:         feedback.style.background = 'rgba(26, 188, 156, 0.2)';
+1759:         feedback.style.color = 'var(--cork-success)';
+1760:         feedback.textContent = '✓ Auto-sauvegardé';
+1761:     } else {
+1762:         feedback.style.background = 'rgba(231, 81, 90, 0.2)';
+1763:         feedback.style.color = 'var(--cork-danger)';
+1764:         feedback.textContent = `✗ Erreur: ${message}`;
+1765:     }
+1766:     
+1767:     // Afficher le feedback
+1768:     feedback.style.opacity = '1';
+1769:     
+1770:     // Masquer après 3 secondes
+1771:     setTimeout(() => {
+1772:         feedback.style.opacity = '0';
+1773:     }, 3000);
+1774: }
+1775: 
+1776: /**
+1777:  * Fonction de debounce pour limiter les appels
+1778:  * @param {Function} func - Fonction à débouncer
+1779:  * @param {number} wait - Temps d'attente en ms
+1780:  * @returns {Function} Fonction débouncée
+1781:  */
+1782: function debounce(func, wait) {
+1783:     let timeout;
+1784:     return function executedFunction(...args) {
+1785:         const later = () => {
+1786:             clearTimeout(timeout);
+1787:             func(...args);
+1788:         };
+1789:         clearTimeout(timeout);
+1790:         timeout = setTimeout(later, wait);
+1791:     };
+1792: }
+1793: 
+1794: // -------------------- Nettoyage --------------------
+1795: window.addEventListener('beforeunload', () => {
+1796:     // Arrêter le polling des logs
+1797:     LogService.stopLogPolling();
+1798:     
+1799:     // Nettoyer le gestionnaire d'onglets
+1800:     if (tabManager) {
+1801:         tabManager.destroy();
+1802:     }
+1803:     
+1804:     // Sauvegarder les préférences locales
+1805:     saveLocalPreferences();
+1806: });
+1807: 
+1808: // -------------------- Export pour compatibilité --------------------
+1809: // Exporter les classes pour utilisation externe si nécessaire
+1810: window.DashboardServices = {
+1811:     ApiService,
+1812:     WebhookService,
+1813:     LogService,
+1814:     MessageHelper,
+1815:     TabManager
+1816: };
 ````
