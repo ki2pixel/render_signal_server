@@ -26,7 +26,9 @@ except ValueError:
         defaults={
             "disable_email_id_dedup": bool(DEFAULT_DISABLE_EMAIL_ID_DEDUP),
             "allow_custom_webhook_without_links": bool(DEFAULT_ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
-        }
+            "gmail_ingress_enabled": True,
+        },
+        external_store=_store,
     )
 
 
@@ -134,6 +136,8 @@ def update_runtime_flags():
             updates["disable_email_id_dedup"] = bool(payload.get("disable_email_id_dedup"))
         if "allow_custom_webhook_without_links" in payload:
             updates["allow_custom_webhook_without_links"] = bool(payload.get("allow_custom_webhook_without_links"))
+        if "gmail_ingress_enabled" in payload:
+            updates["gmail_ingress_enabled"] = bool(payload.get("gmail_ingress_enabled"))
         
         # Appel direct au service (mise à jour atomique + persiste + invalide cache)
         if not _runtime_flags_service.update_flags(updates):

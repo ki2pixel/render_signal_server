@@ -155,6 +155,17 @@ def ingest_gmail():
         return jsonify({"success": False, "message": "Server not ready"}), 503
 
     try:
+        rfs = getattr(ar, "_runtime_flags_service", None)
+        if rfs is not None and hasattr(rfs, "get_flag"):
+            if not bool(rfs.get_flag("gmail_ingress_enabled", True)):
+                return (
+                    jsonify({"success": False, "message": "Gmail ingress disabled"}),
+                    409,
+                )
+    except Exception:
+        pass
+
+    try:
         sender_email = _extract_sender_email(sender_raw)
     except Exception:
         sender_email = sender_raw

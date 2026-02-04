@@ -220,12 +220,16 @@ except Exception:
 
 # 5. Runtime Flags Service (Singleton)
 try:
+    from config import app_config_store
+
     _runtime_flags_service = RuntimeFlagsService.get_instance(
         file_path=settings.RUNTIME_FLAGS_FILE,
         defaults={
             "disable_email_id_dedup": bool(settings.DISABLE_EMAIL_ID_DEDUP),
             "allow_custom_webhook_without_links": bool(settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
-        }
+            "gmail_ingress_enabled": True,
+        },
+        external_store=app_config_store,
     )
     app.logger.info(f"SVC: RuntimeFlagsService initialized (cache_ttl={_runtime_flags_service.get_cache_ttl()}s)")
 except Exception as e:

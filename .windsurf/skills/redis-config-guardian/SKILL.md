@@ -1,6 +1,6 @@
 ---
 name: redis-config-guardian
-description: Inspect and reconcile Redis-stored configs (processing_prefs, polling_config, webhook_config, magic_link_tokens) using the approved scripts, APIs, and dashboard flows. Trigger when validating config drift, migrations, or debugging persistence issues.
+description: Inspect and reconcile Redis-stored configs (processing_prefs, routing_rules, webhook_config, magic_link_tokens) using the approved scripts, APIs, and dashboard flows. Trigger when validating config drift, migrations, or debugging persistence issues.
 ---
 
 # Redis Config Guardian

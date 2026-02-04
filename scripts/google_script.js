@@ -32,6 +32,7 @@ function processWebhookTransfer() {
 
   for (const thread of threads) {
     const messages = thread.getMessages();
+    let allMessagesHandled = true;
     
     for (const message of messages) {
       // On ne traite que les messages non lus du fil de discussion
@@ -62,20 +63,28 @@ function processWebhookTransfer() {
           
           if (responseCode === 200) {
             console.log("Succès pour : " + payload.subject);
-            // Marquer comme lu pour ne pas le renvoyer au prochain tour
-            message.markRead();
+            // On laisse volontairement le message en "non lu" pour conserver un repère visuel.
+            // La suppression du label (voir plus bas) suffit à éviter une double ingestion.
           } else {
             console.error("Erreur Serveur (" + responseCode + ") : " + response.getContentText());
             // On laisse en "non lu" pour retenter plus tard, ou on loggue l'erreur
+            allMessagesHandled = false;
           }
         } catch (e) {
           console.error("Erreur de connexion : " + e.toString());
+          allMessagesHandled = false;
         }
       }
     }
     
-    // Une fois le thread traité, on retire le label "A_TRANSFERER_WEBHOOK" 
-    // pour nettoyer la boite de réception visuellement (optionnel)
-    thread.removeLabel(label);
+    if (allMessagesHandled) {
+      // Une fois le thread traité, on retire le label "A_TRANSFERER_WEBHOOK".
+      // Cela empêche le script de reprendre ces messages même s'ils restent "non lus".
+      thread.removeLabel(label);
+    } else {
+      console.log(
+        "Thread non terminé (au moins un message non ingéré). Label conservé pour retenter plus tard."
+      );
+    }
   }
 }

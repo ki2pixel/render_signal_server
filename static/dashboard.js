@@ -670,6 +670,14 @@ async function loadRuntimeFlags() {
             ) {
                 allowCustom.checked = !!flags.allow_custom_webhook_without_links;
             }
+
+            const gmailIngressEnabled = document.getElementById('gmailIngressEnabledToggle');
+            if (
+                gmailIngressEnabled
+                && Object.prototype.hasOwnProperty.call(flags, 'gmail_ingress_enabled')
+            ) {
+                gmailIngressEnabled.checked = !!flags.gmail_ingress_enabled;
+            }
         }
     } catch (e) {
         console.error('loadRuntimeFlags error', e);
@@ -685,10 +693,12 @@ async function saveRuntimeFlags() {
     try {
         const disableDedup = document.getElementById('disableEmailIdDedupToggle');
         const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
+        const gmailIngressEnabled = document.getElementById('gmailIngressEnabledToggle');
 
         const payload = {
             disable_email_id_dedup: disableDedup?.checked ?? false,
             allow_custom_webhook_without_links: allowCustom?.checked ?? false,
+            gmail_ingress_enabled: gmailIngressEnabled?.checked ?? true,
         };
 
         const data = await ApiService.post('/api/update_runtime_flags', payload);

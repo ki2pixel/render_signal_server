@@ -24,6 +24,40 @@ def test_ingress_gmail_unauthorized(flask_client):
 
 
 @pytest.mark.unit
+def test_ingress_gmail_runtime_flag_disabled(monkeypatch, flask_client):
+    # Given: runtime flag gmail_ingress_enabled is disabled
+    import app_render
+
+    class _FakeFlags:
+        def get_flag(self, key, default=None):
+            if key == "gmail_ingress_enabled":
+                return False
+            return default
+
+    monkeypatch.setattr(app_render, "_runtime_flags_service", _FakeFlags())
+
+    send_mock = MagicMock(return_value=False)
+    monkeypatch.setattr("routes.api_ingress.email_orchestrator.send_custom_webhook_flow", send_mock)
+
+    payload = {
+        "subject": "Hello",
+        "sender": "sender@example.com",
+        "body": "hello",
+        "date": "2026-01-01T00:00:00Z",
+    }
+
+    # When: posting to ingress
+    resp = flask_client.post("/api/ingress/gmail", json=payload, headers=_auth_headers())
+
+    # Then: conflict returned and processing is not executed
+    assert resp.status_code == 409
+    data = resp.get_json()
+    assert data["success"] is False
+    assert data["message"] == "Gmail ingress disabled"
+    assert send_mock.call_count == 0
+
+
+@pytest.mark.unit
 def test_ingress_gmail_invalid_json_payload(flask_client):
     # Given: a request with invalid JSON body
 

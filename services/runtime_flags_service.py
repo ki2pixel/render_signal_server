@@ -58,15 +58,17 @@ class RuntimeFlagsService:
     
     _instance: Optional[RuntimeFlagsService] = None
     
-    def __init__(self, file_path: Path, defaults: Dict[str, bool]):
+    def __init__(self, file_path: Path, defaults: Dict[str, bool], external_store=None):
         """Initialise le service (utiliser get_instance() de préférence).
         
         Args:
             file_path: Chemin du fichier JSON
             defaults: Dictionnaire des valeurs par défaut
+            external_store: Store externe optionnel (config.app_config_store)
         """
         self._lock = threading.RLock()
         self._file_path = file_path
+        self._external_store = external_store
         self._defaults = defaults
         self._cache: Optional[Dict[str, bool]] = None
         self._cache_timestamp: Optional[float] = None
@@ -76,7 +78,8 @@ class RuntimeFlagsService:
     def get_instance(
         cls,
         file_path: Optional[Path] = None,
-        defaults: Optional[Dict[str, bool]] = None
+        defaults: Optional[Dict[str, bool]] = None,
+        external_store=None,
     ) -> RuntimeFlagsService:
         """Récupère ou crée l'instance singleton.
         
@@ -95,7 +98,7 @@ class RuntimeFlagsService:
                 raise ValueError(
                     "RuntimeFlagsService: file_path and defaults required for first initialization"
                 )
-            cls._instance = cls(file_path, defaults)
+            cls._instance = cls(file_path, defaults, external_store=external_store)
         return cls._instance
     
     @classmethod
@@ -213,9 +216,17 @@ class RuntimeFlagsService:
             Dictionnaire des flags fusionnés avec les defaults
         """
         data: Dict[str, Any] = {}
+
+        try:
+            if self._external_store is not None and hasattr(self._external_store, "get_config_json"):
+                raw = self._external_store.get_config_json("runtime_flags") or {}
+                if isinstance(raw, dict):
+                    data.update(raw)
+        except Exception:
+            data = {}
         
         try:
-            if self._file_path.exists():
+            if not data and self._file_path.exists():
                 with open(self._file_path, "r", encoding="utf-8") as f:
                     raw = json.load(f) or {}
                     if isinstance(raw, dict):
@@ -243,6 +254,13 @@ class RuntimeFlagsService:
         Returns:
             True si succès, False sinon
         """
+        try:
+            if self._external_store is not None and hasattr(self._external_store, "set_config_json"):
+                if self._external_store.set_config_json("runtime_flags", data):
+                    return True
+        except Exception:
+            pass
+
         tmp_path = None
         try:
             self._file_path.parent.mkdir(parents=True, exist_ok=True)
