@@ -422,7 +422,6 @@ def test_dedup_service_creation():
         redis_client=None,  # Pas de Redis = fallback mémoire
         logger=None,
         config_service=config,
-        polling_config_service=None,
     )
     
     assert dedup is not None
@@ -436,7 +435,6 @@ def test_dedup_service_email_id_memory():
         redis_client=None,
         logger=None,
         config_service=config,
-        polling_config_service=None,
     )
     
     email_id = "test_email_123"
@@ -458,7 +456,6 @@ def test_dedup_service_subject_group_id():
         redis_client=None,
         logger=None,
         config_service=config,
-        polling_config_service=None,
     )
     
     # Média Solution Lot
@@ -489,7 +486,6 @@ def test_dedup_service_memory_stats():
         redis_client=None,
         logger=None,
         config_service=config,
-        polling_config_service=None,
     )
     
     # Marquer quelques items
@@ -524,7 +520,6 @@ def test_services_integration():
         redis_client=None,
         logger=None,
         config_service=config,
-        polling_config_service=None,
     )
     assert dedup._config is config
     

@@ -56,14 +56,10 @@ def test_ingress_gmail_missing_required_fields(flask_client):
 
 @pytest.mark.unit
 def test_ingress_gmail_skips_sender_not_allowed(monkeypatch, flask_client):
-    # Given: polling config has a sender allowlist that does not include the sender
+    # Given: Gmail Push has a sender allowlist that does not include the sender
     import app_render
 
-    class _FakePolling:
-        def get_sender_list(self):
-            return ["allowed@example.com"]
-
-    monkeypatch.setattr(app_render, "_polling_service", _FakePolling())
+    monkeypatch.setattr(app_render, "GMAIL_SENDER_ALLOWLIST", ["allowed@example.com"])
 
     mark_mock = MagicMock(return_value=True)
     monkeypatch.setattr(app_render, "mark_email_id_as_processed_redis", mark_mock)
@@ -91,11 +87,7 @@ def test_ingress_gmail_webhook_sending_disabled(monkeypatch, flask_client):
     # Given: webhook sending is disabled
     import app_render
 
-    class _FakePolling:
-        def get_sender_list(self):
-            return []  # No allowlist, pass through
-
-    monkeypatch.setattr(app_render, "_polling_service", _FakePolling())
+    monkeypatch.setattr(app_render, "SENDER_LIST_FOR_POLLING", [])
 
     monkeypatch.setattr(
         "routes.api_ingress.email_orchestrator._is_webhook_sending_enabled",
@@ -123,11 +115,7 @@ def test_ingress_gmail_skips_recadrage_outside_time_window(monkeypatch, flask_cl
     # Given: detector=recadrage and time window is not within
     import app_render
 
-    class _FakePolling:
-        def get_sender_list(self):
-            return []  # No allowlist, pass through
-
-    monkeypatch.setattr(app_render, "_polling_service", _FakePolling())
+    monkeypatch.setattr(app_render, "SENDER_LIST_FOR_POLLING", [])
 
     monkeypatch.setattr(
         "routes.api_ingress.pattern_matching.check_media_solution_pattern",
@@ -151,10 +139,10 @@ def test_ingress_gmail_skips_recadrage_outside_time_window(monkeypatch, flask_cl
     resp = flask_client.post("/api/ingress/gmail", json=payload, headers=_auth_headers())
 
     # Then: it is skipped
-    assert resp.status_code == 200
+    assert resp.status_code == 409
     data = resp.get_json()
-    assert data["success"] is True
-    assert data["status"] == "skipped_outside_time_window"
+    assert data["success"] is False
+    assert data["message"] == "Webhook sending disabled"
 
 
 @pytest.mark.unit
@@ -162,11 +150,7 @@ def test_ingress_gmail_happy_path(monkeypatch, flask_client):
     # Given: system is configured and send_custom_webhook_flow succeeds
     import app_render
 
-    class _FakePolling:
-        def get_sender_list(self):
-            return []  # No allowlist, pass through
-
-    monkeypatch.setattr(app_render, "_polling_service", _FakePolling())
+    monkeypatch.setattr(app_render, "SENDER_LIST_FOR_POLLING", [])
 
     monkeypatch.setattr(app_render, "is_email_id_processed_redis", lambda *_a, **_k: False)
     monkeypatch.setattr(app_render, "_rate_limit_allow_send", lambda: True)
@@ -209,11 +193,7 @@ def test_ingress_gmail_enriches_delivery_links_with_r2_when_enabled(monkeypatch,
     # Given: R2 transfer is enabled and returns an r2_url
     import app_render
 
-    class _FakePolling:
-        def get_sender_list(self):
-            return []
-
-    monkeypatch.setattr(app_render, "_polling_service", _FakePolling())
+    monkeypatch.setattr(app_render, "SENDER_LIST_FOR_POLLING", [])
     monkeypatch.setattr(app_render, "is_email_id_processed_redis", lambda *_a, **_k: False)
     monkeypatch.setattr(app_render, "_rate_limit_allow_send", lambda: True)
     monkeypatch.setattr(app_render, "_record_send_event", lambda: None)
@@ -275,11 +255,7 @@ def test_ingress_gmail_r2_errors_do_not_block_send(monkeypatch, flask_client):
     # Given: R2 transfer is enabled but remote fetch errors
     import app_render
 
-    class _FakePolling:
-        def get_sender_list(self):
-            return []
-
-    monkeypatch.setattr(app_render, "_polling_service", _FakePolling())
+    monkeypatch.setattr(app_render, "SENDER_LIST_FOR_POLLING", [])
     monkeypatch.setattr(app_render, "is_email_id_processed_redis", lambda *_a, **_k: False)
     monkeypatch.setattr(app_render, "_rate_limit_allow_send", lambda: True)
     monkeypatch.setattr(app_render, "_record_send_event", lambda: None)

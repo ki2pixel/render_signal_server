@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import sys
 from datetime import datetime, timezone
+from email.utils import parseaddr
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -111,6 +112,16 @@ def _compute_email_id(*, subject: str, sender: str, date: str) -> str:
     return hashlib.md5(unique_str.encode("utf-8")).hexdigest()
 
 
+def _extract_sender_email(sender_raw: str) -> str:
+    try:
+        _, addr = parseaddr(sender_raw or "")
+        if isinstance(addr, str) and addr.strip():
+            return addr.strip()
+    except Exception:
+        pass
+    return (sender_raw or "").strip()
+
+
 @bp.route("/gmail", methods=["POST"])
 def ingest_gmail():
     if not _auth_service.verify_api_key_from_request(request):
@@ -144,10 +155,7 @@ def ingest_gmail():
         return jsonify({"success": False, "message": "Server not ready"}), 503
 
     try:
-        extract_sender_fn = getattr(ar, "extract_sender_email", None)
-        sender_email = (
-            extract_sender_fn(sender_raw) if callable(extract_sender_fn) else sender_raw
-        )
+        sender_email = _extract_sender_email(sender_raw)
     except Exception:
         sender_email = sender_raw
 
@@ -176,14 +184,12 @@ def ingest_gmail():
         pass
 
     try:
-        sender_list = []
-        polling_service = getattr(ar, "_polling_service", None)
-        if polling_service is not None:
-            try:
-                sender_list = polling_service.get_sender_list() or []
-            except Exception:
-                sender_list = []
-        allowed = [str(s).strip().lower() for s in sender_list if isinstance(s, str) and s.strip()]
+        gmail_sender_list = getattr(ar, "GMAIL_SENDER_ALLOWLIST", [])
+        allowed = [
+            str(s).strip().lower()
+            for s in (gmail_sender_list if isinstance(gmail_sender_list, list) else [])
+            if isinstance(s, str) and s.strip()
+        ]
         if allowed and sender_email not in allowed:
             try:
                 mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)

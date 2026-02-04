@@ -29,9 +29,11 @@ FLASK_SECRET_KEY = _get_required_env("FLASK_SECRET_KEY")
 TRIGGER_PAGE_USER = os.environ.get("TRIGGER_PAGE_USER", REF_TRIGGER_PAGE_USER)
 TRIGGER_PAGE_PASSWORD = _get_required_env("TRIGGER_PAGE_PASSWORD")
 
-EMAIL_ADDRESS = _get_required_env("EMAIL_ADDRESS")
-EMAIL_PASSWORD = _get_required_env("EMAIL_PASSWORD")
-IMAP_SERVER = _get_required_env("IMAP_SERVER")
+# Email/IMAP credentials (legacy - not used by Gmail Push)
+# These are kept for tests and legacy compatibility only
+EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS", "")
+EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD", "")
+IMAP_SERVER = os.environ.get("IMAP_SERVER", "")
 IMAP_PORT = int(os.environ.get("IMAP_PORT", 993))
 IMAP_USE_SSL = env_bool("IMAP_USE_SSL", True)
 
@@ -52,6 +54,15 @@ if RENDER_DEPLOY_CLEAR_CACHE not in ("clear", "do_not_clear"):
 RENDER_DEPLOY_HOOK_URL = os.environ.get("RENDER_DEPLOY_HOOK_URL", "")
 
 
+# Gmail Push sender allowlist (comma-separated emails)
+# If empty, all senders are allowed (PROCESS_API_TOKEN is the primary security control)
+GMAIL_SENDER_ALLOWLIST_RAW = os.environ.get("GMAIL_SENDER_ALLOWLIST", "")
+GMAIL_SENDER_ALLOWLIST = [
+    e.strip().lower() for e in GMAIL_SENDER_ALLOWLIST_RAW.split(',') 
+    if e.strip()
+] if GMAIL_SENDER_ALLOWLIST_RAW else []
+
+# Legacy polling configuration (kept for tests only)
 SENDER_OF_INTEREST_FOR_POLLING_RAW = os.environ.get(
     "SENDER_OF_INTEREST_FOR_POLLING",
     "",
@@ -85,6 +96,7 @@ POLLING_INACTIVE_CHECK_INTERVAL_SECONDS = int(
     os.environ.get("POLLING_INACTIVE_CHECK_INTERVAL_SECONDS", 600)
 )
 
+# Background tasks (disabled - Gmail Push is the only ingestion method)
 ENABLE_BACKGROUND_TASKS = env_bool("ENABLE_BACKGROUND_TASKS", False)
 BG_POLLER_LOCK_FILE = os.environ.get(
     "BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock"
@@ -135,12 +147,21 @@ def log_configuration(logger):
     logger.info(f"CFG WEBHOOK: Custom webhook URL configured to: {WEBHOOK_URL}")
     logger.info(f"CFG WEBHOOK: SSL verification = {WEBHOOK_SSL_VERIFY}")
     
+    # Gmail Push sender allowlist
+    if GMAIL_SENDER_ALLOWLIST:
+        logger.info(
+            f"CFG GMAIL: Allowing emails from {len(GMAIL_SENDER_ALLOWLIST)} senders: {GMAIL_SENDER_ALLOWLIST}"
+        )
+    else:
+        logger.debug("CFG GMAIL: GMAIL_SENDER_ALLOWLIST not set (all senders allowed)")
+    
+    # Legacy polling configuration (kept for tests only)
     if SENDER_LIST_FOR_POLLING:
         logger.info(
             f"CFG POLL: Monitoring emails from {len(SENDER_LIST_FOR_POLLING)} senders: {SENDER_LIST_FOR_POLLING}"
         )
     else:
-        logger.warning("CFG POLL: SENDER_OF_INTEREST_FOR_POLLING not set. Email polling likely ineffective.")
+        logger.debug("CFG POLL: SENDER_OF_INTEREST_FOR_POLLING not set (legacy polling disabled)")
     
     if not EXPECTED_API_TOKEN:
         logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")

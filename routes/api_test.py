@@ -17,12 +17,6 @@ from config.settings import (
     WEBHOOK_URL,
     WEBHOOK_SSL_VERIFY,
     POLLING_TIMEZONE_STR,
-    POLLING_ACTIVE_DAYS,
-    POLLING_ACTIVE_START_HOUR,
-    POLLING_ACTIVE_END_HOUR,
-    EMAIL_POLLING_INTERVAL_SECONDS,
-    POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
-    ENABLE_SUBJECT_GROUP_DEDUP,
 )
 from utils.validators import normalize_make_webhook_url as _normalize_make_webhook_url
 
@@ -163,33 +157,6 @@ def update_webhook_config():
     except Exception:
         return (
             jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}),
-            500,
-        )
-
-
-@bp.route("/get_polling_config", methods=["GET"])
-def get_polling_config():
-    if not _testapi_authorized(request):
-        return jsonify({"success": False, "message": "Unauthorized"}), 401
-    try:
-        return (
-            jsonify(
-                {
-                    "success": True,
-                    "timezone": POLLING_TIMEZONE_STR,
-                    "active_days": POLLING_ACTIVE_DAYS,
-                    "active_start_hour": POLLING_ACTIVE_START_HOUR,
-                    "active_end_hour": POLLING_ACTIVE_END_HOUR,
-                    "interval_seconds": EMAIL_POLLING_INTERVAL_SECONDS,
-                    "inactive_check_interval_seconds": POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
-                    "enable_subject_group_dedup": ENABLE_SUBJECT_GROUP_DEDUP,
-                }
-            ),
-            200,
-        )
-    except Exception:
-        return (
-            jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration de polling."}),
             500,
         )
 

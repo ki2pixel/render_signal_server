@@ -20,7 +20,7 @@ These rules are the single source of truth for backend (Flask), frontend (modula
 
 ## Tech Stack
 - **Backend:** Python 3.11, Flask app in `app_render.py`, services under `services/`, routes under `routes/`.
-- **Background jobs:** IMAP poller (`background/polling_thread.py`) guarded by Redis lock + fcntl fallback.
+- **Ingestion:** Gmail Push API (`POST /api/ingress/gmail`) as the sole email ingestion method, with Bearer token authentication and sender allowlist.
 - **Frontend:** `dashboard.html` + ES6 modules under `static/` (`services/`, `components/`, `utils/`, `dashboard.js`).
 - **Storage:** Redis-first config store (`config/app_config_store.py`) with JSON fallback; Cloudflare R2 offload via `R2TransferService`.
 - **Legacy helpers:** Minimal PHP footprint (Render deployment helpers + webhook receiver) adhering to PSR-12.
@@ -29,7 +29,7 @@ These rules are the single source of truth for backend (Flask), frontend (modula
 ## Code Style & Structure
 ### Backend (Python)
 - **Clean Code:** Delete commented-out dead code immediately (no confirmation needed). Comments must state the *why* (intent/business context), never re-describe implementation details.
-- Services are **singletons with typed public methods** (see `PollingConfigService`, `WebhookConfigService`). Never mutate module-level globals at runtime; read via service getters each time.
+- Services are **singletons with typed public methods** (see `RoutingRulesService`, `WebhookConfigService`). Never mutate module-level globals at runtime; read via service getters each time.
 - Keep functions short (<40 logical lines) and typed. Use `TypedDict` / dataclasses for structured payloads (e.g., `email_processing/orchestrator.py`).
 - Input validation lives at route boundaries. Raise `ValueError`/`BadRequest` with explicit messages; let Flask error handlers serialize.
 - Logging goes through `app_logging/` helpers. Always scrub PII with `mask_sensitive_data`.
@@ -46,13 +46,14 @@ These rules are the single source of truth for backend (Flask), frontend (modula
 
 ## Architecture Decisions to Enforce
 ### Configuration & Secrets
-- Secrets (passwords, tokens) **must come from ENV**. `_get_required_env()` in `config/settings.py` already enforces the eight mandatory variables—do not bypass it.
-- Redis is the **source of truth** for `polling_config`, `webhook_config`, `processing_prefs`, and `magic_link_tokens`. Any API or background logic must read via `AppConfigStore` every time.
+- Secrets (passwords, tokens) **must come from ENV**. `_get_required_env()` in `config/settings.py` enforces the five mandatory variables—do not bypass it.
+- Redis is the **source of truth** for `routing_rules`, `webhook_config`, `processing_prefs`, and `magic_link_tokens`. Any API or background logic must read via `AppConfigStore` every time.
 
-### Background Poller
-- Acquire Redis lock key `render_signal:poller_lock` (TTL 300s) before starting the IMAP loop; fallback to file lock only when Redis unavailable.
-- Refresh dynamic config before each cycle by calling `PollingConfigService.get_*` methods. Never cache sender lists or dedup flags between cycles.
-- HTML payload parsing is capped at `MAX_HTML_BYTES = 1_000_000`. Truncate and log a single WARNING when exceeded to avoid OOM.
+### Gmail Push Ingress
+- All email ingestion occurs via `POST /api/ingress/gmail` with Bearer token authentication (`AuthService.verify_api_key_from_request()`).
+- Validate required fields (sender, body) and enforce sender allowlist via `GMAIL_SENDER_ALLOWLIST`.
+- Apply pattern matching (Media Solution/DESABO) and time window rules before triggering webhook flow.
+- Enrich delivery links with R2 offload when enabled; fallback gracefully on R2 failures.
 
 ### Frontend Experience
 - Maintain the dashboard’s **Status Banner + Timeline Canvas + collapsible Webhook panels**. These are non-negotiable UX baselines.
@@ -70,14 +71,19 @@ def update_processing_prefs() -> Response:
 ```
 - **Pattern:** Load schema, validate, persist via store, return JSON. Never write to `settings` globals.
 
-### IMAP Poller Wrapper
+### Gmail Push Ingress Flow
 ```python
-def check_new_emails_and_trigger_webhook():
-    sender_whitelist = polling_config_service.get_sender_whitelist()
-    dedup_enabled = polling_config_service.is_subject_group_dedup_enabled()
-    return orchestrator.process_inbox(sender_whitelist, dedup_enabled)
+@bp.route("/gmail", methods=["POST"])
+def ingest_gmail():
+    if not auth_service.verify_api_key_from_request(request):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+
+    payload = request.get_json(silent=True)
+    # Validate required fields, check sender allowlist, apply time windows
+    # Trigger orchestrator.send_custom_webhook_flow() with enriched payload
+    return jsonify({"success": True, "status": "processed"}), 200
 ```
-- Call getters each run. Do not share mutable state between cycles; rely on service caches with TTL or no cache at all.
+- **Pattern:** Authenticate → Validate → Enrich → Send webhook. Never bypass `AuthService` or log raw email content.
 
 ### Frontend Panel Save Flow
 ```javascript
@@ -107,13 +113,12 @@ def upload_to_r2(source_url: str) -> R2UploadResult:
   - `pytest --cov=.` (full suite)
   - `pytest -m "redis or r2 or resilience" --cov=.` (resilience focus)
   - `python -m scripts.check_config_store` (Redis JSON sanity)
-- Add tests alongside functionality: routes in `tests/routes/`, services in `tests/services/`, poller logic in dedicated integration modules.
-- Favor Given/When/Then naming and explicit fixtures (see `tests/test_polling_dynamic_reload.py`).
+- Add tests alongside functionality: routes in `tests/routes/`, services in `tests/services/`, ingress logic in dedicated integration modules.
+- Favor Given/When/Then naming and explicit fixtures (see `tests/test_api_ingress.py`).
 
 ### Skill Invocation Policy (Workspace vs Global)
 - **Priority order:** always invoke workspace-scoped skills under `.windsurf/skills/` before falling back to the global catalog in `/home/kidpixel/.codeium/skills`. The local skills encapsulate project-specific scripts, environments, and templates that enforce these coding standards.
-  - `redis-config-guardian` remplace/complète le skill `check-config` pour tout audit de `processing_prefs`, `polling_config`, `webhook_config`, `magic_link_tokens`. Il orchestre le script CLI + l’API dashboard.
-  - `routing-rules-orchestrator`, `webhook-dashboard-ux-maintainer`, `background-poller-resilience-lab`, `r2-transfer-service-playbook`, `magic-link-auth-companion`, `docs-sync-automaton`, `testing-matrix-navigator` doivent être utilisés dès qu’une tâche touche leur domaine respectif avant de recourir à des ressources globales.
+  - `redis-config-guardian` remplace/complète le skill `check-config` pour tout audit de `processing_prefs`, `routing_rules`, `webhook_config`, `magic_link_tokens`. Il orchestre le script CLI + l’API dashboard.
   - `debugging-strategies` est obligatoire pour toute tâche de débogage (bugs, incidents de performances, comportements inattendus) avant d’envisager le moindre recours aux skills globaux ou à des ressources externes.
   - Le skill `run-tests` reste la porte d’entrée canonique pour `pytest`; `scaffold-js-module` et `scaffold-service` demeurent obligatoires pour les nouveaux modules/services.
 - **Global skills usage:** reach for `/home/kidpixel/.codeium/skills/*` only when a needed capability (e.g., PDF tooling, algorithmic art, Postgres expertise) is absent from the workspace set. Document why the global skill was preferred if the task overlaps existing local skills.
@@ -122,26 +127,17 @@ def upload_to_r2(source_url: str) -> R2UploadResult:
 ## Deployment & Environment
 - Branch naming: `feature/<slug>` or `fix/<slug>`; commits follow Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`).
 - Docker image built via `.github/workflows/render-image.yml`, deployed to Render. Keep Dockerfile multistage and logs on stdout/stderr.
-- Required ENV list (must be set in Render dashboard and local `.env`): `FLASK_SECRET_KEY`, `TRIGGER_PAGE_PASSWORD`, `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `IMAP_SERVER`, `PROCESS_API_TOKEN`, `WEBHOOK_URL`, `MAKECOM_API_KEY`.
+- Required ENV list (must be set in Render dashboard and local `.env`): `FLASK_SECRET_KEY`, `TRIGGER_PAGE_PASSWORD`, `PROCESS_API_TOKEN`, `WEBHOOK_URL`, `MAKECOM_API_KEY`.
+- Optional legacy IMAP variables (not used by Gmail Push): `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `IMAP_SERVER` (kept for tests only).
 
 ## Anti-Patterns (Never Do)
 - Write secrets or config fallbacks directly in code.
 - Reintroduce `innerHTML` assignments or inline event handlers in the dashboard.
 - Bypass Redis store by editing `debug/*.json` directly during runtime.
-- Start multiple poller instances in the same deployment; always respect locks and `ENABLE_BACKGROUND_TASKS`.
-- Log raw email bodies or personally identifiable information.
+- Disable authentication on `/api/ingress/gmail` or expose PROCESS_API_TOKEN in logs.
+- Log raw email bodies or personally identifiable information from Gmail payloads.
+- Attempt to restart IMAP polling services (retired).
 
-## Common Tasks Reference
-### Adding a New Service
-1. Create `services/<name>_service.py` with singleton pattern (`_instance`, `get_instance()` helper).
-2. Inject dependencies via constructor, not globals.
-3. Expose typed methods; cache with TTL only when necessary.
-4. Register usage where needed (routes, background jobs) without circular imports.
-
-### Extending Dashboard Panels
-1. Add markup inside `dashboard.html` within the appropriate `.section-panel`.
-2. Create or extend a collector function (`collect<Panel>Data`) and persistence helper.
-3. Use `ApiService` for network calls, `MessageHelper` for feedback, `TabManager` for accessibility wiring.
-4. Update CSS tokens (colors, transitions) to maintain the established visual language—no ad hoc styles.
-
-By following these Cursor-ready rules, any new engineer or AI assistant can contribute safely without regressing resilience, UX, or security guarantees.
+## Notes finales
+- Maintenir ce document <12 000 caractères. Réviser après toute évolution majeure.
+- Pour toute question, consulter les audits récents (`docs/workflow/audits/`).

@@ -43,10 +43,10 @@ class ConfigService:
             from config import settings
             self._settings = settings
     
-    # Configuration IMAP / Email
+    # Configuration IMAP / Email (legacy - kept for tests only)
     
     def get_email_config(self) -> dict:
-        """Retourne la configuration email complète et validée.
+        """Retourne la configuration email complète et validée (legacy).
         
         Returns:
             dict avec clés: address, password, server, port, use_ssl
@@ -203,7 +203,7 @@ class ConfigService:
     def has_makecom_api_key(self) -> bool:
         return bool(self._settings.MAKECOM_API_KEY)
     
-    # Configuration Tâches de Fond
+    # Configuration Tâches de Fond (legacy - background tasks disabled)
     
     def is_background_tasks_enabled(self) -> bool:
         return bool(getattr(self._settings, "ENABLE_BACKGROUND_TASKS", False))
@@ -219,9 +219,6 @@ class ConfigService:
     
     def get_runtime_flags_file(self):
         return self._settings.RUNTIME_FLAGS_FILE
-    
-    def get_polling_config_file(self):
-        return self._settings.POLLING_CONFIG_FILE
     
     def get_trigger_signal_file(self):
         return self._settings.TRIGGER_SIGNAL_FILE

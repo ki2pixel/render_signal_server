@@ -13,16 +13,13 @@ Features:
 
 Usage:
     from services import DeduplicationService, ConfigService
-    from config.polling_config import PollingConfigService
     
     config = ConfigService()
-    polling_config = PollingConfigService()
     
     dedup = DeduplicationService(
         redis_client=redis_client,
         logger=app.logger,
-        config_service=config,
-        polling_config_service=polling_config
+        config_service=config
     )
     
     if not dedup.is_email_processed(email_id):
@@ -41,7 +38,6 @@ from typing import Optional, Set, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from services.config_service import ConfigService
-    from config.polling_config import PollingConfigService
 
 from utils.text_helpers import (
     normalize_no_accents_lower_trim,
@@ -56,7 +52,6 @@ class DeduplicationService:
         _redis: Client Redis optionnel
         _logger: Logger pour diagnostics
         _config: ConfigService pour accès à la configuration
-        _polling_config: PollingConfigService pour timezone
         _processed_email_ids: Set en mémoire (fallback)
         _processed_subject_groups: Set en mémoire (fallback)
     """
@@ -66,7 +61,6 @@ class DeduplicationService:
         redis_client=None,
         logger=None,
         config_service: Optional[ConfigService] = None,
-        polling_config_service: Optional[PollingConfigService] = None,
     ):
         """Initialise le service de déduplication.
         
@@ -74,12 +68,10 @@ class DeduplicationService:
             redis_client: Client Redis optionnel (None = fallback mémoire)
             logger: Logger optionnel pour diagnostics
             config_service: ConfigService pour configuration
-            polling_config_service: PollingConfigService pour timezone
         """
         self._redis = redis_client
         self._logger = logger
         self._config = config_service
-        self._polling_config = polling_config_service
         
         # Fallbacks en mémoire (process-local uniquement)
         self._processed_email_ids: Set[str] = set()
@@ -328,10 +320,11 @@ class DeduplicationService:
         if not self.is_subject_dedup_enabled():
             return group_id
         
-        # Scoping mensuel basé sur le timezone de polling
+        # Scoping mensuel basé sur le timezone de polling (Europe/Paris par défaut)
         try:
-            tz = self._polling_config.get_tz() if self._polling_config else None
-            now_local = datetime.now(tz) if tz else datetime.now()
+            import pytz
+            tz = pytz.timezone('Europe/Paris')
+            now_local = datetime.now(tz)
         except Exception:
             now_local = datetime.now()
         

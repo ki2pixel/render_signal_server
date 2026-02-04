@@ -1,6 +1,5 @@
 redis_client = None
 
-from background.lock import acquire_singleton_lock
 from flask import Flask, jsonify, request
 from flask_login import login_required
 from flask_cors import CORS
@@ -18,11 +17,12 @@ from utils.time_helpers import parse_time_hhmm as _parse_time_hhmm
 from utils.validators import normalize_make_webhook_url as _normalize_make_webhook_url
 
 from config import settings
-from config import polling_config
-from config.polling_config import PollingConfigService
 from config import webhook_time_window
 from config.app_config_store import get_config_json as _config_get
 from config.app_config_store import set_config_json as _config_set
+
+# Expose Gmail Push allowlist to ingress endpoint
+GMAIL_SENDER_ALLOWLIST = settings.GMAIL_SENDER_ALLOWLIST
 
 from services import (
     ConfigService,
@@ -36,7 +36,6 @@ from auth import user as auth_user
 from auth import helpers as auth_helpers
 from auth.helpers import testapi_authorized as _testapi_authorized
 
-from email_processing import imap_client as email_imap_client
 from email_processing import pattern_matching as email_pattern_matching
 from email_processing import webhook_sender as email_webhook_sender
 from email_processing import orchestrator as email_orchestrator
@@ -56,7 +55,6 @@ from deduplication.subject_group import generate_subject_group_id as _gen_subjec
 from routes import (
     health_bp,
     api_webhooks_bp,
-    api_polling_bp,
     api_processing_bp,
     api_processing_legacy_bp,
     api_test_bp,
@@ -72,7 +70,6 @@ from routes import (
 )
 from routes.api_processing import DEFAULT_PROCESSING_PREFS as _DEFAULT_PROCESSING_PREFS
 DEFAULT_PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS
-from background.polling_thread import background_email_poller_loop
 
 
 def append_webhook_log(webhook_id: str, webhook_url: str, webhook_status_code: int, webhook_response: str):
@@ -113,16 +110,15 @@ app.secret_key = settings.FLASK_SECRET_KEY
 
 _config_service = ConfigService()
 
-_runtime_flags_service = RuntimeFlagsService.get_instance(...)
+_runtime_flags_service = None
 
-_webhook_service = WebhookConfigService.get_instance(...)
+_webhook_service = None
 
 _auth_service = AuthService(_config_service)
 
 
 app.register_blueprint(health_bp)
 app.register_blueprint(api_webhooks_bp)
-app.register_blueprint(api_polling_bp)
 app.register_blueprint(api_processing_bp)
 app.register_blueprint(api_processing_legacy_bp)
 app.register_blueprint(api_test_bp)
@@ -159,12 +155,6 @@ WEBHOOK_URL = settings.WEBHOOK_URL
 MAKECOM_API_KEY = settings.MAKECOM_API_KEY
 WEBHOOK_SSL_VERIFY = settings.WEBHOOK_SSL_VERIFY
 
-EMAIL_ADDRESS = settings.EMAIL_ADDRESS
-EMAIL_PASSWORD = settings.EMAIL_PASSWORD
-IMAP_SERVER = settings.IMAP_SERVER
-IMAP_PORT = settings.IMAP_PORT
-IMAP_USE_SSL = settings.IMAP_USE_SSL
-
 EXPECTED_API_TOKEN = settings.EXPECTED_API_TOKEN
 
 ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
@@ -173,7 +163,6 @@ SENDER_LIST_FOR_POLLING = settings.SENDER_LIST_FOR_POLLING
 # Runtime flags and files
 DISABLE_EMAIL_ID_DEDUP = settings.DISABLE_EMAIL_ID_DEDUP
 ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS
-POLLING_CONFIG_FILE = settings.POLLING_CONFIG_FILE
 TRIGGER_SIGNAL_FILE = settings.TRIGGER_SIGNAL_FILE
 RUNTIME_FLAGS_FILE = settings.RUNTIME_FLAGS_FILE
 
@@ -196,28 +185,6 @@ try:
 except Exception:
     PROCESS_START_TIME = None
 
-def _heartbeat_loop():
-    interval = 60
-    while True:
-        try:
-            bg = globals().get("_bg_email_poller_thread")
-            mk = globals().get("_make_watcher_thread")
-            bg_alive = bool(bg and bg.is_alive())
-            mk_alive = bool(mk and mk.is_alive())
-            app.logger.info("HEARTBEAT: alive (bg_poller=%s, make_watcher=%s)", bg_alive, mk_alive)
-        except Exception:
-            # Ignored intentionally: heartbeat logging must never crash the loop
-            pass
-        time.sleep(interval)
-
-try:
-    disable_bg_hb = os.environ.get("DISABLE_BACKGROUND_TASKS", "").strip().lower() in ["1", "true", "yes"]
-    if getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and not disable_bg_hb:
-        _heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
-        _heartbeat_thread.start()
-except Exception:
-    pass
-
 # Process signal handlers (observability)
 def _handle_sigterm(signum, frame):  # pragma: no cover - environment dependent
     try:
@@ -237,11 +204,15 @@ settings.log_configuration(app.logger)
 if not WEBHOOK_SSL_VERIFY:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     app.logger.warning("CFG WEBHOOK: SSL verification DISABLED for webhook calls (development/legacy). Use valid certificates in production.")
-    
-TZ_FOR_POLLING = polling_config.initialize_polling_timezone(app.logger)
 
-# Polling Config Service (accès centralisé à la configuration)
-_polling_service = PollingConfigService(settings)
+TZ_FOR_POLLING = timezone.utc
+try:
+    tz_name = getattr(settings, "POLLING_TIMEZONE_STR", "UTC")
+    if isinstance(tz_name, str) and tz_name.strip() and tz_name.strip().upper() != "UTC":
+        if ZoneInfo is not None:
+            TZ_FOR_POLLING = ZoneInfo(tz_name.strip())
+except Exception:
+    TZ_FOR_POLLING = timezone.utc
 
 # =============================================================================
 # SERVICES INITIALIZATION
@@ -303,42 +274,6 @@ try:
 except Exception:
     pass
 
-# --- Polling config overrides (optional UI overrides from external store with file fallback) ---
-try:
-    _poll_cfg_path = settings.POLLING_CONFIG_FILE
-    app.logger.info(
-        f"CFG POLL(file): path={_poll_cfg_path}; exists={_poll_cfg_path.exists()}"
-    )
-    _pc = {}
-    try:
-        _pc = _config_get("polling_config", file_fallback=_poll_cfg_path) or {}
-    except Exception:
-        _pc = {}
-    app.logger.info(
-        "CFG POLL(loaded): keys=%s; snippet={active_days=%s,start=%s,end=%s,enable_polling=%s}",
-        list(_pc.keys()),
-        _pc.get("active_days"),
-        _pc.get("active_start_hour"),
-        _pc.get("active_end_hour"),
-        _pc.get("enable_polling"),
-    )
-    try:
-        app.logger.info(
-            "CFG POLL(effective): days=%s; start=%s; end=%s; senders=%s; dedup_monthly_scope=%s; enable_polling=%s; vacation_start=%s; vacation_end=%s",
-            _polling_service.get_active_days(),
-            _polling_service.get_active_start_hour(),
-            _polling_service.get_active_end_hour(),
-            len(_polling_service.get_sender_list() or []),
-            _polling_service.is_subject_group_dedup_enabled(),
-            _polling_service.get_enable_polling(True),
-            (_pc.get("vacation_start") if isinstance(_pc, dict) else None),
-            (_pc.get("vacation_end") if isinstance(_pc, dict) else None),
-        )
-    except Exception:
-        pass
-except Exception:
-    pass
-
 # --- Dedup constants mapping (from central settings) ---
 PROCESSED_EMAIL_IDS_REDIS_KEY = settings.PROCESSED_EMAIL_IDS_REDIS_KEY
 PROCESSED_SUBJECT_GROUPS_REDIS_KEY = settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY
@@ -354,42 +289,11 @@ try:
         redis_client=redis_client,  # None = fallback mémoire automatique
         logger=app.logger,
         config_service=_config_service,
-        polling_config_service=_polling_service,
     )
     app.logger.info(f"SVC: DeduplicationService initialized {_dedup_service}")
 except Exception as e:
     app.logger.error(f"SVC: Failed to initialize DeduplicationService: {e}")
     _dedup_service = None
-
-# --- Fonctions Utilitaires IMAP ---
-def create_imap_connection():
-    """Wrapper vers email_processing.imap_client.create_imap_connection."""
-    return email_imap_client.create_imap_connection(app.logger)
-
-
-def close_imap_connection(mail):
-    """Wrapper vers email_processing.imap_client.close_imap_connection."""
-    return email_imap_client.close_imap_connection(app.logger, mail)
-
-
-def generate_email_id(msg_data):
-    """Wrapper vers email_processing.imap_client.generate_email_id."""
-    return email_imap_client.generate_email_id(msg_data)
-
-
-def extract_sender_email(from_header):
-    """Wrapper vers email_processing.imap_client.extract_sender_email."""
-    return email_imap_client.extract_sender_email(from_header)
-
-
-def decode_email_header(header_value):
-    """Wrapper vers email_processing.imap_client.decode_email_header_value."""
-    return email_imap_client.decode_email_header_value(header_value)
-
-
-def mark_email_as_read_imap(mail, email_num):
-    """Wrapper vers email_processing.imap_client.mark_email_as_read_imap."""
-    return email_imap_client.mark_email_as_read_imap(app.logger, mail, email_num)
 
 
 def check_media_solution_pattern(subject, email_content):
@@ -468,7 +372,7 @@ def is_subject_group_processed(group_id: str) -> bool:
         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
-        enable_monthly_scope=_polling_service.is_subject_group_dedup_enabled(),
+        enable_monthly_scope=bool(ENABLE_SUBJECT_GROUP_DEDUP),
         tz=TZ_FOR_POLLING,
         memory_set=SUBJECT_GROUPS_MEMORY,
     )
@@ -484,172 +388,10 @@ def mark_subject_group_processed(group_id: str) -> bool:
         ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
         ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
         groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
-        enable_monthly_scope=_polling_service.is_subject_group_dedup_enabled(),
+        enable_monthly_scope=bool(ENABLE_SUBJECT_GROUP_DEDUP),
         tz=TZ_FOR_POLLING,
         memory_set=SUBJECT_GROUPS_MEMORY,
     )
-
-
- 
- 
-def check_new_emails_and_trigger_webhook():
-    """Delegate to orchestrator entry-point."""
-    global SENDER_LIST_FOR_POLLING, ENABLE_SUBJECT_GROUP_DEDUP
-    try:
-        SENDER_LIST_FOR_POLLING = _polling_service.get_sender_list() or []
-    except Exception:
-        pass
-    try:
-        ENABLE_SUBJECT_GROUP_DEDUP = _polling_service.is_subject_group_dedup_enabled()
-    except Exception:
-        pass
-    return email_orchestrator.check_new_emails_and_trigger_webhook()
-
-def background_email_poller() -> None:
-    """Delegate polling loop to background.polling_thread with injected deps."""
-    def _is_ready_to_poll() -> bool:
-        return all([email_config_valid, _polling_service.get_sender_list(), WEBHOOK_URL])
-
-    def _run_cycle() -> int:
-        return check_new_emails_and_trigger_webhook()
-
-    def _is_in_vacation(now_dt: datetime) -> bool:
-        try:
-            return _polling_service.is_in_vacation(now_dt)
-        except Exception:
-            return False
-
-    background_email_poller_loop(
-        logger=app.logger,
-        tz_for_polling=_polling_service.get_tz(),
-        get_active_days=_polling_service.get_active_days,
-        get_active_start_hour=_polling_service.get_active_start_hour,
-        get_active_end_hour=_polling_service.get_active_end_hour,
-        inactive_sleep_seconds=_polling_service.get_inactive_check_interval_s(),
-        active_sleep_seconds=_polling_service.get_email_poll_interval_s(),
-        is_in_vacation=_is_in_vacation,
-        is_ready_to_poll=_is_ready_to_poll,
-        run_poll_cycle=_run_cycle,
-        max_consecutive_errors=5,
-    )
-
-
-def make_scenarios_vacation_watcher() -> None:
-    """Background watcher that enforces Make scenarios ON/OFF according to
-    - UI global toggle enable_polling (persisted via /api/update_polling_config)
-    - Vacation window in polling_config (POLLING_VACATION_START/END)
-
-    Logic:
-    - If enable_polling is False => ensure scenarios are OFF
-    - If enable_polling is True and in vacation => ensure scenarios are OFF
-    - If enable_polling is True and not in vacation => ensure scenarios are ON
-
-    To minimize API calls, apply only on state changes.
-    """
-    last_applied = None  # None|True|False meaning desired state last set
-    interval = max(60, _polling_service.get_inactive_check_interval_s())
-    while True:
-        try:
-            enable_ui = _polling_service.get_enable_polling(True)
-            in_vac = False
-            try:
-                in_vac = _polling_service.is_in_vacation(None)
-            except Exception:
-                in_vac = False
-            desired = bool(enable_ui and not in_vac)
-            if last_applied is None or desired != last_applied:
-                try:
-                    from routes.api_make import toggle_all_scenarios  # local import to avoid cycles
-                    res = toggle_all_scenarios(desired, logger=app.logger)
-                    app.logger.info(
-                        "MAKE_WATCHER: applied desired=%s (enable_ui=%s, in_vacation=%s) results_keys=%s",
-                        desired, enable_ui, in_vac, list(res.keys()) if isinstance(res, dict) else 'n/a'
-                    )
-                except Exception as e:
-                    app.logger.error(f"MAKE_WATCHER: toggle_all_scenarios failed: {e}")
-                last_applied = desired
-        except Exception as e:
-            try:
-                app.logger.error(f"MAKE_WATCHER: loop error: {e}")
-            except Exception:
-                pass
-        time.sleep(interval)
-
-
-def _start_daemon_thread(target, name: str) -> threading.Thread | None:
-    try:
-        thread = threading.Thread(target=target, daemon=True, name=name)
-        thread.start()
-        app.logger.info(f"THREAD: {name} started successfully")
-        return thread
-    except Exception as e:
-        app.logger.error(f"THREAD: Failed to start {name}: {e}", exc_info=True)
-        return None
-
-
-try:
-    # Check legacy disable flag (priority override)
-    disable_bg = os.environ.get("DISABLE_BACKGROUND_TASKS", "").strip().lower() in ["1", "true", "yes"]
-    enable_bg = getattr(settings, "ENABLE_BACKGROUND_TASKS", False) and not disable_bg
-    
-    # Log effective config before starting background tasks
-    try:
-        app.logger.info(
-            f"CFG BG: enable_polling(UI)={_polling_service.get_enable_polling(True)}; ENABLE_BACKGROUND_TASKS(env)={getattr(settings, 'ENABLE_BACKGROUND_TASKS', False)}; DISABLE_BACKGROUND_TASKS={disable_bg}"
-        )
-    except Exception:
-        pass
-    # Start background poller only if both the environment flag and the persisted
-    # UI-controlled switch are enabled. This avoids unexpected background work
-    # when the operator intentionally disabled polling from the dashboard.
-    if enable_bg and _polling_service.get_enable_polling(True):
-        lock_path = getattr(settings, "BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock")
-        try:
-            if acquire_singleton_lock(lock_path):
-                app.logger.info(
-                    f"BG_POLLER: Singleton lock acquired on {lock_path}. Starting background thread."
-                )
-                _bg_email_poller_thread = _start_daemon_thread(background_email_poller, "EmailPoller")
-            else:
-                app.logger.info(
-                    f"BG_POLLER: Singleton lock NOT acquired on {lock_path}. Background thread will not start."
-                )
-        except Exception as e:
-            app.logger.error(
-                f"BG_POLLER: Failed to start background thread: {e}", exc_info=True
-            )
-    else:
-        # Clarify which condition prevented starting the poller
-        if disable_bg:
-            app.logger.info(
-                "BG_POLLER: DISABLE_BACKGROUND_TASKS is set. Background poller not started."
-            )
-        elif not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
-            app.logger.info(
-                "BG_POLLER: ENABLE_BACKGROUND_TASKS is false. Background poller not started."
-            )
-        elif not _polling_service.get_enable_polling(True):
-            app.logger.info(
-                "BG_POLLER: UI 'enable_polling' flag is false. Background poller not started."
-            )
-except Exception:
-    # Defensive: never block app startup because of background thread wiring
-    pass
-
-try:
-    if enable_bg and bool(settings.MAKECOM_API_KEY):
-        _make_watcher_thread = _start_daemon_thread(make_scenarios_vacation_watcher, "MakeVacationWatcher")
-        if _make_watcher_thread:
-            app.logger.info("MAKE_WATCHER: vacation-aware ON/OFF watcher active")
-    else:
-        if disable_bg:
-            app.logger.info("MAKE_WATCHER: not started because DISABLE_BACKGROUND_TASKS is set")
-        elif not getattr(settings, "ENABLE_BACKGROUND_TASKS", False):
-            app.logger.info("MAKE_WATCHER: not started because ENABLE_BACKGROUND_TASKS is false")
-        elif not bool(settings.MAKECOM_API_KEY):
-            app.logger.info("MAKE_WATCHER: not started because MAKECOM_API_KEY is not configured (avoiding 401 noise)")
-except Exception as e:
-    app.logger.error(f"MAKE_WATCHER: failed to start thread: {e}")
 
 
 

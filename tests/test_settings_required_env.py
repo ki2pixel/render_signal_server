@@ -7,9 +7,6 @@ import pytest
 _REQUIRED_ENV = {
     "FLASK_SECRET_KEY": "test-secret-key",
     "TRIGGER_PAGE_PASSWORD": "test-dashboard-password",
-    "EMAIL_ADDRESS": "test@example.com",
-    "EMAIL_PASSWORD": "test-email-password",
-    "IMAP_SERVER": "imap.example.com",
     "PROCESS_API_TOKEN": "test-process-api-token",
     "WEBHOOK_URL": "https://example.com/webhook",
     "MAKECOM_API_KEY": "test-makecom-api-key",
@@ -26,8 +23,7 @@ def test_settings_import_succeeds_when_required_env_present(monkeypatch):
     settings = importlib.import_module("config.settings")
 
     assert settings.FLASK_SECRET_KEY == _REQUIRED_ENV["FLASK_SECRET_KEY"]
-    assert settings.EMAIL_ADDRESS == _REQUIRED_ENV["EMAIL_ADDRESS"]
-    assert settings.IMAP_SERVER == _REQUIRED_ENV["IMAP_SERVER"]
+    assert settings.EXPECTED_API_TOKEN == _REQUIRED_ENV["PROCESS_API_TOKEN"]
 
 
 @pytest.mark.unit
@@ -36,9 +32,6 @@ def test_settings_import_succeeds_when_required_env_present(monkeypatch):
     [
         "FLASK_SECRET_KEY",
         "TRIGGER_PAGE_PASSWORD",
-        "EMAIL_ADDRESS",
-        "EMAIL_PASSWORD",
-        "IMAP_SERVER",
         "PROCESS_API_TOKEN",
         "WEBHOOK_URL",
         "MAKECOM_API_KEY",

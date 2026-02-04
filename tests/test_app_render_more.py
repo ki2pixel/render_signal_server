@@ -12,23 +12,16 @@ import app_render as ar
 
 
 @pytest.mark.unit
-def test_wrappers_imap_and_generators(monkeypatch):
-    # Arrange mocks for email_imap_client wrappers
+def test_wrappers_generators_only(monkeypatch):
+    # Arrange mocks for remaining wrappers (non-IMAP)
     calls = {}
-    monkeypatch.setattr(ar.email_imap_client, 'create_imap_connection', lambda logger: 'MAIL')
-    monkeypatch.setattr(ar.email_imap_client, 'close_imap_connection', lambda logger, mail: True)
-    monkeypatch.setattr(ar.email_imap_client, 'generate_email_id', lambda msg: 'EID123')
-    monkeypatch.setattr(ar.email_imap_client, 'extract_sender_email', lambda s: 'sender@example.com')
-    monkeypatch.setattr(ar.email_imap_client, 'decode_email_header_value', lambda v: 'decoded')
-    monkeypatch.setattr(ar.email_imap_client, 'mark_email_as_read_imap', lambda logger, mail, num: True)
-
-    # Act + Assert wrappers
-    assert ar.create_imap_connection() == 'MAIL'
-    assert ar.close_imap_connection('MAIL') is True
-    assert ar.generate_email_id(SimpleNamespace()) == 'EID123'
-    assert ar.extract_sender_email('From: <sender@example.com>') == 'sender@example.com'
-    assert ar.decode_email_header('=?UTF-8?Q?...?=') == 'decoded'
-    assert ar.mark_email_as_read_imap('MAIL', 1) is True
+    # Note: email_imap_client wrappers removed with IMAP polling retirement
+    
+    # Act + Assert remaining wrappers
+    # IMAP-related wrappers have been removed, testing only remaining functionality
+    assert hasattr(ar, 'create_imap_connection') == False  # Should be removed
+    assert hasattr(ar, 'check_new_emails_and_trigger_webhook') == False  # Should be removed
+    assert hasattr(ar, 'mark_email_as_read_imap') == False  # Should be removed
 
 
 @pytest.mark.unit
@@ -66,13 +59,6 @@ def test_send_makecom_webhook_delegate(monkeypatch):
     assert captured['subject'] == 'subj'
     assert captured['email_id'] == 'e1'
     assert 'logger' in captured and 'log_hook' in captured
-
-
-@pytest.mark.unit
-def test_check_new_emails_and_trigger_webhook_delegate(monkeypatch):
-    # Delegate to orchestrator entry point
-    monkeypatch.setattr(ar.email_orchestrator, 'check_new_emails_and_trigger_webhook', lambda: 5)
-    assert ar.check_new_emails_and_trigger_webhook() == 5
 
 
 @pytest.mark.unit

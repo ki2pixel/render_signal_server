@@ -3,26 +3,29 @@
 ## 📅 Date de création
 2026-01-29
 
+## 📅 Dernière mise à jour
+2026-02-04
+
 ## Contexte
 L'analyse radon du codebase révèle plusieurs points chauds de complexité cyclomatique élevée. Ces zones nécessitent une attention particulière pour maintenir la codebase maintenable et éviter l'accumulation de dette technique.
 
-## Surveillance radon (2026-01-29)
+## Surveillance radon (2026-02-04)
 
 ### Métriques globales
-- **Complexité moyenne** : D (24.98)
+- **Complexité moyenne** : D (25.8)
 - **Blocs analysés** : 44
-- **Répartition** : 1xF, 7xE, 12xD, 15xC, 9xB
+- **Répartition** : 2xF, 5xE, 12xD, 15xC, 10xB
 
 ### Points critiques identifiés
 
 | Fonction | Module | Grade | Complexité | Plan d'action |
 |---|---|---|---|---|
-| `check_new_emails_and_trigger_webhook` | `email_processing/orchestrator.py` | F | 43 | ✅ **Extraction routing rules** |
-| `update_polling_config` | `routes/api_config.py` | F | 38 | ✅ **Délégation service** |
-| `normalize_source_url` | `services/r2_transfer_service.py` | E | 18 | ⚠️ **Stratégie par fournisseur** |
-| `validate_processing_prefs` | `preferences/processing_prefs.py` | E | 17 | ⚠️ **Schéma typé (pydantic)** |
-| `check_media_solution_pattern` | `email_processing/pattern_matching.py` | E | 16 | ⚠️ **Réduction branches** |
-| `update_webhook_config` | `routes/api_webhooks.py` | E | 15 | ✅ **Délegation service** |
+| `check_new_emails_and_trigger_webhook` | `email_processing/orchestrator.py` | F | 239 | ✅ **Extraction routing rules** |
+| `ingest_gmail` | `routes/api_ingress.py` | F | 85 | ✅ **Endpoint Apps Script** |
+| `normalize_source_url` | `services/r2_transfer_service.py` | E | 31 | ⚠️ **Stratégie par fournisseur** |
+| `validate_processing_prefs` | `preferences/processing_prefs.py` | E | 32 | ⚠️ **Schéma typé (pydantic)** |
+| `check_media_solution_pattern` | `email_processing/pattern_matching.py` | E | 33 | ⚠️ **Réduction branches** |
+| `update_webhook_config` | `routes/api_webhooks.py` | E | 28 | ✅ **Délegation service** |
 | `handle_media_solution_route` | `email_processing/orchestrator.py` | E | 14 | ⚠️ **Extraction helpers** |
 | `send_custom_webhook_flow` | `email_processing/orchestrator.py` | E | 14 | ✅ **Simplification** |
 | `handle_desabo_route` | `email_processing/orchestrator.py` | E | 13 | ✅ **Simplification** |

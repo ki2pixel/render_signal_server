@@ -217,10 +217,6 @@ function bindEvents() {
         saveWebhookBtn.addEventListener('click', () => WebhookService.saveConfig());
     }
     
-    const saveEmailPrefsBtn = document.getElementById('saveEmailPrefsBtn');
-    if (saveEmailPrefsBtn) {
-        saveEmailPrefsBtn.addEventListener('click', savePollingConfig);
-    }
     
     const clearLogsBtn = document.getElementById('clearLogsBtn');
     if (clearLogsBtn) {
@@ -238,10 +234,6 @@ function bindEvents() {
             LogService.changeLogPeriod(parseInt(e.target.value));
         });
     }
-    const pollingToggle = document.getElementById('pollingToggle');
-    if (pollingToggle) {
-        pollingToggle.addEventListener('change', togglePolling);
-    }
     
     const saveTimeWindowBtn = document.getElementById('saveTimeWindowBtn');
     if (saveTimeWindowBtn) {
@@ -253,10 +245,6 @@ function bindEvents() {
         saveGlobalWebhookTimeBtn.addEventListener('click', saveGlobalWebhookTimeWindow);
     }
     
-    const savePollingConfigBtn = document.getElementById('savePollingCfgBtn');
-    if (savePollingConfigBtn) {
-        savePollingConfigBtn.addEventListener('click', savePollingConfig);
-    }
     
     const saveRuntimeFlagsBtn = document.getElementById('runtimeFlagsSaveBtn');
     if (saveRuntimeFlagsBtn) {
@@ -293,10 +281,6 @@ function bindEvents() {
         }
     });
     
-    const addEmailBtn = document.getElementById('addSenderBtn');
-    if (addEmailBtn) {
-        addEmailBtn.addEventListener('click', () => addEmailField(''));
-    }
     
     const refreshStatusBtn = document.getElementById('refreshStatusBtn');
     if (refreshStatusBtn) {
@@ -321,13 +305,6 @@ function bindEvents() {
         }
     });
     
-    const hourDropdowns = ['pollingStartHour', 'pollingEndHour'];
-    hourDropdowns.forEach(id => {
-        const select = document.getElementById(id);
-        if (select) {
-            select.innerHTML = generateHourOptions();
-        }
-    });
     
     const restartBtn = document.getElementById('restartServerBtn');
     if (restartBtn) {
@@ -362,13 +339,12 @@ async function loadInitialData() {
     try {
         await Promise.all([
             WebhookService.loadConfig(),
-            loadPollingStatus(),
             loadTimeWindow(),
-            loadPollingConfig(),
             loadRuntimeFlags(),
             loadProcessingPrefsFromServer(),
             loadLocalPreferences()
         ]);
+
         
         await loadGlobalWebhookTimeWindow();
         
@@ -531,47 +507,6 @@ async function generateMagicLink() {
     }
 }
 
-// Polling control
-async function loadPollingStatus() {
-    try {
-        const data = await ApiService.get('/api/get_polling_config');
-        
-        if (data.success) {
-            const isEnabled = !!data.config?.enable_polling;
-            const toggle = document.getElementById('pollingToggle');
-            const statusText = document.getElementById('pollingStatusText');
-            
-            if (toggle) toggle.checked = isEnabled;
-            if (statusText) {
-                statusText.textContent = isEnabled ? '✅ Polling activé' : '❌ Polling désactivé';
-            }
-        }
-    } catch (e) {
-        console.error('Erreur chargement statut polling:', e);
-        const statusText = document.getElementById('pollingStatusText');
-        if (statusText) statusText.textContent = '⚠️ Erreur de chargement';
-    }
-}
-
-async function togglePolling() {
-    const enable = document.getElementById('pollingToggle').checked;
-    
-    try {
-        const data = await ApiService.post('/api/update_polling_config', { enable_polling: enable });
-        
-        if (data.success) {
-            MessageHelper.showInfo('pollingMsg', data.message);
-            const statusText = document.getElementById('pollingStatusText');
-            if (statusText) {
-                statusText.textContent = enable ? '✅ Polling activé' : '❌ Polling désactivé';
-            }
-        } else {
-            MessageHelper.showError('pollingMsg', data.message || 'Erreur lors du changement.');
-        }
-    } catch (e) {
-        MessageHelper.showError('pollingMsg', 'Erreur de communication avec le serveur.');
-    }
-}
 
 // Time window helpers
 function generateTimeOptions(stepMinutes = 30) {
@@ -714,101 +649,6 @@ function renderTimeWindowDisplay(start, end) {
     displayEl.textContent = `Dernière fenêtre enregistrée: ${startText} → ${endText}`;
 }
 
-// Polling configuration
-async function loadPollingConfig() {
-    try {
-        const data = await ApiService.get('/api/get_polling_config');
-        
-        if (data.success) {
-            const cfg = data.config || {};
-            
-            // Déduplication
-            const dedupEl = document.getElementById('enableSubjectGroupDedup');
-            if (dedupEl) dedupEl.checked = !!cfg.enable_subject_group_dedup;
-            
-            // Senders
-            const senders = Array.isArray(cfg.sender_of_interest_for_polling) ? cfg.sender_of_interest_for_polling : [];
-            renderSenderInputs(senders);
-            
-            // Active days and hours
-            try {
-                if (Array.isArray(cfg.active_days)) setDayCheckboxes(cfg.active_days);
-                
-                const sh = document.getElementById('pollingStartHour');
-                const eh = document.getElementById('pollingEndHour');
-                if (sh && Number.isInteger(cfg.active_start_hour)) setSelectedOption(sh, String(cfg.active_start_hour));
-                if (eh && Number.isInteger(cfg.active_end_hour)) setSelectedOption(eh, String(cfg.active_end_hour));
-            } catch (e) {
-                console.warn('loadPollingConfig: applying days/hours failed', e);
-            }
-        }
-    } catch (e) {
-        console.error('Erreur chargement config polling:', e);
-    }
-}
-
-async function savePollingConfig(event) {
-    const btn = event?.target || document.getElementById('savePollingCfgBtn');
-    if (btn) btn.disabled = true;
-    
-    const dedup = document.getElementById('enableSubjectGroupDedup')?.checked;
-    const senders = collectSenderInputs();
-    const activeDays = collectDayCheckboxes();
-    const startHourStr = document.getElementById('pollingStartHour')?.value?.trim() ?? '';
-    const endHourStr = document.getElementById('pollingEndHour')?.value?.trim() ?? '';
-    const statusId = document.getElementById('emailPrefsSaveStatus') ? 'emailPrefsSaveStatus' : 'pollingCfgMsg';
-
-    // Validation
-    const startHour = startHourStr === '' ? null : Number.parseInt(startHourStr, 10);
-    const endHour = endHourStr === '' ? null : Number.parseInt(endHourStr, 10);
-    
-    if (!activeDays || activeDays.length === 0) {
-        MessageHelper.showError(statusId, 'Veuillez sélectionner au moins un jour actif.');
-        if (btn) btn.disabled = false;
-        return;
-    }
-    
-    if (startHour === null || Number.isNaN(startHour) || startHour < 0 || startHour > 23) {
-        MessageHelper.showError(statusId, 'Heure de début invalide (0-23).');
-        if (btn) btn.disabled = false;
-        return;
-    }
-    
-    if (endHour === null || Number.isNaN(endHour) || endHour < 0 || endHour > 23) {
-        MessageHelper.showError(statusId, 'Heure de fin invalide (0-23).');
-        if (btn) btn.disabled = false;
-        return;
-    }
-    
-    if (startHour === endHour) {
-        MessageHelper.showError(statusId, 'L\'heure de début et de fin ne peuvent pas être identiques.');
-        if (btn) btn.disabled = false;
-        return;
-    }
-
-    const payload = {
-        enable_subject_group_dedup: dedup,
-        sender_of_interest_for_polling: senders,
-        active_days: activeDays,
-        active_start_hour: startHour,
-        active_end_hour: endHour
-    };
-
-    try {
-        const data = await ApiService.post('/api/update_polling_config', payload);
-        
-        if (data.success) {
-            MessageHelper.showSuccess(statusId, data.message || 'Préférences enregistrées avec succès !');
-            await loadPollingConfig();
-        } else {
-            MessageHelper.showError(statusId, data.message || 'Erreur lors de la sauvegarde.');
-        }
-    } catch (e) {
-        MessageHelper.showError(statusId, 'Erreur de communication avec le serveur.');
-    } finally {
-        if (btn) btn.disabled = false;
-    }
-}
 
 // Runtime flags
 async function loadRuntimeFlags() {
@@ -1083,9 +923,8 @@ function saveLocalPreferences() {
 // Configuration management
 async function exportAllConfig() {
     try {
-        const [webhookCfg, pollingCfg, timeWin, processingPrefs] = await Promise.all([
+        const [webhookCfg, timeWin, processingPrefs] = await Promise.all([
             ApiService.get('/api/webhooks/config'),
-            ApiService.get('/api/get_polling_config'),
             ApiService.get('/api/get_webhook_time_window'),
             ApiService.get('/api/processing_prefs')
         ]);
@@ -1094,7 +933,6 @@ async function exportAllConfig() {
         const exportObj = {
             exported_at: new Date().toISOString(),
             webhook_config: webhookCfg,
-            polling_config: pollingCfg,
             time_window: timeWin,
             processing_prefs: processingPrefs,
             ui_preferences: prefsRaw ? JSON.parse(prefsRaw) : {}
@@ -1173,23 +1011,6 @@ async function applyImportedServerConfig(obj) {
         }
     }
     
-    // Polling config
-    if (obj?.polling_config?.config) {
-        const cfg = obj.polling_config.config;
-        const payload = {};
-        
-        if (Array.isArray(cfg.active_days)) payload.active_days = cfg.active_days;
-        if (Number.isInteger(cfg.active_start_hour)) payload.active_start_hour = cfg.active_start_hour;
-        if (Number.isInteger(cfg.active_end_hour)) payload.active_end_hour = cfg.active_end_hour;
-        if (typeof cfg.enable_subject_group_dedup === 'boolean') payload.enable_subject_group_dedup = cfg.enable_subject_group_dedup;
-        if (Array.isArray(cfg.sender_of_interest_for_polling)) payload.sender_of_interest_for_polling = cfg.sender_of_interest_for_polling;
-        
-        if (Object.keys(payload).length) {
-            await ApiService.post('/api/update_polling_config', payload);
-            await loadPollingConfig();
-        }
-    }
-    
     // Time window
     if (obj?.time_window) {
         const start = obj.time_window.webhooks_time_start ?? '';
@@ -1245,90 +1066,6 @@ function buildPayloadPreview() {
     if (pre) pre.textContent = JSON.stringify(payload, null, 2);
 }
 
-// UI helpers
-function setDayCheckboxes(days) {
-    const group = document.getElementById('pollingActiveDaysGroup');
-    if (!group) return;
-    
-    const set = new Set(Array.isArray(days) ? days : []);
-    const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
-    
-    boxes.forEach(cb => {
-        const idx = parseInt(cb.value, 10);
-        cb.checked = set.has(idx);
-    });
-}
-
-function collectDayCheckboxes() {
-    const group = document.getElementById('pollingActiveDaysGroup');
-    if (!group) return [];
-    
-    const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
-    const out = [];
-    
-    boxes.forEach(cb => {
-        if (cb.checked) out.push(parseInt(cb.value, 10));
-    });
-    
-    // Trier croissant et garantir l'unicité
-    return Array.from(new Set(out)).sort((a, b) => a - b);
-}
-
-function addEmailField(value) {
-    const container = document.getElementById('senderOfInterestContainer');
-    if (!container) return;
-    
-    const row = document.createElement('div');
-    row.className = 'inline-group';
-    
-    const input = document.createElement('input');
-    input.type = 'email';
-    input.placeholder = 'ex: email@example.com';
-    input.value = value || '';
-    input.style.flex = '1';
-    
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'email-remove-btn';
-    btn.textContent = '❌';
-    btn.title = 'Supprimer cet email';
-    btn.addEventListener('click', () => row.remove());
-    
-    row.appendChild(input);
-    row.appendChild(btn);
-    container.appendChild(row);
-}
-
-function renderSenderInputs(list) {
-    const container = document.getElementById('senderOfInterestContainer');
-    if (!container) return;
-    
-    container.innerHTML = '';
-    (list || []).forEach(e => addEmailField(e));
-    if (!list || list.length === 0) addEmailField('');
-}
-
-function collectSenderInputs() {
-    const container = document.getElementById('senderOfInterestContainer');
-    if (!container) return [];
-    
-    const inputs = Array.from(container.querySelectorAll('input[type="email"]'));
-    const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-    const out = [];
-    const seen = new Set();
-    
-    for (const i of inputs) {
-        const v = (i.value || '').trim().toLowerCase();
-        if (!v) continue;
-        
-        if (emailRe.test(v) && !seen.has(v)) {
-            seen.add(v);
-            out.push(v);
-        }
-    }
-    
-    return out;
-}
 
 // Fenêtre horaire global webhook
 async function loadGlobalWebhookTimeWindow() {

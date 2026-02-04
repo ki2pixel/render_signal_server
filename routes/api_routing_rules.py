@@ -52,14 +52,9 @@ def _resolve_backend_webhook_url() -> str | None:
 
 def _resolve_sender_allowlist_pattern() -> str | None:
     try:
-        from config import polling_config as _polling_config
         from config import settings as _settings
 
-        service = _polling_config.PollingConfigService(
-            settings_module=_settings,
-            config_store=_store,
-        )
-        senders = service.get_sender_list()
+        senders = getattr(_settings, "SENDER_LIST_FOR_POLLING", [])
     except Exception:
         senders = []
 

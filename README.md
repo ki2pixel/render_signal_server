@@ -1,13 +1,13 @@
 # render_signal_server
 
-Application Flask modulaires pour le pilotage de webhooks et le polling IMAP. Ce dépôt a été refactoré pour passer d'un fichier monolithique (`app_render.py`) à une architecture claire et testable.
+Application Flask modulaire pour le pilotage de webhooks et l'ingestion d'e-mails via Gmail Push. Ce dépôt a été refactoré pour passer d'un fichier monolithique (`app_render.py`) à une architecture claire et testable.
 
 ## Documentation
 
 - Documentation principale : `docs/README.md`
 - Architecture & services : `docs/architecture/overview.md`
 - API HTTP : `docs/architecture/api.md`
-- Pôles Fonctionnels : `docs/features/` (`email_polling.md`, `webhooks.md`, `ui.md`)
+- Pôles Fonctionnels : `docs/features/` (`gmail_push_ingress.md`, `webhooks.md`, `frontend_dashboard_features.md`)
 - Configuration & Stockage : `docs/configuration/` (`configuration.md`, `storage.md`, `installation.md`)
 - Déploiement & Opérations : `docs/operations/` (`deploiement.md`, `operational-guide.md`, `checklist_production.md`, `depannage.md`)
 - Tests & qualité : `docs/quality/testing.md`
@@ -27,14 +27,14 @@ Application Flask modulaires pour le pilotage de webhooks et le polling IMAP. Ce
 ## Surveillance et Logs
 
 ### Logs Importants
-- **Démarrage** : Vérifiez `BG_POLLER: Singleton lock acquired` pour confirmer le bon démarrage du polling.
-- **Vivacité** : Des messages `HEARTBEAT: alive` sont émis toutes les 5 minutes pour confirmer que les threads de fond fonctionnent correctement.
+- **Démarrage** : Vérifiez `CFG WEBHOOK: Custom webhook URL configured` pour confirmer la configuration des webhooks.
+- **Ingestion Gmail** : Les logs `API INGRESS: Gmail push processed successfully` confirment la réception des e-mails via Apps Script.
 - **Arrêt** : `PROCESS: SIGTERM received` indique un arrêt propre du service.
-- **Watcher Make** : `MAKE_WATCHER: background thread started` confirme que le watcher est actif (nécessite `ENABLE_BACKGROUND_TASKS` et `MAKECOM_API_KEY`).
+- **Watcher Make** : `MAKE_WATCHER: background thread started` confirme que le watcher est actif (nécessite `MAKECOM_API_KEY`).
 
 ### Surveillance Recommandée
-- Configurez une alerte sur l'absence de logs `HEARTBEAT` pendant plus de 10 minutes.
-- Surveillez les erreurs de connexion IMAP et les échecs d'envoi de webhooks.
+- Configurez une alerte sur l'absence de logs `API INGRESS: Gmail push` pendant plus de 15 minutes.
+- Surveillez les échecs d'envoi de webhooks et les erreurs de traitement Gmail Apps Script.
 - Consultez les logs pour les entrées `WARNING` et `ERROR` pour détecter les problèmes potentiels.
 
 Consultez [la documentation opérationnelle](docs/operational-guide.md) pour plus de détails sur la configuration et le dépannage.

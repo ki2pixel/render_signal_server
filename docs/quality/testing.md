@@ -11,8 +11,7 @@
 ### Engagements Lot 2 (Résilience & Architecture)
 - ✅ **Verrou distribué Redis** : Implémenté avec clé `render_signal:poller_lock`, TTL 5 min
 - ✅ **Fallback R2 garanti** : Conservation URLs sources si Worker R2 indisponible
-- ✅ **Watchdog IMAP** : Timeout 30s pour éviter processus zombies
-- ✅ **Tests résilience** : `test_lock_redis.py`, `test_r2_resilience.py` avec marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`
+- ✅ **Tests résilience** : `test_r2_resilience.py` avec marqueurs `@pytest.mark.r2`
 - ✅ **Store-as-Source-of-Truth** : Configuration dynamique depuis Redis/fichier, pas d'écriture runtime dans les globals
 
 ### Métriques de documentation
@@ -80,21 +79,21 @@ render_signal_server-main/
 ### 📊 Métriques Clés
 
 - **Couverture de code** : 70.12% (objectif : 80%+) - Post-Lot 2/3
-- **Tests passants** : 431/431 (100%) - Post-routing-rules (2026-01-26)
+- **Tests passants** : 356/356 (100%) - Post-IMAP Retirement (2026-02-04)
 - **Temps d'exécution** : ~65s (avec tests Redis et R2 résilience)
-- **Dernière exécution** : 2026-01-26 20:10:00 (post-correction UI routing)
+- **Dernière exécution** : 2026-02-04 23:59:00 (post-IMAP Retirement validation)
 
 #### Évolution Lot 2 - Résilience
-- **Nouveaux tests** : `test_lock_redis.py` avec format Given/When/Then
+- **Nouveaux tests** : `test_r2_resilience.py` avec format Given/When/Then
 - **Marqueurs** : `@pytest.mark.redis` pour tests nécessitant Redis
 - **Couverture** : Amélioration de 67.3% → 70.12% (+2.82 points)
-- **Scénarios testés** : Verrou distribué Redis, fallback fcntl, TTL 5 minutes
+- **Scénarios testés** : Fallback R2, troncature HTML
 
 #### Évolution Lot 3 - Performance & Validation
 - **Nouveaux tests** : `test_r2_resilience.py` avec scénarios d'échec Worker (exception/None)
 - **Performance** : Ajout tests anti-OOM HTML (>1MB tronqué + WARNING)
 - **Couverture** : Maintenue à 70.12% (+3 tests, même couverture)
-- **Scénarios testés** : Worker R2 down, timeout IMAP, HTML volumineux
+- **Scénarios testés** : Worker R2 down, HTML volumineux
 
 #### Évolution Store-as-Source-of-Truth (2026-01-22)
 - **Nouveaux tests** : `test_polling_dynamic_reload.py` avec 5 scénarios E2E
@@ -131,25 +130,6 @@ pytest --cov=. tests/test_settings_required_env.py
 
 ### Tests Résilience (Lot 2/3)
 
-#### Verrou Distribué Redis
-- **Fichier** : `tests/test_lock_redis.py`
-- **Format** : Given/When/Then pour clarté
-- **Scénarios** :
-  - Acquisition réussie du verrou
-  - Comportement avec Redis indisponible (fallback fcntl)
-  - TTL et expiration du verrou
-  - Concurrence multi-processus
-- **Marqueur** : `@pytest.mark.redis`
-- **Commandes d'exécution** :
-```bash
-# Tests résilience uniquement
-pytest -m "redis or r2 or resilience"
-
-# Tests avec environnement partagé
-source /mnt/venv_ext4/venv_render_signal_server/bin/activate
-pytest --cov=. tests/test_lock_redis.py tests/test_r2_resilience.py
-```
-
 #### Fallback R2 Garanti
 - **Fichier** : `tests/test_r2_resilience.py`
 - **Scénarios** :
@@ -176,7 +156,7 @@ source /mnt/venv_ext4/venv_render_signal_server/bin/activate
 pytest --cov=. --cov-report=html
 
 # Tests résilience uniquement
-pytest -m "redis or r2 or resilience" --cov=. tests/test_lock_redis.py tests/test_r2_resilience.py
+pytest -m "redis or r2 or resilience" --cov=. tests/test_r2_resilience.py
 ```
 
 ### Tests Frontend UX Avancée

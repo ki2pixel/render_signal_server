@@ -244,66 +244,7 @@
       </div>
       </div>
 
-      <!-- Section: Préférences Email (expéditeurs, dédup) -->
-      <div id="sec-email" class="section-panel">
-        <div class="card">
-          <div class="card-title">🧩 Préférences Email (expéditeurs, dédup)</div>
-          <div class="inline-group" style="margin: 8px 0 12px 0;">
-            <label class="toggle-switch">
-              <input type="checkbox" id="pollingToggle">
-              <span class="toggle-slider"></span>
-            </label>
-            <span id="pollingStatusText" style="margin-left: 10px;">—</span>
-          </div>
-          <div id="pollingMsg" class="status-msg" style="margin-top: 6px;"></div>
-          <div class="form-group">
-            <label>SENDER_OF_INTEREST_FOR_POLLING</label>
-            <div id="senderOfInterestContainer" class="stack" style="gap:8px;"></div>
-            <button id="addSenderBtn" type="button" class="btn btn-secondary" style="margin-top:8px;">➕ Ajouter Email</button>
-            <div class="small-text">Ajouter / modifier / supprimer des emails individuellement. Ils seront validés et normalisés (minuscules).</div>
-          </div>
-          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-            <div class="form-group">
-              <label for="pollingStartHour">POLLING_ACTIVE_START_HOUR (0-23)</label>
-              <select id="pollingStartHour" style="width: 100%; max-width: 100px;">
-                <option value="">Sélectionner...</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="pollingEndHour">POLLING_ACTIVE_END_HOUR (0-23)</label>
-              <select id="pollingEndHour" style="width: 100%; max-width: 100px;">
-                <option value="">Sélectionner...</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-group" style="margin-top: 10px;">
-            <label>Jours actifs (POLLING_ACTIVE_DAYS)</label>
-            <div id="pollingActiveDaysGroup" class="inline-group" style="flex-wrap: wrap; gap: 12px; margin-top: 6px;">
-              <label><input type="checkbox" name="pollingDay" value="0"> Lun</label>
-              <label><input type="checkbox" name="pollingDay" value="1"> Mar</label>
-              <label><input type="checkbox" name="pollingDay" value="2"> Mer</label>
-              <label><input type="checkbox" name="pollingDay" value="3"> Jeu</label>
-              <label><input type="checkbox" name="pollingDay" value="4"> Ven</label>
-              <label><input type="checkbox" name="pollingDay" value="5"> Sam</label>
-              <label><input type="checkbox" name="pollingDay" value="6"> Dim</label>
-            </div>
-            <div class="small-text">0=Lundi ... 6=Dimanche. Sélectionnez au moins un jour.</div>
-          </div>
-          <div class="inline-group" style="margin: 8px 0 12px 0;">
-            <label class="toggle-switch">
-              <input type="checkbox" id="enableSubjectGroupDedup">
-              <span class="toggle-slider"></span>
-            </label>
-            <span style="margin-left: 10px;">ENABLE_SUBJECT_GROUP_DEDUP</span>
-          </div>
-          <button id="saveEmailPrefsBtn" class="btn btn-primary" style="margin-top: 15px;">💾 Enregistrer les préférences</button>
-          <div id="emailPrefsSaveStatus" class="status-msg" style="margin-top: 10px;"></div>
-          <!-- Fallback status container (legacy ID used by JS as a fallback) -->
-          <div id="pollingCfgMsg" class="status-msg" style="margin-top: 6px;"></div>
-        </div>
-        
-      </div>
-
+      
       <!-- Section: Préférences (filtres + fiabilité) -->
       <div id="sec-preferences" class="section-panel">
         <div class="card">

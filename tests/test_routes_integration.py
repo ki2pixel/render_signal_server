@@ -89,46 +89,6 @@ class TestWebhooksConfigEndpoints:
             )
             assert response.status_code == 200
 
-
-@pytest.mark.integration
-class TestPollingEndpoints:
-    """Tests pour les endpoints de polling"""
-    
-    def test_toggle_polling_requires_auth(self, flask_client):
-        """Test que POST /api/polling/toggle nécessite une authentification"""
-        response = flask_client.post(
-            '/api/polling/toggle',
-            json={'enable': True}
-        )
-        assert response.status_code in [302, 401]
-    
-    def test_toggle_polling_enable(self, authenticated_flask_client, temp_file):
-        """Test activation du polling"""
-        with patch('routes.api_polling.WEBHOOK_CONFIG_FILE', temp_file):
-            response = authenticated_flask_client.post(
-                '/api/polling/toggle',
-                json={'enable': True},
-                content_type='application/json'
-            )
-            assert response.status_code == 200
-            data = response.get_json()
-            assert data['success'] is True
-            assert data['polling_enabled'] is True
-    
-    def test_toggle_polling_disable(self, authenticated_flask_client, temp_file):
-        """Test désactivation du polling"""
-        with patch('routes.api_polling.WEBHOOK_CONFIG_FILE', temp_file):
-            response = authenticated_flask_client.post(
-                '/api/polling/toggle',
-                json={'enable': False},
-                content_type='application/json'
-            )
-            assert response.status_code == 200
-            data = response.get_json()
-            assert data['success'] is True
-            assert data['polling_enabled'] is False
-
-
 @pytest.mark.integration
 class TestProcessingPreferencesEndpoints:
     """Tests pour les endpoints de préférences de traitement"""

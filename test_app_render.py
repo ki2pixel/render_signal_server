@@ -19,7 +19,6 @@ app_render = importlib.import_module("app_render")
 
 # Import blueprints modules to patch their constants for file locations
 routes_api_webhooks = importlib.import_module("routes.api_webhooks")
-routes_api_polling = importlib.import_module("routes.api_polling")
 
 check_fn = app_render.check_media_solution_pattern
 
@@ -474,54 +473,6 @@ def test_update_webhook_config_normalize_make_url(authenticated_client, temp_con
     # Phase 5: Vérifier la normalisation via GET API
     # Note: presence_true_url n'est pas dans la réponse GET standard, vérifier via POST success
     # La normalisation est déjà vérifiée par le fait que POST a réussi
-
-
-# --- Tests pour l'endpoint POST /api/toggle_polling ---
-
-def test_toggle_polling_requires_auth(client):
-    """Test que l'endpoint nécessite une authentification."""
-    response = client.post('/api/polling/toggle', json={"enable": True})
-    assert response.status_code in [302, 401]  # Flask-Login peut rediriger (302) ou renvoyer 401
-
-
-def test_toggle_polling_enable(authenticated_client, temp_config_file):
-    """Test activation du polling."""
-    payload = {"enable": True}
-    
-    with patch.object(routes_api_polling, 'WEBHOOK_CONFIG_FILE', temp_config_file):
-        response = authenticated_client.post(
-            '/api/polling/toggle',
-            json=payload,
-            content_type='application/json'
-        )
-    
-    assert response.status_code == 200
-    data = response.get_json()
-    assert data["success"] is True
-    assert data["polling_enabled"] is True
-    assert "redémarr" in data["message"].lower()  # Accepter "redémarrage" ou "redémarrez"
-    
-    # Vérifier la persistance
-    with open(temp_config_file) as f:
-        config = json.load(f)
-    assert config["polling_enabled"] is True
-
-
-def test_toggle_polling_disable(authenticated_client, temp_config_file):
-    """Test désactivation du polling."""
-    payload = {"enable": False}
-    
-    with patch.object(routes_api_polling, 'WEBHOOK_CONFIG_FILE', temp_config_file):
-        response = authenticated_client.post(
-            '/api/polling/toggle',
-            json=payload,
-            content_type='application/json'
-        )
-    
-    assert response.status_code == 200
-    data = response.get_json()
-    assert data["success"] is True
-    assert data["polling_enabled"] is False
 
 
 # --- Tests pour l'endpoint GET /api/webhook_logs ---

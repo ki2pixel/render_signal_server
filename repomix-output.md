@@ -93,6 +93,7 @@ routes/
 scripts/
   __init__.py
   check_config_store.py
+  google_script.js
 services/
   __init__.py
   auth_service.py
@@ -440,6 +441,299 @@ requirements.txt
 13: 
 14: # Les imports seront ajoutés progressivement au fur et à mesure de l'extraction
 15: __all__ = []
+````
+
+## File: email_processing/pattern_matching.py
+````python
+  1: """
+  2: email_processing.pattern_matching
+  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  4: 
+  5: Détection de patterns dans les emails pour trigger des webhooks spécifiques.
+  6: Gère les patterns Média Solution et DESABO.
+  7: """
+  8: from __future__ import annotations
+  9: 
+ 10: import re
+ 11: import unicodedata
+ 12: from datetime import datetime, timedelta
+ 13: from typing import Any, Dict
+ 14: 
+ 15: from utils.text_helpers import normalize_no_accents_lower_trim
+ 16: 
+ 17: 
+ 18: # =============================================================================
+ 19: # CONSTANTES - PATTERNS URL PROVIDERS
+ 20: # =============================================================================
+ 21: 
+ 22: # Compiled regex pattern pour détecter les URLs de fournisseurs supportés:
+ 23: # - Dropbox folder links
+ 24: # - FromSmash share links
+ 25: # - SwissTransfer download links
+ 26: URL_PROVIDERS_PATTERN = re.compile(
+ 27:     r'(https?://(?:www\.)?(?:dropbox\.com|fromsmash\.com|swisstransfer\.com)[^\s<>\"]*)',
+ 28:     re.IGNORECASE,
+ 29: )
+ 30: 
+ 31: # =============================================================================
+ 32: # CONSTANTES - DESABO PATTERN
+ 33: # =============================================================================
+ 34: 
+ 35: # Mots-clés requis pour la détection DESABO (présents dans le corps normalisé)
+ 36: DESABO_REQUIRED_KEYWORDS = ["journee", "tarifs habituels", "desabonn"]
+ 37: 
+ 38: # Mots-clés interdits qui invalident la détection DESABO
+ 39: DESABO_FORBIDDEN_KEYWORDS = [
+ 40:     "annulation",
+ 41:     "facturation",
+ 42:     "facture",
+ 43:     "moment",
+ 44:     "reference client",
+ 45:     "total ht",
+ 46: ]
+ 47: 
+ 48: 
+ 49: # =============================================================================
+ 50: # PATTERN MÉDIA SOLUTION
+ 51: # =============================================================================
+ 52: 
+ 53: def check_media_solution_pattern(subject, email_content, tz_for_polling, logger) -> Dict[str, Any]:
+ 54:     """
+ 55:     Vérifie si l'email correspond au pattern Média Solution spécifique et extrait la fenêtre de livraison.
+ 56: 
+ 57:     Conditions minimales:
+ 58:     1. Contenu contient: "https://www.dropbox.com/scl/fo"
+ 59:     2. Sujet contient: "Média Solution - Missions Recadrage - Lot"
+ 60: 
+ 61:     Détails d'extraction pour delivery_time:
+ 62:     - Pattern A (heure seule): "à faire pour" suivi d'une heure (variantes supportées):
+ 63:       * 11h51, 9h, 09h, 9:00, 09:5, 9h5 -> normalisé en "HHhMM"
+ 64:     - Pattern B (date + heure): "à faire pour le D/M/YYYY à HhMM?" ou "à faire pour le D/M/YYYY à H:MM"
+ 65:       * exemples: "le 03/09/2025 à 09h00", "le 3/9/2025 à 9h", "le 3/9/2025 à 9:05"
+ 66:       * normalisé en "le dd/mm/YYYY à HHhMM"
+ 67:     - Cas URGENCE: si le sujet contient "URGENCE", on ignore tout horaire présent dans le corps
+ 68:       et on met l'heure locale actuelle + 1h au format "HHhMM" (ex: "13h35").
+ 69: 
+ 70:     Args:
+ 71:         subject: Sujet de l'email
+ 72:         email_content: Contenu/corps de l'email
+ 73:         tz_for_polling: Timezone pour le calcul des heures (depuis config.polling_config)
+ 74:         logger: Logger Flask (app.logger)
+ 75: 
+ 76:     Returns:
+ 77:         dict avec 'matches' (bool) et 'delivery_time' (str ou None)
+ 78:     """
+ 79:     result = {'matches': False, 'delivery_time': None}
+ 80: 
+ 81:     if not subject or not email_content:
+ 82:         return result
+ 83: 
+ 84:     # Helpers de normalisation de texte (sans accents, en minuscule) pour des regex robustes
+ 85:     def normalize_text(s: str) -> str:
+ 86:         if not s:
+ 87:             return ""
+ 88:         # Supprime les accents et met en minuscule pour une comparaison robuste
+ 89:         nfkd = unicodedata.normalize('NFD', s)
+ 90:         no_accents = ''.join(ch for ch in nfkd if not unicodedata.combining(ch))
+ 91:         return no_accents.lower()
+ 92: 
+ 93:     norm_subject = normalize_text(subject)
+ 94: 
+ 95:     # Conditions principales
+ 96:     # 1) Présence d'au moins un lien de fournisseur supporté (Dropbox, FromSmash, SwissTransfer)
+ 97:     body_text = email_content or ""
+ 98:     condition1 = bool(URL_PROVIDERS_PATTERN.search(body_text)) or (
+ 99:         ("dropbox.com/scl/fo" in body_text)
+100:         or ("fromsmash.com/" in body_text.lower())
+101:         or ("swisstransfer.com/d/" in body_text.lower())
+102:     )
+103:     # 2) Sujet conforme
+104:     #    Tolérant: on accepte la chaîne exacte (avec accents) OU la présence des mots-clés dans le sujet normalisé
+105:     keywords_ok = all(token in norm_subject for token in [
+106:         "media solution", "missions recadrage", "lot"
+107:     ])
+108:     condition2 = ("Média Solution - Missions Recadrage - Lot" in (subject or "")) or keywords_ok
+109: 
+110:     # Si conditions principales non remplies, on sort
+111:     if not (condition1 and condition2):
+112:         logger.debug(
+113:             f"PATTERN_CHECK: Delivery URL present (dropbox/fromsmash/swisstransfer): {condition1}, Subject pattern: {condition2}"
+114:         )
+115:         return result
+116: 
+117:     # --- Helpers de normalisation ---
+118:     def normalize_hhmm(hh_str: str, mm_str: str | None) -> str:
+119:         """Normalise heures/minutes en "HHhMM". Minutes par défaut à 00."""
+120:         try:
+121:             hh = int(hh_str)
+122:         except Exception:
+123:             hh = 0
+124:         if not mm_str:
+125:             mm = 0
+126:         else:
+127:             try:
+128:                 mm = int(mm_str)
+129:             except Exception:
+130:                 mm = 0
+131:         return f"{hh:02d}h{mm:02d}"
+132: 
+133:     def normalize_date(d_str: str, m_str: str, y_str: str) -> str:
+134:         """Normalise D/M/YYYY en dd/mm/YYYY (zero-pad jour/mois)."""
+135:         try:
+136:             d = int(d_str)
+137:             m = int(m_str)
+138:             y = int(y_str)
+139:         except Exception:
+140:             return f"{d_str}/{m_str}/{y_str}"
+141:         return f"{d:02d}/{m:02d}/{y:04d}"
+142: 
+143:     # --- Extraction de delivery_time ---
+144:     delivery_time_str = None
+145: 
+146:     # 1) URGENCE: si le sujet contient "URGENCE", on ignore tout horaire présent dans le corps
+147:     if re.search(r"\burgence\b", norm_subject or ""):
+148:         try:
+149:             now_local = datetime.now(tz_for_polling)
+150:             one_hour_later = now_local + timedelta(hours=1)
+151:             delivery_time_str = f"{one_hour_later.hour:02d}h{one_hour_later.minute:02d}"
+152:             logger.info(f"PATTERN_MATCH: URGENCE detected, overriding delivery_time with now+1h: {delivery_time_str}")
+153:         except Exception as e_time:
+154:             logger.error(f"PATTERN_CHECK: Failed to compute URGENCE override time: {e_time}")
+155:     else:
+156:         # 2) Pattern B: Date + Heure (variantes)
+157:         #    Variante "h" -> minutes optionnelles
+158:         pattern_date_time_h = r"(?:à|a)\s+faire\s+pour\s+le\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+(?:à|a)\s+(?:(?:à|a)\s+)?(\d{1,2})h(\d{0,2})"
+159:         m_dth = re.search(pattern_date_time_h, email_content or "", re.IGNORECASE)
+160:         if m_dth:
+161:             d, m, y, hh, mm = m_dth.group(1), m_dth.group(2), m_dth.group(3), m_dth.group(4), m_dth.group(5)
+162:             date_norm = normalize_date(d, m, y)
+163:             time_norm = normalize_hhmm(hh, mm if mm else None)
+164:             delivery_time_str = f"le {date_norm} à {time_norm}"
+165:             logger.info(f"PATTERN_MATCH: Found date+time (h) delivery window: {delivery_time_str}")
+166:         else:
+167:             #    Variante ":" -> minutes obligatoires
+168:             pattern_date_time_colon = r"(?:à|a)\s+faire\s+pour\s+le\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+(?:à|a)\s+(?:(?:à|a)\s+)?(\d{1,2}):(\d{2})"
+169:             m_dtc = re.search(pattern_date_time_colon, email_content or "", re.IGNORECASE)
+170:             if m_dtc:
+171:                 d, m, y, hh, mm = m_dtc.group(1), m_dtc.group(2), m_dtc.group(3), m_dtc.group(4), m_dtc.group(5)
+172:                 date_norm = normalize_date(d, m, y)
+173:                 time_norm = normalize_hhmm(hh, mm)
+174:                 delivery_time_str = f"le {date_norm} à {time_norm}"
+175:                 logger.info(f"PATTERN_MATCH: Found date+time (colon) delivery window: {delivery_time_str}")
+176: 
+177:         # 3) Pattern A: Heure seule (variantes)
+178:         if not delivery_time_str:
+179:             # Variante "h" (minutes optionnelles), avec éventuel "à" superflu
+180:             pattern_time_h = r"(?:à|a)\s+faire\s+pour\s+(?:(?:à|a)\s+)?(\d{1,2})h(\d{0,2})"
+181:             m_th = re.search(pattern_time_h, email_content or "", re.IGNORECASE)
+182:             if m_th:
+183:                 hh, mm = m_th.group(1), m_th.group(2)
+184:                 delivery_time_str = normalize_hhmm(hh, mm if mm else None)
+185:                 logger.info(f"PATTERN_MATCH: Found time-only (h) delivery window: {delivery_time_str}")
+186:             else:
+187:                 # Variante ":" (minutes obligatoires)
+188:                 pattern_time_colon = r"(?:à|a)\s+faire\s+pour\s+(?:(?:à|a)\s+)?(\d{1,2}):(\d{2})"
+189:                 m_tc = re.search(pattern_time_colon, email_content or "", re.IGNORECASE)
+190:                 if m_tc:
+191:                     hh, mm = m_tc.group(1), m_tc.group(2)
+192:                     delivery_time_str = normalize_hhmm(hh, mm)
+193:                     logger.info(f"PATTERN_MATCH: Found time-only (colon) delivery window: {delivery_time_str}")
+194: 
+195:         # 4) Fallback permissif: si toujours rien trouvé, tenter une heure isolée (sécurité: restreint aux formats attendus)
+196:         if not delivery_time_str:
+197:             m_fallback_h = re.search(r"\b(\d{1,2})h(\d{0,2})\b", email_content or "", re.IGNORECASE)
+198:             if m_fallback_h:
+199:                 hh, mm = m_fallback_h.group(1), m_fallback_h.group(2)
+200:                 delivery_time_str = normalize_hhmm(hh, mm if mm else None)
+201:                 logger.info(f"PATTERN_MATCH: Fallback time (h) detected: {delivery_time_str}")
+202:             else:
+203:                 m_fallback_colon = re.search(r"\b(\d{1,2}):(\d{2})\b", email_content or "")
+204:                 if m_fallback_colon:
+205:                     hh, mm = m_fallback_colon.group(1), m_fallback_colon.group(2)
+206:                     delivery_time_str = normalize_hhmm(hh, mm)
+207:                     logger.info(f"PATTERN_MATCH: Fallback time (colon) detected: {delivery_time_str}")
+208: 
+209:     if delivery_time_str:
+210:         result['delivery_time'] = delivery_time_str
+211:         result['matches'] = True
+212:         logger.info(
+213:             f"PATTERN_MATCH: Email matches Média Solution pattern. Delivery time: {result['delivery_time']}"
+214:         )
+215:     else:
+216:         logger.debug("PATTERN_CHECK: Base conditions met but no delivery_time pattern matched")
+217: 
+218:     return result
+219: 
+220: 
+221: def check_desabo_conditions(subject: str, email_content: str, logger) -> Dict[str, Any]:
+222:     """Vérifie les conditions du pattern DESABO.
+223: 
+224:     Ce helper externalise la logique de détection « Se désabonner / journée / tarifs habituels »
+225:     actuellement intégrée dans `check_new_emails_and_trigger_webhook()` de `app_render.py`.
+226: 
+227:     Critères:
+228:     - required_terms tous présents dans le corps normalisé sans accents
+229:     - forbidden_terms absents
+230:     - présence d'une URL Dropbox de type "/request/"
+231: 
+232:     Args:
+233:         subject: Sujet de l'email (non utilisé pour la détection de base, conservé pour évolutions)
+234:         email_content: Contenu de l'email (texte combiné recommandé: plain + HTML brut)
+235:         logger: Logger pour traces de debug
+236: 
+237:     Returns:
+238:         dict: { 'matches': bool, 'has_dropbox_request': bool, 'is_urgent': bool }
+239:     """
+240:     result = {"matches": False, "has_dropbox_request": False, "is_urgent": False}
+241: 
+242:     try:
+243:         norm_body = normalize_no_accents_lower_trim(email_content or "")
+244:         norm_subject = normalize_no_accents_lower_trim(subject or "")
+245: 
+246:         # 1) Détection du lien Dropbox Request dans le contenu d'entrée (DOIT être calculé en premier)
+247:         has_dropbox_request = "https://www.dropbox.com/request/" in (email_content or "").lower()
+248:         result["has_dropbox_request"] = has_dropbox_request
+249: 
+250:         # 2) Règles de détection: mots-clés dans le corps + mention de désabonnement
+251:         has_journee = "journee" in norm_body
+252:         has_tarifs = "tarifs habituels" in norm_body
+253:         has_desabo = ("desabonn" in norm_body) or ("desabonn" in norm_subject)
+254:         
+255:         # 3) Détection URGENCE: mot-clé dans le sujet ou le corps normalisés
+256:         is_urgent = ("urgent" in norm_subject) or ("urgence" in norm_subject) or ("urgent" in norm_body) or ("urgence" in norm_body)
+257:         result["is_urgent"] = bool(is_urgent)
+258: 
+259:         # 4) Règle relaxée: allow match if (journee AND tarifs) AND (explicit desabo OR dropbox request link present)
+260:         has_required = (has_journee and has_tarifs) and (has_desabo or has_dropbox_request)
+261:         has_forbidden = any(term in norm_body for term in DESABO_FORBIDDEN_KEYWORDS)
+262: 
+263:         # Logs de diagnostic concis (ne doivent jamais lever)
+264:         try:
+265:             # Construction des listes de diagnostic avec les constantes du module
+266:             required_for_diagnostic = ["journee", "tarifs habituels"]
+267:             missing_required = [t for t in required_for_diagnostic if t not in norm_body]
+268:             present_forbidden = [t for t in DESABO_FORBIDDEN_KEYWORDS if t in norm_body]
+269:             logger.debug(
+270:                 "DESABO_HELPER_DEBUG: required_ok=%s, forbidden_present=%s, dropbox_request=%s, urgent=%s, missing_required=%s, present_forbidden=%s",
+271:                 has_required,
+272:                 has_forbidden,
+273:                 has_dropbox_request,
+274:                 is_urgent,
+275:                 missing_required,
+276:                 present_forbidden,
+277:             )
+278:         except Exception:
+279:             pass
+280: 
+281:         # Match if required conditions satisfied and no forbidden terms
+282:         result["matches"] = bool(has_required and (not has_forbidden))
+283:         return result
+284:     except Exception as e:
+285:         try:
+286:             logger.error("DESABO_HELPER: Exception during detection: %s", e)
+287:         except Exception:
+288:             pass
+289:         return result
 ````
 
 ## File: preferences/processing_prefs.py
@@ -1037,6 +1331,131 @@ requirements.txt
 29: sphinx>=5.0            # Génération de documentation (optionnel)
 ````
 
+## File: requirements.txt
+````
+1: Flask>=2.0
+2: gunicorn
+3: Flask-Login
+4: Flask-Cors>=4.0
+5: requests
+6: redis>=4.0
+7: email-validator
+8: typing_extensions>=4.7,<5
+````
+
+## File: app_logging/webhook_logger.py
+````python
+  1: """
+  2: Logging helpers for webhook events with Redis and file fallbacks.
+  3: 
+  4: - append_webhook_log: push a log entry (keeps last N entries)
+  5: - fetch_webhook_logs: retrieve recent logs with optional day window and limit
+  6: 
+  7: Design:
+  8: - Accept redis_client and logger as injected dependencies
+  9: - File path and redis key are passed in by the caller
+ 10: """
+ 11: from __future__ import annotations
+ 12: 
+ 13: import json
+ 14: from datetime import datetime, timedelta, timezone
+ 15: from pathlib import Path
+ 16: from typing import Any
+ 17: 
+ 18: DEFAULT_MAX_ENTRIES = 500
+ 19: 
+ 20: 
+ 21: def append_webhook_log(
+ 22:     log_entry: dict,
+ 23:     *,
+ 24:     redis_client,
+ 25:     logger,
+ 26:     file_path: Path,
+ 27:     redis_list_key: str,
+ 28:     max_entries: int = DEFAULT_MAX_ENTRIES,
+ 29: ) -> None:
+ 30:     try:
+ 31:         if redis_client is not None:
+ 32:             redis_client.rpush(redis_list_key, json.dumps(log_entry, ensure_ascii=False))
+ 33:             redis_client.ltrim(redis_list_key, -max_entries, -1)
+ 34:             return
+ 35:     except Exception as e:
+ 36:         if logger:
+ 37:             logger.error(f"WEBHOOK_LOG: redis write error: {e}")
+ 38:     try:
+ 39:         file_path.parent.mkdir(parents=True, exist_ok=True)
+ 40:         logs = []
+ 41:         if file_path.exists():
+ 42:             try:
+ 43:                 with open(file_path, "r", encoding="utf-8") as f:
+ 44:                     logs = json.load(f)
+ 45:             except Exception:
+ 46:                 logs = []
+ 47:         logs.append(log_entry)
+ 48:         if len(logs) > max_entries:
+ 49:             logs = logs[-max_entries:]
+ 50:         with open(file_path, "w", encoding="utf-8") as f:
+ 51:             json.dump(logs, f, indent=2, ensure_ascii=False)
+ 52:     except Exception as e:
+ 53:         if logger:
+ 54:             logger.error(f"WEBHOOK_LOG: file write error: {e}")
+ 55: 
+ 56: 
+ 57: def fetch_webhook_logs(
+ 58:     *,
+ 59:     redis_client,
+ 60:     logger,
+ 61:     file_path: Path,
+ 62:     redis_list_key: str,
+ 63:     days: int = 7,
+ 64:     limit: int = 50,
+ 65: ) -> dict[str, Any]:
+ 66:     days = max(1, min(30, int(days)))
+ 67: 
+ 68:     all_logs = None
+ 69:     try:
+ 70:         if redis_client is not None:
+ 71:             items = redis_client.lrange(redis_list_key, 0, -1)
+ 72:             all_logs = []
+ 73:             for it in items:
+ 74:                 try:
+ 75:                     s = it if isinstance(it, str) else it.decode("utf-8")
+ 76:                     all_logs.append(json.loads(s))
+ 77:                 except Exception:
+ 78:                     pass
+ 79:     except Exception as e:
+ 80:         if logger:
+ 81:             logger.error(f"WEBHOOK_LOG: redis read error: {e}")
+ 82: 
+ 83:     if all_logs is None:
+ 84:         try:
+ 85:             with open(file_path, "r", encoding="utf-8") as f:
+ 86:                 all_logs = json.load(f)
+ 87:         except Exception:
+ 88:             return {"success": True, "logs": [], "count": 0, "days_filter": days}
+ 89: 
+ 90:     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+ 91:     filtered_logs = []
+ 92:     for log in all_logs:
+ 93:         try:
+ 94:             log_time = datetime.fromisoformat(log.get("timestamp", ""))
+ 95:             if log_time >= cutoff:
+ 96:                 filtered_logs.append(log)
+ 97:         except Exception:
+ 98:             # If timestamp unparsable, include the entry for backward-compat
+ 99:             filtered_logs.append(log)
+100: 
+101:     filtered_logs = filtered_logs[-limit:]
+102:     filtered_logs.reverse()
+103: 
+104:     return {
+105:         "success": True,
+106:         "logs": filtered_logs,
+107:         "count": len(filtered_logs),
+108:         "days_filter": days,
+109:     }
+````
+
 ## File: auth/helpers.py
 ````python
  1: """
@@ -1177,6 +1596,212 @@ requirements.txt
 74:     if verify_credentials(username, password):
 75:         return User(username)
 76:     return None
+````
+
+## File: config/app_config_store.py
+````python
+  1: """
+  2: config.app_config_store
+  3: ~~~~~~~~~~~~~~~~~~~~~~~~
+  4: 
+  5: Key-Value configuration store with External JSON backend and file fallback.
+  6: - Provides get_config_json()/set_config_json() for dict payloads.
+  7: - External backend configured via env vars: EXTERNAL_CONFIG_BASE_URL, CONFIG_API_TOKEN.
+  8: - If external backend is unavailable, falls back to per-key JSON files provided by callers.
+  9: 
+ 10: Security: no secrets are logged; errors are swallowed and caller can fallback.
+ 11: """
+ 12: from __future__ import annotations
+ 13: 
+ 14: import json
+ 15: import os
+ 16: from pathlib import Path
+ 17: from typing import Any, Dict, Optional
+ 18: 
+ 19: try:
+ 20:     import requests  # type: ignore
+ 21: except Exception:  # requests may be unavailable in some test contexts
+ 22:     requests = None  # type: ignore
+ 23: 
+ 24: 
+ 25: _REDIS_CLIENT = None
+ 26: 
+ 27: 
+ 28: def _get_redis_client():
+ 29:     global _REDIS_CLIENT
+ 30: 
+ 31:     if _REDIS_CLIENT is not None:
+ 32:         return _REDIS_CLIENT
+ 33: 
+ 34:     redis_url = os.environ.get("REDIS_URL")
+ 35:     if not isinstance(redis_url, str) or not redis_url.strip():
+ 36:         return None
+ 37: 
+ 38:     try:
+ 39:         import redis  # type: ignore
+ 40: 
+ 41:         _REDIS_CLIENT = redis.Redis.from_url(redis_url, decode_responses=True)
+ 42:         return _REDIS_CLIENT
+ 43:     except Exception:
+ 44:         return None
+ 45: 
+ 46: 
+ 47: def _config_redis_key(key: str) -> str:
+ 48:     prefix = os.environ.get("CONFIG_STORE_REDIS_PREFIX", "r:ss:config:")
+ 49:     return f"{prefix}{key}"
+ 50: 
+ 51: 
+ 52: def _store_mode() -> str:
+ 53:     mode = os.environ.get("CONFIG_STORE_MODE", "redis_first")
+ 54:     if not isinstance(mode, str):
+ 55:         return "redis_first"
+ 56:     mode = mode.strip().lower()
+ 57:     return mode if mode in {"redis_first", "php_first"} else "redis_first"
+ 58: 
+ 59: 
+ 60: def _env_bool(name: str, default: bool = False) -> bool:
+ 61:     raw = os.environ.get(name)
+ 62:     if raw is None:
+ 63:         return bool(default)
+ 64:     return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+ 65: 
+ 66: 
+ 67: def _redis_get_json(key: str) -> Optional[Dict[str, Any]]:
+ 68:     if _env_bool("CONFIG_STORE_DISABLE_REDIS", False):
+ 69:         return None
+ 70: 
+ 71:     client = _get_redis_client()
+ 72:     if client is None:
+ 73:         return None
+ 74: 
+ 75:     try:
+ 76:         raw = client.get(_config_redis_key(key))
+ 77:         if not raw:
+ 78:             return None
+ 79:         data = json.loads(raw)
+ 80:         return data if isinstance(data, dict) else None
+ 81:     except Exception:
+ 82:         return None
+ 83: 
+ 84: 
+ 85: def _redis_set_json(key: str, value: Dict[str, Any]) -> bool:
+ 86:     if _env_bool("CONFIG_STORE_DISABLE_REDIS", False):
+ 87:         return False
+ 88: 
+ 89:     client = _get_redis_client()
+ 90:     if client is None:
+ 91:         return False
+ 92: 
+ 93:     try:
+ 94:         client.set(_config_redis_key(key), json.dumps(value, ensure_ascii=False))
+ 95:         return True
+ 96:     except Exception:
+ 97:         return False
+ 98: 
+ 99: def get_config_json(key: str, *, file_fallback: Optional[Path] = None) -> Dict[str, Any]:
+100:     """Fetch config dict for a key from External JSON backend, with file fallback.
+101:     Returns empty dict on any error.
+102:     """
+103:     mode = _store_mode()
+104: 
+105:     if mode == "redis_first":
+106:         data = _redis_get_json(key)
+107:         if isinstance(data, dict):
+108:             return data
+109: 
+110:     base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
+111:     api_token = os.environ.get("CONFIG_API_TOKEN")
+112:     if base_url and api_token and requests is not None:
+113:         try:
+114:             data = _external_config_get(base_url, api_token, key)
+115:             if isinstance(data, dict):
+116:                 return data
+117:         except Exception:
+118:             pass
+119: 
+120:     if mode == "php_first":
+121:         data = _redis_get_json(key)
+122:         if isinstance(data, dict):
+123:             return data
+124: 
+125:     # File fallback
+126:     if file_fallback and file_fallback.exists():
+127:         try:
+128:             with open(file_fallback, "r", encoding="utf-8") as f:
+129:                 data = json.load(f) or {}
+130:                 if isinstance(data, dict):
+131:                     return data
+132:         except Exception:
+133:             pass
+134:     return {}
+135: 
+136: 
+137: def set_config_json(key: str, value: Dict[str, Any], *, file_fallback: Optional[Path] = None) -> bool:
+138:     """Persist config dict for a key into External backend, fallback to file if needed."""
+139:     mode = _store_mode()
+140: 
+141:     if mode == "redis_first":
+142:         if _redis_set_json(key, value):
+143:             return True
+144: 
+145:     base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
+146:     api_token = os.environ.get("CONFIG_API_TOKEN")
+147:     if base_url and api_token and requests is not None:
+148:         try:
+149:             ok = _external_config_set(base_url, api_token, key, value)
+150:             if ok:
+151:                 return True
+152:         except Exception:
+153:             pass
+154: 
+155:     if mode == "php_first":
+156:         if _redis_set_json(key, value):
+157:             return True
+158: 
+159:     # File fallback
+160:     if file_fallback is not None:
+161:         try:
+162:             file_fallback.parent.mkdir(parents=True, exist_ok=True)
+163:             with open(file_fallback, "w", encoding="utf-8") as f:
+164:                 json.dump(value, f, indent=2, ensure_ascii=False)
+165:             return True
+166:         except Exception:
+167:             return False
+168:     return False
+169: 
+170: 
+171: # ---------------------------------------------------------------------------
+172: # External JSON backend helpers
+173: # ---------------------------------------------------------------------------
+174: def _external_config_get(base_url: str, token: str, key: str) -> Dict[str, Any]:
+175:     """GET config JSON from external PHP service. Raises on error."""
+176:     url = base_url.rstrip('/') + '/config_api.php'
+177:     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+178:     params = {"key": key}
+179:     # Small timeout for robustness
+180:     resp = requests.get(url, headers=headers, params=params, timeout=6)  # type: ignore
+181:     if resp.status_code != 200:
+182:         raise RuntimeError(f"external get http={resp.status_code}")
+183:     data = resp.json()
+184:     if not isinstance(data, dict) or not data.get("success"):
+185:         raise RuntimeError("external get failed")
+186:     cfg = data.get("config") or {}
+187:     return cfg if isinstance(cfg, dict) else {}
+188: 
+189: 
+190: def _external_config_set(base_url: str, token: str, key: str, value: Dict[str, Any]) -> bool:
+191:     """POST config JSON to external PHP service. Returns True on success."""
+192:     url = base_url.rstrip('/') + '/config_api.php'
+193:     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json"}
+194:     body = {"key": key, "config": value}
+195:     resp = requests.post(url, headers=headers, data=json.dumps(body), timeout=8)  # type: ignore
+196:     if resp.status_code != 200:
+197:         return False
+198:     try:
+199:         data = resp.json()
+200:     except Exception:
+201:         return False
+202:     return bool(isinstance(data, dict) and data.get("success"))
 ````
 
 ## File: config/webhook_time_window.py
@@ -1543,617 +2168,427 @@ requirements.txt
 43:     return f"subject_hash_{subject_hash}"
 ````
 
-## File: email_processing/pattern_matching.py
+## File: email_processing/imap_client.py
 ````python
   1: """
-  2: email_processing.pattern_matching
-  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  2: email_processing.imap_client
+  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   4: 
-  5: Détection de patterns dans les emails pour trigger des webhooks spécifiques.
-  6: Gère les patterns Média Solution et DESABO.
-  7: """
-  8: from __future__ import annotations
-  9: 
- 10: import re
- 11: import unicodedata
- 12: from datetime import datetime, timedelta
- 13: from typing import Any, Dict
- 14: 
- 15: from utils.text_helpers import normalize_no_accents_lower_trim
- 16: 
- 17: 
- 18: # =============================================================================
- 19: # CONSTANTES - PATTERNS URL PROVIDERS
- 20: # =============================================================================
- 21: 
- 22: # Compiled regex pattern pour détecter les URLs de fournisseurs supportés:
- 23: # - Dropbox folder links
- 24: # - FromSmash share links
- 25: # - SwissTransfer download links
- 26: URL_PROVIDERS_PATTERN = re.compile(
- 27:     r'(https?://(?:www\.)?(?:dropbox\.com|fromsmash\.com|swisstransfer\.com)[^\s<>\"]*)',
- 28:     re.IGNORECASE,
- 29: )
- 30: 
- 31: # =============================================================================
- 32: # CONSTANTES - DESABO PATTERN
- 33: # =============================================================================
- 34: 
- 35: # Mots-clés requis pour la détection DESABO (présents dans le corps normalisé)
- 36: DESABO_REQUIRED_KEYWORDS = ["journee", "tarifs habituels", "desabonn"]
- 37: 
- 38: # Mots-clés interdits qui invalident la détection DESABO
- 39: DESABO_FORBIDDEN_KEYWORDS = [
- 40:     "annulation",
- 41:     "facturation",
- 42:     "facture",
- 43:     "moment",
- 44:     "reference client",
- 45:     "total ht",
- 46: ]
+  5: Gestion de la connexion IMAP pour la lecture des emails et helpers associés.
+  6: """
+  7: from __future__ import annotations
+  8: 
+  9: import hashlib
+ 10: import imaplib
+ 11: import re
+ 12: from email.header import decode_header
+ 13: from logging import Logger
+ 14: from typing import Optional, Union
+ 15: 
+ 16: from config.settings import (
+ 17:     EMAIL_ADDRESS,
+ 18:     EMAIL_PASSWORD,
+ 19:     IMAP_PORT,
+ 20:     IMAP_SERVER,
+ 21:     IMAP_USE_SSL,
+ 22: )
+ 23: from utils.text_helpers import mask_sensitive_data
+ 24: 
+ 25: 
+ 26: def create_imap_connection(
+ 27:     logger: Optional[Logger],
+ 28:     timeout: int = 30,
+ 29: ) -> Optional[Union[imaplib.IMAP4_SSL, imaplib.IMAP4]]:
+ 30:     """Crée une connexion IMAP sécurisée au serveur email.
+ 31: 
+ 32:     Args:
+ 33:         logger: Instance de logger Flask (app.logger) ou None
+ 34:         timeout: Timeout pour la connexion IMAP (défaut: 30 secondes)
+ 35: 
+ 36:     Returns:
+ 37:         Connection IMAP (IMAP4_SSL ou IMAP4) si succès, None si échec
+ 38:     """
+ 39:     if not logger:
+ 40:         # Fallback minimal si pas de logger disponible
+ 41:         return None
+ 42: 
+ 43:     # Validation minimale des paramètres de connexion (ne jamais logger les credentials)
+ 44:     if not IMAP_SERVER or not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+ 45:         logger.error("IMAP: Configuration incomplète (serveur, email ou mot de passe manquant)")
+ 46:         return None
  47: 
- 48: 
- 49: # =============================================================================
- 50: # PATTERN MÉDIA SOLUTION
- 51: # =============================================================================
- 52: 
- 53: def check_media_solution_pattern(subject, email_content, tz_for_polling, logger) -> Dict[str, Any]:
- 54:     """
- 55:     Vérifie si l'email correspond au pattern Média Solution spécifique et extrait la fenêtre de livraison.
- 56: 
- 57:     Conditions minimales:
- 58:     1. Contenu contient: "https://www.dropbox.com/scl/fo"
- 59:     2. Sujet contient: "Média Solution - Missions Recadrage - Lot"
- 60: 
- 61:     Détails d'extraction pour delivery_time:
- 62:     - Pattern A (heure seule): "à faire pour" suivi d'une heure (variantes supportées):
- 63:       * 11h51, 9h, 09h, 9:00, 09:5, 9h5 -> normalisé en "HHhMM"
- 64:     - Pattern B (date + heure): "à faire pour le D/M/YYYY à HhMM?" ou "à faire pour le D/M/YYYY à H:MM"
- 65:       * exemples: "le 03/09/2025 à 09h00", "le 3/9/2025 à 9h", "le 3/9/2025 à 9:05"
- 66:       * normalisé en "le dd/mm/YYYY à HHhMM"
- 67:     - Cas URGENCE: si le sujet contient "URGENCE", on ignore tout horaire présent dans le corps
- 68:       et on met l'heure locale actuelle + 1h au format "HHhMM" (ex: "13h35").
- 69: 
- 70:     Args:
- 71:         subject: Sujet de l'email
- 72:         email_content: Contenu/corps de l'email
- 73:         tz_for_polling: Timezone pour le calcul des heures (depuis config.polling_config)
- 74:         logger: Logger Flask (app.logger)
- 75: 
- 76:     Returns:
- 77:         dict avec 'matches' (bool) et 'delivery_time' (str ou None)
- 78:     """
- 79:     result = {'matches': False, 'delivery_time': None}
- 80: 
- 81:     if not subject or not email_content:
- 82:         return result
- 83: 
- 84:     # Helpers de normalisation de texte (sans accents, en minuscule) pour des regex robustes
- 85:     def normalize_text(s: str) -> str:
- 86:         if not s:
- 87:             return ""
- 88:         # Supprime les accents et met en minuscule pour une comparaison robuste
- 89:         nfkd = unicodedata.normalize('NFD', s)
- 90:         no_accents = ''.join(ch for ch in nfkd if not unicodedata.combining(ch))
- 91:         return no_accents.lower()
- 92: 
- 93:     norm_subject = normalize_text(subject)
+ 48:     # Logs de debug uniquement (pas INFO pour éviter le spam)
+ 49:     logger.debug("IMAP: Tentative de connexion au serveur %s:%s (SSL=%s)", IMAP_SERVER, IMAP_PORT, IMAP_USE_SSL)
+ 50: 
+ 51:     try:
+ 52:         if IMAP_USE_SSL:
+ 53:             mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT, timeout=timeout)
+ 54:         else:
+ 55:             # Connexion non-sécurisée (déconseillé)
+ 56:             logger.warning("IMAP: Connexion non-SSL utilisée (vulnérable)")
+ 57:             mail = imaplib.IMAP4(IMAP_SERVER, IMAP_PORT, timeout=timeout)
+ 58: 
+ 59:         # Authentification (ne jamais logger le mot de passe)
+ 60:         mail.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+ 61:         logger.info("IMAP: Connexion établie avec succès (%s)", IMAP_SERVER)
+ 62:         return mail
+ 63: 
+ 64:     except imaplib.IMAP4.error as e:
+ 65:         logger.error(
+ 66:             "IMAP: Échec d'authentification pour %s sur %s:%s - %s",
+ 67:             mask_sensitive_data(EMAIL_ADDRESS or "", "email"),
+ 68:             IMAP_SERVER,
+ 69:             IMAP_PORT,
+ 70:             e,
+ 71:         )
+ 72:         return None
+ 73:     except Exception as e:
+ 74:         logger.error("IMAP: Erreur de connexion à %s:%s - %s", IMAP_SERVER, IMAP_PORT, e)
+ 75:         return None
+ 76: 
+ 77: 
+ 78: def close_imap_connection(logger: Optional[Logger], mail: Optional[Union[imaplib.IMAP4_SSL, imaplib.IMAP4]]) -> None:
+ 79:     """Ferme proprement une connexion IMAP.
+ 80:     
+ 81:     Args:
+ 82:         logger: Instance de logger Flask (app.logger) ou None
+ 83:         mail: Connection IMAP à fermer ou None
+ 84:     """
+ 85:     try:
+ 86:         if mail:
+ 87:             mail.close()
+ 88:             mail.logout()
+ 89:             if logger:
+ 90:                 logger.debug("IMAP: Connection closed successfully")
+ 91:     except Exception as e:
+ 92:         if logger:
+ 93:             logger.warning("IMAP: Error closing connection: %s", e)
  94: 
- 95:     # Conditions principales
- 96:     # 1) Présence d'au moins un lien de fournisseur supporté (Dropbox, FromSmash, SwissTransfer)
- 97:     body_text = email_content or ""
- 98:     condition1 = bool(URL_PROVIDERS_PATTERN.search(body_text)) or (
- 99:         ("dropbox.com/scl/fo" in body_text)
-100:         or ("fromsmash.com/" in body_text.lower())
-101:         or ("swisstransfer.com/d/" in body_text.lower())
-102:     )
-103:     # 2) Sujet conforme
-104:     #    Tolérant: on accepte la chaîne exacte (avec accents) OU la présence des mots-clés dans le sujet normalisé
-105:     keywords_ok = all(token in norm_subject for token in [
-106:         "media solution", "missions recadrage", "lot"
-107:     ])
-108:     condition2 = ("Média Solution - Missions Recadrage - Lot" in (subject or "")) or keywords_ok
-109: 
-110:     # Si conditions principales non remplies, on sort
-111:     if not (condition1 and condition2):
-112:         logger.debug(
-113:             f"PATTERN_CHECK: Delivery URL present (dropbox/fromsmash/swisstransfer): {condition1}, Subject pattern: {condition2}"
-114:         )
-115:         return result
-116: 
-117:     # --- Helpers de normalisation ---
-118:     def normalize_hhmm(hh_str: str, mm_str: str | None) -> str:
-119:         """Normalise heures/minutes en "HHhMM". Minutes par défaut à 00."""
-120:         try:
-121:             hh = int(hh_str)
-122:         except Exception:
-123:             hh = 0
-124:         if not mm_str:
-125:             mm = 0
-126:         else:
-127:             try:
-128:                 mm = int(mm_str)
-129:             except Exception:
-130:                 mm = 0
-131:         return f"{hh:02d}h{mm:02d}"
-132: 
-133:     def normalize_date(d_str: str, m_str: str, y_str: str) -> str:
-134:         """Normalise D/M/YYYY en dd/mm/YYYY (zero-pad jour/mois)."""
-135:         try:
-136:             d = int(d_str)
-137:             m = int(m_str)
-138:             y = int(y_str)
-139:         except Exception:
-140:             return f"{d_str}/{m_str}/{y_str}"
-141:         return f"{d:02d}/{m:02d}/{y:04d}"
-142: 
-143:     # --- Extraction de delivery_time ---
-144:     delivery_time_str = None
-145: 
-146:     # 1) URGENCE: si le sujet contient "URGENCE", on ignore tout horaire présent dans le corps
-147:     if re.search(r"\burgence\b", norm_subject or ""):
-148:         try:
-149:             now_local = datetime.now(tz_for_polling)
-150:             one_hour_later = now_local + timedelta(hours=1)
-151:             delivery_time_str = f"{one_hour_later.hour:02d}h{one_hour_later.minute:02d}"
-152:             logger.info(f"PATTERN_MATCH: URGENCE detected, overriding delivery_time with now+1h: {delivery_time_str}")
-153:         except Exception as e_time:
-154:             logger.error(f"PATTERN_CHECK: Failed to compute URGENCE override time: {e_time}")
-155:     else:
-156:         # 2) Pattern B: Date + Heure (variantes)
-157:         #    Variante "h" -> minutes optionnelles
-158:         pattern_date_time_h = r"(?:à|a)\s+faire\s+pour\s+le\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+(?:à|a)\s+(?:(?:à|a)\s+)?(\d{1,2})h(\d{0,2})"
-159:         m_dth = re.search(pattern_date_time_h, email_content or "", re.IGNORECASE)
-160:         if m_dth:
-161:             d, m, y, hh, mm = m_dth.group(1), m_dth.group(2), m_dth.group(3), m_dth.group(4), m_dth.group(5)
-162:             date_norm = normalize_date(d, m, y)
-163:             time_norm = normalize_hhmm(hh, mm if mm else None)
-164:             delivery_time_str = f"le {date_norm} à {time_norm}"
-165:             logger.info(f"PATTERN_MATCH: Found date+time (h) delivery window: {delivery_time_str}")
-166:         else:
-167:             #    Variante ":" -> minutes obligatoires
-168:             pattern_date_time_colon = r"(?:à|a)\s+faire\s+pour\s+le\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+(?:à|a)\s+(?:(?:à|a)\s+)?(\d{1,2}):(\d{2})"
-169:             m_dtc = re.search(pattern_date_time_colon, email_content or "", re.IGNORECASE)
-170:             if m_dtc:
-171:                 d, m, y, hh, mm = m_dtc.group(1), m_dtc.group(2), m_dtc.group(3), m_dtc.group(4), m_dtc.group(5)
-172:                 date_norm = normalize_date(d, m, y)
-173:                 time_norm = normalize_hhmm(hh, mm)
-174:                 delivery_time_str = f"le {date_norm} à {time_norm}"
-175:                 logger.info(f"PATTERN_MATCH: Found date+time (colon) delivery window: {delivery_time_str}")
-176: 
-177:         # 3) Pattern A: Heure seule (variantes)
-178:         if not delivery_time_str:
-179:             # Variante "h" (minutes optionnelles), avec éventuel "à" superflu
-180:             pattern_time_h = r"(?:à|a)\s+faire\s+pour\s+(?:(?:à|a)\s+)?(\d{1,2})h(\d{0,2})"
-181:             m_th = re.search(pattern_time_h, email_content or "", re.IGNORECASE)
-182:             if m_th:
-183:                 hh, mm = m_th.group(1), m_th.group(2)
-184:                 delivery_time_str = normalize_hhmm(hh, mm if mm else None)
-185:                 logger.info(f"PATTERN_MATCH: Found time-only (h) delivery window: {delivery_time_str}")
-186:             else:
-187:                 # Variante ":" (minutes obligatoires)
-188:                 pattern_time_colon = r"(?:à|a)\s+faire\s+pour\s+(?:(?:à|a)\s+)?(\d{1,2}):(\d{2})"
-189:                 m_tc = re.search(pattern_time_colon, email_content or "", re.IGNORECASE)
-190:                 if m_tc:
-191:                     hh, mm = m_tc.group(1), m_tc.group(2)
-192:                     delivery_time_str = normalize_hhmm(hh, mm)
-193:                     logger.info(f"PATTERN_MATCH: Found time-only (colon) delivery window: {delivery_time_str}")
-194: 
-195:         # 4) Fallback permissif: si toujours rien trouvé, tenter une heure isolée (sécurité: restreint aux formats attendus)
-196:         if not delivery_time_str:
-197:             m_fallback_h = re.search(r"\b(\d{1,2})h(\d{0,2})\b", email_content or "", re.IGNORECASE)
-198:             if m_fallback_h:
-199:                 hh, mm = m_fallback_h.group(1), m_fallback_h.group(2)
-200:                 delivery_time_str = normalize_hhmm(hh, mm if mm else None)
-201:                 logger.info(f"PATTERN_MATCH: Fallback time (h) detected: {delivery_time_str}")
-202:             else:
-203:                 m_fallback_colon = re.search(r"\b(\d{1,2}):(\d{2})\b", email_content or "")
-204:                 if m_fallback_colon:
-205:                     hh, mm = m_fallback_colon.group(1), m_fallback_colon.group(2)
-206:                     delivery_time_str = normalize_hhmm(hh, mm)
-207:                     logger.info(f"PATTERN_MATCH: Fallback time (colon) detected: {delivery_time_str}")
-208: 
-209:     if delivery_time_str:
-210:         result['delivery_time'] = delivery_time_str
-211:         result['matches'] = True
-212:         logger.info(
-213:             f"PATTERN_MATCH: Email matches Média Solution pattern. Delivery time: {result['delivery_time']}"
-214:         )
-215:     else:
-216:         logger.debug("PATTERN_CHECK: Base conditions met but no delivery_time pattern matched")
-217: 
-218:     return result
-219: 
-220: 
-221: def check_desabo_conditions(subject: str, email_content: str, logger) -> Dict[str, Any]:
-222:     """Vérifie les conditions du pattern DESABO.
-223: 
-224:     Ce helper externalise la logique de détection « Se désabonner / journée / tarifs habituels »
-225:     actuellement intégrée dans `check_new_emails_and_trigger_webhook()` de `app_render.py`.
-226: 
-227:     Critères:
-228:     - required_terms tous présents dans le corps normalisé sans accents
-229:     - forbidden_terms absents
-230:     - présence d'une URL Dropbox de type "/request/"
-231: 
-232:     Args:
-233:         subject: Sujet de l'email (non utilisé pour la détection de base, conservé pour évolutions)
-234:         email_content: Contenu de l'email (texte combiné recommandé: plain + HTML brut)
-235:         logger: Logger pour traces de debug
-236: 
-237:     Returns:
-238:         dict: { 'matches': bool, 'has_dropbox_request': bool, 'is_urgent': bool }
-239:     """
-240:     result = {"matches": False, "has_dropbox_request": False, "is_urgent": False}
-241: 
-242:     try:
-243:         norm_body = normalize_no_accents_lower_trim(email_content or "")
-244:         norm_subject = normalize_no_accents_lower_trim(subject or "")
-245: 
-246:         # 1) Détection du lien Dropbox Request dans le contenu d'entrée (DOIT être calculé en premier)
-247:         has_dropbox_request = "https://www.dropbox.com/request/" in (email_content or "").lower()
-248:         result["has_dropbox_request"] = has_dropbox_request
-249: 
-250:         # 2) Règles de détection: mots-clés dans le corps + mention de désabonnement
-251:         has_journee = "journee" in norm_body
-252:         has_tarifs = "tarifs habituels" in norm_body
-253:         has_desabo = ("desabonn" in norm_body) or ("desabonn" in norm_subject)
-254:         
-255:         # 3) Détection URGENCE: mot-clé dans le sujet ou le corps normalisés
-256:         is_urgent = ("urgent" in norm_subject) or ("urgence" in norm_subject) or ("urgent" in norm_body) or ("urgence" in norm_body)
-257:         result["is_urgent"] = bool(is_urgent)
-258: 
-259:         # 4) Règle relaxée: allow match if (journee AND tarifs) AND (explicit desabo OR dropbox request link present)
-260:         has_required = (has_journee and has_tarifs) and (has_desabo or has_dropbox_request)
-261:         has_forbidden = any(term in norm_body for term in DESABO_FORBIDDEN_KEYWORDS)
-262: 
-263:         # Logs de diagnostic concis (ne doivent jamais lever)
-264:         try:
-265:             # Construction des listes de diagnostic avec les constantes du module
-266:             required_for_diagnostic = ["journee", "tarifs habituels"]
-267:             missing_required = [t for t in required_for_diagnostic if t not in norm_body]
-268:             present_forbidden = [t for t in DESABO_FORBIDDEN_KEYWORDS if t in norm_body]
-269:             logger.debug(
-270:                 "DESABO_HELPER_DEBUG: required_ok=%s, forbidden_present=%s, dropbox_request=%s, urgent=%s, missing_required=%s, present_forbidden=%s",
-271:                 has_required,
-272:                 has_forbidden,
-273:                 has_dropbox_request,
-274:                 is_urgent,
-275:                 missing_required,
-276:                 present_forbidden,
-277:             )
-278:         except Exception:
-279:             pass
-280: 
-281:         # Match if required conditions satisfied and no forbidden terms
-282:         result["matches"] = bool(has_required and (not has_forbidden))
-283:         return result
-284:     except Exception as e:
-285:         try:
-286:             logger.error("DESABO_HELPER: Exception during detection: %s", e)
-287:         except Exception:
-288:             pass
-289:         return result
+ 95: 
+ 96: def generate_email_id(msg_data: dict) -> str:
+ 97:     """Génère un ID unique pour un email basé sur son contenu (Message-ID|Subject|Date)."""
+ 98:     msg_id = msg_data.get('Message-ID', '')
+ 99:     subject = msg_data.get('Subject', '')
+100:     date = msg_data.get('Date', '')
+101:     unique_string = f"{msg_id}|{subject}|{date}"
+102:     return hashlib.md5(unique_string.encode('utf-8')).hexdigest()
+103: 
+104: 
+105: def extract_sender_email(from_header: str) -> str:
+106:     """Extrait une adresse email depuis un header From."""
+107:     if not from_header:
+108:         return ""
+109:     email_pattern = r'<([^>]+)>|([^\s<>]+@[^\s<>]+)'
+110:     match = re.search(email_pattern, from_header)
+111:     if match:
+112:         return match.group(1) if match.group(1) else match.group(2)
+113:     return ""
+114: 
+115: 
+116: def decode_email_header_value(header_value: str) -> str:
+117:     """Décode un header potentiellement encodé (RFC2047)."""
+118:     if not header_value:
+119:         return ""
+120:     decoded_parts = decode_header(header_value)
+121:     decoded_string = ""
+122:     for part, encoding in decoded_parts:
+123:         if isinstance(part, bytes):
+124:             if encoding:
+125:                 try:
+126:                     decoded_string += part.decode(encoding)
+127:                 except (UnicodeDecodeError, LookupError):
+128:                     decoded_string += part.decode('utf-8', errors='ignore')
+129:             else:
+130:                 decoded_string += part.decode('utf-8', errors='ignore')
+131:         else:
+132:             decoded_string += str(part)
+133:     return decoded_string
+134: 
+135: 
+136: def mark_email_as_read_imap(logger: Optional[Logger], mail: Optional[Union[imaplib.IMAP4_SSL, imaplib.IMAP4]], email_num: str) -> bool:
+137:     """Marque un email comme lu via IMAP.
+138:     
+139:     Args:
+140:         logger: Instance de logger Flask (app.logger) ou None
+141:         mail: Connection IMAP active
+142:         email_num: Numéro de l'email à marquer comme lu
+143:         
+144:     Returns:
+145:         True si succès, False sinon
+146:     """
+147:     try:
+148:         if not mail:
+149:             return False
+150:         mail.store(email_num, '+FLAGS', '\\Seen')
+151:         if logger:
+152:             logger.debug("IMAP: Email %s marked as read", email_num)
+153:         return True
+154:     except Exception as e:
+155:         if logger:
+156:             logger.error("IMAP: Error marking email %s as read: %s", email_num, e)
+157:         return False
 ````
 
-## File: routes/api_ingress.py
+## File: email_processing/payloads.py
+````python
+  1: """
+  2: email_processing.payloads
+  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~
+  4: 
+  5: Builders for webhook payloads to keep formatting logic centralized and testable.
+  6: """
+  7: from __future__ import annotations
+  8: 
+  9: from typing import Any, Dict, List, Optional
+ 10: from typing_extensions import TypedDict
+ 11: 
+ 12: 
+ 13: class CustomWebhookPayload(TypedDict, total=False):
+ 14:     """Structure du payload pour le webhook custom (PHP endpoint)."""
+ 15:     microsoft_graph_email_id: str
+ 16:     subject: Optional[str]
+ 17:     receivedDateTime: Optional[str]
+ 18:     sender_address: Optional[str]
+ 19:     bodyPreview: Optional[str]
+ 20:     email_content: Optional[str]
+ 21:     delivery_links: List[Dict[str, str]]
+ 22:     first_direct_download_url: Optional[str]
+ 23:     dropbox_urls: List[str]
+ 24:     dropbox_first_url: Optional[str]
+ 25: 
+ 26: 
+ 27: class DesaboMakePayload(TypedDict, total=False):
+ 28:     """Structure du payload pour le webhook Make.com DESABO."""
+ 29:     detector: str
+ 30:     email_content: Optional[str]
+ 31:     Text: Optional[str]
+ 32:     Subject: Optional[str]
+ 33:     Sender: Optional[Dict[str, str]]
+ 34:     webhooks_time_start: Optional[str]
+ 35:     webhooks_time_end: Optional[str]
+ 36: 
+ 37: 
+ 38: def _extract_dropbox_urls_legacy(delivery_links: Optional[List[Dict[str, str]]]) -> List[str]:
+ 39:     """Extrait les URLs Dropbox depuis delivery_links pour compatibilité legacy.
+ 40:     
+ 41:     Args:
+ 42:         delivery_links: Liste de dicts avec 'provider' et 'raw_url'
+ 43:     
+ 44:     Returns:
+ 45:         Liste des raw_url où provider == 'dropbox'
+ 46:     """
+ 47:     if not delivery_links:
+ 48:         return []
+ 49:     
+ 50:     try:
+ 51:         return [
+ 52:             item.get("raw_url")
+ 53:             for item in delivery_links
+ 54:             if item and item.get("provider") == "dropbox" and item.get("raw_url")
+ 55:         ]
+ 56:     except Exception:
+ 57:         return []
+ 58: 
+ 59: 
+ 60: def build_custom_webhook_payload(
+ 61:     *,
+ 62:     email_id: str,
+ 63:     subject: Optional[str],
+ 64:     date_received: Optional[str],
+ 65:     sender: Optional[str],
+ 66:     body_preview: Optional[str],
+ 67:     full_email_content: Optional[str],
+ 68:     delivery_links: List[Dict[str, str]],
+ 69:     first_direct_url: Optional[str],
+ 70: ) -> Dict[str, Any]:
+ 71:     """Builds the payload dict for the custom webhook.
+ 72: 
+ 73:     Mirrors legacy fields for backward compatibility.
+ 74:     Adds legacy Dropbox-specific aliases (`dropbox_urls`, `dropbox_first_url`).
+ 75:     
+ 76:     Note: delivery_links items may contain an optional 'r2_url' field if R2TransferService
+ 77:     successfully transferred the file to Cloudflare R2. The structure is:
+ 78:         {
+ 79:             'provider': 'dropbox',
+ 80:             'raw_url': 'https://...',
+ 81:             'direct_url': 'https://...' or None,
+ 82:             'r2_url': 'https://media.example.com/...' (optional)
+ 83:         }
+ 84:     """
+ 85:     dropbox_urls_legacy = _extract_dropbox_urls_legacy(delivery_links)
+ 86:     
+ 87:     payload = {
+ 88:         "microsoft_graph_email_id": email_id,
+ 89:         "subject": subject,
+ 90:         "receivedDateTime": date_received,
+ 91:         "sender_address": sender,
+ 92:         "bodyPreview": body_preview,
+ 93:         "email_content": full_email_content,
+ 94:         "delivery_links": delivery_links,
+ 95:         "first_direct_download_url": first_direct_url,
+ 96:         "dropbox_urls": dropbox_urls_legacy,
+ 97:         "dropbox_first_url": dropbox_urls_legacy[0] if dropbox_urls_legacy else None,
+ 98:     }
+ 99: 
+100:     return payload
+101: 
+102: 
+103: def build_desabo_make_payload(
+104:     *,
+105:     subject: Optional[str],
+106:     full_email_content: Optional[str],
+107:     sender_email: Optional[str],
+108:     time_start_payload: Optional[str],
+109:     time_end_payload: Optional[str],
+110: ) -> Dict[str, Any]:
+111:     """Builds the `extra_payload` for DESABO Make.com webhook.
+112: 
+113:     Matches legacy keys expected by Make scenario (detector, Text, Subject, Sender, webhooks_time_*).
+114:     """
+115:     return {
+116:         "detector": "desabonnement_journee_tarifs",
+117:         "email_content": full_email_content,
+118:         # Mailhook-style aliases for Make mapping
+119:         "Text": full_email_content,
+120:         "Subject": subject,
+121:         "Sender": {"email": sender_email} if sender_email else None,
+122:         "webhooks_time_start": time_start_payload,
+123:         "webhooks_time_end": time_end_payload,
+124:     }
+````
+
+## File: routes/api_make.py
 ````python
   1: from __future__ import annotations
   2: 
-  3: import hashlib
-  4: import sys
-  5: from datetime import datetime, timezone
+  3: import os
+  4: import requests
+  5: from typing import Dict, Tuple
   6: 
-  7: from flask import Blueprint, current_app, jsonify, request
-  8: 
-  9: from email_processing import link_extraction
- 10: from email_processing import orchestrator as email_orchestrator
- 11: from email_processing import pattern_matching
- 12: from services import AuthService, ConfigService
- 13: from utils.text_helpers import mask_sensitive_data
- 14: from utils.time_helpers import is_within_time_window_local, parse_time_hhmm
- 15: 
- 16: bp = Blueprint("api_ingress", __name__, url_prefix="/api/ingress")
- 17: 
- 18: _config_service = ConfigService()
- 19: _auth_service = AuthService(_config_service)
- 20: 
- 21: 
- 22: def _compute_email_id(*, subject: str, sender: str, date: str) -> str:
- 23:     unique_str = f"{subject}|{sender}|{date}"
- 24:     return hashlib.md5(unique_str.encode("utf-8")).hexdigest()
- 25: 
- 26: 
- 27: @bp.route("/gmail", methods=["POST"])
- 28: def ingest_gmail():
- 29:     if not _auth_service.verify_api_key_from_request(request):
- 30:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+  7: from flask import Blueprint, jsonify, request, current_app
+  8: from flask_login import login_required
+  9: 
+ 10: from config.settings import MAKECOM_API_KEY
+ 11: 
+ 12: bp = Blueprint("api_make", __name__, url_prefix="/api/make")
+ 13: # Scenario IDs: can be overridden by env vars, fallback to provided IDs
+ 14: # ENV overrides (optional): MAKE_SCENARIO_ID_AUTOREPONDEUR, MAKE_SCENARIO_ID_RECADRAGE
+ 15: SCENARIO_IDS = {
+ 16:     "autorepondeur": int(os.environ.get("MAKE_SCENARIO_ID_AUTOREPONDEUR", "7448207")),
+ 17:     "recadrage": int(os.environ.get("MAKE_SCENARIO_ID_RECADRAGE", "6649843")),
+ 18: }
+ 19: 
+ 20: # Configuration du webhook de contrôle (solution alternative)
+ 21: MAKE_WEBHOOK_CONTROL_URL = os.environ.get("MAKE_WEBHOOK_CONTROL_URL", "").strip()
+ 22: MAKE_WEBHOOK_API_KEY = os.environ.get("MAKE_WEBHOOK_API_KEY", "").strip()
+ 23: 
+ 24: # Configuration API directe (si webhook non configuré)
+ 25: MAKE_HOST = os.environ.get("MAKE_API_HOST", "eu1.make.com").strip()
+ 26: API_BASE = f"https://{MAKE_HOST}/api/v2"
+ 27: 
+ 28: # Auth type: Token (default) or Bearer (for OAuth access tokens)
+ 29: MAKE_AUTH_TYPE = os.environ.get("MAKE_API_AUTH_TYPE", "Token").strip()
+ 30: MAKE_ORG_ID = os.environ.get("MAKE_API_ORG_ID", "").strip()
  31: 
- 32:     payload = request.get_json(silent=True)
- 33:     if not isinstance(payload, dict):
- 34:         return jsonify({"success": False, "message": "Invalid JSON payload"}), 400
- 35: 
- 36:     subject = payload.get("subject")
- 37:     sender_raw = payload.get("sender")
- 38:     body = payload.get("body")
- 39:     email_date = payload.get("date")
- 40: 
- 41:     if not isinstance(subject, str):
- 42:         subject = ""
- 43:     if not isinstance(sender_raw, str):
- 44:         sender_raw = ""
- 45:     if not isinstance(body, str):
- 46:         body = ""
- 47:     if not isinstance(email_date, str):
- 48:         email_date = ""
+ 32: TIMEOUT_SEC = 15
+ 33: 
+ 34: 
+ 35: def build_headers() -> dict:
+ 36:     headers = {}
+ 37:     if MAKE_AUTH_TYPE.lower() == "bearer":
+ 38:         headers["Authorization"] = f"Bearer {MAKECOM_API_KEY}"
+ 39:     else:
+ 40:         headers["Authorization"] = f"Token {MAKECOM_API_KEY}"
+ 41:     if MAKE_ORG_ID:
+ 42:         headers["X-Organization"] = MAKE_ORG_ID
+ 43:     return headers
+ 44: 
+ 45: 
+ 46: def _scenario_action_url(scenario_id: int, enable: bool) -> str:
+ 47:     action = "start" if enable else "stop"
+ 48:     return f"{API_BASE}/scenarios/{scenario_id}/{action}"
  49: 
- 50:     if not sender_raw:
- 51:         return jsonify({"success": False, "message": "Missing field: sender"}), 400
- 52:     if not body:
- 53:         return jsonify({"success": False, "message": "Missing field: body"}), 400
- 54: 
- 55:     ar = sys.modules.get("app_render")
- 56:     if ar is None:
- 57:         return jsonify({"success": False, "message": "Server not ready"}), 503
- 58: 
- 59:     try:
- 60:         extract_sender_fn = getattr(ar, "extract_sender_email", None)
- 61:         sender_email = (
- 62:             extract_sender_fn(sender_raw) if callable(extract_sender_fn) else sender_raw
- 63:         )
- 64:     except Exception:
- 65:         sender_email = sender_raw
- 66: 
- 67:     sender_email = (sender_email or sender_raw).strip().lower()
- 68: 
- 69:     email_id = _compute_email_id(subject=subject, sender=sender_email, date=email_date)
- 70: 
- 71:     try:
- 72:         current_app.logger.info(
- 73:             "INGRESS: gmail payload received (email_id=%s sender=%s subject=%s)",
- 74:             email_id,
- 75:             mask_sensitive_data(sender_email, "email"),
- 76:             mask_sensitive_data(subject, "subject"),
- 77:         )
- 78:     except Exception:
- 79:         pass
+ 50: 
+ 51: def _call_make_scenario(scenario_id: int, enable: bool) -> Tuple[bool, str, int]:
+ 52:     """Appelle l'API Make soit directement, soit via webhook de contrôle"""
+ 53:     action = "start" if enable else "stop"
+ 54:     
+ 55:     # Si webhook de contrôle configuré, l'utiliser
+ 56:     if MAKE_WEBHOOK_CONTROL_URL and MAKE_WEBHOOK_API_KEY:
+ 57:         try:
+ 58:             response = requests.post(
+ 59:                 MAKE_WEBHOOK_CONTROL_URL,
+ 60:                 json={
+ 61:                     "action": action,
+ 62:                     "scenario_id": scenario_id,
+ 63:                     "api_key": MAKE_WEBHOOK_API_KEY
+ 64:                 },
+ 65:                 timeout=TIMEOUT_SEC
+ 66:             )
+ 67:             ok = response.status_code == 200
+ 68:             return ok, f"Webhook {action} for {scenario_id}", response.status_code
+ 69:         except Exception as e:
+ 70:             return False, f"Webhook error: {str(e)}", -1
+ 71:     
+ 72:     # Sinon, utiliser l'API directe
+ 73:     url = _scenario_action_url(scenario_id, enable)
+ 74:     try:
+ 75:         resp = requests.post(url, headers=build_headers(), timeout=TIMEOUT_SEC)
+ 76:         ok = resp.ok
+ 77:         return ok, url, resp.status_code
+ 78:     except Exception as e:
+ 79:         return False, url, -1
  80: 
- 81:     try:
- 82:         is_processed_fn = getattr(ar, "is_email_id_processed_redis", None)
- 83:         if callable(is_processed_fn) and is_processed_fn(email_id):
- 84:             return (
- 85:                 jsonify({"success": True, "status": "already_processed", "email_id": email_id}),
- 86:                 200,
- 87:             )
- 88:     except Exception:
- 89:         pass
- 90: 
- 91:     try:
- 92:         sender_list = []
- 93:         polling_service = getattr(ar, "_polling_service", None)
- 94:         if polling_service is not None:
- 95:             try:
- 96:                 sender_list = polling_service.get_sender_list() or []
- 97:             except Exception:
- 98:                 sender_list = []
- 99:         allowed = [str(s).strip().lower() for s in sender_list if isinstance(s, str) and s.strip()]
-100:         if allowed and sender_email not in allowed:
-101:             try:
-102:                 mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
-103:                 if callable(mark_processed_fn):
-104:                     mark_processed_fn(email_id)
-105:             except Exception:
-106:                 pass
-107:             return (
-108:                 jsonify({"success": True, "status": "skipped_sender_not_allowed", "email_id": email_id}),
-109:                 200,
-110:             )
-111:     except Exception:
-112:         pass
-113: 
-114:     try:
-115:         if not email_orchestrator._is_webhook_sending_enabled():
-116:             return (
-117:                 jsonify({"success": False, "message": "Webhook sending disabled"}),
-118:                 409,
-119:             )
-120:     except Exception:
-121:         pass
-122: 
-123:     tz_for_polling = getattr(ar, "TZ_FOR_POLLING", None)
-124:     try:
-125:         now_local = datetime.now(tz_for_polling) if tz_for_polling else datetime.now()
-126:     except Exception:
-127:         now_local = datetime.now()
-128: 
-129:     detector_val = None
-130:     delivery_time_val = None
-131:     desabo_is_urgent = False
-132:     try:
-133:         ms_res = pattern_matching.check_media_solution_pattern(
-134:             subject or "", body, tz_for_polling, current_app.logger
-135:         )
-136:         if isinstance(ms_res, dict) and bool(ms_res.get("matches")):
-137:             detector_val = "recadrage"
-138:             delivery_time_val = ms_res.get("delivery_time")
-139:         else:
-140:             des_res = pattern_matching.check_desabo_conditions(
-141:                 subject or "", body, current_app.logger
-142:             )
-143:             if isinstance(des_res, dict) and bool(des_res.get("matches")):
-144:                 detector_val = "desabonnement_journee_tarifs"
-145:                 desabo_is_urgent = bool(des_res.get("is_urgent"))
-146:     except Exception:
-147:         detector_val = None
-148: 
-149:     s_str, e_str = "", ""
-150:     try:
-151:         s_str, e_str = email_orchestrator._load_webhook_global_time_window()
-152:     except Exception:
-153:         s_str, e_str = "", ""
-154: 
-155:     start_t = parse_time_hhmm(s_str) if s_str else None
-156:     end_t = parse_time_hhmm(e_str) if e_str else None
-157:     within = True
-158:     if start_t and end_t:
-159:         within = is_within_time_window_local(now_local, start_t, end_t)
-160: 
-161:     if not within:
-162:         if detector_val == "desabonnement_journee_tarifs":
-163:             if desabo_is_urgent:
-164:                 return (
-165:                     jsonify({"success": False, "message": "Outside time window (DESABO urgent)"}),
-166:                     409,
-167:                 )
-168:         elif detector_val == "recadrage":
-169:             try:
-170:                 mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
-171:                 if callable(mark_processed_fn):
-172:                     mark_processed_fn(email_id)
-173:             except Exception:
-174:                 pass
-175:             return (
-176:                 jsonify({"success": True, "status": "skipped_outside_time_window", "email_id": email_id}),
-177:                 200,
-178:             )
-179:         else:
-180:             return (
-181:                 jsonify({"success": False, "message": "Outside time window"}),
-182:                 409,
-183:             )
-184: 
-185:     start_payload_val = None
-186:     try:
-187:         if start_t and end_t:
-188:             if within:
-189:                 start_payload_val = "maintenant"
-190:             else:
-191:                 if (
-192:                     detector_val == "desabonnement_journee_tarifs"
-193:                     and not desabo_is_urgent
-194:                     and now_local.time() < start_t
-195:                 ):
-196:                     start_payload_val = s_str
-197:     except Exception:
-198:         start_payload_val = None
-199: 
-200:     delivery_links = link_extraction.extract_provider_links_from_text(body)
-201: 
-202:     payload_for_webhook = {
-203:         "microsoft_graph_email_id": email_id,
-204:         "subject": subject or "",
-205:         "receivedDateTime": email_date or "",
-206:         "sender_address": sender_raw,
-207:         "bodyPreview": (body or "")[:200],
-208:         "email_content": body or "",
-209:         "source": "gmail_push",
-210:     }
-211: 
-212:     try:
-213:         if detector_val:
-214:             payload_for_webhook["detector"] = detector_val
-215:         if detector_val == "recadrage" and delivery_time_val:
-216:             payload_for_webhook["delivery_time"] = delivery_time_val
-217:         payload_for_webhook["sender_email"] = sender_email
-218:     except Exception:
-219:         pass
-220: 
-221:     try:
-222:         if start_payload_val is not None:
-223:             payload_for_webhook["webhooks_time_start"] = start_payload_val
-224:         if e_str:
-225:             payload_for_webhook["webhooks_time_end"] = e_str
-226:     except Exception:
-227:         pass
-228: 
-229:     webhook_cfg = {}
-230:     try:
-231:         webhook_cfg = email_orchestrator._get_webhook_config_dict() or {}
-232:     except Exception:
-233:         webhook_cfg = {}
-234: 
-235:     webhook_url = ""
-236:     try:
-237:         webhook_url = str(webhook_cfg.get("webhook_url") or "").strip()
-238:     except Exception:
-239:         webhook_url = ""
-240:     if not webhook_url:
-241:         webhook_url = str(getattr(ar, "WEBHOOK_URL", "") or "").strip()
-242:     if not webhook_url:
-243:         return jsonify({"success": False, "message": "WEBHOOK_URL not configured"}), 500
-244: 
-245:     webhook_ssl_verify = True
-246:     try:
-247:         webhook_ssl_verify = bool(webhook_cfg.get("webhook_ssl_verify", True))
-248:     except Exception:
-249:         webhook_ssl_verify = True
-250: 
-251:     allow_without_links = bool(getattr(ar, "ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS", False))
-252:     try:
-253:         rfs = getattr(ar, "_runtime_flags_service", None)
-254:         if rfs is not None and hasattr(rfs, "get_flag"):
-255:             allow_without_links = bool(
-256:                 rfs.get_flag("allow_custom_webhook_without_links", allow_without_links)
-257:             )
-258:     except Exception:
-259:         pass
-260: 
-261:     processing_prefs = getattr(ar, "PROCESSING_PREFS", {})
-262: 
-263:     rate_limit_allow_send = getattr(ar, "_rate_limit_allow_send", None)
-264:     record_send_event = getattr(ar, "_record_send_event", None)
-265:     append_webhook_log = getattr(ar, "_append_webhook_log", None)
-266:     mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
-267: 
-268:     if not callable(rate_limit_allow_send) or not callable(record_send_event):
-269:         return jsonify({"success": False, "message": "Server misconfigured"}), 500
-270:     if not callable(append_webhook_log) or not callable(mark_processed_fn):
-271:         return jsonify({"success": False, "message": "Server misconfigured"}), 500
-272: 
-273:     import requests
-274:     import time
-275: 
-276:     try:
-277:         flow_result = email_orchestrator.send_custom_webhook_flow(
-278:             email_id=email_id,
-279:             subject=subject,
-280:             payload_for_webhook=payload_for_webhook,
-281:             delivery_links=delivery_links or [],
-282:             webhook_url=webhook_url,
-283:             webhook_ssl_verify=webhook_ssl_verify,
-284:             allow_without_links=allow_without_links,
-285:             processing_prefs=processing_prefs,
-286:             rate_limit_allow_send=rate_limit_allow_send,
-287:             record_send_event=record_send_event,
-288:             append_webhook_log=append_webhook_log,
-289:             mark_email_id_as_processed_redis=mark_processed_fn,
-290:             mark_email_as_read_imap=lambda *_a, **_kw: True,
-291:             mail=None,
-292:             email_num=None,
-293:             urlparse=None,
-294:             requests=requests,
-295:             time=time,
-296:             logger=current_app.logger,
-297:         )
-298: 
-299:         return (
-300:             jsonify(
-301:                 {
-302:                     "success": True,
-303:                     "status": "processed",
-304:                     "email_id": email_id,
-305:                     "flow_result": flow_result,
-306:                     "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-307:                 }
-308:             ),
-309:             200,
-310:         )
-311:     except Exception as e:
-312:         try:
-313:             current_app.logger.error("INGRESS: processing error for %s: %s", email_id, e)
-314:         except Exception:
-315:             pass
-316:         return jsonify({"success": False, "message": "Internal error"}), 500
+ 81: 
+ 82: # Exposed function for internal use from other blueprints
+ 83: # Returns dict of results per scenario key
+ 84: 
+ 85: def toggle_all_scenarios(enable: bool, logger=None) -> Dict[str, dict]:
+ 86:     results: Dict[str, dict] = {}
+ 87:     for key, sid in SCENARIO_IDS.items():
+ 88:         ok, url, status = _call_make_scenario(sid, enable)
+ 89:         results[key] = {"scenario_id": sid, "ok": ok, "status": status, "url": url}
+ 90:         if logger:
+ 91:             logger.info(
+ 92:                 "MAKE API: %s scenario '%s' (id=%s) -> ok=%s status=%s",
+ 93:                 "start" if enable else "stop",
+ 94:                 key,
+ 95:                 sid,
+ 96:                 ok,
+ 97:                 status,
+ 98:             )
+ 99:     return results
+100: 
+101: 
+102: @bp.route("/toggle_all", methods=["POST"])
+103: @login_required
+104: def api_toggle_all():
+105:     try:
+106:         payload = request.get_json(silent=True) or {}
+107:         enable = bool(payload.get("enable", False))
+108:         if not MAKECOM_API_KEY:
+109:             return jsonify({"success": False, "message": "Clé API Make manquante (MAKECOM_API_KEY)."}), 400
+110:         res = toggle_all_scenarios(enable, logger=current_app.logger)
+111:         return jsonify({"success": True, "enable": enable, "results": res}), 200
+112:     except Exception:
+113:         return jsonify({"success": False, "message": "Erreur interne lors de l'appel Make."}), 500
+114: 
+115: 
+116: @bp.route("/status_all", methods=["GET"])
+117: @login_required
+118: def api_status_all():
+119:     # Make n'expose pas de /status simple par scénario dans v2 publique.
+120:     # On retourne simplement la configuration des IDs connus côté serveur.
+121:     try:
+122:         return jsonify({
+123:             "success": True,
+124:             "scenarios": {
+125:                 k: {"scenario_id": v} for k, v in SCENARIO_IDS.items()
+126:             },
+127:             "host": MAKE_HOST,
+128:         }), 200
+129:     except Exception:
+130:         return jsonify({"success": False, "message": "Erreur interne."}), 500
 ````
 
 ## File: routes/api_polling.py
@@ -2201,6 +2636,134 @@ requirements.txt
 41:         }), 200
 42:     except Exception:
 43:         return jsonify({"success": False, "message": "Erreur interne"}), 500
+````
+
+## File: routes/api_processing.py
+````python
+  1: from __future__ import annotations
+  2: 
+  3: from pathlib import Path
+  4: 
+  5: from flask import Blueprint, jsonify, request
+  6: from flask_login import login_required
+  7: from config import app_config_store as _store
+  8: from preferences import processing_prefs as _prefs_module
+  9: 
+ 10: bp = Blueprint("api_processing", __name__, url_prefix="/api/processing_prefs")
+ 11: legacy_bp = Blueprint("api_processing_legacy", __name__)
+ 12: 
+ 13: # Storage compatible with legacy locations
+ 14: PROCESSING_PREFS_FILE = (
+ 15:     Path(__file__).resolve().parents[1] / "debug" / "processing_prefs.json"
+ 16: )
+ 17: DEFAULT_PROCESSING_PREFS = {
+ 18:     "exclude_keywords": [],
+ 19:     "require_attachments": False,
+ 20:     "max_email_size_mb": None,
+ 21:     "sender_priority": {},
+ 22:     "retry_count": 0,
+ 23:     "retry_delay_sec": 2,
+ 24:     "webhook_timeout_sec": 30,
+ 25:     "rate_limit_per_hour": 5,
+ 26:     "notify_on_failure": False,
+ 27:     "mirror_media_to_custom": True,  # Activer le miroir vers le webhook personnalisé par défaut
+ 28: }
+ 29: 
+ 30: 
+ 31: def _load_processing_prefs() -> dict:
+ 32:     """Load prefs from DB if available, else file; merge with defaults."""
+ 33:     data = _store.get_config_json(
+ 34:         "processing_prefs", file_fallback=PROCESSING_PREFS_FILE
+ 35:     ) or {}
+ 36:     if isinstance(data, dict):
+ 37:         return {**DEFAULT_PROCESSING_PREFS, **data}
+ 38:     return DEFAULT_PROCESSING_PREFS.copy()
+ 39: 
+ 40: 
+ 41: def _save_processing_prefs(prefs: dict) -> bool:
+ 42:     """Persist prefs to DB with file fallback."""
+ 43:     return _store.set_config_json(
+ 44:         "processing_prefs", prefs, file_fallback=PROCESSING_PREFS_FILE
+ 45:     )
+ 46: 
+ 47: 
+ 48: def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
+ 49:     """
+ 50:     Valide les préférences en normalisant les alias puis en déléguant à preferences.processing_prefs.
+ 51:     Les alias 'exclude_keywords_recadrage' et 'exclude_keywords_autorepondeur' sont conservés dans le résultat
+ 52:     mais la validation core est déléguée au module centralisé.
+ 53:     """
+ 54:     base_prefs = _load_processing_prefs()
+ 55:     
+ 56:     # Normalisation des alias: conserver les clés alias dans payload_normalized
+ 57:     payload_normalized = dict(payload)
+ 58:     
+ 59:     # Validation des alias spécifiques (extend keys used by UI and tests)
+ 60:     try:
+ 61:         if "exclude_keywords_recadrage" in payload:
+ 62:             val = payload["exclude_keywords_recadrage"]
+ 63:             if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
+ 64:                 return False, "exclude_keywords_recadrage doit être une liste de chaînes", base_prefs
+ 65:             payload_normalized["exclude_keywords_recadrage"] = [x.strip() for x in val if x and isinstance(x, str)]
+ 66:         
+ 67:         if "exclude_keywords_autorepondeur" in payload:
+ 68:             val = payload["exclude_keywords_autorepondeur"]
+ 69:             if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
+ 70:                 return False, "exclude_keywords_autorepondeur doit être une liste de chaînes", base_prefs
+ 71:             payload_normalized["exclude_keywords_autorepondeur"] = [x.strip() for x in val if x and isinstance(x, str)]
+ 72:     except Exception as e:
+ 73:         return False, f"Alias validation error: {e}", base_prefs
+ 74:     
+ 75:     # Déléguer la validation des champs core au module centralisé
+ 76:     ok, msg, validated_prefs = _prefs_module.validate_processing_prefs(payload_normalized, base_prefs)
+ 77:     
+ 78:     if not ok:
+ 79:         return ok, msg, validated_prefs
+ 80:     
+ 81:     # Ajouter les alias validés au résultat final si présents
+ 82:     if "exclude_keywords_recadrage" in payload_normalized:
+ 83:         validated_prefs["exclude_keywords_recadrage"] = payload_normalized["exclude_keywords_recadrage"]
+ 84:     if "exclude_keywords_autorepondeur" in payload_normalized:
+ 85:         validated_prefs["exclude_keywords_autorepondeur"] = payload_normalized["exclude_keywords_autorepondeur"]
+ 86:     
+ 87:     return True, "ok", validated_prefs
+ 88: 
+ 89: 
+ 90: @bp.route("", methods=["GET"])
+ 91: @login_required
+ 92: def get_processing_prefs():
+ 93:     try:
+ 94:         return jsonify({"success": True, "prefs": _load_processing_prefs()})
+ 95:     except Exception as e:
+ 96:         return jsonify({"success": False, "message": str(e)}), 500
+ 97: 
+ 98: 
+ 99: @bp.route("", methods=["POST"])
+100: @login_required
+101: def update_processing_prefs():
+102:     try:
+103:         payload = request.get_json(force=True, silent=True) or {}
+104:         ok, msg, new_prefs = _validate_processing_prefs(payload)
+105:         if not ok:
+106:             return jsonify({"success": False, "message": msg}), 400
+107:         if _save_processing_prefs(new_prefs):
+108:             return jsonify({"success": True, "message": "Préférences mises à jour.", "prefs": new_prefs})
+109:         return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
+110:     except Exception as e:
+111:         return jsonify({"success": False, "message": str(e)}), 500
+112: 
+113: 
+114: # --- Legacy alias routes to maintain backward-compat URLs used by tests/UI ---
+115: @legacy_bp.route("/api/get_processing_prefs", methods=["GET"])
+116: @login_required
+117: def legacy_get_processing_prefs():
+118:     return get_processing_prefs()
+119: 
+120: 
+121: @legacy_bp.route("/api/update_processing_prefs", methods=["POST"])
+122: @login_required
+123: def legacy_update_processing_prefs():
+124:     return update_processing_prefs()
 ````
 
 ## File: routes/api_utility.py
@@ -2338,6 +2901,1272 @@ requirements.txt
 ## File: scripts/__init__.py
 ````python
 1: """Utility scripts package for render_signal_server."""
+````
+
+## File: services/config_service.py
+````python
+  1: """
+  2: services.config_service
+  3: ~~~~~~~~~~~~~~~~~~~~~~~
+  4: 
+  5: Service centralisé pour accéder à la configuration applicative.
+  6: 
+  7: Ce service remplace l'accès direct aux variables de config.settings et fournit:
+  8: - Validation des valeurs de configuration
+  9: - Transformation et normalisation
+ 10: - Interface stable indépendante de l'implémentation sous-jacente
+ 11: - Méthodes typées pour accès sécurisé
+ 12: 
+ 13: Usage:
+ 14:     from services import ConfigService
+ 15:     
+ 16:     config = ConfigService()
+ 17:     
+ 18:     if config.is_email_config_valid():
+ 19:         email_cfg = config.get_email_config()
+ 20:         # ... use email_cfg
+ 21: """
+ 22: 
+ 23: from __future__ import annotations
+ 24: from typing import Optional
+ 25: 
+ 26: 
+ 27: class ConfigService:
+ 28:     """Service centralisé pour accéder à la configuration applicative.
+ 29:     
+ 30:     Attributes:
+ 31:         _settings: Module de configuration (config.settings par défaut)
+ 32:     """
+ 33:     
+ 34:     def __init__(self, settings_module=None):
+ 35:         """Initialise le service avec un module de configuration.
+ 36:         
+ 37:         Args:
+ 38:             settings_module: Module contenant la configuration (None = import dynamique)
+ 39:         """
+ 40:         if settings_module:
+ 41:             self._settings = settings_module
+ 42:         else:
+ 43:             from config import settings
+ 44:             self._settings = settings
+ 45:     
+ 46:     # Configuration IMAP / Email
+ 47:     
+ 48:     def get_email_config(self) -> dict:
+ 49:         """Retourne la configuration email complète et validée.
+ 50:         
+ 51:         Returns:
+ 52:             dict avec clés: address, password, server, port, use_ssl
+ 53:         """
+ 54:         return {
+ 55:             "address": self._settings.EMAIL_ADDRESS,
+ 56:             "password": self._settings.EMAIL_PASSWORD,
+ 57:             "server": self._settings.IMAP_SERVER,
+ 58:             "port": self._settings.IMAP_PORT,
+ 59:             "use_ssl": self._settings.IMAP_USE_SSL,
+ 60:         }
+ 61:     
+ 62:     def is_email_config_valid(self) -> bool:
+ 63:         """Vérifie si la configuration email est complète et valide.
+ 64:         
+ 65:         Returns:
+ 66:             True si tous les champs requis sont présents
+ 67:         """
+ 68:         return bool(
+ 69:             self._settings.EMAIL_ADDRESS
+ 70:             and self._settings.EMAIL_PASSWORD
+ 71:             and self._settings.IMAP_SERVER
+ 72:         )
+ 73:     
+ 74:     def get_email_address(self) -> str:
+ 75:         return self._settings.EMAIL_ADDRESS
+ 76:     
+ 77:     def get_email_password(self) -> str:
+ 78:         return self._settings.EMAIL_PASSWORD
+ 79:     
+ 80:     def get_imap_server(self) -> str:
+ 81:         return self._settings.IMAP_SERVER
+ 82:     
+ 83:     def get_imap_port(self) -> int:
+ 84:         return self._settings.IMAP_PORT
+ 85:     
+ 86:     def get_imap_use_ssl(self) -> bool:
+ 87:         return self._settings.IMAP_USE_SSL
+ 88:     
+ 89:     # Configuration Webhooks
+ 90:     
+ 91:     def get_webhook_url(self) -> str:
+ 92:         return self._settings.WEBHOOK_URL
+ 93:     
+ 94:     def get_webhook_ssl_verify(self) -> bool:
+ 95:         return self._settings.WEBHOOK_SSL_VERIFY
+ 96:     
+ 97:     def has_webhook_url(self) -> bool:
+ 98:         return bool(self._settings.WEBHOOK_URL)
+ 99:     
+100:     # Configuration API / Tokens
+101:     
+102:     def get_api_token(self) -> str:
+103:         return self._settings.EXPECTED_API_TOKEN or ""
+104:     
+105:     def verify_api_token(self, token: str) -> bool:
+106:         """Vérifie si un token correspond au token API configuré.
+107:         
+108:         Args:
+109:             token: Token à vérifier
+110:             
+111:         Returns:
+112:             True si le token est valide
+113:         """
+114:         expected = self.get_api_token()
+115:         if not expected:
+116:             return False
+117:         return token == expected
+118:     
+119:     def has_api_token(self) -> bool:
+120:         return bool(self._settings.EXPECTED_API_TOKEN)
+121:     
+122:     def get_test_api_key(self) -> str:
+123:         import os
+124:         return os.environ.get("TEST_API_KEY", "")
+125:     
+126:     def verify_test_api_key(self, key: str) -> bool:
+127:         expected = self.get_test_api_key()
+128:         if not expected:
+129:             return False
+130:         return key == expected
+131:     
+132:     # Configuration Render (Déploiement)
+133:     
+134:     def get_render_config(self) -> dict:
+135:         """Retourne la configuration Render pour déploiement.
+136:         
+137:         Returns:
+138:             dict avec api_key, service_id, deploy_hook_url, clear_cache
+139:         """
+140:         return {
+141:             "api_key": self._settings.RENDER_API_KEY,
+142:             "service_id": self._settings.RENDER_SERVICE_ID,
+143:             "deploy_hook_url": self._settings.RENDER_DEPLOY_HOOK_URL,
+144:             "clear_cache": self._settings.RENDER_DEPLOY_CLEAR_CACHE,
+145:         }
+146:     
+147:     def has_render_config(self) -> bool:
+148:         return bool(
+149:             self._settings.RENDER_API_KEY and self._settings.RENDER_SERVICE_ID
+150:         ) or bool(self._settings.RENDER_DEPLOY_HOOK_URL)
+151:     
+152:     # Présence: feature removed
+153:     
+154:     # Configuration Authentification Dashboard
+155:     
+156:     def get_dashboard_user(self) -> str:
+157:         return self._settings.TRIGGER_PAGE_USER
+158:     
+159:     def get_dashboard_password(self) -> str:
+160:         return self._settings.TRIGGER_PAGE_PASSWORD
+161:     
+162:     def verify_dashboard_credentials(self, username: str, password: str) -> bool:
+163:         """Vérifie les credentials du dashboard.
+164:         
+165:         Args:
+166:             username: Nom d'utilisateur
+167:             password: Mot de passe
+168:             
+169:         Returns:
+170:             True si credentials valides
+171:         """
+172:         return (
+173:             username == self._settings.TRIGGER_PAGE_USER
+174:             and password == self._settings.TRIGGER_PAGE_PASSWORD
+175:         )
+176:     
+177:     # Configuration Déduplication
+178:     
+179:     def is_email_id_dedup_disabled(self) -> bool:
+180:         return bool(self._settings.DISABLE_EMAIL_ID_DEDUP)
+181:     
+182:     def is_subject_group_dedup_enabled(self) -> bool:
+183:         return bool(self._settings.ENABLE_SUBJECT_GROUP_DEDUP)
+184:     
+185:     def get_dedup_redis_keys(self) -> dict:
+186:         """Retourne les clés Redis pour la déduplication.
+187:         
+188:         Returns:
+189:             dict avec email_ids_key, subject_groups_key, subject_group_prefix
+190:         """
+191:         return {
+192:             "email_ids_key": self._settings.PROCESSED_EMAIL_IDS_REDIS_KEY,
+193:             "subject_groups_key": self._settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
+194:             "subject_group_prefix": self._settings.SUBJECT_GROUP_REDIS_PREFIX,
+195:             "subject_group_ttl": self._settings.SUBJECT_GROUP_TTL_SECONDS,
+196:         }
+197:     
+198:     # Configuration Make.com
+199:     
+200:     def get_makecom_api_key(self) -> str:
+201:         return self._settings.MAKECOM_API_KEY or ""
+202:     
+203:     def has_makecom_api_key(self) -> bool:
+204:         return bool(self._settings.MAKECOM_API_KEY)
+205:     
+206:     # Configuration Tâches de Fond
+207:     
+208:     def is_background_tasks_enabled(self) -> bool:
+209:         return bool(getattr(self._settings, "ENABLE_BACKGROUND_TASKS", False))
+210:     
+211:     def get_bg_poller_lock_file(self) -> str:
+212:         return getattr(
+213:             self._settings,
+214:             "BG_POLLER_LOCK_FILE",
+215:             "/tmp/render_signal_server_email_poller.lock",
+216:         )
+217:     
+218:     # Chemins de Fichiers
+219:     
+220:     def get_runtime_flags_file(self):
+221:         return self._settings.RUNTIME_FLAGS_FILE
+222:     
+223:     def get_polling_config_file(self):
+224:         return self._settings.POLLING_CONFIG_FILE
+225:     
+226:     def get_trigger_signal_file(self):
+227:         return self._settings.TRIGGER_SIGNAL_FILE
+228:     
+229:     # Méthodes Utilitaires
+230:     
+231:     def get_raw_settings(self):
+232:         return self._settings
+233:     
+234:     def __repr__(self) -> str:
+235:         return f"<ConfigService(email_valid={self.is_email_config_valid()}, webhook={self.has_webhook_url()})>"
+````
+
+## File: services/deduplication_service.py
+````python
+  1: """
+  2: services.deduplication_service
+  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  4: 
+  5: Service pour la déduplication d'emails avec Redis et fallback mémoire.
+  6: 
+  7: Features:
+  8: - Déduplication par email ID (identifiant unique de l'email)
+  9: - Déduplication par subject group (regroupement par sujet)
+ 10: - Fallback automatique en mémoire si Redis indisponible
+ 11: - Scoping mensuel optionnel pour subject groups
+ 12: - Thread-safe via design immutable
+ 13: 
+ 14: Usage:
+ 15:     from services import DeduplicationService, ConfigService
+ 16:     from config.polling_config import PollingConfigService
+ 17:     
+ 18:     config = ConfigService()
+ 19:     polling_config = PollingConfigService()
+ 20:     
+ 21:     dedup = DeduplicationService(
+ 22:         redis_client=redis_client,
+ 23:         logger=app.logger,
+ 24:         config_service=config,
+ 25:         polling_config_service=polling_config
+ 26:     )
+ 27:     
+ 28:     if not dedup.is_email_processed(email_id):
+ 29:         dedup.mark_email_processed(email_id)
+ 30:     
+ 31:     if not dedup.is_subject_group_processed(subject):
+ 32:         dedup.mark_subject_group_processed(subject)
+ 33: """
+ 34: 
+ 35: from __future__ import annotations
+ 36: 
+ 37: import hashlib
+ 38: import re
+ 39: from datetime import datetime
+ 40: from typing import Optional, Set, TYPE_CHECKING
+ 41: 
+ 42: if TYPE_CHECKING:
+ 43:     from services.config_service import ConfigService
+ 44:     from config.polling_config import PollingConfigService
+ 45: 
+ 46: from utils.text_helpers import (
+ 47:     normalize_no_accents_lower_trim,
+ 48:     strip_leading_reply_prefixes,
+ 49: )
+ 50: 
+ 51: 
+ 52: class DeduplicationService:
+ 53:     """Service pour la déduplication d'emails et subject groups.
+ 54:     
+ 55:     Attributes:
+ 56:         _redis: Client Redis optionnel
+ 57:         _logger: Logger pour diagnostics
+ 58:         _config: ConfigService pour accès à la configuration
+ 59:         _polling_config: PollingConfigService pour timezone
+ 60:         _processed_email_ids: Set en mémoire (fallback)
+ 61:         _processed_subject_groups: Set en mémoire (fallback)
+ 62:     """
+ 63:     
+ 64:     def __init__(
+ 65:         self,
+ 66:         redis_client=None,
+ 67:         logger=None,
+ 68:         config_service: Optional[ConfigService] = None,
+ 69:         polling_config_service: Optional[PollingConfigService] = None,
+ 70:     ):
+ 71:         """Initialise le service de déduplication.
+ 72:         
+ 73:         Args:
+ 74:             redis_client: Client Redis optionnel (None = fallback mémoire)
+ 75:             logger: Logger optionnel pour diagnostics
+ 76:             config_service: ConfigService pour configuration
+ 77:             polling_config_service: PollingConfigService pour timezone
+ 78:         """
+ 79:         self._redis = redis_client
+ 80:         self._logger = logger
+ 81:         self._config = config_service
+ 82:         self._polling_config = polling_config_service
+ 83:         
+ 84:         # Fallbacks en mémoire (process-local uniquement)
+ 85:         self._processed_email_ids: Set[str] = set()
+ 86:         self._processed_subject_groups: Set[str] = set()
+ 87:     
+ 88:     # =========================================================================
+ 89:     # Déduplication Email ID
+ 90:     # =========================================================================
+ 91:     
+ 92:     def is_email_processed(self, email_id: str) -> bool:
+ 93:         """Vérifie si un email a déjà été traité.
+ 94:         
+ 95:         Args:
+ 96:             email_id: Identifiant unique de l'email
+ 97:             
+ 98:         Returns:
+ 99:             True si déjà traité, False sinon
+100:         """
+101:         if not email_id:
+102:             return False
+103:         
+104:         if self.is_email_dedup_disabled():
+105:             return False
+106:         
+107:         # Essayer Redis d'abord
+108:         if self._use_redis():
+109:             try:
+110:                 keys_config = self._get_dedup_keys()
+111:                 key = keys_config["email_ids_key"]
+112:                 return bool(self._redis.sismember(key, email_id))
+113:             except Exception as e:
+114:                 if self._logger:
+115:                     self._logger.error(
+116:                         f"DEDUP: Error checking email ID '{email_id}': {e}. "
+117:                         f"Assuming NOT processed."
+118:                     )
+119:                 # Fall through to memory
+120:         
+121:         # Fallback mémoire
+122:         return email_id in self._processed_email_ids
+123:     
+124:     def mark_email_processed(self, email_id: str) -> bool:
+125:         """Marque un email comme traité.
+126:         
+127:         Args:
+128:             email_id: Identifiant unique de l'email
+129:             
+130:         Returns:
+131:             True si marqué avec succès
+132:         """
+133:         if not email_id:
+134:             return False
+135:         
+136:         # Si dédup désactivée, ne rien faire
+137:         if self.is_email_dedup_disabled():
+138:             return True  # Considéré comme succès (pas d'erreur)
+139:         
+140:         # Essayer Redis d'abord
+141:         if self._use_redis():
+142:             try:
+143:                 keys_config = self._get_dedup_keys()
+144:                 key = keys_config["email_ids_key"]
+145:                 self._redis.sadd(key, email_id)
+146:                 return True
+147:             except Exception as e:
+148:                 if self._logger:
+149:                     self._logger.error(f"DEDUP: Error marking email ID '{email_id}': {e}")
+150:                 # Fall through to memory
+151:         
+152:         # Fallback mémoire
+153:         self._processed_email_ids.add(email_id)
+154:         return True
+155:     
+156:     # =========================================================================
+157:     # Déduplication Subject Group
+158:     # =========================================================================
+159:     
+160:     def is_subject_group_processed(self, subject: str) -> bool:
+161:         """Vérifie si un subject group a été traité.
+162:         
+163:         Args:
+164:             subject: Sujet de l'email
+165:             
+166:         Returns:
+167:             True si déjà traité
+168:         """
+169:         if not subject:
+170:             return False
+171:         
+172:         if not self.is_subject_dedup_enabled():
+173:             return False
+174:         
+175:         # Générer l'ID du groupe
+176:         group_id = self.generate_subject_group_id(subject)
+177:         scoped_id = self._get_scoped_group_id(group_id)
+178:         
+179:         # Essayer Redis d'abord
+180:         if self._use_redis():
+181:             try:
+182:                 keys_config = self._get_dedup_keys()
+183:                 ttl_seconds = keys_config["subject_group_ttl"]
+184:                 ttl_prefix = keys_config["subject_group_prefix"]
+185:                 groups_key = keys_config["subject_groups_key"]
+186:                 
+187:                 if ttl_seconds and ttl_seconds > 0:
+188:                     ttl_key = ttl_prefix + scoped_id
+189:                     val = self._redis.get(ttl_key)
+190:                     if val is not None:
+191:                         return True
+192:                 
+193:                 return bool(self._redis.sismember(groups_key, scoped_id))
+194:             except Exception as e:
+195:                 if self._logger:
+196:                     self._logger.error(
+197:                         f"DEDUP: Error checking subject group '{group_id}': {e}. "
+198:                         f"Assuming NOT processed."
+199:                     )
+200:                 # Fall through to memory
+201:         
+202:         # Fallback mémoire
+203:         return scoped_id in self._processed_subject_groups
+204:     
+205:     def mark_subject_group_processed(self, subject: str) -> bool:
+206:         """Marque un subject group comme traité.
+207:         
+208:         Args:
+209:             subject: Sujet de l'email
+210:             
+211:         Returns:
+212:             True si succès
+213:         """
+214:         if not subject:
+215:             return False
+216:         
+217:         # Si dédup désactivée, ne rien faire
+218:         if not self.is_subject_dedup_enabled():
+219:             return True
+220:         
+221:         # Générer l'ID du groupe
+222:         group_id = self.generate_subject_group_id(subject)
+223:         scoped_id = self._get_scoped_group_id(group_id)
+224:         
+225:         # Essayer Redis d'abord
+226:         if self._use_redis():
+227:             try:
+228:                 keys_config = self._get_dedup_keys()
+229:                 ttl_seconds = keys_config["subject_group_ttl"]
+230:                 ttl_prefix = keys_config["subject_group_prefix"]
+231:                 groups_key = keys_config["subject_groups_key"]
+232:                 
+233:                 # Marquer avec TTL si configuré
+234:                 if ttl_seconds and ttl_seconds > 0:
+235:                     ttl_key = ttl_prefix + scoped_id
+236:                     self._redis.set(ttl_key, 1, ex=ttl_seconds)
+237:                 
+238:                 # Ajouter au set permanent
+239:                 self._redis.sadd(groups_key, scoped_id)
+240:                 return True
+241:             except Exception as e:
+242:                 if self._logger:
+243:                     self._logger.error(f"DEDUP: Error marking subject group '{group_id}': {e}")
+244:                 # Fall through to memory
+245:         
+246:         # Fallback mémoire
+247:         self._processed_subject_groups.add(scoped_id)
+248:         return True
+249:     
+250:     def generate_subject_group_id(self, subject: str) -> str:
+251:         """Génère un ID de groupe stable pour un sujet.
+252:         
+253:         Heuristique:
+254:         - Normalise le sujet (sans accents, minuscules, espaces réduits)
+255:         - Retire les préfixes Re:/Fwd:
+256:         - Si détecte "Média Solution Missions Recadrage Lot <num>" → groupe par lot
+257:         - Sinon si détecte "Lot <num>" → groupe par lot
+258:         - Sinon → hash MD5 du sujet normalisé
+259:         
+260:         Args:
+261:             subject: Sujet de l'email
+262:             
+263:         Returns:
+264:             Identifiant de groupe stable
+265:         """
+266:         # Normaliser
+267:         norm = normalize_no_accents_lower_trim(subject or "")
+268:         core = strip_leading_reply_prefixes(norm)
+269:         
+270:         # Essayer d'extraire un numéro de lot
+271:         m_lot = re.search(r"\blot\s+(\d+)\b", core)
+272:         lot_part = m_lot.group(1) if m_lot else None
+273:         
+274:         # Détecter les mots-clés Média Solution
+275:         is_media_solution = (
+276:             all(tok in core for tok in ["media solution", "missions recadrage", "lot"])
+277:             if core
+278:             else False
+279:         )
+280:         
+281:         if is_media_solution and lot_part:
+282:             return f"media_solution_missions_recadrage_lot_{lot_part}"
+283:         
+284:         if lot_part:
+285:             return f"lot_{lot_part}"
+286:         
+287:         # Fallback: hash du sujet normalisé
+288:         subject_hash = hashlib.md5(core.encode("utf-8")).hexdigest()
+289:         return f"subject_hash_{subject_hash}"
+290:     
+291:     # =========================================================================
+292:     # Configuration
+293:     # =========================================================================
+294:     
+295:     def is_email_dedup_disabled(self) -> bool:
+296:         """Vérifie si la déduplication par email ID est désactivée.
+297:         
+298:         Returns:
+299:             True si désactivée
+300:         """
+301:         if self._config:
+302:             return self._config.is_email_id_dedup_disabled()
+303:         return False
+304:     
+305:     def is_subject_dedup_enabled(self) -> bool:
+306:         """Vérifie si la déduplication par subject group est activée.
+307:         
+308:         Returns:
+309:             True si activée
+310:         """
+311:         if self._config:
+312:             return self._config.is_subject_group_dedup_enabled()
+313:         return False
+314:     
+315:     # =========================================================================
+316:     # Helpers Internes
+317:     # =========================================================================
+318:     
+319:     def _get_scoped_group_id(self, group_id: str) -> str:
+320:         """Applique le scoping mensuel si activé.
+321:         
+322:         Args:
+323:             group_id: ID de base du groupe
+324:             
+325:         Returns:
+326:             ID scopé (ex: "2025-11:lot_42") si scoping activé, sinon ID original
+327:         """
+328:         if not self.is_subject_dedup_enabled():
+329:             return group_id
+330:         
+331:         # Scoping mensuel basé sur le timezone de polling
+332:         try:
+333:             tz = self._polling_config.get_tz() if self._polling_config else None
+334:             now_local = datetime.now(tz) if tz else datetime.now()
+335:         except Exception:
+336:             now_local = datetime.now()
+337:         
+338:         month_prefix = now_local.strftime("%Y-%m")
+339:         return f"{month_prefix}:{group_id}"
+340:     
+341:     def _use_redis(self) -> bool:
+342:         """Vérifie si Redis est disponible.
+343:         
+344:         Returns:
+345:             True si Redis peut être utilisé
+346:         """
+347:         return self._redis is not None
+348:     
+349:     def _get_dedup_keys(self) -> dict:
+350:         """Récupère les clés Redis depuis la configuration.
+351:         
+352:         Returns:
+353:             dict avec email_ids_key, subject_groups_key, etc.
+354:         """
+355:         if self._config:
+356:             return self._config.get_dedup_redis_keys()
+357:         
+358:         # Fallback sur valeurs par défaut
+359:         return {
+360:             "email_ids_key": "r:ss:processed_email_ids:v1",
+361:             "subject_groups_key": "r:ss:processed_subject_groups:v1",
+362:             "subject_group_prefix": "r:ss:subj_grp:",
+363:             "subject_group_ttl": 2592000,  # 30 jours
+364:         }
+365:     
+366:     # =========================================================================
+367:     # Diagnostic & Stats
+368:     # =========================================================================
+369:     
+370:     def get_memory_stats(self) -> dict:
+371:         """Retourne les statistiques du fallback mémoire.
+372:         
+373:         Returns:
+374:             dict avec email_ids_count, subject_groups_count
+375:         """
+376:         return {
+377:             "email_ids_count": len(self._processed_email_ids),
+378:             "subject_groups_count": len(self._processed_subject_groups),
+379:             "using_redis": self._use_redis(),
+380:         }
+381:     
+382:     def clear_memory_cache(self) -> None:
+383:         """Vide le cache mémoire (pour tests ou débogage)."""
+384:         self._processed_email_ids.clear()
+385:         self._processed_subject_groups.clear()
+386:     
+387:     def __repr__(self) -> str:
+388:         """Représentation du service."""
+389:         backend = "Redis" if self._use_redis() else "Memory"
+390:         email_dedup = "disabled" if self.is_email_dedup_disabled() else "enabled"
+391:         subject_dedup = "enabled" if self.is_subject_dedup_enabled() else "disabled"
+392:         return (
+393:             f"<DeduplicationService(backend={backend}, "
+394:             f"email_dedup={email_dedup}, subject_dedup={subject_dedup})>"
+395:         )
+````
+
+## File: services/README.md
+````markdown
+  1: # Services - Architecture Orientée Services
+  2: 
+  3: **Date de création:** 2025-11-17  
+  4: **Version:** 1.0  
+  5: **Status:** ✅ Production Ready
+  6: 
+  7: ---
+  8: 
+  9: ## 📋 Vue d'Ensemble
+ 10: 
+ 11: Le dossier `services/` contient 8 services professionnels qui encapsulent la logique métier de l'application. Ces services fournissent des interfaces cohérentes et testables pour accéder aux fonctionnalités clés.
+ 12: 
+ 13: ### Philosophie
+ 14: 
+ 15: - **Separation of Concerns** - Un service = Une responsabilité
+ 16: - **Dependency Injection** - Services configurables via injection
+ 17: - **Testabilité** - Mocks faciles, tests isolés
+ 18: - **Robustesse** - Gestion d'erreurs, fallbacks automatiques
+ 19: - **Performance** - Cache intelligent, Singletons
+ 20: 
+ 21: ---
+ 22: 
+ 23: ## 🗂️ Structure
+ 24: 
+ 25: ```
+ 26: services/
+ 27: ├── __init__.py                    # Module principal - exports all services
+ 28: ├── config_service.py              # Configuration centralisée
+ 29: ├── runtime_flags_service.py       # Flags runtime avec cache (Singleton)
+ 30: ├── webhook_config_service.py      # Webhooks + validation (Singleton)
+ 31: ├── auth_service.py                # Authentification unifiée
+ 32: ├── deduplication_service.py       # Déduplication emails/subject groups
+ 33: ├── magic_link_service.py          # Magic links authentification (Singleton)
+ 34: ├── r2_transfer_service.py         # Offload Cloudflare R2 (Singleton)
+ 35: └── README.md                      # Ce fichier
+ 36: ```
+ 37: 
+ 38: ---
+ 39: 
+ 40: ## 📦 Services Disponibles
+ 41: 
+ 42: ### 1. ConfigService
+ 43: 
+ 44: **Fichier:** `config_service.py`  
+ 45: **Pattern:** Standard (instance par appel)  
+ 46: **Responsabilité:** Accès centralisé à toute la configuration applicative
+ 47: 
+ 48: **Fonctionnalités:**
+ 49: - Configuration Email/IMAP
+ 50: - Configuration Webhooks
+ 51: - Tokens API
+ 52: - Configuration Render (déploiement)
+ 53: - Authentification Dashboard
+ 54: - Clés Redis Déduplication
+ 55: 
+ 56: **Usage:**
+ 57: ```python
+ 58: from services import ConfigService
+ 59: 
+ 60: config = ConfigService()
+ 61: 
+ 62: # Email config
+ 63: if config.is_email_config_valid():
+ 64:     email_cfg = config.get_email_config()
+ 65:     print(f"Email: {email_cfg['address']}")
+ 66: 
+ 67: # Webhook config
+ 68: if config.has_webhook_url():
+ 69:     url = config.get_webhook_url()
+ 70: 
+ 71: # API token
+ 72: if config.verify_api_token(token):
+ 73:     # Token valide
+ 74:     pass
+ 75: ```
+ 76: 
+ 77: ---
+ 78: 
+ 79: ### 2. RuntimeFlagsService
+ 80: 
+ 81: **Fichier:** `runtime_flags_service.py`  
+ 82: **Pattern:** Singleton  
+ 83: **Responsabilité:** Gestion flags runtime avec cache intelligent
+ 84: 
+ 85: **Fonctionnalités:**
+ 86: - Cache mémoire avec TTL (60s par défaut)
+ 87: - Persistence JSON automatique
+ 88: - Invalidation cache intelligente
+ 89: - Lecture/écriture atomique
+ 90: 
+ 91: **Usage:**
+ 92: ```python
+ 93: from services import RuntimeFlagsService
+ 94: from pathlib import Path
+ 95: 
+ 96: # Initialisation (une fois au démarrage)
+ 97: service = RuntimeFlagsService.get_instance(
+ 98:     file_path=Path("debug/runtime_flags.json"),
+ 99:     defaults={
+100:         "disable_dedup": False,
+101:         "enable_feature": True,
+102:     }
+103: )
+104: 
+105: # Utilisation
+106: if service.get_flag("disable_dedup"):
+107:     # Bypass dedup
+108:     pass
+109: 
+110: # Modifier un flag (persiste immédiatement)
+111: service.set_flag("disable_dedup", True)
+112: 
+113: # Mise à jour multiple atomique
+114: service.update_flags({
+115:     "disable_dedup": False,
+116:     "enable_feature": True,
+117: })
+118: ```
+119: 
+120: ---
+121: 
+122: ### 3. WebhookConfigService
+123: 
+124: **Fichier:** `webhook_config_service.py`  
+125: **Pattern:** Singleton  
+126: **Responsabilité:** Configuration webhooks avec validation stricte
+127: 
+128: **Fonctionnalités:**
+129: - Validation stricte URLs (HTTPS requis)
+130: - Normalisation URLs Make.com
+131: - Configuration Absence Globale
+132: - SSL verify toggle
+133: - Cache avec invalidation
+134: 
+135: **Usage:**
+136: ```python
+137: from services import WebhookConfigService
+138: from pathlib import Path
+139: 
+140: # Initialisation
+141: service = WebhookConfigService.get_instance(
+142:     file_path=Path("debug/webhook_config.json")
+143: )
+144: 
+145: # Définir URL avec validation
+146: ok, msg = service.set_webhook_url("https://hook.eu2.make.com/abc123")
+147: if ok:
+148:     print("URL valide et enregistrée")
+149: else:
+150:     print(f"Erreur: {msg}")
+151: 
+152: # Format Make.com auto-normalisé
+153: ok, msg = service.set_webhook_url("abc123@hook.eu2.make.com")
+154: # Converti en: https://hook.eu2.make.com/abc123
+155: 
+156: # Configuration Absence Globale
+157: absence = service.get_absence_config()
+158: service.update_absence_config({
+159:     "absence_pause_enabled": True,
+160:     "absence_pause_days": ["saturday", "sunday"],
+161: })
+162: ```
+163: 
+164: ---
+165: 
+166: ### 4. AuthService
+167: 
+168: **Fichier:** `auth_service.py`  
+169: **Pattern:** Standard (inject ConfigService)  
+170: **Responsabilité:** Authentification unifiée (dashboard + API)
+171: 
+172: **Fonctionnalités:**
+173: - Authentification dashboard (Flask-Login)
+174: - Authentification API (Bearer token)
+175: - Authentification endpoints test (X-API-Key)
+176: - Gestion LoginManager
+177: - Décorateurs réutilisables
+178: 
+179: **Usage:**
+180: ```python
+181: from services import ConfigService, AuthService
+182: from flask import Flask, request
+183: 
+184: app = Flask(__name__)
+185: config = ConfigService()
+186: auth = AuthService(config)
+187: 
+188: # Initialiser Flask-Login
+189: auth.init_flask_login(app)
+190: 
+191: # Dashboard login
+192: username = request.form.get('username')
+193: password = request.form.get('password')
+194: if auth.verify_dashboard_credentials(username, password):
+195:     user = auth.create_user(username)
+196:     login_user(user)
+197: 
+198: # Décorateur API
+199: @app.route('/api/protected')
+200: @auth.api_key_required
+201: def protected():
+202:     return {"data": "secret"}
+203: 
+204: # Décorateur test API
+205: @app.route('/api/test/validate')
+206: @auth.test_api_key_required
+207: def test_endpoint():
+208:     return {"status": "ok"}
+209: ```
+210: 
+211: ---
+212: 
+213: ### 5. DeduplicationService
+214: 
+215: **Fichier:** `deduplication_service.py`  
+216: **Pattern:** Standard (inject services)  
+217: **Responsabilité:** Déduplication emails et subject groups
+218: 
+219: **Fonctionnalités:**
+220: - Dédup par email ID
+221: - Dédup par subject group
+222: - Fallback mémoire si Redis down
+223: - Scoping mensuel automatique
+224: - Génération subject group ID intelligente
+225: 
+226: **Usage:**
+227: ```python
+228: from services import DeduplicationService, ConfigService
+229: from config.polling_config import PollingConfigService
+230: 
+231: config = ConfigService()
+232: polling_config = PollingConfigService()
+233: 
+234: dedup = DeduplicationService(
+235:     redis_client=redis_client,  # None = fallback mémoire
+236:     logger=app.logger,
+237:     config_service=config,
+238:     polling_config_service=polling_config,
+239: )
+240: 
+241: # Email ID dedup
+242: email_id = "unique-email-id-123"
+243: if not dedup.is_email_processed(email_id):
+244:     # Traiter l'email
+245:     process_email(email_id)
+246:     dedup.mark_email_processed(email_id)
+247: 
+248: # Subject group dedup
+249: subject = "Média Solution - Missions Recadrage - Lot 42"
+250: if not dedup.is_subject_group_processed(subject):
+251:     # Traiter
+252:     process_subject(subject)
+253:     dedup.mark_subject_group_processed(subject)
+254: 
+255: # Générer ID de groupe
+256: group_id = dedup.generate_subject_group_id(subject)
+257: # → "media_solution_missions_recadrage_lot_42"
+258: 
+259: # Stats
+260: stats = dedup.get_memory_stats()
+261: print(f"Email IDs in memory: {stats['email_ids_count']}")
+262: print(f"Using Redis: {stats['using_redis']}")
+263: ```
+264: 
+265: ---
+266: 
+267: ## 🚀 Quick Start
+268: 
+269: ### Utilisation dans app_render.py
+270: 
+271: Les services sont **déjà initialisés** dans `app_render.py` :
+272: 
+273: ```python
+274: # Services disponibles globalement dans app_render.py
+275: _config_service = ConfigService()
+276: _runtime_flags_service = RuntimeFlagsService.get_instance(...)
+277: _webhook_service = WebhookConfigService.get_instance(...)
+278: _auth_service = AuthService(_config_service)
+279: _polling_service = PollingConfigService(settings)
+280: _dedup_service = DeduplicationService(...)
+281: _magic_link_service = MagicLinkService.get_instance(...)
+282: _r2_transfer_service = R2TransferService.get_instance(...)
+283: ```
+284: 
+285: **Utiliser directement:**
+286: ```python
+287: # Dans une fonction de app_render.py
+288: def my_function():
+289:     if _config_service.is_email_config_valid():
+290:         # Faire quelque chose
+291:         pass
+292: ```
+293: 
+294: ---
+295: 
+296: ### 6. MagicLinkService
+297: 
+298: **Fichier:** `magic_link_service.py`  
+299: **Pattern:** Singleton  
+300: **Responsabilité:** Génération et validation des magic links pour authentification sans mot de passe
+301: 
+302: **Fonctionnalités:**
+303: - Génération tokens HMAC SHA-256 signés
+304: - Support one-shot (TTL configurable) et permanent
+305: - Stockage partagé via API PHP ou fallback fichier JSON
+306: - Nettoyage automatique tokens expirés
+307: - Validation et consommation sécurisées
+308: 
+309: **Usage:**
+310: ```python
+311: from services import MagicLinkService
+312: 
+313: # Initialisation (automatique via get_instance)
+314: service = MagicLinkService.get_instance()
+315: 
+316: # Générer un magic link one-shot
+317: link_data = service.generate_magic_link(unlimited=False)
+318: print(f"Lien: {link_data['url']}")
+319: print(f"Expire: {link_data['expires_at']}")
+320: 
+321: # Générer un magic link permanent
+322: permanent_link = service.generate_magic_link(unlimited=True)
+323: print(f"Lien permanent: {permanent_link['url']}")
+324: 
+325: # Valider un token
+326: validation = service.validate_magic_link(token)
+327: if validation['valid']:
+328:     print(f"Token valide pour: {validation['purpose']}")
+329: 
+330: # Consommer un token one-shot
+331: if service.consume_magic_link(token):
+332:     print("Token consommé avec succès")
+333: 
+334: # Révoquer manuellement un token
+335: if service.revoke_magic_link(token):
+336:     print("Token révoqué")
+337: 
+338: # Nettoyer les tokens expirés
+339: cleaned = service.cleanup_expired_tokens()
+340: print(f"{cleaned} tokens expirés supprimés")
+341: ```
+342: 
+343: ---
+344: 
+345: ### 7. R2TransferService
+346: 
+347: **Fichier:** `r2_transfer_service.py`  
+348: **Pattern:** Singleton  
+349: **Responsabilité:** Offload Cloudflare R2 pour économiser la bande passante
+350: 
+351: **Fonctionnalités:**
+352: - Normalisation URLs Dropbox (y compris `/scl/fo/`)
+353: - Fetch distant via Worker Cloudflare sécurisé (token X-R2-FETCH-TOKEN)
+354: - Persistance paires `source_url`/`r2_url` + `original_filename`
+355: - Fallback gracieux si Worker indisponible
+356: - Timeout spécifique pour dossiers Dropbox (120s)
+357: - Validation ZIP et métadonnées
+358: 
+359: **Usage:**
+360: ```python
+361: from services import R2TransferService
+362: 
+363: # Initialisation (automatique via get_instance)
+364: service = R2TransferService.get_instance()
+365: 
+366: # Vérifier si le service est activé
+367: if service.is_enabled():
+368:     print("Service R2 activé")
+369:     print(f"Endpoint: {service.get_fetch_endpoint()}")
+370:     print(f"Bucket: {service.get_bucket_name()}")
+371: 
+372: # Demander un offload distant
+373: try:
+374:     result = service.request_remote_fetch(
+375:         source_url="https://www.dropbox.com/scl/fi/...",
+376:         provider="dropbox",
+377:         original_filename="document.pdf"
+378:     )
+379:     if result and result.get('r2_url'):
+380:         print(f"Offload réussi: {result['r2_url']}")
+381:         print(f"Nom original: {result.get('original_filename')}")
+382:     else:
+383:         print("Offload échoué, utilisation URL source")
+384: except Exception as e:
+385:     print(f"Erreur R2: {e}")
+386: 
+387: # Persister manuellement une paire source/R2
+388: service.persist_link_pair(
+389:     source_url="https://example.com/file.pdf",
+390:     r2_url="https://cdn.example.com/file.pdf",
+391:     original_filename="file.pdf"
+392: )
+393: 
+394: # Lister les liens récents
+395: recent_links = service.get_recent_links(limit=10)
+396: for link in recent_links:
+397:     print(f"{link['provider']}: {link['original_filename']}")
+398: ```
+399: 
+400: ---
+401: 
+402: ### 8. PollingConfigService
+403: 
+404: **Fichier:** `config/polling_config.py`  
+405: **Pattern:** Standard  
+406: **Responsabilité:** Configuration du polling IMAP et fenêtres actives
+407: 
+408: **Fonctionnalités:**
+409: - Jours actifs pour polling (0=Lundi à 6=Dimanche)
+410: - Fenêtres horaires (début/fin)
+411: - Liste expéditeurs d'intérêt
+412: - Intervalles polling (actif/inactif)
+413: - Timezone configuration
+414: - Flag UI `enable_polling` persisté
+415: 
+416: **Usage:**
+417: ```python
+418: from config.polling_config import PollingConfigService
+419: 
+420: # Initialisation
+421: service = PollingConfigService()
+422: 
+423: # Jours actifs
+424: active_days = service.get_active_days()  # [0, 1, 2, 3, 4] (Lundi-Vendredi)
+425: 
+426: # Fenêtre horaire
+427: start_hour = service.get_active_start_hour()  # 9
+428: end_hour = service.get_active_end_hour()  # 17
+429: 
+430: # Expéditeurs
+431: senders = service.get_sender_list()  # ["media@example.com", "recadrage@example.com"]
+432: 
+433: # Intervalles
+434: active_interval = service.get_email_poll_interval_s()  # 300 (5 minutes)
+435: inactive_interval = service.get_inactive_check_interval_s()  # 1800 (30 minutes)
+436: 
+437: # Timezone
+438: tz = service.get_tz()  # ZoneInfo("Europe/Paris") ou UTC
+439: 
+440: # Vacances
+441: if service.is_in_vacation():
+442:     print("Période de vacances - polling désactivé")
+443: 
+444: # Flag UI
+445: if service.get_enable_polling():
+446:     print("Polling activé via UI")
+447: else:
+448:     print("Polling désactivé via UI")
+449: ```
+450: 
+451: ### Utilisation dans les Routes (Blueprints)
+452: 
+453: **Option 1: Importer depuis app_render**
+454: ```python
+455: # Dans routes/api_webhooks.py par exemple
+456: from app_render import _config_service, _webhook_service
+457: 
+458: @bp.route('/webhook/config')
+459: def get_config():
+460:     return {
+461:         "url": _webhook_service.get_webhook_url(),
+462:         "ssl_verify": _config_service.get_webhook_ssl_verify(),
+463:     }
+464: ```
+465: 
+466: **Option 2: Créer vos propres instances**
+467: ```python
+468: from services import ConfigService
+469: 
+470: def my_route():
+471:     config = ConfigService()
+472:     # Utiliser config
+473: ```
+474: 
+475: ---
+476: 
+477: ## ✅ Tests
+478: 
+479: Tous les services ont des tests unitaires complets :
+480: 
+481: ```bash
+482: # Lancer tests des services
+483: pytest tests/test_services.py -v
+484: 
+485: # Résultat: 25/25 tests passed (100%)
+486: ```
+487: 
+488: **Couverture:**
+489: - ConfigService: 66.22%
+490: - RuntimeFlagsService: 86.02%
+491: - WebhookConfigService: 57.41%
+492: - AuthService: 49.23%
+493: - DeduplicationService: 41.22%
+494: 
+495: ---
+496: 
+497: ## 📚 Documentation
+498: 
+499: | Document | Description |
+500: |----------|-------------|
+501: | `SERVICES_USAGE_EXAMPLES.md` | Exemples détaillés d'utilisation |
+502: | `REFACTORING_ARCHITECTURE_PLAN.md` | Plan architectural complet |
+503: | `REFACTORING_SERVICES_SUMMARY.md` | Résumé Phase 1 |
+504: | `REFACTORING_PHASE2_SUMMARY.md` | Résumé Phase 2 |
+505: | `tests/test_services.py` | Tests = documentation vivante |
+506: 
+507: ---
+508: 
+509: ## 🔧 Dépannage
+510: 
+511: ### Le service retourne None
+512: 
+513: **Cause:** Échec d'initialisation  
+514: **Solution:** Vérifier les logs au démarrage (préfixe `SVC:`)
+515: 
+516: ```
+517: INFO - SVC: RuntimeFlagsService initialized (cache_ttl=60s)
+518: ERROR - SVC: Failed to initialize WebhookConfigService: ...
+519: ```
+520: 
+521: ### Cache pas mis à jour
+522: 
+523: **Service:** RuntimeFlagsService, WebhookConfigService  
+524: **Solution:** Forcer rechargement
+525: 
+526: ```python
+527: service.reload()  # Invalide cache, force reload depuis disque
+528: ```
+529: 
+530: ### Redis indisponible
+531: 
+532: **Service:** DeduplicationService  
+533: **Comportement:** Fallback automatique en mémoire (process-local)  
+534: **Vérification:**
+535: 
+536: ```python
+537: stats = dedup.get_memory_stats()
+538: print(stats['using_redis'])  # False = fallback mémoire
+539: ```
+540: 
+541: ---
+542: 
+543: ## 🎯 Bonnes Pratiques
+544: 
+545: ### 1. Injecter les Dépendances
+546: 
+547: ```python
+548: # ✅ BON
+549: def my_function(config_service: ConfigService):
+550:     return config_service.get_webhook_url()
+551: 
+552: # ❌ ÉVITER
+553: def my_function():
+554:     config = ConfigService()  # Nouvelle instance à chaque appel
+555:     return config.get_webhook_url()
+556: ```
+557: 
+558: ### 2. Utiliser les Singletons Correctement
+559: 
+560: ```python
+561: # ✅ BON - Initialisation une fois
+562: service = RuntimeFlagsService.get_instance(path, defaults)
+563: 
+564: # ✅ BON - Récupération ensuite
+565: service = RuntimeFlagsService.get_instance()
+566: 
+567: # ❌ ÉVITER - Re-initialisation inutile
+568: service = RuntimeFlagsService.get_instance(path, defaults)  # À chaque fois
+569: ```
+570: 
+571: ### 3. Gérer les Erreurs
+572: 
+573: ```python
+574: # ✅ BON
+575: try:
+576:     ok, msg = webhook_service.set_webhook_url(url)
+577:     if not ok:
+578:         logger.error(f"Invalid webhook: {msg}")
+579: except Exception as e:
+580:     logger.error(f"Failed to set webhook: {e}")
+581: 
+582: # ❌ ÉVITER - Pas de gestion d'erreur
+583: webhook_service.set_webhook_url(url)  # Peut lever exception
+584: ```
+585: 
+586: ---
+587: 
+588: ## 💡 Contribuer
+589: 
+590: ### Ajouter un Nouveau Service
+591: 
+592: 1. Créer `services/my_service.py`
+593: 2. Implémenter la classe avec docstrings
+594: 3. Ajouter au `services/__init__.py`
+595: 4. Créer tests dans `tests/test_services.py`
+596: 5. Documenter dans ce README
+597: 
+598: ### Standards de Code
+599: 
+600: - ✅ Annotations de types complètes
+601: - ✅ Docstrings Google style
+602: - ✅ Gestion d'erreurs robuste
+603: - ✅ Tests unitaires (>70% couverture)
+604: - ✅ Logs avec préfixe `SVC:`
+605: 
+606: ---
+607: 
+608: ## 📞 Support
+609: 
+610: **Questions ?**  
+611: Voir les exemples dans `SERVICES_USAGE_EXAMPLES.md`
+612: 
+613: **Bugs ?**  
+614: Vérifier les logs (préfixe `SVC:`) et les tests
+615: 
+616: **Améliora tions ?**  
+617: Suivre le plan dans `REFACTORING_ARCHITECTURE_PLAN.md`
+618: 
+619: ---
+620: 
+621: **Version:** 1.0  
+622: **Status:** ✅ Production Ready  
+623: **Tests:** 25/25 passed (100%)  
+624: **Last Update:** 2025-11-17
 ````
 
 ## File: services/routing_rules_service.py
@@ -2661,6 +4490,307 @@ requirements.txt
 317:             )
 318: 
 319:         return True, "ok", normalized
+````
+
+## File: services/runtime_flags_service.py
+````python
+  1: """
+  2: services.runtime_flags_service
+  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  4: 
+  5: Service pour gérer les flags runtime avec cache intelligent et persistence.
+  6: 
+  7: Features:
+  8: - Pattern Singleton (instance unique)
+  9: - Cache en mémoire avec TTL
+ 10: - Persistence JSON automatique
+ 11: - Thread-safe (via design immutable)
+ 12: - Validation des valeurs
+ 13: 
+ 14: Usage:
+ 15:     from services import RuntimeFlagsService
+ 16:     from pathlib import Path
+ 17:     
+ 18:     # Initialisation (une seule fois au démarrage)
+ 19:     service = RuntimeFlagsService.get_instance(
+ 20:         file_path=Path("debug/runtime_flags.json"),
+ 21:         defaults={
+ 22:             "disable_email_id_dedup": False,
+ 23:             "allow_custom_webhook_without_links": False,
+ 24:         }
+ 25:     )
+ 26:     
+ 27:     # Utilisation
+ 28:     if service.get_flag("disable_email_id_dedup"):
+ 29:         # ...
+ 30:     
+ 31:     service.set_flag("disable_email_id_dedup", True)
+ 32: """
+ 33: 
+ 34: from __future__ import annotations
+ 35: 
+ 36: import json
+ 37: import os
+ 38: import threading
+ 39: import time
+ 40: from pathlib import Path
+ 41: from typing import Dict, Optional, Any
+ 42: 
+ 43: 
+ 44: class RuntimeFlagsService:
+ 45:     """Service pour gérer les flags runtime avec cache et persistence.
+ 46:     
+ 47:     Implémente le pattern Singleton pour garantir une instance unique.
+ 48:     Le cache est invalidé automatiquement après un TTL configuré.
+ 49:     
+ 50:     Attributes:
+ 51:         _instance: Instance singleton
+ 52:         _file_path: Chemin du fichier JSON de persistence
+ 53:         _defaults: Valeurs par défaut des flags
+ 54:         _cache: Cache en mémoire des flags
+ 55:         _cache_timestamp: Timestamp du dernier chargement du cache
+ 56:         _cache_ttl: Durée de vie du cache en secondes
+ 57:     """
+ 58:     
+ 59:     _instance: Optional[RuntimeFlagsService] = None
+ 60:     
+ 61:     def __init__(self, file_path: Path, defaults: Dict[str, bool]):
+ 62:         """Initialise le service (utiliser get_instance() de préférence).
+ 63:         
+ 64:         Args:
+ 65:             file_path: Chemin du fichier JSON
+ 66:             defaults: Dictionnaire des valeurs par défaut
+ 67:         """
+ 68:         self._lock = threading.RLock()
+ 69:         self._file_path = file_path
+ 70:         self._defaults = defaults
+ 71:         self._cache: Optional[Dict[str, bool]] = None
+ 72:         self._cache_timestamp: Optional[float] = None
+ 73:         self._cache_ttl = 60  # 60 secondes
+ 74:     
+ 75:     @classmethod
+ 76:     def get_instance(
+ 77:         cls,
+ 78:         file_path: Optional[Path] = None,
+ 79:         defaults: Optional[Dict[str, bool]] = None
+ 80:     ) -> RuntimeFlagsService:
+ 81:         """Récupère ou crée l'instance singleton.
+ 82:         
+ 83:         Args:
+ 84:             file_path: Chemin du fichier (requis à la première création)
+ 85:             defaults: Valeurs par défaut (requis à la première création)
+ 86:             
+ 87:         Returns:
+ 88:             Instance unique du service
+ 89:             
+ 90:         Raises:
+ 91:             ValueError: Si instance pas encore créée et paramètres manquants
+ 92:         """
+ 93:         if cls._instance is None:
+ 94:             if file_path is None or defaults is None:
+ 95:                 raise ValueError(
+ 96:                     "RuntimeFlagsService: file_path and defaults required for first initialization"
+ 97:                 )
+ 98:             cls._instance = cls(file_path, defaults)
+ 99:         return cls._instance
+100:     
+101:     @classmethod
+102:     def reset_instance(cls) -> None:
+103:         """Réinitialise l'instance singleton (pour tests uniquement)."""
+104:         cls._instance = None
+105:     
+106:     # =========================================================================
+107:     # Accès aux Flags
+108:     # =========================================================================
+109:     
+110:     def get_flag(self, key: str, default: Optional[bool] = None) -> bool:
+111:         """Récupère la valeur d'un flag avec cache.
+112:         
+113:         Args:
+114:             key: Nom du flag
+115:             default: Valeur par défaut si flag inexistant
+116:             
+117:         Returns:
+118:             Valeur du flag (bool)
+119:         """
+120:         flags = self._get_cached_flags()
+121:         if key in flags:
+122:             return flags[key]
+123:         if default is not None:
+124:             return default
+125:         return self._defaults.get(key, False)
+126:     
+127:     def set_flag(self, key: str, value: bool) -> bool:
+128:         """Définit la valeur d'un flag et persiste immédiatement.
+129:         
+130:         Args:
+131:             key: Nom du flag
+132:             value: Nouvelle valeur (bool)
+133:             
+134:         Returns:
+135:             True si sauvegarde réussie, False sinon
+136:         """
+137:         with self._lock:
+138:             flags = self._load_from_disk()
+139:             flags[key] = bool(value)
+140:             if self._save_to_disk(flags):
+141:                 self._invalidate_cache()
+142:                 return True
+143:             return False
+144:     
+145:     def get_all_flags(self) -> Dict[str, bool]:
+146:         """Retourne tous les flags actuels.
+147:         
+148:         Returns:
+149:             Dictionnaire complet des flags
+150:         """
+151:         return dict(self._get_cached_flags())
+152:     
+153:     def update_flags(self, updates: Dict[str, bool]) -> bool:
+154:         """Met à jour plusieurs flags atomiquement.
+155:         
+156:         Args:
+157:             updates: Dictionnaire des flags à mettre à jour
+158:             
+159:         Returns:
+160:             True si sauvegarde réussie, False sinon
+161:         """
+162:         with self._lock:
+163:             flags = self._load_from_disk()
+164:             for key, value in updates.items():
+165:                 flags[key] = bool(value)
+166:             if self._save_to_disk(flags):
+167:                 self._invalidate_cache()
+168:                 return True
+169:             return False
+170:     
+171:     # =========================================================================
+172:     # Gestion du Cache
+173:     # =========================================================================
+174:     
+175:     def _get_cached_flags(self) -> Dict[str, bool]:
+176:         """Récupère les flags depuis le cache ou recharge depuis le disque.
+177:         
+178:         Returns:
+179:             Dictionnaire des flags
+180:         """
+181:         now = time.time()
+182: 
+183:         with self._lock:
+184:             if (
+185:                 self._cache is not None
+186:                 and self._cache_timestamp is not None
+187:                 and (now - self._cache_timestamp) < self._cache_ttl
+188:             ):
+189:                 return dict(self._cache)
+190: 
+191:             self._cache = self._load_from_disk()
+192:             self._cache_timestamp = now
+193:             return dict(self._cache)
+194:     
+195:     def _invalidate_cache(self) -> None:
+196:         """Invalide le cache pour forcer un rechargement au prochain accès."""
+197:         with self._lock:
+198:             self._cache = None
+199:             self._cache_timestamp = None
+200:     
+201:     def reload(self) -> None:
+202:         """Force le rechargement des flags depuis le disque."""
+203:         self._invalidate_cache()
+204:     
+205:     # =========================================================================
+206:     # Persistence (I/O Disk)
+207:     # =========================================================================
+208:     
+209:     def _load_from_disk(self) -> Dict[str, bool]:
+210:         """Charge les flags depuis le fichier JSON avec fallback sur defaults.
+211:         
+212:         Returns:
+213:             Dictionnaire des flags fusionnés avec les defaults
+214:         """
+215:         data: Dict[str, Any] = {}
+216:         
+217:         try:
+218:             if self._file_path.exists():
+219:                 with open(self._file_path, "r", encoding="utf-8") as f:
+220:                     raw = json.load(f) or {}
+221:                     if isinstance(raw, dict):
+222:                         data.update(raw)
+223:         except Exception:
+224:             # Erreur de lecture: utiliser defaults uniquement
+225:             pass
+226:         
+227:         # Fusionner avec defaults (defaults en priorité pour clés manquantes)
+228:         result = dict(self._defaults)
+229:         
+230:         # Appliquer uniquement les clés connues depuis le fichier
+231:         for key, value in data.items():
+232:             if key in self._defaults:
+233:                 result[key] = bool(value)
+234:         
+235:         return result
+236:     
+237:     def _save_to_disk(self, data: Dict[str, bool]) -> bool:
+238:         """Sauvegarde les flags vers le fichier JSON.
+239:         
+240:         Args:
+241:             data: Dictionnaire des flags à sauvegarder
+242:             
+243:         Returns:
+244:             True si succès, False sinon
+245:         """
+246:         tmp_path = None
+247:         try:
+248:             self._file_path.parent.mkdir(parents=True, exist_ok=True)
+249:             tmp_path = self._file_path.with_name(self._file_path.name + ".tmp")
+250:             with open(tmp_path, "w", encoding="utf-8") as f:
+251:                 json.dump(data, f, indent=2, ensure_ascii=False)
+252:                 f.flush()
+253:                 os.fsync(f.fileno())
+254:             os.replace(tmp_path, self._file_path)
+255:             return True
+256:         except Exception:
+257:             try:
+258:                 if tmp_path is not None and tmp_path.exists():
+259:                     tmp_path.unlink()
+260:             except Exception:
+261:                 pass
+262:             return False
+263:     
+264:     # =========================================================================
+265:     # Méthodes Utilitaires
+266:     # =========================================================================
+267:     
+268:     def get_file_path(self) -> Path:
+269:         """Retourne le chemin du fichier de persistence."""
+270:         return self._file_path
+271:     
+272:     def get_defaults(self) -> Dict[str, bool]:
+273:         """Retourne les valeurs par défaut."""
+274:         return dict(self._defaults)
+275:     
+276:     def get_cache_ttl(self) -> int:
+277:         """Retourne le TTL du cache en secondes."""
+278:         return self._cache_ttl
+279:     
+280:     def set_cache_ttl(self, ttl: int) -> None:
+281:         """Définit le TTL du cache.
+282:         
+283:         Args:
+284:             ttl: Nouvelle durée en secondes (minimum 1)
+285:         """
+286:         self._cache_ttl = max(1, int(ttl))
+287:     
+288:     def is_cache_valid(self) -> bool:
+289:         """Vérifie si le cache est actuellement valide."""
+290:         if self._cache is None or self._cache_timestamp is None:
+291:             return False
+292:         return (time.time() - self._cache_timestamp) < self._cache_ttl
+293:     
+294:     def __repr__(self) -> str:
+295:         """Représentation du service."""
+296:         cache_status = "valid" if self.is_cache_valid() else "expired"
+297:         return f"<RuntimeFlagsService(file={self._file_path.name}, cache={cache_status})>"
 ````
 
 ## File: static/components/JsonViewer.js
@@ -5936,624 +8066,672 @@ requirements.txt
 152:     return "[redacted]"
 ````
 
-## File: requirements.txt
-````
-1: Flask>=2.0
-2: gunicorn
-3: Flask-Login
-4: Flask-Cors>=4.0
-5: requests
-6: redis>=4.0
-7: email-validator
-8: typing_extensions>=4.7,<5
-````
-
-## File: app_logging/webhook_logger.py
+## File: config/polling_config.py
 ````python
   1: """
-  2: Logging helpers for webhook events with Redis and file fallbacks.
-  3: 
-  4: - append_webhook_log: push a log entry (keeps last N entries)
-  5: - fetch_webhook_logs: retrieve recent logs with optional day window and limit
-  6: 
-  7: Design:
-  8: - Accept redis_client and logger as injected dependencies
-  9: - File path and redis key are passed in by the caller
- 10: """
- 11: from __future__ import annotations
- 12: 
- 13: import json
- 14: from datetime import datetime, timedelta, timezone
- 15: from pathlib import Path
- 16: from typing import Any
- 17: 
- 18: DEFAULT_MAX_ENTRIES = 500
- 19: 
- 20: 
- 21: def append_webhook_log(
- 22:     log_entry: dict,
- 23:     *,
- 24:     redis_client,
- 25:     logger,
- 26:     file_path: Path,
- 27:     redis_list_key: str,
- 28:     max_entries: int = DEFAULT_MAX_ENTRIES,
- 29: ) -> None:
- 30:     try:
- 31:         if redis_client is not None:
- 32:             redis_client.rpush(redis_list_key, json.dumps(log_entry, ensure_ascii=False))
- 33:             redis_client.ltrim(redis_list_key, -max_entries, -1)
- 34:             return
- 35:     except Exception as e:
- 36:         if logger:
- 37:             logger.error(f"WEBHOOK_LOG: redis write error: {e}")
- 38:     try:
- 39:         file_path.parent.mkdir(parents=True, exist_ok=True)
- 40:         logs = []
- 41:         if file_path.exists():
- 42:             try:
- 43:                 with open(file_path, "r", encoding="utf-8") as f:
- 44:                     logs = json.load(f)
- 45:             except Exception:
- 46:                 logs = []
- 47:         logs.append(log_entry)
- 48:         if len(logs) > max_entries:
- 49:             logs = logs[-max_entries:]
- 50:         with open(file_path, "w", encoding="utf-8") as f:
- 51:             json.dump(logs, f, indent=2, ensure_ascii=False)
- 52:     except Exception as e:
- 53:         if logger:
- 54:             logger.error(f"WEBHOOK_LOG: file write error: {e}")
- 55: 
- 56: 
- 57: def fetch_webhook_logs(
- 58:     *,
- 59:     redis_client,
- 60:     logger,
- 61:     file_path: Path,
- 62:     redis_list_key: str,
- 63:     days: int = 7,
- 64:     limit: int = 50,
- 65: ) -> dict[str, Any]:
- 66:     days = max(1, min(30, int(days)))
- 67: 
- 68:     all_logs = None
- 69:     try:
- 70:         if redis_client is not None:
- 71:             items = redis_client.lrange(redis_list_key, 0, -1)
- 72:             all_logs = []
- 73:             for it in items:
- 74:                 try:
- 75:                     s = it if isinstance(it, str) else it.decode("utf-8")
- 76:                     all_logs.append(json.loads(s))
- 77:                 except Exception:
- 78:                     pass
- 79:     except Exception as e:
- 80:         if logger:
- 81:             logger.error(f"WEBHOOK_LOG: redis read error: {e}")
- 82: 
- 83:     if all_logs is None:
- 84:         try:
- 85:             with open(file_path, "r", encoding="utf-8") as f:
- 86:                 all_logs = json.load(f)
- 87:         except Exception:
- 88:             return {"success": True, "logs": [], "count": 0, "days_filter": days}
- 89: 
- 90:     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
- 91:     filtered_logs = []
- 92:     for log in all_logs:
- 93:         try:
- 94:             log_time = datetime.fromisoformat(log.get("timestamp", ""))
- 95:             if log_time >= cutoff:
- 96:                 filtered_logs.append(log)
- 97:         except Exception:
- 98:             # If timestamp unparsable, include the entry for backward-compat
- 99:             filtered_logs.append(log)
-100: 
-101:     filtered_logs = filtered_logs[-limit:]
-102:     filtered_logs.reverse()
-103: 
-104:     return {
-105:         "success": True,
-106:         "logs": filtered_logs,
-107:         "count": len(filtered_logs),
-108:         "days_filter": days,
-109:     }
-````
-
-## File: config/app_config_store.py
-````python
-  1: """
-  2: config.app_config_store
-  3: ~~~~~~~~~~~~~~~~~~~~~~~~
+  2: config.polling_config
+  3: ~~~~~~~~~~~~~~~~~~~~~
   4: 
-  5: Key-Value configuration store with External JSON backend and file fallback.
-  6: - Provides get_config_json()/set_config_json() for dict payloads.
-  7: - External backend configured via env vars: EXTERNAL_CONFIG_BASE_URL, CONFIG_API_TOKEN.
-  8: - If external backend is unavailable, falls back to per-key JSON files provided by callers.
-  9: 
- 10: Security: no secrets are logged; errors are swallowed and caller can fallback.
+  5: Configuration et helpers pour le polling IMAP.
+  6: Gère le timezone, la fenêtre horaire, et les paramètres de vacances.
+  7: """
+  8: 
+  9: from datetime import timezone, datetime, date
+ 10: from typing import Optional
+ 11: import json
+ 12: import re
+ 13: 
+ 14: from config import app_config_store as _app_config_store
+ 15: from config.settings import (
+ 16:     POLLING_TIMEZONE_STR,
+ 17:     POLLING_CONFIG_FILE,
+ 18:     POLLING_ACTIVE_DAYS as SETTINGS_POLLING_ACTIVE_DAYS,
+ 19:     POLLING_ACTIVE_START_HOUR as SETTINGS_POLLING_ACTIVE_START_HOUR,
+ 20:     POLLING_ACTIVE_END_HOUR as SETTINGS_POLLING_ACTIVE_END_HOUR,
+ 21:     SENDER_LIST_FOR_POLLING as SETTINGS_SENDER_LIST_FOR_POLLING,
+ 22:     EMAIL_POLLING_INTERVAL_SECONDS,
+ 23:     POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
+ 24: )
+ 25: 
+ 26: # Tentative d'import de ZoneInfo (Python 3.9+)
+ 27: try:
+ 28:     from zoneinfo import ZoneInfo
+ 29: except ImportError:
+ 30:     ZoneInfo = None
+ 31: 
+ 32: 
+ 33: # =============================================================================
+ 34: # TIMEZONE POUR LE POLLING
+ 35: # =============================================================================
+ 36: 
+ 37: TZ_FOR_POLLING = None
+ 38: 
+ 39: def initialize_polling_timezone(logger):
+ 40:     """
+ 41:     Initialise le timezone pour le polling IMAP.
+ 42:     
+ 43:     Args:
+ 44:         logger: Instance de logger Flask (app.logger)
+ 45:     
+ 46:     Returns:
+ 47:         ZoneInfo ou timezone.utc
+ 48:     """
+ 49:     global TZ_FOR_POLLING
+ 50:     
+ 51:     if POLLING_TIMEZONE_STR.upper() != "UTC":
+ 52:         if ZoneInfo:
+ 53:             try:
+ 54:                 TZ_FOR_POLLING = ZoneInfo(POLLING_TIMEZONE_STR)
+ 55:                 logger.info(f"CFG POLL: Using timezone '{POLLING_TIMEZONE_STR}' for polling schedule.")
+ 56:             except Exception as e:
+ 57:                 logger.warning(f"CFG POLL: Error loading TZ '{POLLING_TIMEZONE_STR}': {e}. Using UTC.")
+ 58:                 TZ_FOR_POLLING = timezone.utc
+ 59:         else:
+ 60:             logger.warning(f"CFG POLL: 'zoneinfo' module not available. Using UTC. '{POLLING_TIMEZONE_STR}' ignored.")
+ 61:             TZ_FOR_POLLING = timezone.utc
+ 62:     else:
+ 63:         TZ_FOR_POLLING = timezone.utc
+ 64:     
+ 65:     if TZ_FOR_POLLING is None or TZ_FOR_POLLING == timezone.utc:
+ 66:         logger.info(f"CFG POLL: Using timezone 'UTC' for polling schedule (default or fallback).")
+ 67:     
+ 68:     return TZ_FOR_POLLING
+ 69: 
+ 70: 
+ 71: # =============================================================================
+ 72: # GESTION DES VACANCES (VACATION MODE)
+ 73: # =============================================================================
+ 74: 
+ 75: POLLING_VACATION_START_DATE = None
+ 76: POLLING_VACATION_END_DATE = None
+ 77: 
+ 78: def set_vacation_period(start_date: date | None, end_date: date | None, logger):
+ 79:     """
+ 80:     Définit une période de vacances pendant laquelle le polling est désactivé.
+ 81:     
+ 82:     Args:
+ 83:         start_date: Date de début (incluse) ou None pour désactiver
+ 84:         end_date: Date de fin (incluse) ou None pour désactiver
+ 85:         logger: Instance de logger Flask
+ 86:     """
+ 87:     global POLLING_VACATION_START_DATE, POLLING_VACATION_END_DATE
+ 88:     
+ 89:     POLLING_VACATION_START_DATE = start_date
+ 90:     POLLING_VACATION_END_DATE = end_date
+ 91:     
+ 92:     if start_date and end_date:
+ 93:         logger.info(f"CFG POLL: Vacation mode enabled from {start_date} to {end_date}")
+ 94:     else:
+ 95:         logger.info("CFG POLL: Vacation mode disabled")
+ 96: 
+ 97: 
+ 98: def is_in_vacation_period(check_date: date = None) -> bool:
+ 99:     """
+100:     Vérifie si une date donnée est dans la période de vacances.
+101:     
+102:     Args:
+103:         check_date: Date à vérifier (utilise aujourd'hui si None)
+104:     
+105:     Returns:
+106:         True si dans la période de vacances, False sinon
+107:     """
+108:     if not check_date:
+109:         check_date = datetime.now(TZ_FOR_POLLING if TZ_FOR_POLLING else timezone.utc).date()
+110:     
+111:     if not (POLLING_VACATION_START_DATE and POLLING_VACATION_END_DATE):
+112:         return False
+113:     
+114:     return POLLING_VACATION_START_DATE <= check_date <= POLLING_VACATION_END_DATE
+115: 
+116: 
+117: # =============================================================================
+118: # HELPERS POUR VALIDATION DES JOURS ET HEURES
+119: # =============================================================================
+120: 
+121: def is_polling_active(now_dt: datetime, active_days: list[int], 
+122:                      start_hour: int, end_hour: int) -> bool:
+123:     """
+124:     Vérifie si le polling est actif pour un datetime donné.
+125:     
+126:     Args:
+127:         now_dt: Datetime à vérifier (avec timezone)
+128:         active_days: Liste des jours actifs (0=Lundi, 6=Dimanche)
+129:         start_hour: Heure de début (0-23)
+130:         end_hour: Heure de fin (0-23)
+131:     
+132:     Returns:
+133:         True si le polling est actif, False sinon
+134:     """
+135:     if is_in_vacation_period(now_dt.date()):
+136:         return False
+137:     
+138:     is_active_day = now_dt.weekday() in active_days
+139:     
+140:     h = now_dt.hour
+141:     if 0 <= start_hour <= 23 and 0 <= end_hour <= 23:
+142:         if start_hour < end_hour:
+143:             # Fenêtre standard dans la même journée
+144:             is_active_time = (start_hour <= h < end_hour)
+145:         elif start_hour > end_hour:
+146:             # Fenêtre qui traverse minuit (ex: 23 -> 0 ou 22 -> 6)
+147:             is_active_time = (h >= start_hour) or (h < end_hour)
+148:         else:
+149:             # start == end : fenêtre vide (aucune heure active)
+150:             is_active_time = False
+151:     else:
+152:         # Valeurs hors bornes: considérer inactif par sécurité
+153:         is_active_time = False
+154: 
+155:     return is_active_day and is_active_time
+156: 
+157: 
+158: # =============================================================================
+159: # GLOBAL ENABLE (BOOT-TIME POLLER SWITCH)
+160: # =============================================================================
+161: 
+162: def get_enable_polling(default: bool = True) -> bool:
+163:     """Return whether polling is globally enabled from the persisted polling config.
+164: 
+165:     Why: UI may disable polling at the configuration level (in addition to the
+166:     environment flag ENABLE_BACKGROUND_TASKS). This helper centralizes reading
+167:     of the persisted switch stored alongside other polling parameters in
+168:     POLLING_CONFIG_FILE.
+169: 
+170:     Notes:
+171:     - If the file or the key is missing/invalid, we fall back to `default=True`
+172:       to preserve the existing behavior (polling enabled unless explicitly
+173:       disabled via UI).
+174:     """
+175:     try:
+176:         if not POLLING_CONFIG_FILE.exists():
+177:             return bool(default)
+178:         with open(POLLING_CONFIG_FILE, "r", encoding="utf-8") as f:
+179:             data = json.load(f) or {}
+180:         val = data.get("enable_polling")
+181:         # Accept truthy/falsy representations robustly
+182:         if isinstance(val, bool):
+183:             return val
+184:         if isinstance(val, (int, float)):
+185:             return bool(val)
+186:         if isinstance(val, str):
+187:             s = val.strip().lower()
+188:             if s in {"1", "true", "yes", "y", "on"}:
+189:                 return True
+190:             if s in {"0", "false", "no", "n", "off"}:
+191:                 return False
+192:         return bool(default)
+193:     except Exception:
+194:         return bool(default)
+195: 
+196: 
+197: # =============================================================================
+198: # POLLING CONFIG SERVICE
+199: # =============================================================================
+200: 
+201: class PollingConfigService:
+202:     """Service centralisé pour accéder à la configuration de polling.
+203:     
+204:     Ce service encapsule l'accès aux variables de configuration depuis le
+205:     module settings, offrant une interface cohérente et facilitant les tests
+206:     via injection de dépendances.
+207:     """
+208:     
+209:     def __init__(self, settings_module=None, config_store=None):
+210:         """Initialise le service avec un module de settings.
+211:         
+212:         Args:
+213:             settings_module: Module de configuration (par défaut: config.settings)
+214:         """
+215:         self._settings = settings_module
+216:         self._store = config_store
+217: 
+218:     def _get_persisted_polling_config(self) -> dict:
+219:         store = self._store or _app_config_store
+220:         file_fallback = None
+221:         try:
+222:             if self._settings is not None:
+223:                 file_fallback = getattr(self._settings, "POLLING_CONFIG_FILE", None)
+224:         except Exception:
+225:             file_fallback = None
+226: 
+227:         try:
+228:             cfg = store.get_config_json("polling_config", file_fallback=file_fallback)
+229:             return cfg if isinstance(cfg, dict) else {}
+230:         except Exception:
+231:             return {}
+232:     
+233:     def get_active_days(self) -> list[int]:
+234:         """Retourne la liste des jours actifs pour le polling (0=Lundi, 6=Dimanche)."""
+235:         cfg = self._get_persisted_polling_config()
+236:         raw = cfg.get("active_days")
+237:         parsed: list[int] = []
+238:         if isinstance(raw, list):
+239:             for d in raw:
+240:                 try:
+241:                     v = int(d)
+242:                     if 0 <= v <= 6:
+243:                         parsed.append(v)
+244:                 except Exception:
+245:                     continue
+246:         if parsed:
+247:             return sorted(set(parsed))
+248: 
+249:         if self._settings:
+250:             return self._settings.POLLING_ACTIVE_DAYS
+251:         from config import settings
+252:         return settings.POLLING_ACTIVE_DAYS
+253:     
+254:     def get_active_start_hour(self) -> int:
+255:         """Retourne l'heure de début de la fenêtre de polling (0-23)."""
+256:         cfg = self._get_persisted_polling_config()
+257:         if "active_start_hour" in cfg:
+258:             try:
+259:                 v = int(cfg.get("active_start_hour"))
+260:                 if 0 <= v <= 23:
+261:                     return v
+262:             except Exception:
+263:                 pass
+264: 
+265:         if self._settings:
+266:             return self._settings.POLLING_ACTIVE_START_HOUR
+267:         from config import settings
+268:         return settings.POLLING_ACTIVE_START_HOUR
+269:     
+270:     def get_active_end_hour(self) -> int:
+271:         """Retourne l'heure de fin de la fenêtre de polling (0-23)."""
+272:         cfg = self._get_persisted_polling_config()
+273:         if "active_end_hour" in cfg:
+274:             try:
+275:                 v = int(cfg.get("active_end_hour"))
+276:                 if 0 <= v <= 23:
+277:                     return v
+278:             except Exception:
+279:                 pass
+280: 
+281:         if self._settings:
+282:             return self._settings.POLLING_ACTIVE_END_HOUR
+283:         from config import settings
+284:         return settings.POLLING_ACTIVE_END_HOUR
+285:     
+286:     def get_sender_list(self) -> list[str]:
+287:         """Retourne la liste des expéditeurs d'intérêt pour le polling."""
+288:         cfg = self._get_persisted_polling_config()
+289:         raw = cfg.get("sender_of_interest_for_polling")
+290:         senders: list[str] = []
+291:         if isinstance(raw, list):
+292:             senders = [str(s).strip().lower() for s in raw if str(s).strip()]
+293:         elif isinstance(raw, str):
+294:             senders = [p.strip().lower() for p in raw.split(",") if p.strip()]
+295:         if senders:
+296:             email_re = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+297:             filtered = [s for s in senders if email_re.match(s)]
+298:             seen = set()
+299:             unique = []
+300:             for s in filtered:
+301:                 if s not in seen:
+302:                     seen.add(s)
+303:                     unique.append(s)
+304:             return unique
+305: 
+306:         if self._settings:
+307:             return self._settings.SENDER_LIST_FOR_POLLING
+308:         from config import settings
+309:         return settings.SENDER_LIST_FOR_POLLING
+310:     
+311:     def get_email_poll_interval_s(self) -> int:
+312:         """Retourne l'intervalle de polling actif en secondes."""
+313:         if self._settings:
+314:             return self._settings.EMAIL_POLLING_INTERVAL_SECONDS
+315:         from config import settings
+316:         return settings.EMAIL_POLLING_INTERVAL_SECONDS
+317:     
+318:     def get_inactive_check_interval_s(self) -> int:
+319:         """Retourne l'intervalle de vérification hors période active en secondes."""
+320:         if self._settings:
+321:             return self._settings.POLLING_INACTIVE_CHECK_INTERVAL_SECONDS
+322:         from config import settings
+323:         return settings.POLLING_INACTIVE_CHECK_INTERVAL_SECONDS
+324:     
+325:     def get_tz(self):
+326:         """Retourne le timezone configuré pour le polling.
+327:         
+328:         Returns:
+329:             ZoneInfo ou timezone.utc selon la configuration
+330:         """
+331:         return TZ_FOR_POLLING if TZ_FOR_POLLING else timezone.utc
+332:     
+333:     def is_in_vacation(self, check_date_or_dt) -> bool:
+334:         """Vérifie si une date/datetime est dans la période de vacances.
+335:         
+336:         Args:
+337:             check_date_or_dt: date ou datetime à vérifier (None = aujourd'hui)
+338:         
+339:         Returns:
+340:             True si dans la période de vacances, False sinon
+341:         """
+342:         if isinstance(check_date_or_dt, datetime):
+343:             check_date = check_date_or_dt.date()
+344:         elif isinstance(check_date_or_dt, date):
+345:             check_date = check_date_or_dt
+346:         else:
+347:             check_date = None
+348: 
+349:         cfg = self._get_persisted_polling_config()
+350:         vs = cfg.get("vacation_start")
+351:         ve = cfg.get("vacation_end")
+352:         if vs and ve:
+353:             try:
+354:                 start_date = datetime.fromisoformat(str(vs)).date()
+355:                 end_date = datetime.fromisoformat(str(ve)).date()
+356:                 if check_date is None:
+357:                     check_date = datetime.now(
+358:                         TZ_FOR_POLLING if TZ_FOR_POLLING else timezone.utc
+359:                     ).date()
+360:                 return start_date <= check_date <= end_date
+361:             except Exception:
+362:                 pass
+363: 
+364:         return is_in_vacation_period(check_date)
+365:     
+366:     def get_enable_polling(self, default: bool = True) -> bool:
+367:         """Retourne si le polling est activé globalement.
+368:         
+369:         Args:
+370:             default: Valeur par défaut si non configuré
+371:         
+372:         Returns:
+373:             True si le polling est activé, False sinon
+374:         """
+375:         cfg = self._get_persisted_polling_config()
+376:         val = cfg.get("enable_polling")
+377:         if isinstance(val, bool):
+378:             return val
+379:         if isinstance(val, (int, float)):
+380:             return bool(val)
+381:         if isinstance(val, str):
+382:             s = val.strip().lower()
+383:             if s in {"1", "true", "yes", "y", "on"}:
+384:                 return True
+385:             if s in {"0", "false", "no", "n", "off"}:
+386:                 return False
+387:         return bool(default)
+388: 
+389:     def is_subject_group_dedup_enabled(self) -> bool:
+390:         cfg = self._get_persisted_polling_config()
+391:         if "enable_subject_group_dedup" in cfg:
+392:             return bool(cfg.get("enable_subject_group_dedup"))
+393:         if self._settings:
+394:             return bool(getattr(self._settings, "ENABLE_SUBJECT_GROUP_DEDUP", False))
+395:         from config import settings
+396:         return bool(getattr(settings, "ENABLE_SUBJECT_GROUP_DEDUP", False))
+````
+
+## File: email_processing/link_extraction.py
+````python
+  1: """
+  2: email_processing.link_extraction
+  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  4: 
+  5: Extraction des liens de fournisseurs (Dropbox, FromSmash, SwissTransfer)
+  6: depuis un texte d'email.
+  7: 
+  8: Cette extraction réutilise le regex `URL_PROVIDERS_PATTERN` défini dans
+  9: `email_processing.pattern_matching` et le helper `detect_provider()` de
+ 10: `utils.text_helpers`.
  11: """
  12: from __future__ import annotations
  13: 
- 14: import json
- 15: import os
- 16: from pathlib import Path
- 17: from typing import Any, Dict, Optional
- 18: 
- 19: try:
- 20:     import requests  # type: ignore
- 21: except Exception:  # requests may be unavailable in some test contexts
- 22:     requests = None  # type: ignore
- 23: 
- 24: 
- 25: _REDIS_CLIENT = None
+ 14: import html
+ 15: from typing import List
+ 16: from typing_extensions import TypedDict
+ 17: 
+ 18: from email_processing.pattern_matching import URL_PROVIDERS_PATTERN
+ 19: from utils.text_helpers import detect_provider as _detect_provider
+ 20: 
+ 21: 
+ 22: class ProviderLink(TypedDict):
+ 23:     """Structure d'un lien de fournisseur extrait d'un email."""
+ 24:     provider: str
+ 25:     raw_url: str
  26: 
  27: 
- 28: def _get_redis_client():
- 29:     global _REDIS_CLIENT
+ 28: def extract_provider_links_from_text(text: str) -> List[ProviderLink]:
+ 29:     """Extrait toutes les URLs supportées présentes dans un texte.
  30: 
- 31:     if _REDIS_CLIENT is not None:
- 32:         return _REDIS_CLIENT
+ 31:     Les URLs sont dédupliquées tout en préservant l'ordre d'apparition.
+ 32:     Normalisation appliquée: strip() des URLs avant déduplication.
  33: 
- 34:     redis_url = os.environ.get("REDIS_URL")
- 35:     if not isinstance(redis_url, str) or not redis_url.strip():
- 36:         return None
- 37: 
- 38:     try:
- 39:         import redis  # type: ignore
- 40: 
- 41:         _REDIS_CLIENT = redis.Redis.from_url(redis_url, decode_responses=True)
- 42:         return _REDIS_CLIENT
- 43:     except Exception:
- 44:         return None
- 45: 
- 46: 
- 47: def _config_redis_key(key: str) -> str:
- 48:     prefix = os.environ.get("CONFIG_STORE_REDIS_PREFIX", "r:ss:config:")
- 49:     return f"{prefix}{key}"
- 50: 
- 51: 
- 52: def _store_mode() -> str:
- 53:     mode = os.environ.get("CONFIG_STORE_MODE", "redis_first")
- 54:     if not isinstance(mode, str):
- 55:         return "redis_first"
- 56:     mode = mode.strip().lower()
- 57:     return mode if mode in {"redis_first", "php_first"} else "redis_first"
- 58: 
- 59: 
- 60: def _env_bool(name: str, default: bool = False) -> bool:
- 61:     raw = os.environ.get(name)
- 62:     if raw is None:
- 63:         return bool(default)
- 64:     return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
- 65: 
- 66: 
- 67: def _redis_get_json(key: str) -> Optional[Dict[str, Any]]:
- 68:     if _env_bool("CONFIG_STORE_DISABLE_REDIS", False):
- 69:         return None
- 70: 
- 71:     client = _get_redis_client()
- 72:     if client is None:
- 73:         return None
- 74: 
- 75:     try:
- 76:         raw = client.get(_config_redis_key(key))
- 77:         if not raw:
- 78:             return None
- 79:         data = json.loads(raw)
- 80:         return data if isinstance(data, dict) else None
- 81:     except Exception:
- 82:         return None
- 83: 
- 84: 
- 85: def _redis_set_json(key: str, value: Dict[str, Any]) -> bool:
- 86:     if _env_bool("CONFIG_STORE_DISABLE_REDIS", False):
- 87:         return False
- 88: 
- 89:     client = _get_redis_client()
- 90:     if client is None:
- 91:         return False
- 92: 
- 93:     try:
- 94:         client.set(_config_redis_key(key), json.dumps(value, ensure_ascii=False))
- 95:         return True
- 96:     except Exception:
- 97:         return False
- 98: 
- 99: def get_config_json(key: str, *, file_fallback: Optional[Path] = None) -> Dict[str, Any]:
-100:     """Fetch config dict for a key from External JSON backend, with file fallback.
-101:     Returns empty dict on any error.
-102:     """
-103:     mode = _store_mode()
-104: 
-105:     if mode == "redis_first":
-106:         data = _redis_get_json(key)
-107:         if isinstance(data, dict):
-108:             return data
-109: 
-110:     base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
-111:     api_token = os.environ.get("CONFIG_API_TOKEN")
-112:     if base_url and api_token and requests is not None:
-113:         try:
-114:             data = _external_config_get(base_url, api_token, key)
-115:             if isinstance(data, dict):
-116:                 return data
-117:         except Exception:
-118:             pass
-119: 
-120:     if mode == "php_first":
-121:         data = _redis_get_json(key)
-122:         if isinstance(data, dict):
-123:             return data
-124: 
-125:     # File fallback
-126:     if file_fallback and file_fallback.exists():
-127:         try:
-128:             with open(file_fallback, "r", encoding="utf-8") as f:
-129:                 data = json.load(f) or {}
-130:                 if isinstance(data, dict):
-131:                     return data
-132:         except Exception:
-133:             pass
-134:     return {}
-135: 
-136: 
-137: def set_config_json(key: str, value: Dict[str, Any], *, file_fallback: Optional[Path] = None) -> bool:
-138:     """Persist config dict for a key into External backend, fallback to file if needed."""
-139:     mode = _store_mode()
-140: 
-141:     if mode == "redis_first":
-142:         if _redis_set_json(key, value):
-143:             return True
-144: 
-145:     base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
-146:     api_token = os.environ.get("CONFIG_API_TOKEN")
-147:     if base_url and api_token and requests is not None:
-148:         try:
-149:             ok = _external_config_set(base_url, api_token, key, value)
-150:             if ok:
-151:                 return True
-152:         except Exception:
-153:             pass
-154: 
-155:     if mode == "php_first":
-156:         if _redis_set_json(key, value):
-157:             return True
-158: 
-159:     # File fallback
-160:     if file_fallback is not None:
-161:         try:
-162:             file_fallback.parent.mkdir(parents=True, exist_ok=True)
-163:             with open(file_fallback, "w", encoding="utf-8") as f:
-164:                 json.dump(value, f, indent=2, ensure_ascii=False)
-165:             return True
-166:         except Exception:
-167:             return False
-168:     return False
-169: 
-170: 
-171: # ---------------------------------------------------------------------------
-172: # External JSON backend helpers
-173: # ---------------------------------------------------------------------------
-174: def _external_config_get(base_url: str, token: str, key: str) -> Dict[str, Any]:
-175:     """GET config JSON from external PHP service. Raises on error."""
-176:     url = base_url.rstrip('/') + '/config_api.php'
-177:     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-178:     params = {"key": key}
-179:     # Small timeout for robustness
-180:     resp = requests.get(url, headers=headers, params=params, timeout=6)  # type: ignore
-181:     if resp.status_code != 200:
-182:         raise RuntimeError(f"external get http={resp.status_code}")
-183:     data = resp.json()
-184:     if not isinstance(data, dict) or not data.get("success"):
-185:         raise RuntimeError("external get failed")
-186:     cfg = data.get("config") or {}
-187:     return cfg if isinstance(cfg, dict) else {}
-188: 
-189: 
-190: def _external_config_set(base_url: str, token: str, key: str, value: Dict[str, Any]) -> bool:
-191:     """POST config JSON to external PHP service. Returns True on success."""
-192:     url = base_url.rstrip('/') + '/config_api.php'
-193:     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json"}
-194:     body = {"key": key, "config": value}
-195:     resp = requests.post(url, headers=headers, data=json.dumps(body), timeout=8)  # type: ignore
-196:     if resp.status_code != 200:
-197:         return False
-198:     try:
-199:         data = resp.json()
-200:     except Exception:
-201:         return False
-202:     return bool(isinstance(data, dict) and data.get("success"))
-````
-
-## File: email_processing/imap_client.py
-````python
-  1: """
-  2: email_processing.imap_client
-  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  4: 
-  5: Gestion de la connexion IMAP pour la lecture des emails et helpers associés.
-  6: """
-  7: from __future__ import annotations
-  8: 
-  9: import hashlib
- 10: import imaplib
- 11: import re
- 12: from email.header import decode_header
- 13: from logging import Logger
- 14: from typing import Optional, Union
- 15: 
- 16: from config.settings import (
- 17:     EMAIL_ADDRESS,
- 18:     EMAIL_PASSWORD,
- 19:     IMAP_PORT,
- 20:     IMAP_SERVER,
- 21:     IMAP_USE_SSL,
- 22: )
- 23: from utils.text_helpers import mask_sensitive_data
- 24: 
- 25: 
- 26: def create_imap_connection(
- 27:     logger: Optional[Logger],
- 28:     timeout: int = 30,
- 29: ) -> Optional[Union[imaplib.IMAP4_SSL, imaplib.IMAP4]]:
- 30:     """Crée une connexion IMAP sécurisée au serveur email.
- 31: 
- 32:     Args:
- 33:         logger: Instance de logger Flask (app.logger) ou None
- 34:         timeout: Timeout pour la connexion IMAP (défaut: 30 secondes)
- 35: 
- 36:     Returns:
- 37:         Connection IMAP (IMAP4_SSL ou IMAP4) si succès, None si échec
- 38:     """
- 39:     if not logger:
- 40:         # Fallback minimal si pas de logger disponible
- 41:         return None
- 42: 
- 43:     # Validation minimale des paramètres de connexion (ne jamais logger les credentials)
- 44:     if not IMAP_SERVER or not EMAIL_ADDRESS or not EMAIL_PASSWORD:
- 45:         logger.error("IMAP: Configuration incomplète (serveur, email ou mot de passe manquant)")
- 46:         return None
- 47: 
- 48:     # Logs de debug uniquement (pas INFO pour éviter le spam)
- 49:     logger.debug("IMAP: Tentative de connexion au serveur %s:%s (SSL=%s)", IMAP_SERVER, IMAP_PORT, IMAP_USE_SSL)
- 50: 
- 51:     try:
- 52:         if IMAP_USE_SSL:
- 53:             mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT, timeout=timeout)
- 54:         else:
- 55:             # Connexion non-sécurisée (déconseillé)
- 56:             logger.warning("IMAP: Connexion non-SSL utilisée (vulnérable)")
- 57:             mail = imaplib.IMAP4(IMAP_SERVER, IMAP_PORT, timeout=timeout)
- 58: 
- 59:         # Authentification (ne jamais logger le mot de passe)
- 60:         mail.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
- 61:         logger.info("IMAP: Connexion établie avec succès (%s)", IMAP_SERVER)
- 62:         return mail
- 63: 
- 64:     except imaplib.IMAP4.error as e:
- 65:         logger.error(
- 66:             "IMAP: Échec d'authentification pour %s sur %s:%s - %s",
- 67:             mask_sensitive_data(EMAIL_ADDRESS or "", "email"),
- 68:             IMAP_SERVER,
- 69:             IMAP_PORT,
- 70:             e,
- 71:         )
- 72:         return None
- 73:     except Exception as e:
- 74:         logger.error("IMAP: Erreur de connexion à %s:%s - %s", IMAP_SERVER, IMAP_PORT, e)
- 75:         return None
- 76: 
- 77: 
- 78: def close_imap_connection(logger: Optional[Logger], mail: Optional[Union[imaplib.IMAP4_SSL, imaplib.IMAP4]]) -> None:
- 79:     """Ferme proprement une connexion IMAP.
- 80:     
- 81:     Args:
- 82:         logger: Instance de logger Flask (app.logger) ou None
- 83:         mail: Connection IMAP à fermer ou None
- 84:     """
- 85:     try:
- 86:         if mail:
- 87:             mail.close()
- 88:             mail.logout()
- 89:             if logger:
- 90:                 logger.debug("IMAP: Connection closed successfully")
- 91:     except Exception as e:
- 92:         if logger:
- 93:             logger.warning("IMAP: Error closing connection: %s", e)
- 94: 
- 95: 
- 96: def generate_email_id(msg_data: dict) -> str:
- 97:     """Génère un ID unique pour un email basé sur son contenu (Message-ID|Subject|Date)."""
- 98:     msg_id = msg_data.get('Message-ID', '')
- 99:     subject = msg_data.get('Subject', '')
-100:     date = msg_data.get('Date', '')
-101:     unique_string = f"{msg_id}|{subject}|{date}"
-102:     return hashlib.md5(unique_string.encode('utf-8')).hexdigest()
-103: 
-104: 
-105: def extract_sender_email(from_header: str) -> str:
-106:     """Extrait une adresse email depuis un header From."""
-107:     if not from_header:
-108:         return ""
-109:     email_pattern = r'<([^>]+)>|([^\s<>]+@[^\s<>]+)'
-110:     match = re.search(email_pattern, from_header)
-111:     if match:
-112:         return match.group(1) if match.group(1) else match.group(2)
-113:     return ""
-114: 
-115: 
-116: def decode_email_header_value(header_value: str) -> str:
-117:     """Décode un header potentiellement encodé (RFC2047)."""
-118:     if not header_value:
-119:         return ""
-120:     decoded_parts = decode_header(header_value)
-121:     decoded_string = ""
-122:     for part, encoding in decoded_parts:
-123:         if isinstance(part, bytes):
-124:             if encoding:
-125:                 try:
-126:                     decoded_string += part.decode(encoding)
-127:                 except (UnicodeDecodeError, LookupError):
-128:                     decoded_string += part.decode('utf-8', errors='ignore')
-129:             else:
-130:                 decoded_string += part.decode('utf-8', errors='ignore')
-131:         else:
-132:             decoded_string += str(part)
-133:     return decoded_string
-134: 
-135: 
-136: def mark_email_as_read_imap(logger: Optional[Logger], mail: Optional[Union[imaplib.IMAP4_SSL, imaplib.IMAP4]], email_num: str) -> bool:
-137:     """Marque un email comme lu via IMAP.
-138:     
-139:     Args:
-140:         logger: Instance de logger Flask (app.logger) ou None
-141:         mail: Connection IMAP active
-142:         email_num: Numéro de l'email à marquer comme lu
-143:         
-144:     Returns:
-145:         True si succès, False sinon
-146:     """
-147:     try:
-148:         if not mail:
-149:             return False
-150:         mail.store(email_num, '+FLAGS', '\\Seen')
-151:         if logger:
-152:             logger.debug("IMAP: Email %s marked as read", email_num)
-153:         return True
-154:     except Exception as e:
-155:         if logger:
-156:             logger.error("IMAP: Error marking email %s as read: %s", email_num, e)
-157:         return False
-````
-
-## File: email_processing/payloads.py
-````python
-  1: """
-  2: email_processing.payloads
-  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~
-  4: 
-  5: Builders for webhook payloads to keep formatting logic centralized and testable.
-  6: """
-  7: from __future__ import annotations
-  8: 
-  9: from typing import Any, Dict, List, Optional
- 10: from typing_extensions import TypedDict
- 11: 
- 12: 
- 13: class CustomWebhookPayload(TypedDict, total=False):
- 14:     """Structure du payload pour le webhook custom (PHP endpoint)."""
- 15:     microsoft_graph_email_id: str
- 16:     subject: Optional[str]
- 17:     receivedDateTime: Optional[str]
- 18:     sender_address: Optional[str]
- 19:     bodyPreview: Optional[str]
- 20:     email_content: Optional[str]
- 21:     delivery_links: List[Dict[str, str]]
- 22:     first_direct_download_url: Optional[str]
- 23:     dropbox_urls: List[str]
- 24:     dropbox_first_url: Optional[str]
- 25: 
- 26: 
- 27: class DesaboMakePayload(TypedDict, total=False):
- 28:     """Structure du payload pour le webhook Make.com DESABO."""
- 29:     detector: str
- 30:     email_content: Optional[str]
- 31:     Text: Optional[str]
- 32:     Subject: Optional[str]
- 33:     Sender: Optional[Dict[str, str]]
- 34:     webhooks_time_start: Optional[str]
- 35:     webhooks_time_end: Optional[str]
+ 34:     Args:
+ 35:         text: Chaîne source (plain + HTML brut possible)
  36: 
- 37: 
- 38: def _extract_dropbox_urls_legacy(delivery_links: Optional[List[Dict[str, str]]]) -> List[str]:
- 39:     """Extrait les URLs Dropbox depuis delivery_links pour compatibilité legacy.
- 40:     
- 41:     Args:
- 42:         delivery_links: Liste de dicts avec 'provider' et 'raw_url'
- 43:     
- 44:     Returns:
- 45:         Liste des raw_url où provider == 'dropbox'
- 46:     """
- 47:     if not delivery_links:
- 48:         return []
- 49:     
- 50:     try:
- 51:         return [
- 52:             item.get("raw_url")
- 53:             for item in delivery_links
- 54:             if item and item.get("provider") == "dropbox" and item.get("raw_url")
- 55:         ]
- 56:     except Exception:
- 57:         return []
- 58: 
+ 37:     Returns:
+ 38:         Liste de dicts {"provider": str, "raw_url": str}
+ 39:     """
+ 40:     results: List[ProviderLink] = []
+ 41:     if not text:
+ 42:         return results
+ 43: 
+ 44:     def _should_skip_provider_url(provider: str, url: str) -> bool:
+ 45:         if provider != "dropbox":
+ 46:             return False
+ 47:         if not url:
+ 48:             return False
+ 49: 
+ 50:         # Dropbox peut inclure dans certains emails des assets de preview (ex: avatar/logo).
+ 51:         # Cas observé: .../scl/fi/.../MS.png?...&raw=1
+ 52:         try:
+ 53:             parsed = html.unescape(url)
+ 54:         except Exception:
+ 55:             parsed = url
+ 56: 
+ 57:         try:
+ 58:             from urllib.parse import urlsplit, parse_qs
  59: 
- 60: def build_custom_webhook_payload(
- 61:     *,
- 62:     email_id: str,
- 63:     subject: Optional[str],
- 64:     date_received: Optional[str],
- 65:     sender: Optional[str],
- 66:     body_preview: Optional[str],
- 67:     full_email_content: Optional[str],
- 68:     delivery_links: List[Dict[str, str]],
- 69:     first_direct_url: Optional[str],
- 70: ) -> Dict[str, Any]:
- 71:     """Builds the payload dict for the custom webhook.
+ 60:             parts = urlsplit(parsed)
+ 61:             host = (parts.hostname or "").lower()
+ 62:             path = (parts.path or "")
+ 63:             path_lower = path.lower()
+ 64:             if not host.endswith("dropbox.com"):
+ 65:                 return False
+ 66: 
+ 67:             filename = path_lower.split("/")[-1]
+ 68:             if not filename:
+ 69:                 return False
+ 70: 
+ 71:             qs = parse_qs(parts.query or "")
+ 72:             raw_values = qs.get("raw", [])
+ 73:             has_raw_one = any(str(v).strip() == "1" for v in raw_values)
+ 74: 
+ 75:             if path_lower.startswith("/scl/fi/") and has_raw_one:
+ 76:                 is_image = filename.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
+ 77:                 if not is_image:
+ 78:                     return False
+ 79: 
+ 80:                 # Heuristique volontairement restrictive pour éviter de filtrer des livrables.
+ 81:                 logo_like_prefixes = ("ms", "logo", "avatar", "profile")
+ 82:                 base = filename.rsplit(".", 1)[0]
+ 83:                 if base in logo_like_prefixes or any(base.startswith(p) for p in logo_like_prefixes):
+ 84:                     return True
+ 85: 
+ 86:             return False
+ 87:         except Exception:
+ 88:             return False
+ 89: 
+ 90:     seen_urls = set()
+ 91:     for m in URL_PROVIDERS_PATTERN.finditer(text):
+ 92:         raw = m.group(1).strip()
+ 93:         try:
+ 94:             raw = html.unescape(raw)
+ 95:         except Exception:
+ 96:             pass
+ 97:         if not raw:
+ 98:             continue
+ 99:         
+100:         provider = _detect_provider(raw)
+101:         if not provider:
+102:             continue
+103: 
+104:         if _should_skip_provider_url(provider, raw):
+105:             continue
+106:             
+107:         # Déduplication: garder la première occurrence de chaque URL
+108:         if raw not in seen_urls:
+109:             seen_urls.add(raw)
+110:             results.append({"provider": provider, "raw_url": raw})
+111:     
+112:     return results
+````
+
+## File: email_processing/webhook_sender.py
+````python
+  1: """
+  2: Webhook sending functions (Make.com, autoresponder, etc.).
+  3: Extracted from app_render.py for improved modularity and testability.
+  4: """
+  5: 
+  6: from __future__ import annotations
+  7: 
+  8: import logging
+  9: from datetime import datetime, timezone
+ 10: from typing import Callable, Optional
+ 11: 
+ 12: import requests
+ 13: 
+ 14: from config import settings
+ 15: from utils.text_helpers import mask_sensitive_data
+ 16: 
+ 17: 
+ 18: def send_makecom_webhook(
+ 19:     subject: str,
+ 20:     delivery_time: Optional[str],
+ 21:     sender_email: Optional[str],
+ 22:     email_id: str,
+ 23:     override_webhook_url: Optional[str] = None,
+ 24:     extra_payload: Optional[dict] = None,
+ 25:     *,
+ 26:     attempts: int = 2,
+ 27:     logger: Optional[logging.Logger] = None,
+ 28:     log_hook: Optional[Callable[[dict], None]] = None,
+ 29: ) -> bool:
+ 30:     """Envoie un webhook vers Make.com.
+ 31: 
+ 32:     Cette fonction est une extraction de `app_render.py`. Elle supporte l'injection
+ 33:     d'un logger et d'un hook de log pour éviter les dépendances directes sur Flask
+ 34:     (`app.logger`) et sur les fonctions internes de logging du dashboard.
+ 35: 
+ 36:     Args:
+ 37:         subject: Sujet de l'email
+ 38:         delivery_time: Heure/fenêtre de livraison extraite (ex: "11h38" ou None)
+ 39:         sender_email: Adresse e-mail de l'expéditeur
+ 40:         email_id: Identifiant unique de l'email (pour les logs)
+ 41:         override_webhook_url: URL Make.com alternative (prioritaire si fournie)
+ 42:         extra_payload: Données supplémentaires à fusionner dans le payload JSON
+ 43:         attempts: Nombre de tentatives d'envoi (défaut: 2, minimum: 1)
+ 44:         logger: Logger optionnel (par défaut logging.getLogger(__name__))
+ 45:         log_hook: Callback facultatif prenant un dict pour journaliser côté dashboard
+ 46: 
+ 47:     Returns:
+ 48:         bool: True en cas de succès HTTP 200, False sinon
+ 49:     """
+ 50:     log = logger or logging.getLogger(__name__)
+ 51: 
+ 52:     payload = {
+ 53:         "subject": subject,
+ 54:         "delivery_time": delivery_time,
+ 55:         "sender_email": sender_email,
+ 56:     }
+ 57:     if extra_payload:
+ 58:         for k, v in extra_payload.items():
+ 59:             if k not in payload:
+ 60:                 payload[k] = v
+ 61: 
+ 62:     headers = {
+ 63:         "Content-Type": "application/json",
+ 64:         "Authorization": f"Bearer {settings.MAKECOM_API_KEY}",
+ 65:     }
+ 66: 
+ 67:     target_url = override_webhook_url or settings.WEBHOOK_URL
+ 68:     if not target_url:
+ 69:         # Use placeholder URL to maintain retry behavior when no webhook is configured
+ 70:         log.error("MAKECOM: No webhook URL configured (target_url is empty). Using placeholder for retry behavior.")
+ 71:         target_url = "http://localhost/placeholder-webhook"
  72: 
- 73:     Mirrors legacy fields for backward compatibility.
- 74:     Adds legacy Dropbox-specific aliases (`dropbox_urls`, `dropbox_first_url`).
- 75:     
- 76:     Note: delivery_links items may contain an optional 'r2_url' field if R2TransferService
- 77:     successfully transferred the file to Cloudflare R2. The structure is:
- 78:         {
- 79:             'provider': 'dropbox',
- 80:             'raw_url': 'https://...',
- 81:             'direct_url': 'https://...' or None,
- 82:             'r2_url': 'https://media.example.com/...' (optional)
- 83:         }
- 84:     """
- 85:     dropbox_urls_legacy = _extract_dropbox_urls_legacy(delivery_links)
- 86:     
- 87:     payload = {
- 88:         "microsoft_graph_email_id": email_id,
- 89:         "subject": subject,
- 90:         "receivedDateTime": date_received,
- 91:         "sender_address": sender,
- 92:         "bodyPreview": body_preview,
- 93:         "email_content": full_email_content,
- 94:         "delivery_links": delivery_links,
- 95:         "first_direct_download_url": first_direct_url,
- 96:         "dropbox_urls": dropbox_urls_legacy,
- 97:         "dropbox_first_url": dropbox_urls_legacy[0] if dropbox_urls_legacy else None,
- 98:     }
+ 73:     # Valider le nombre de tentatives (au moins 1)
+ 74:     attempts = max(1, attempts)
+ 75:     last_ok = False
+ 76:     for attempt in range(1, attempts + 1):
+ 77:         try:
+ 78:             log.info(
+ 79:                 "MAKECOM: Sending webhook (attempt %s/%s) for email %s - Subject: %s, Delivery: %s, Sender: %s",
+ 80:                 attempt,
+ 81:                 attempts,
+ 82:                 email_id,
+ 83:                 mask_sensitive_data(subject or "", "subject"),
+ 84:                 delivery_time,
+ 85:                 mask_sensitive_data(sender_email or "", "email"),
+ 86:             )
+ 87: 
+ 88:             response = requests.post(
+ 89:                 target_url,
+ 90:                 json=payload,
+ 91:                 headers=headers,
+ 92:                 timeout=30,
+ 93:                 verify=True,
+ 94:             )
+ 95: 
+ 96:             ok = response.status_code == 200
+ 97:             last_ok = ok
+ 98:             log_text = None if ok else (response.text[:200] if getattr(response, "text", None) else "Unknown error")
  99: 
-100:     return payload
-101: 
-102: 
-103: def build_desabo_make_payload(
-104:     *,
-105:     subject: Optional[str],
-106:     full_email_content: Optional[str],
-107:     sender_email: Optional[str],
-108:     time_start_payload: Optional[str],
-109:     time_end_payload: Optional[str],
-110: ) -> Dict[str, Any]:
-111:     """Builds the `extra_payload` for DESABO Make.com webhook.
-112: 
-113:     Matches legacy keys expected by Make scenario (detector, Text, Subject, Sender, webhooks_time_*).
-114:     """
-115:     return {
-116:         "detector": "desabonnement_journee_tarifs",
-117:         "email_content": full_email_content,
-118:         # Mailhook-style aliases for Make mapping
-119:         "Text": full_email_content,
-120:         "Subject": subject,
-121:         "Sender": {"email": sender_email} if sender_email else None,
-122:         "webhooks_time_start": time_start_payload,
-123:         "webhooks_time_end": time_end_payload,
-124:     }
+100:             # Hook vers le dashboard log si disponible (par tentative)
+101:             if log_hook:
+102:                 try:
+103:                     log_entry = {
+104:                         "timestamp": datetime.now(timezone.utc).isoformat(),
+105:                         "type": "makecom",
+106:                         "email_id": email_id,
+107:                         "status": "success" if ok else "error",
+108:                         "status_code": response.status_code,
+109:                         "target_url": target_url[:50] + "..." if len(target_url) > 50 else target_url,
+110:                         "subject": mask_sensitive_data(subject or "", "subject") or None,
+111:                     }
+112:                     if not ok:
+113:                         log_entry["error"] = log_text
+114:                     log_hook(log_entry)
+115:                 except Exception:
+116:                     pass
+117: 
+118:             if ok:
+119:                 log.info("MAKECOM: Webhook sent successfully for email %s on attempt %s", email_id, attempt)
+120:                 return True
+121:             else:
+122:                 log.error(
+123:                     "MAKECOM: Webhook failed for email %s on attempt %s. Status: %s, Response: %s",
+124:                     email_id,
+125:                     attempt,
+126:                     response.status_code,
+127:                     log_text,
+128:                 )
+129:         except requests.exceptions.RequestException as e:
+130:             last_ok = False
+131:             log.error("MAKECOM: Exception during webhook call for email %s on attempt %s: %s", email_id, attempt, e)
+132:             if log_hook:
+133:                 try:
+134:                     log_hook(
+135:                         {
+136:                             "timestamp": datetime.now(timezone.utc).isoformat(),
+137:                             "type": "makecom",
+138:                             "email_id": email_id,
+139:                             "status": "error",
+140:                             "error": str(e)[:200],
+141:                             "target_url": target_url[:50] + "..." if len(target_url) > 50 else target_url,
+142:                             "subject": mask_sensitive_data(subject or "", "subject") or None,
+143:                         }
+144:                     )
+145:                 except Exception:
+146:                     pass
+147: 
+148:     return last_ok
 ````
 
 ## File: routes/api_auth.py
@@ -6604,1460 +8782,1161 @@ requirements.txt
 44:         return jsonify({"success": False, "message": "Impossible de générer un magic link."}), 500
 ````
 
-## File: routes/api_processing.py
+## File: routes/api_ingress.py
 ````python
   1: from __future__ import annotations
   2: 
-  3: from pathlib import Path
-  4: 
-  5: from flask import Blueprint, jsonify, request
-  6: from flask_login import login_required
-  7: from config import app_config_store as _store
-  8: from preferences import processing_prefs as _prefs_module
-  9: 
- 10: bp = Blueprint("api_processing", __name__, url_prefix="/api/processing_prefs")
- 11: legacy_bp = Blueprint("api_processing_legacy", __name__)
- 12: 
- 13: # Storage compatible with legacy locations
- 14: PROCESSING_PREFS_FILE = (
- 15:     Path(__file__).resolve().parents[1] / "debug" / "processing_prefs.json"
- 16: )
- 17: DEFAULT_PROCESSING_PREFS = {
- 18:     "exclude_keywords": [],
- 19:     "require_attachments": False,
- 20:     "max_email_size_mb": None,
- 21:     "sender_priority": {},
- 22:     "retry_count": 0,
- 23:     "retry_delay_sec": 2,
- 24:     "webhook_timeout_sec": 30,
- 25:     "rate_limit_per_hour": 5,
- 26:     "notify_on_failure": False,
- 27:     "mirror_media_to_custom": True,  # Activer le miroir vers le webhook personnalisé par défaut
- 28: }
- 29: 
- 30: 
- 31: def _load_processing_prefs() -> dict:
- 32:     """Load prefs from DB if available, else file; merge with defaults."""
- 33:     data = _store.get_config_json(
- 34:         "processing_prefs", file_fallback=PROCESSING_PREFS_FILE
- 35:     ) or {}
- 36:     if isinstance(data, dict):
- 37:         return {**DEFAULT_PROCESSING_PREFS, **data}
- 38:     return DEFAULT_PROCESSING_PREFS.copy()
- 39: 
- 40: 
- 41: def _save_processing_prefs(prefs: dict) -> bool:
- 42:     """Persist prefs to DB with file fallback."""
- 43:     return _store.set_config_json(
- 44:         "processing_prefs", prefs, file_fallback=PROCESSING_PREFS_FILE
- 45:     )
+  3: import hashlib
+  4: import sys
+  5: from datetime import datetime, timezone
+  6: 
+  7: from flask import Blueprint, current_app, jsonify, request
+  8: 
+  9: from email_processing import link_extraction
+ 10: from email_processing import orchestrator as email_orchestrator
+ 11: from email_processing import pattern_matching
+ 12: from services import AuthService, ConfigService
+ 13: from utils.text_helpers import mask_sensitive_data
+ 14: from utils.time_helpers import is_within_time_window_local, parse_time_hhmm
+ 15: 
+ 16: try:
+ 17:     from services import R2TransferService
+ 18: except Exception:
+ 19:     R2TransferService = None
+ 20: 
+ 21: bp = Blueprint("api_ingress", __name__, url_prefix="/api/ingress")
+ 22: 
+ 23: _config_service = ConfigService()
+ 24: _auth_service = AuthService(_config_service)
+ 25: 
+ 26: 
+ 27: def _maybe_enrich_delivery_links_with_r2(
+ 28:     *, delivery_links: list, email_id: str, logger
+ 29: ) -> None:
+ 30:     if not delivery_links:
+ 31:         return
+ 32: 
+ 33:     try:
+ 34:         if R2TransferService is None:
+ 35:             return
+ 36: 
+ 37:         r2_service = R2TransferService.get_instance()
+ 38:         if not r2_service.is_enabled():
+ 39:             return
+ 40:     except Exception:
+ 41:         return
+ 42: 
+ 43:     for item in delivery_links:
+ 44:         if not isinstance(item, dict):
+ 45:             continue
  46: 
- 47: 
- 48: def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
- 49:     """
- 50:     Valide les préférences en normalisant les alias puis en déléguant à preferences.processing_prefs.
- 51:     Les alias 'exclude_keywords_recadrage' et 'exclude_keywords_autorepondeur' sont conservés dans le résultat
- 52:     mais la validation core est déléguée au module centralisé.
- 53:     """
- 54:     base_prefs = _load_processing_prefs()
- 55:     
- 56:     # Normalisation des alias: conserver les clés alias dans payload_normalized
- 57:     payload_normalized = dict(payload)
- 58:     
- 59:     # Validation des alias spécifiques (extend keys used by UI and tests)
- 60:     try:
- 61:         if "exclude_keywords_recadrage" in payload:
- 62:             val = payload["exclude_keywords_recadrage"]
- 63:             if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
- 64:                 return False, "exclude_keywords_recadrage doit être une liste de chaînes", base_prefs
- 65:             payload_normalized["exclude_keywords_recadrage"] = [x.strip() for x in val if x and isinstance(x, str)]
- 66:         
- 67:         if "exclude_keywords_autorepondeur" in payload:
- 68:             val = payload["exclude_keywords_autorepondeur"]
- 69:             if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
- 70:                 return False, "exclude_keywords_autorepondeur doit être une liste de chaînes", base_prefs
- 71:             payload_normalized["exclude_keywords_autorepondeur"] = [x.strip() for x in val if x and isinstance(x, str)]
- 72:     except Exception as e:
- 73:         return False, f"Alias validation error: {e}", base_prefs
- 74:     
- 75:     # Déléguer la validation des champs core au module centralisé
- 76:     ok, msg, validated_prefs = _prefs_module.validate_processing_prefs(payload_normalized, base_prefs)
- 77:     
- 78:     if not ok:
- 79:         return ok, msg, validated_prefs
- 80:     
- 81:     # Ajouter les alias validés au résultat final si présents
- 82:     if "exclude_keywords_recadrage" in payload_normalized:
- 83:         validated_prefs["exclude_keywords_recadrage"] = payload_normalized["exclude_keywords_recadrage"]
- 84:     if "exclude_keywords_autorepondeur" in payload_normalized:
- 85:         validated_prefs["exclude_keywords_autorepondeur"] = payload_normalized["exclude_keywords_autorepondeur"]
- 86:     
- 87:     return True, "ok", validated_prefs
- 88: 
- 89: 
- 90: @bp.route("", methods=["GET"])
- 91: @login_required
- 92: def get_processing_prefs():
- 93:     try:
- 94:         return jsonify({"success": True, "prefs": _load_processing_prefs()})
- 95:     except Exception as e:
- 96:         return jsonify({"success": False, "message": str(e)}), 500
- 97: 
- 98: 
- 99: @bp.route("", methods=["POST"])
-100: @login_required
-101: def update_processing_prefs():
-102:     try:
-103:         payload = request.get_json(force=True, silent=True) or {}
-104:         ok, msg, new_prefs = _validate_processing_prefs(payload)
-105:         if not ok:
-106:             return jsonify({"success": False, "message": msg}), 400
-107:         if _save_processing_prefs(new_prefs):
-108:             return jsonify({"success": True, "message": "Préférences mises à jour.", "prefs": new_prefs})
-109:         return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
-110:     except Exception as e:
-111:         return jsonify({"success": False, "message": str(e)}), 500
+ 47:         raw_url = item.get("raw_url")
+ 48:         provider = item.get("provider")
+ 49:         if not isinstance(raw_url, str) or not raw_url.strip():
+ 50:             continue
+ 51:         if not isinstance(provider, str) or not provider.strip():
+ 52:             continue
+ 53: 
+ 54:         if not isinstance(item.get("direct_url"), str) or not item.get("direct_url"):
+ 55:             item["direct_url"] = raw_url
+ 56: 
+ 57:         try:
+ 58:             normalized_source_url = r2_service.normalize_source_url(raw_url, provider)
+ 59:         except Exception:
+ 60:             normalized_source_url = raw_url
+ 61: 
+ 62:         remote_fetch_timeout = 15
+ 63:         try:
+ 64:             if provider == "dropbox" and "/scl/fo/" in normalized_source_url.lower():
+ 65:                 remote_fetch_timeout = 120
+ 66:         except Exception:
+ 67:             remote_fetch_timeout = 15
+ 68: 
+ 69:         try:
+ 70:             r2_url, original_filename = r2_service.request_remote_fetch(
+ 71:                 source_url=normalized_source_url,
+ 72:                 provider=provider,
+ 73:                 email_id=email_id,
+ 74:                 timeout=remote_fetch_timeout,
+ 75:             )
+ 76:         except Exception:
+ 77:             continue
+ 78: 
+ 79:         if not isinstance(r2_url, str) or not r2_url.strip():
+ 80:             continue
+ 81: 
+ 82:         item["r2_url"] = r2_url
+ 83:         if isinstance(original_filename, str) and original_filename.strip():
+ 84:             item["original_filename"] = original_filename.strip()
+ 85: 
+ 86:         try:
+ 87:             logger.info(
+ 88:                 "R2_TRANSFER: Successfully transferred %s link to R2 for email %s",
+ 89:                 provider,
+ 90:                 email_id,
+ 91:             )
+ 92:         except Exception:
+ 93:             pass
+ 94: 
+ 95:         try:
+ 96:             r2_service.persist_link_pair(
+ 97:                 source_url=normalized_source_url,
+ 98:                 r2_url=r2_url,
+ 99:                 provider=provider,
+100:                 original_filename=(original_filename if isinstance(original_filename, str) else None),
+101:             )
+102:         except Exception as ex:
+103:             try:
+104:                 logger.debug("R2_TRANSFER: persist_link_pair failed for email %s: %s", email_id, ex)
+105:             except Exception:
+106:                 pass
+107: 
+108: 
+109: def _compute_email_id(*, subject: str, sender: str, date: str) -> str:
+110:     unique_str = f"{subject}|{sender}|{date}"
+111:     return hashlib.md5(unique_str.encode("utf-8")).hexdigest()
 112: 
 113: 
-114: # --- Legacy alias routes to maintain backward-compat URLs used by tests/UI ---
-115: @legacy_bp.route("/api/get_processing_prefs", methods=["GET"])
-116: @login_required
-117: def legacy_get_processing_prefs():
-118:     return get_processing_prefs()
-119: 
-120: 
-121: @legacy_bp.route("/api/update_processing_prefs", methods=["POST"])
-122: @login_required
-123: def legacy_update_processing_prefs():
-124:     return update_processing_prefs()
-````
-
-## File: services/deduplication_service.py
-````python
-  1: """
-  2: services.deduplication_service
-  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  4: 
-  5: Service pour la déduplication d'emails avec Redis et fallback mémoire.
-  6: 
-  7: Features:
-  8: - Déduplication par email ID (identifiant unique de l'email)
-  9: - Déduplication par subject group (regroupement par sujet)
- 10: - Fallback automatique en mémoire si Redis indisponible
- 11: - Scoping mensuel optionnel pour subject groups
- 12: - Thread-safe via design immutable
- 13: 
- 14: Usage:
- 15:     from services import DeduplicationService, ConfigService
- 16:     from config.polling_config import PollingConfigService
- 17:     
- 18:     config = ConfigService()
- 19:     polling_config = PollingConfigService()
- 20:     
- 21:     dedup = DeduplicationService(
- 22:         redis_client=redis_client,
- 23:         logger=app.logger,
- 24:         config_service=config,
- 25:         polling_config_service=polling_config
- 26:     )
- 27:     
- 28:     if not dedup.is_email_processed(email_id):
- 29:         dedup.mark_email_processed(email_id)
- 30:     
- 31:     if not dedup.is_subject_group_processed(subject):
- 32:         dedup.mark_subject_group_processed(subject)
- 33: """
- 34: 
- 35: from __future__ import annotations
- 36: 
- 37: import hashlib
- 38: import re
- 39: from datetime import datetime
- 40: from typing import Optional, Set, TYPE_CHECKING
- 41: 
- 42: if TYPE_CHECKING:
- 43:     from services.config_service import ConfigService
- 44:     from config.polling_config import PollingConfigService
- 45: 
- 46: from utils.text_helpers import (
- 47:     normalize_no_accents_lower_trim,
- 48:     strip_leading_reply_prefixes,
- 49: )
- 50: 
- 51: 
- 52: class DeduplicationService:
- 53:     """Service pour la déduplication d'emails et subject groups.
- 54:     
- 55:     Attributes:
- 56:         _redis: Client Redis optionnel
- 57:         _logger: Logger pour diagnostics
- 58:         _config: ConfigService pour accès à la configuration
- 59:         _polling_config: PollingConfigService pour timezone
- 60:         _processed_email_ids: Set en mémoire (fallback)
- 61:         _processed_subject_groups: Set en mémoire (fallback)
- 62:     """
- 63:     
- 64:     def __init__(
- 65:         self,
- 66:         redis_client=None,
- 67:         logger=None,
- 68:         config_service: Optional[ConfigService] = None,
- 69:         polling_config_service: Optional[PollingConfigService] = None,
- 70:     ):
- 71:         """Initialise le service de déduplication.
- 72:         
- 73:         Args:
- 74:             redis_client: Client Redis optionnel (None = fallback mémoire)
- 75:             logger: Logger optionnel pour diagnostics
- 76:             config_service: ConfigService pour configuration
- 77:             polling_config_service: PollingConfigService pour timezone
- 78:         """
- 79:         self._redis = redis_client
- 80:         self._logger = logger
- 81:         self._config = config_service
- 82:         self._polling_config = polling_config_service
- 83:         
- 84:         # Fallbacks en mémoire (process-local uniquement)
- 85:         self._processed_email_ids: Set[str] = set()
- 86:         self._processed_subject_groups: Set[str] = set()
- 87:     
- 88:     # =========================================================================
- 89:     # Déduplication Email ID
- 90:     # =========================================================================
- 91:     
- 92:     def is_email_processed(self, email_id: str) -> bool:
- 93:         """Vérifie si un email a déjà été traité.
- 94:         
- 95:         Args:
- 96:             email_id: Identifiant unique de l'email
- 97:             
- 98:         Returns:
- 99:             True si déjà traité, False sinon
-100:         """
-101:         if not email_id:
-102:             return False
-103:         
-104:         if self.is_email_dedup_disabled():
-105:             return False
-106:         
-107:         # Essayer Redis d'abord
-108:         if self._use_redis():
-109:             try:
-110:                 keys_config = self._get_dedup_keys()
-111:                 key = keys_config["email_ids_key"]
-112:                 return bool(self._redis.sismember(key, email_id))
-113:             except Exception as e:
-114:                 if self._logger:
-115:                     self._logger.error(
-116:                         f"DEDUP: Error checking email ID '{email_id}': {e}. "
-117:                         f"Assuming NOT processed."
-118:                     )
-119:                 # Fall through to memory
-120:         
-121:         # Fallback mémoire
-122:         return email_id in self._processed_email_ids
-123:     
-124:     def mark_email_processed(self, email_id: str) -> bool:
-125:         """Marque un email comme traité.
-126:         
-127:         Args:
-128:             email_id: Identifiant unique de l'email
-129:             
-130:         Returns:
-131:             True si marqué avec succès
-132:         """
-133:         if not email_id:
-134:             return False
-135:         
-136:         # Si dédup désactivée, ne rien faire
-137:         if self.is_email_dedup_disabled():
-138:             return True  # Considéré comme succès (pas d'erreur)
-139:         
-140:         # Essayer Redis d'abord
-141:         if self._use_redis():
-142:             try:
-143:                 keys_config = self._get_dedup_keys()
-144:                 key = keys_config["email_ids_key"]
-145:                 self._redis.sadd(key, email_id)
-146:                 return True
-147:             except Exception as e:
-148:                 if self._logger:
-149:                     self._logger.error(f"DEDUP: Error marking email ID '{email_id}': {e}")
-150:                 # Fall through to memory
-151:         
-152:         # Fallback mémoire
-153:         self._processed_email_ids.add(email_id)
-154:         return True
-155:     
-156:     # =========================================================================
-157:     # Déduplication Subject Group
-158:     # =========================================================================
-159:     
-160:     def is_subject_group_processed(self, subject: str) -> bool:
-161:         """Vérifie si un subject group a été traité.
-162:         
-163:         Args:
-164:             subject: Sujet de l'email
-165:             
-166:         Returns:
-167:             True si déjà traité
-168:         """
-169:         if not subject:
-170:             return False
-171:         
-172:         if not self.is_subject_dedup_enabled():
-173:             return False
-174:         
-175:         # Générer l'ID du groupe
-176:         group_id = self.generate_subject_group_id(subject)
-177:         scoped_id = self._get_scoped_group_id(group_id)
-178:         
-179:         # Essayer Redis d'abord
-180:         if self._use_redis():
-181:             try:
-182:                 keys_config = self._get_dedup_keys()
-183:                 ttl_seconds = keys_config["subject_group_ttl"]
-184:                 ttl_prefix = keys_config["subject_group_prefix"]
-185:                 groups_key = keys_config["subject_groups_key"]
-186:                 
-187:                 if ttl_seconds and ttl_seconds > 0:
-188:                     ttl_key = ttl_prefix + scoped_id
-189:                     val = self._redis.get(ttl_key)
-190:                     if val is not None:
-191:                         return True
-192:                 
-193:                 return bool(self._redis.sismember(groups_key, scoped_id))
-194:             except Exception as e:
-195:                 if self._logger:
-196:                     self._logger.error(
-197:                         f"DEDUP: Error checking subject group '{group_id}': {e}. "
-198:                         f"Assuming NOT processed."
-199:                     )
-200:                 # Fall through to memory
-201:         
-202:         # Fallback mémoire
-203:         return scoped_id in self._processed_subject_groups
-204:     
-205:     def mark_subject_group_processed(self, subject: str) -> bool:
-206:         """Marque un subject group comme traité.
-207:         
-208:         Args:
-209:             subject: Sujet de l'email
-210:             
-211:         Returns:
-212:             True si succès
-213:         """
-214:         if not subject:
-215:             return False
-216:         
-217:         # Si dédup désactivée, ne rien faire
-218:         if not self.is_subject_dedup_enabled():
-219:             return True
-220:         
-221:         # Générer l'ID du groupe
-222:         group_id = self.generate_subject_group_id(subject)
-223:         scoped_id = self._get_scoped_group_id(group_id)
-224:         
-225:         # Essayer Redis d'abord
-226:         if self._use_redis():
-227:             try:
-228:                 keys_config = self._get_dedup_keys()
-229:                 ttl_seconds = keys_config["subject_group_ttl"]
-230:                 ttl_prefix = keys_config["subject_group_prefix"]
-231:                 groups_key = keys_config["subject_groups_key"]
-232:                 
-233:                 # Marquer avec TTL si configuré
-234:                 if ttl_seconds and ttl_seconds > 0:
-235:                     ttl_key = ttl_prefix + scoped_id
-236:                     self._redis.set(ttl_key, 1, ex=ttl_seconds)
-237:                 
-238:                 # Ajouter au set permanent
-239:                 self._redis.sadd(groups_key, scoped_id)
-240:                 return True
-241:             except Exception as e:
-242:                 if self._logger:
-243:                     self._logger.error(f"DEDUP: Error marking subject group '{group_id}': {e}")
-244:                 # Fall through to memory
-245:         
-246:         # Fallback mémoire
-247:         self._processed_subject_groups.add(scoped_id)
-248:         return True
-249:     
-250:     def generate_subject_group_id(self, subject: str) -> str:
-251:         """Génère un ID de groupe stable pour un sujet.
-252:         
-253:         Heuristique:
-254:         - Normalise le sujet (sans accents, minuscules, espaces réduits)
-255:         - Retire les préfixes Re:/Fwd:
-256:         - Si détecte "Média Solution Missions Recadrage Lot <num>" → groupe par lot
-257:         - Sinon si détecte "Lot <num>" → groupe par lot
-258:         - Sinon → hash MD5 du sujet normalisé
-259:         
-260:         Args:
-261:             subject: Sujet de l'email
-262:             
-263:         Returns:
-264:             Identifiant de groupe stable
-265:         """
-266:         # Normaliser
-267:         norm = normalize_no_accents_lower_trim(subject or "")
-268:         core = strip_leading_reply_prefixes(norm)
-269:         
-270:         # Essayer d'extraire un numéro de lot
-271:         m_lot = re.search(r"\blot\s+(\d+)\b", core)
-272:         lot_part = m_lot.group(1) if m_lot else None
-273:         
-274:         # Détecter les mots-clés Média Solution
-275:         is_media_solution = (
-276:             all(tok in core for tok in ["media solution", "missions recadrage", "lot"])
-277:             if core
-278:             else False
-279:         )
-280:         
-281:         if is_media_solution and lot_part:
-282:             return f"media_solution_missions_recadrage_lot_{lot_part}"
-283:         
-284:         if lot_part:
-285:             return f"lot_{lot_part}"
-286:         
-287:         # Fallback: hash du sujet normalisé
-288:         subject_hash = hashlib.md5(core.encode("utf-8")).hexdigest()
-289:         return f"subject_hash_{subject_hash}"
-290:     
-291:     # =========================================================================
-292:     # Configuration
-293:     # =========================================================================
-294:     
-295:     def is_email_dedup_disabled(self) -> bool:
-296:         """Vérifie si la déduplication par email ID est désactivée.
-297:         
-298:         Returns:
-299:             True si désactivée
-300:         """
-301:         if self._config:
-302:             return self._config.is_email_id_dedup_disabled()
-303:         return False
-304:     
-305:     def is_subject_dedup_enabled(self) -> bool:
-306:         """Vérifie si la déduplication par subject group est activée.
-307:         
-308:         Returns:
-309:             True si activée
-310:         """
-311:         if self._config:
-312:             return self._config.is_subject_group_dedup_enabled()
-313:         return False
-314:     
-315:     # =========================================================================
-316:     # Helpers Internes
-317:     # =========================================================================
-318:     
-319:     def _get_scoped_group_id(self, group_id: str) -> str:
-320:         """Applique le scoping mensuel si activé.
-321:         
-322:         Args:
-323:             group_id: ID de base du groupe
-324:             
-325:         Returns:
-326:             ID scopé (ex: "2025-11:lot_42") si scoping activé, sinon ID original
-327:         """
-328:         if not self.is_subject_dedup_enabled():
-329:             return group_id
-330:         
-331:         # Scoping mensuel basé sur le timezone de polling
-332:         try:
-333:             tz = self._polling_config.get_tz() if self._polling_config else None
-334:             now_local = datetime.now(tz) if tz else datetime.now()
-335:         except Exception:
-336:             now_local = datetime.now()
-337:         
-338:         month_prefix = now_local.strftime("%Y-%m")
-339:         return f"{month_prefix}:{group_id}"
-340:     
-341:     def _use_redis(self) -> bool:
-342:         """Vérifie si Redis est disponible.
-343:         
-344:         Returns:
-345:             True si Redis peut être utilisé
-346:         """
-347:         return self._redis is not None
-348:     
-349:     def _get_dedup_keys(self) -> dict:
-350:         """Récupère les clés Redis depuis la configuration.
-351:         
-352:         Returns:
-353:             dict avec email_ids_key, subject_groups_key, etc.
-354:         """
-355:         if self._config:
-356:             return self._config.get_dedup_redis_keys()
-357:         
-358:         # Fallback sur valeurs par défaut
-359:         return {
-360:             "email_ids_key": "r:ss:processed_email_ids:v1",
-361:             "subject_groups_key": "r:ss:processed_subject_groups:v1",
-362:             "subject_group_prefix": "r:ss:subj_grp:",
-363:             "subject_group_ttl": 2592000,  # 30 jours
-364:         }
-365:     
-366:     # =========================================================================
-367:     # Diagnostic & Stats
-368:     # =========================================================================
-369:     
-370:     def get_memory_stats(self) -> dict:
-371:         """Retourne les statistiques du fallback mémoire.
-372:         
-373:         Returns:
-374:             dict avec email_ids_count, subject_groups_count
-375:         """
-376:         return {
-377:             "email_ids_count": len(self._processed_email_ids),
-378:             "subject_groups_count": len(self._processed_subject_groups),
-379:             "using_redis": self._use_redis(),
-380:         }
-381:     
-382:     def clear_memory_cache(self) -> None:
-383:         """Vide le cache mémoire (pour tests ou débogage)."""
-384:         self._processed_email_ids.clear()
-385:         self._processed_subject_groups.clear()
-386:     
-387:     def __repr__(self) -> str:
-388:         """Représentation du service."""
-389:         backend = "Redis" if self._use_redis() else "Memory"
-390:         email_dedup = "disabled" if self.is_email_dedup_disabled() else "enabled"
-391:         subject_dedup = "enabled" if self.is_subject_dedup_enabled() else "disabled"
-392:         return (
-393:             f"<DeduplicationService(backend={backend}, "
-394:             f"email_dedup={email_dedup}, subject_dedup={subject_dedup})>"
-395:         )
-````
-
-## File: services/README.md
-````markdown
-  1: # Services - Architecture Orientée Services
-  2: 
-  3: **Date de création:** 2025-11-17  
-  4: **Version:** 1.0  
-  5: **Status:** ✅ Production Ready
-  6: 
-  7: ---
-  8: 
-  9: ## 📋 Vue d'Ensemble
- 10: 
- 11: Le dossier `services/` contient 8 services professionnels qui encapsulent la logique métier de l'application. Ces services fournissent des interfaces cohérentes et testables pour accéder aux fonctionnalités clés.
- 12: 
- 13: ### Philosophie
- 14: 
- 15: - **Separation of Concerns** - Un service = Une responsabilité
- 16: - **Dependency Injection** - Services configurables via injection
- 17: - **Testabilité** - Mocks faciles, tests isolés
- 18: - **Robustesse** - Gestion d'erreurs, fallbacks automatiques
- 19: - **Performance** - Cache intelligent, Singletons
- 20: 
- 21: ---
- 22: 
- 23: ## 🗂️ Structure
- 24: 
- 25: ```
- 26: services/
- 27: ├── __init__.py                    # Module principal - exports all services
- 28: ├── config_service.py              # Configuration centralisée
- 29: ├── runtime_flags_service.py       # Flags runtime avec cache (Singleton)
- 30: ├── webhook_config_service.py      # Webhooks + validation (Singleton)
- 31: ├── auth_service.py                # Authentification unifiée
- 32: ├── deduplication_service.py       # Déduplication emails/subject groups
- 33: ├── magic_link_service.py          # Magic links authentification (Singleton)
- 34: ├── r2_transfer_service.py         # Offload Cloudflare R2 (Singleton)
- 35: └── README.md                      # Ce fichier
- 36: ```
- 37: 
- 38: ---
- 39: 
- 40: ## 📦 Services Disponibles
- 41: 
- 42: ### 1. ConfigService
- 43: 
- 44: **Fichier:** `config_service.py`  
- 45: **Pattern:** Standard (instance par appel)  
- 46: **Responsabilité:** Accès centralisé à toute la configuration applicative
- 47: 
- 48: **Fonctionnalités:**
- 49: - Configuration Email/IMAP
- 50: - Configuration Webhooks
- 51: - Tokens API
- 52: - Configuration Render (déploiement)
- 53: - Authentification Dashboard
- 54: - Clés Redis Déduplication
- 55: 
- 56: **Usage:**
- 57: ```python
- 58: from services import ConfigService
- 59: 
- 60: config = ConfigService()
- 61: 
- 62: # Email config
- 63: if config.is_email_config_valid():
- 64:     email_cfg = config.get_email_config()
- 65:     print(f"Email: {email_cfg['address']}")
- 66: 
- 67: # Webhook config
- 68: if config.has_webhook_url():
- 69:     url = config.get_webhook_url()
- 70: 
- 71: # API token
- 72: if config.verify_api_token(token):
- 73:     # Token valide
- 74:     pass
- 75: ```
- 76: 
- 77: ---
- 78: 
- 79: ### 2. RuntimeFlagsService
- 80: 
- 81: **Fichier:** `runtime_flags_service.py`  
- 82: **Pattern:** Singleton  
- 83: **Responsabilité:** Gestion flags runtime avec cache intelligent
- 84: 
- 85: **Fonctionnalités:**
- 86: - Cache mémoire avec TTL (60s par défaut)
- 87: - Persistence JSON automatique
- 88: - Invalidation cache intelligente
- 89: - Lecture/écriture atomique
- 90: 
- 91: **Usage:**
- 92: ```python
- 93: from services import RuntimeFlagsService
- 94: from pathlib import Path
- 95: 
- 96: # Initialisation (une fois au démarrage)
- 97: service = RuntimeFlagsService.get_instance(
- 98:     file_path=Path("debug/runtime_flags.json"),
- 99:     defaults={
-100:         "disable_dedup": False,
-101:         "enable_feature": True,
-102:     }
-103: )
-104: 
-105: # Utilisation
-106: if service.get_flag("disable_dedup"):
-107:     # Bypass dedup
-108:     pass
-109: 
-110: # Modifier un flag (persiste immédiatement)
-111: service.set_flag("disable_dedup", True)
-112: 
-113: # Mise à jour multiple atomique
-114: service.update_flags({
-115:     "disable_dedup": False,
-116:     "enable_feature": True,
-117: })
-118: ```
-119: 
-120: ---
-121: 
-122: ### 3. WebhookConfigService
-123: 
-124: **Fichier:** `webhook_config_service.py`  
-125: **Pattern:** Singleton  
-126: **Responsabilité:** Configuration webhooks avec validation stricte
+114: @bp.route("/gmail", methods=["POST"])
+115: def ingest_gmail():
+116:     if not _auth_service.verify_api_key_from_request(request):
+117:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+118: 
+119:     payload = request.get_json(silent=True)
+120:     if not isinstance(payload, dict):
+121:         return jsonify({"success": False, "message": "Invalid JSON payload"}), 400
+122: 
+123:     subject = payload.get("subject")
+124:     sender_raw = payload.get("sender")
+125:     body = payload.get("body")
+126:     email_date = payload.get("date")
 127: 
-128: **Fonctionnalités:**
-129: - Validation stricte URLs (HTTPS requis)
-130: - Normalisation URLs Make.com
-131: - Configuration Absence Globale
-132: - SSL verify toggle
-133: - Cache avec invalidation
-134: 
-135: **Usage:**
-136: ```python
-137: from services import WebhookConfigService
-138: from pathlib import Path
-139: 
-140: # Initialisation
-141: service = WebhookConfigService.get_instance(
-142:     file_path=Path("debug/webhook_config.json")
-143: )
-144: 
-145: # Définir URL avec validation
-146: ok, msg = service.set_webhook_url("https://hook.eu2.make.com/abc123")
-147: if ok:
-148:     print("URL valide et enregistrée")
-149: else:
-150:     print(f"Erreur: {msg}")
-151: 
-152: # Format Make.com auto-normalisé
-153: ok, msg = service.set_webhook_url("abc123@hook.eu2.make.com")
-154: # Converti en: https://hook.eu2.make.com/abc123
+128:     if not isinstance(subject, str):
+129:         subject = ""
+130:     if not isinstance(sender_raw, str):
+131:         sender_raw = ""
+132:     if not isinstance(body, str):
+133:         body = ""
+134:     if not isinstance(email_date, str):
+135:         email_date = ""
+136: 
+137:     if not sender_raw:
+138:         return jsonify({"success": False, "message": "Missing field: sender"}), 400
+139:     if not body:
+140:         return jsonify({"success": False, "message": "Missing field: body"}), 400
+141: 
+142:     ar = sys.modules.get("app_render")
+143:     if ar is None:
+144:         return jsonify({"success": False, "message": "Server not ready"}), 503
+145: 
+146:     try:
+147:         extract_sender_fn = getattr(ar, "extract_sender_email", None)
+148:         sender_email = (
+149:             extract_sender_fn(sender_raw) if callable(extract_sender_fn) else sender_raw
+150:         )
+151:     except Exception:
+152:         sender_email = sender_raw
+153: 
+154:     sender_email = (sender_email or sender_raw).strip().lower()
 155: 
-156: # Configuration Absence Globale
-157: absence = service.get_absence_config()
-158: service.update_absence_config({
-159:     "absence_pause_enabled": True,
-160:     "absence_pause_days": ["saturday", "sunday"],
-161: })
-162: ```
-163: 
-164: ---
-165: 
-166: ### 4. AuthService
+156:     email_id = _compute_email_id(subject=subject, sender=sender_email, date=email_date)
+157: 
+158:     try:
+159:         current_app.logger.info(
+160:             "INGRESS: gmail payload received (email_id=%s sender=%s subject=%s)",
+161:             email_id,
+162:             mask_sensitive_data(sender_email, "email"),
+163:             mask_sensitive_data(subject, "subject"),
+164:         )
+165:     except Exception:
+166:         pass
 167: 
-168: **Fichier:** `auth_service.py`  
-169: **Pattern:** Standard (inject ConfigService)  
-170: **Responsabilité:** Authentification unifiée (dashboard + API)
-171: 
-172: **Fonctionnalités:**
-173: - Authentification dashboard (Flask-Login)
-174: - Authentification API (Bearer token)
-175: - Authentification endpoints test (X-API-Key)
-176: - Gestion LoginManager
-177: - Décorateurs réutilisables
-178: 
-179: **Usage:**
-180: ```python
-181: from services import ConfigService, AuthService
-182: from flask import Flask, request
-183: 
-184: app = Flask(__name__)
-185: config = ConfigService()
-186: auth = AuthService(config)
-187: 
-188: # Initialiser Flask-Login
-189: auth.init_flask_login(app)
-190: 
-191: # Dashboard login
-192: username = request.form.get('username')
-193: password = request.form.get('password')
-194: if auth.verify_dashboard_credentials(username, password):
-195:     user = auth.create_user(username)
-196:     login_user(user)
-197: 
-198: # Décorateur API
-199: @app.route('/api/protected')
-200: @auth.api_key_required
-201: def protected():
-202:     return {"data": "secret"}
-203: 
-204: # Décorateur test API
-205: @app.route('/api/test/validate')
-206: @auth.test_api_key_required
-207: def test_endpoint():
-208:     return {"status": "ok"}
-209: ```
-210: 
-211: ---
-212: 
-213: ### 5. DeduplicationService
-214: 
-215: **Fichier:** `deduplication_service.py`  
-216: **Pattern:** Standard (inject services)  
-217: **Responsabilité:** Déduplication emails et subject groups
-218: 
-219: **Fonctionnalités:**
-220: - Dédup par email ID
-221: - Dédup par subject group
-222: - Fallback mémoire si Redis down
-223: - Scoping mensuel automatique
-224: - Génération subject group ID intelligente
-225: 
-226: **Usage:**
-227: ```python
-228: from services import DeduplicationService, ConfigService
-229: from config.polling_config import PollingConfigService
-230: 
-231: config = ConfigService()
-232: polling_config = PollingConfigService()
-233: 
-234: dedup = DeduplicationService(
-235:     redis_client=redis_client,  # None = fallback mémoire
-236:     logger=app.logger,
-237:     config_service=config,
-238:     polling_config_service=polling_config,
-239: )
-240: 
-241: # Email ID dedup
-242: email_id = "unique-email-id-123"
-243: if not dedup.is_email_processed(email_id):
-244:     # Traiter l'email
-245:     process_email(email_id)
-246:     dedup.mark_email_processed(email_id)
+168:     try:
+169:         is_processed_fn = getattr(ar, "is_email_id_processed_redis", None)
+170:         if callable(is_processed_fn) and is_processed_fn(email_id):
+171:             return (
+172:                 jsonify({"success": True, "status": "already_processed", "email_id": email_id}),
+173:                 200,
+174:             )
+175:     except Exception:
+176:         pass
+177: 
+178:     try:
+179:         sender_list = []
+180:         polling_service = getattr(ar, "_polling_service", None)
+181:         if polling_service is not None:
+182:             try:
+183:                 sender_list = polling_service.get_sender_list() or []
+184:             except Exception:
+185:                 sender_list = []
+186:         allowed = [str(s).strip().lower() for s in sender_list if isinstance(s, str) and s.strip()]
+187:         if allowed and sender_email not in allowed:
+188:             try:
+189:                 mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
+190:                 if callable(mark_processed_fn):
+191:                     mark_processed_fn(email_id)
+192:             except Exception:
+193:                 pass
+194:             return (
+195:                 jsonify({"success": True, "status": "skipped_sender_not_allowed", "email_id": email_id}),
+196:                 200,
+197:             )
+198:     except Exception:
+199:         pass
+200: 
+201:     try:
+202:         if not email_orchestrator._is_webhook_sending_enabled():
+203:             return (
+204:                 jsonify({"success": False, "message": "Webhook sending disabled"}),
+205:                 409,
+206:             )
+207:     except Exception:
+208:         pass
+209: 
+210:     tz_for_polling = getattr(ar, "TZ_FOR_POLLING", None)
+211:     try:
+212:         now_local = datetime.now(tz_for_polling) if tz_for_polling else datetime.now()
+213:     except Exception:
+214:         now_local = datetime.now()
+215: 
+216:     detector_val = None
+217:     delivery_time_val = None
+218:     desabo_is_urgent = False
+219:     try:
+220:         ms_res = pattern_matching.check_media_solution_pattern(
+221:             subject or "", body, tz_for_polling, current_app.logger
+222:         )
+223:         if isinstance(ms_res, dict) and bool(ms_res.get("matches")):
+224:             detector_val = "recadrage"
+225:             delivery_time_val = ms_res.get("delivery_time")
+226:         else:
+227:             des_res = pattern_matching.check_desabo_conditions(
+228:                 subject or "", body, current_app.logger
+229:             )
+230:             if isinstance(des_res, dict) and bool(des_res.get("matches")):
+231:                 detector_val = "desabonnement_journee_tarifs"
+232:                 desabo_is_urgent = bool(des_res.get("is_urgent"))
+233:     except Exception:
+234:         detector_val = None
+235: 
+236:     s_str, e_str = "", ""
+237:     try:
+238:         s_str, e_str = email_orchestrator._load_webhook_global_time_window()
+239:     except Exception:
+240:         s_str, e_str = "", ""
+241: 
+242:     start_t = parse_time_hhmm(s_str) if s_str else None
+243:     end_t = parse_time_hhmm(e_str) if e_str else None
+244:     within = True
+245:     if start_t and end_t:
+246:         within = is_within_time_window_local(now_local, start_t, end_t)
 247: 
-248: # Subject group dedup
-249: subject = "Média Solution - Missions Recadrage - Lot 42"
-250: if not dedup.is_subject_group_processed(subject):
-251:     # Traiter
-252:     process_subject(subject)
-253:     dedup.mark_subject_group_processed(subject)
-254: 
-255: # Générer ID de groupe
-256: group_id = dedup.generate_subject_group_id(subject)
-257: # → "media_solution_missions_recadrage_lot_42"
-258: 
-259: # Stats
-260: stats = dedup.get_memory_stats()
-261: print(f"Email IDs in memory: {stats['email_ids_count']}")
-262: print(f"Using Redis: {stats['using_redis']}")
-263: ```
-264: 
-265: ---
-266: 
-267: ## 🚀 Quick Start
-268: 
-269: ### Utilisation dans app_render.py
-270: 
-271: Les services sont **déjà initialisés** dans `app_render.py` :
-272: 
-273: ```python
-274: # Services disponibles globalement dans app_render.py
-275: _config_service = ConfigService()
-276: _runtime_flags_service = RuntimeFlagsService.get_instance(...)
-277: _webhook_service = WebhookConfigService.get_instance(...)
-278: _auth_service = AuthService(_config_service)
-279: _polling_service = PollingConfigService(settings)
-280: _dedup_service = DeduplicationService(...)
-281: _magic_link_service = MagicLinkService.get_instance(...)
-282: _r2_transfer_service = R2TransferService.get_instance(...)
-283: ```
-284: 
-285: **Utiliser directement:**
-286: ```python
-287: # Dans une fonction de app_render.py
-288: def my_function():
-289:     if _config_service.is_email_config_valid():
-290:         # Faire quelque chose
-291:         pass
-292: ```
-293: 
-294: ---
-295: 
-296: ### 6. MagicLinkService
-297: 
-298: **Fichier:** `magic_link_service.py`  
-299: **Pattern:** Singleton  
-300: **Responsabilité:** Génération et validation des magic links pour authentification sans mot de passe
-301: 
-302: **Fonctionnalités:**
-303: - Génération tokens HMAC SHA-256 signés
-304: - Support one-shot (TTL configurable) et permanent
-305: - Stockage partagé via API PHP ou fallback fichier JSON
-306: - Nettoyage automatique tokens expirés
-307: - Validation et consommation sécurisées
-308: 
-309: **Usage:**
-310: ```python
-311: from services import MagicLinkService
-312: 
-313: # Initialisation (automatique via get_instance)
-314: service = MagicLinkService.get_instance()
-315: 
-316: # Générer un magic link one-shot
-317: link_data = service.generate_magic_link(unlimited=False)
-318: print(f"Lien: {link_data['url']}")
-319: print(f"Expire: {link_data['expires_at']}")
-320: 
-321: # Générer un magic link permanent
-322: permanent_link = service.generate_magic_link(unlimited=True)
-323: print(f"Lien permanent: {permanent_link['url']}")
-324: 
-325: # Valider un token
-326: validation = service.validate_magic_link(token)
-327: if validation['valid']:
-328:     print(f"Token valide pour: {validation['purpose']}")
-329: 
-330: # Consommer un token one-shot
-331: if service.consume_magic_link(token):
-332:     print("Token consommé avec succès")
-333: 
-334: # Révoquer manuellement un token
-335: if service.revoke_magic_link(token):
-336:     print("Token révoqué")
-337: 
-338: # Nettoyer les tokens expirés
-339: cleaned = service.cleanup_expired_tokens()
-340: print(f"{cleaned} tokens expirés supprimés")
-341: ```
-342: 
-343: ---
-344: 
-345: ### 7. R2TransferService
-346: 
-347: **Fichier:** `r2_transfer_service.py`  
-348: **Pattern:** Singleton  
-349: **Responsabilité:** Offload Cloudflare R2 pour économiser la bande passante
-350: 
-351: **Fonctionnalités:**
-352: - Normalisation URLs Dropbox (y compris `/scl/fo/`)
-353: - Fetch distant via Worker Cloudflare sécurisé (token X-R2-FETCH-TOKEN)
-354: - Persistance paires `source_url`/`r2_url` + `original_filename`
-355: - Fallback gracieux si Worker indisponible
-356: - Timeout spécifique pour dossiers Dropbox (120s)
-357: - Validation ZIP et métadonnées
-358: 
-359: **Usage:**
-360: ```python
-361: from services import R2TransferService
-362: 
-363: # Initialisation (automatique via get_instance)
-364: service = R2TransferService.get_instance()
-365: 
-366: # Vérifier si le service est activé
-367: if service.is_enabled():
-368:     print("Service R2 activé")
-369:     print(f"Endpoint: {service.get_fetch_endpoint()}")
-370:     print(f"Bucket: {service.get_bucket_name()}")
-371: 
-372: # Demander un offload distant
-373: try:
-374:     result = service.request_remote_fetch(
-375:         source_url="https://www.dropbox.com/scl/fi/...",
-376:         provider="dropbox",
-377:         original_filename="document.pdf"
-378:     )
-379:     if result and result.get('r2_url'):
-380:         print(f"Offload réussi: {result['r2_url']}")
-381:         print(f"Nom original: {result.get('original_filename')}")
-382:     else:
-383:         print("Offload échoué, utilisation URL source")
-384: except Exception as e:
-385:     print(f"Erreur R2: {e}")
-386: 
-387: # Persister manuellement une paire source/R2
-388: service.persist_link_pair(
-389:     source_url="https://example.com/file.pdf",
-390:     r2_url="https://cdn.example.com/file.pdf",
-391:     original_filename="file.pdf"
-392: )
-393: 
-394: # Lister les liens récents
-395: recent_links = service.get_recent_links(limit=10)
-396: for link in recent_links:
-397:     print(f"{link['provider']}: {link['original_filename']}")
-398: ```
-399: 
-400: ---
-401: 
-402: ### 8. PollingConfigService
-403: 
-404: **Fichier:** `config/polling_config.py`  
-405: **Pattern:** Standard  
-406: **Responsabilité:** Configuration du polling IMAP et fenêtres actives
-407: 
-408: **Fonctionnalités:**
-409: - Jours actifs pour polling (0=Lundi à 6=Dimanche)
-410: - Fenêtres horaires (début/fin)
-411: - Liste expéditeurs d'intérêt
-412: - Intervalles polling (actif/inactif)
-413: - Timezone configuration
-414: - Flag UI `enable_polling` persisté
-415: 
-416: **Usage:**
-417: ```python
-418: from config.polling_config import PollingConfigService
-419: 
-420: # Initialisation
-421: service = PollingConfigService()
-422: 
-423: # Jours actifs
-424: active_days = service.get_active_days()  # [0, 1, 2, 3, 4] (Lundi-Vendredi)
-425: 
-426: # Fenêtre horaire
-427: start_hour = service.get_active_start_hour()  # 9
-428: end_hour = service.get_active_end_hour()  # 17
-429: 
-430: # Expéditeurs
-431: senders = service.get_sender_list()  # ["media@example.com", "recadrage@example.com"]
-432: 
-433: # Intervalles
-434: active_interval = service.get_email_poll_interval_s()  # 300 (5 minutes)
-435: inactive_interval = service.get_inactive_check_interval_s()  # 1800 (30 minutes)
-436: 
-437: # Timezone
-438: tz = service.get_tz()  # ZoneInfo("Europe/Paris") ou UTC
-439: 
-440: # Vacances
-441: if service.is_in_vacation():
-442:     print("Période de vacances - polling désactivé")
-443: 
-444: # Flag UI
-445: if service.get_enable_polling():
-446:     print("Polling activé via UI")
-447: else:
-448:     print("Polling désactivé via UI")
-449: ```
-450: 
-451: ### Utilisation dans les Routes (Blueprints)
-452: 
-453: **Option 1: Importer depuis app_render**
-454: ```python
-455: # Dans routes/api_webhooks.py par exemple
-456: from app_render import _config_service, _webhook_service
-457: 
-458: @bp.route('/webhook/config')
-459: def get_config():
-460:     return {
-461:         "url": _webhook_service.get_webhook_url(),
-462:         "ssl_verify": _config_service.get_webhook_ssl_verify(),
-463:     }
-464: ```
-465: 
-466: **Option 2: Créer vos propres instances**
-467: ```python
-468: from services import ConfigService
-469: 
-470: def my_route():
-471:     config = ConfigService()
-472:     # Utiliser config
-473: ```
-474: 
-475: ---
-476: 
-477: ## ✅ Tests
-478: 
-479: Tous les services ont des tests unitaires complets :
-480: 
-481: ```bash
-482: # Lancer tests des services
-483: pytest tests/test_services.py -v
-484: 
-485: # Résultat: 25/25 tests passed (100%)
-486: ```
-487: 
-488: **Couverture:**
-489: - ConfigService: 66.22%
-490: - RuntimeFlagsService: 86.02%
-491: - WebhookConfigService: 57.41%
-492: - AuthService: 49.23%
-493: - DeduplicationService: 41.22%
-494: 
-495: ---
-496: 
-497: ## 📚 Documentation
-498: 
-499: | Document | Description |
-500: |----------|-------------|
-501: | `SERVICES_USAGE_EXAMPLES.md` | Exemples détaillés d'utilisation |
-502: | `REFACTORING_ARCHITECTURE_PLAN.md` | Plan architectural complet |
-503: | `REFACTORING_SERVICES_SUMMARY.md` | Résumé Phase 1 |
-504: | `REFACTORING_PHASE2_SUMMARY.md` | Résumé Phase 2 |
-505: | `tests/test_services.py` | Tests = documentation vivante |
-506: 
-507: ---
-508: 
-509: ## 🔧 Dépannage
-510: 
-511: ### Le service retourne None
-512: 
-513: **Cause:** Échec d'initialisation  
-514: **Solution:** Vérifier les logs au démarrage (préfixe `SVC:`)
-515: 
-516: ```
-517: INFO - SVC: RuntimeFlagsService initialized (cache_ttl=60s)
-518: ERROR - SVC: Failed to initialize WebhookConfigService: ...
-519: ```
-520: 
-521: ### Cache pas mis à jour
-522: 
-523: **Service:** RuntimeFlagsService, WebhookConfigService  
-524: **Solution:** Forcer rechargement
-525: 
-526: ```python
-527: service.reload()  # Invalide cache, force reload depuis disque
-528: ```
-529: 
-530: ### Redis indisponible
-531: 
-532: **Service:** DeduplicationService  
-533: **Comportement:** Fallback automatique en mémoire (process-local)  
-534: **Vérification:**
-535: 
-536: ```python
-537: stats = dedup.get_memory_stats()
-538: print(stats['using_redis'])  # False = fallback mémoire
-539: ```
-540: 
-541: ---
-542: 
-543: ## 🎯 Bonnes Pratiques
-544: 
-545: ### 1. Injecter les Dépendances
-546: 
-547: ```python
-548: # ✅ BON
-549: def my_function(config_service: ConfigService):
-550:     return config_service.get_webhook_url()
-551: 
-552: # ❌ ÉVITER
-553: def my_function():
-554:     config = ConfigService()  # Nouvelle instance à chaque appel
-555:     return config.get_webhook_url()
-556: ```
-557: 
-558: ### 2. Utiliser les Singletons Correctement
-559: 
-560: ```python
-561: # ✅ BON - Initialisation une fois
-562: service = RuntimeFlagsService.get_instance(path, defaults)
-563: 
-564: # ✅ BON - Récupération ensuite
-565: service = RuntimeFlagsService.get_instance()
-566: 
-567: # ❌ ÉVITER - Re-initialisation inutile
-568: service = RuntimeFlagsService.get_instance(path, defaults)  # À chaque fois
-569: ```
-570: 
-571: ### 3. Gérer les Erreurs
-572: 
-573: ```python
-574: # ✅ BON
-575: try:
-576:     ok, msg = webhook_service.set_webhook_url(url)
-577:     if not ok:
-578:         logger.error(f"Invalid webhook: {msg}")
-579: except Exception as e:
-580:     logger.error(f"Failed to set webhook: {e}")
-581: 
-582: # ❌ ÉVITER - Pas de gestion d'erreur
-583: webhook_service.set_webhook_url(url)  # Peut lever exception
-584: ```
-585: 
-586: ---
-587: 
-588: ## 💡 Contribuer
-589: 
-590: ### Ajouter un Nouveau Service
-591: 
-592: 1. Créer `services/my_service.py`
-593: 2. Implémenter la classe avec docstrings
-594: 3. Ajouter au `services/__init__.py`
-595: 4. Créer tests dans `tests/test_services.py`
-596: 5. Documenter dans ce README
-597: 
-598: ### Standards de Code
-599: 
-600: - ✅ Annotations de types complètes
-601: - ✅ Docstrings Google style
-602: - ✅ Gestion d'erreurs robuste
-603: - ✅ Tests unitaires (>70% couverture)
-604: - ✅ Logs avec préfixe `SVC:`
-605: 
-606: ---
-607: 
-608: ## 📞 Support
-609: 
-610: **Questions ?**  
-611: Voir les exemples dans `SERVICES_USAGE_EXAMPLES.md`
-612: 
-613: **Bugs ?**  
-614: Vérifier les logs (préfixe `SVC:`) et les tests
-615: 
-616: **Améliora tions ?**  
-617: Suivre le plan dans `REFACTORING_ARCHITECTURE_PLAN.md`
-618: 
-619: ---
-620: 
-621: **Version:** 1.0  
-622: **Status:** ✅ Production Ready  
-623: **Tests:** 25/25 passed (100%)  
-624: **Last Update:** 2025-11-17
-````
-
-## File: services/runtime_flags_service.py
-````python
-  1: """
-  2: services.runtime_flags_service
-  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  4: 
-  5: Service pour gérer les flags runtime avec cache intelligent et persistence.
-  6: 
-  7: Features:
-  8: - Pattern Singleton (instance unique)
-  9: - Cache en mémoire avec TTL
- 10: - Persistence JSON automatique
- 11: - Thread-safe (via design immutable)
- 12: - Validation des valeurs
- 13: 
- 14: Usage:
- 15:     from services import RuntimeFlagsService
- 16:     from pathlib import Path
- 17:     
- 18:     # Initialisation (une seule fois au démarrage)
- 19:     service = RuntimeFlagsService.get_instance(
- 20:         file_path=Path("debug/runtime_flags.json"),
- 21:         defaults={
- 22:             "disable_email_id_dedup": False,
- 23:             "allow_custom_webhook_without_links": False,
- 24:         }
- 25:     )
- 26:     
- 27:     # Utilisation
- 28:     if service.get_flag("disable_email_id_dedup"):
- 29:         # ...
- 30:     
- 31:     service.set_flag("disable_email_id_dedup", True)
- 32: """
- 33: 
- 34: from __future__ import annotations
- 35: 
- 36: import json
- 37: import os
- 38: import threading
- 39: import time
- 40: from pathlib import Path
- 41: from typing import Dict, Optional, Any
- 42: 
- 43: 
- 44: class RuntimeFlagsService:
- 45:     """Service pour gérer les flags runtime avec cache et persistence.
- 46:     
- 47:     Implémente le pattern Singleton pour garantir une instance unique.
- 48:     Le cache est invalidé automatiquement après un TTL configuré.
- 49:     
- 50:     Attributes:
- 51:         _instance: Instance singleton
- 52:         _file_path: Chemin du fichier JSON de persistence
- 53:         _defaults: Valeurs par défaut des flags
- 54:         _cache: Cache en mémoire des flags
- 55:         _cache_timestamp: Timestamp du dernier chargement du cache
- 56:         _cache_ttl: Durée de vie du cache en secondes
- 57:     """
- 58:     
- 59:     _instance: Optional[RuntimeFlagsService] = None
- 60:     
- 61:     def __init__(self, file_path: Path, defaults: Dict[str, bool]):
- 62:         """Initialise le service (utiliser get_instance() de préférence).
- 63:         
- 64:         Args:
- 65:             file_path: Chemin du fichier JSON
- 66:             defaults: Dictionnaire des valeurs par défaut
- 67:         """
- 68:         self._lock = threading.RLock()
- 69:         self._file_path = file_path
- 70:         self._defaults = defaults
- 71:         self._cache: Optional[Dict[str, bool]] = None
- 72:         self._cache_timestamp: Optional[float] = None
- 73:         self._cache_ttl = 60  # 60 secondes
- 74:     
- 75:     @classmethod
- 76:     def get_instance(
- 77:         cls,
- 78:         file_path: Optional[Path] = None,
- 79:         defaults: Optional[Dict[str, bool]] = None
- 80:     ) -> RuntimeFlagsService:
- 81:         """Récupère ou crée l'instance singleton.
- 82:         
- 83:         Args:
- 84:             file_path: Chemin du fichier (requis à la première création)
- 85:             defaults: Valeurs par défaut (requis à la première création)
- 86:             
- 87:         Returns:
- 88:             Instance unique du service
- 89:             
- 90:         Raises:
- 91:             ValueError: Si instance pas encore créée et paramètres manquants
- 92:         """
- 93:         if cls._instance is None:
- 94:             if file_path is None or defaults is None:
- 95:                 raise ValueError(
- 96:                     "RuntimeFlagsService: file_path and defaults required for first initialization"
- 97:                 )
- 98:             cls._instance = cls(file_path, defaults)
- 99:         return cls._instance
-100:     
-101:     @classmethod
-102:     def reset_instance(cls) -> None:
-103:         """Réinitialise l'instance singleton (pour tests uniquement)."""
-104:         cls._instance = None
-105:     
-106:     # =========================================================================
-107:     # Accès aux Flags
-108:     # =========================================================================
-109:     
-110:     def get_flag(self, key: str, default: Optional[bool] = None) -> bool:
-111:         """Récupère la valeur d'un flag avec cache.
-112:         
-113:         Args:
-114:             key: Nom du flag
-115:             default: Valeur par défaut si flag inexistant
-116:             
-117:         Returns:
-118:             Valeur du flag (bool)
-119:         """
-120:         flags = self._get_cached_flags()
-121:         if key in flags:
-122:             return flags[key]
-123:         if default is not None:
-124:             return default
-125:         return self._defaults.get(key, False)
-126:     
-127:     def set_flag(self, key: str, value: bool) -> bool:
-128:         """Définit la valeur d'un flag et persiste immédiatement.
-129:         
-130:         Args:
-131:             key: Nom du flag
-132:             value: Nouvelle valeur (bool)
-133:             
-134:         Returns:
-135:             True si sauvegarde réussie, False sinon
-136:         """
-137:         with self._lock:
-138:             flags = self._load_from_disk()
-139:             flags[key] = bool(value)
-140:             if self._save_to_disk(flags):
-141:                 self._invalidate_cache()
-142:                 return True
-143:             return False
-144:     
-145:     def get_all_flags(self) -> Dict[str, bool]:
-146:         """Retourne tous les flags actuels.
-147:         
-148:         Returns:
-149:             Dictionnaire complet des flags
-150:         """
-151:         return dict(self._get_cached_flags())
-152:     
-153:     def update_flags(self, updates: Dict[str, bool]) -> bool:
-154:         """Met à jour plusieurs flags atomiquement.
-155:         
-156:         Args:
-157:             updates: Dictionnaire des flags à mettre à jour
-158:             
-159:         Returns:
-160:             True si sauvegarde réussie, False sinon
-161:         """
-162:         with self._lock:
-163:             flags = self._load_from_disk()
-164:             for key, value in updates.items():
-165:                 flags[key] = bool(value)
-166:             if self._save_to_disk(flags):
-167:                 self._invalidate_cache()
-168:                 return True
-169:             return False
-170:     
-171:     # =========================================================================
-172:     # Gestion du Cache
-173:     # =========================================================================
-174:     
-175:     def _get_cached_flags(self) -> Dict[str, bool]:
-176:         """Récupère les flags depuis le cache ou recharge depuis le disque.
-177:         
-178:         Returns:
-179:             Dictionnaire des flags
-180:         """
-181:         now = time.time()
-182: 
-183:         with self._lock:
-184:             if (
-185:                 self._cache is not None
-186:                 and self._cache_timestamp is not None
-187:                 and (now - self._cache_timestamp) < self._cache_ttl
-188:             ):
-189:                 return dict(self._cache)
-190: 
-191:             self._cache = self._load_from_disk()
-192:             self._cache_timestamp = now
-193:             return dict(self._cache)
-194:     
-195:     def _invalidate_cache(self) -> None:
-196:         """Invalide le cache pour forcer un rechargement au prochain accès."""
-197:         with self._lock:
-198:             self._cache = None
-199:             self._cache_timestamp = None
-200:     
-201:     def reload(self) -> None:
-202:         """Force le rechargement des flags depuis le disque."""
-203:         self._invalidate_cache()
-204:     
-205:     # =========================================================================
-206:     # Persistence (I/O Disk)
-207:     # =========================================================================
-208:     
-209:     def _load_from_disk(self) -> Dict[str, bool]:
-210:         """Charge les flags depuis le fichier JSON avec fallback sur defaults.
-211:         
-212:         Returns:
-213:             Dictionnaire des flags fusionnés avec les defaults
-214:         """
-215:         data: Dict[str, Any] = {}
-216:         
-217:         try:
-218:             if self._file_path.exists():
-219:                 with open(self._file_path, "r", encoding="utf-8") as f:
-220:                     raw = json.load(f) or {}
-221:                     if isinstance(raw, dict):
-222:                         data.update(raw)
-223:         except Exception:
-224:             # Erreur de lecture: utiliser defaults uniquement
-225:             pass
-226:         
-227:         # Fusionner avec defaults (defaults en priorité pour clés manquantes)
-228:         result = dict(self._defaults)
-229:         
-230:         # Appliquer uniquement les clés connues depuis le fichier
-231:         for key, value in data.items():
-232:             if key in self._defaults:
-233:                 result[key] = bool(value)
-234:         
-235:         return result
-236:     
-237:     def _save_to_disk(self, data: Dict[str, bool]) -> bool:
-238:         """Sauvegarde les flags vers le fichier JSON.
-239:         
-240:         Args:
-241:             data: Dictionnaire des flags à sauvegarder
-242:             
-243:         Returns:
-244:             True si succès, False sinon
-245:         """
-246:         tmp_path = None
-247:         try:
-248:             self._file_path.parent.mkdir(parents=True, exist_ok=True)
-249:             tmp_path = self._file_path.with_name(self._file_path.name + ".tmp")
-250:             with open(tmp_path, "w", encoding="utf-8") as f:
-251:                 json.dump(data, f, indent=2, ensure_ascii=False)
-252:                 f.flush()
-253:                 os.fsync(f.fileno())
-254:             os.replace(tmp_path, self._file_path)
-255:             return True
-256:         except Exception:
-257:             try:
-258:                 if tmp_path is not None and tmp_path.exists():
-259:                     tmp_path.unlink()
+248:     if not within:
+249:         if detector_val == "desabonnement_journee_tarifs":
+250:             if desabo_is_urgent:
+251:                 return (
+252:                     jsonify({"success": False, "message": "Outside time window (DESABO urgent)"}),
+253:                     409,
+254:                 )
+255:         elif detector_val == "recadrage":
+256:             try:
+257:                 mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
+258:                 if callable(mark_processed_fn):
+259:                     mark_processed_fn(email_id)
 260:             except Exception:
 261:                 pass
-262:             return False
-263:     
-264:     # =========================================================================
-265:     # Méthodes Utilitaires
-266:     # =========================================================================
-267:     
-268:     def get_file_path(self) -> Path:
-269:         """Retourne le chemin du fichier de persistence."""
-270:         return self._file_path
-271:     
-272:     def get_defaults(self) -> Dict[str, bool]:
-273:         """Retourne les valeurs par défaut."""
-274:         return dict(self._defaults)
-275:     
-276:     def get_cache_ttl(self) -> int:
-277:         """Retourne le TTL du cache en secondes."""
-278:         return self._cache_ttl
-279:     
-280:     def set_cache_ttl(self, ttl: int) -> None:
-281:         """Définit le TTL du cache.
-282:         
-283:         Args:
-284:             ttl: Nouvelle durée en secondes (minimum 1)
-285:         """
-286:         self._cache_ttl = max(1, int(ttl))
-287:     
-288:     def is_cache_valid(self) -> bool:
-289:         """Vérifie si le cache est actuellement valide."""
-290:         if self._cache is None or self._cache_timestamp is None:
-291:             return False
-292:         return (time.time() - self._cache_timestamp) < self._cache_ttl
-293:     
-294:     def __repr__(self) -> str:
-295:         """Représentation du service."""
-296:         cache_status = "valid" if self.is_cache_valid() else "expired"
-297:         return f"<RuntimeFlagsService(file={self._file_path.name}, cache={cache_status})>"
+262:             return (
+263:                 jsonify({"success": True, "status": "skipped_outside_time_window", "email_id": email_id}),
+264:                 200,
+265:             )
+266:         else:
+267:             return (
+268:                 jsonify({"success": False, "message": "Outside time window"}),
+269:                 409,
+270:             )
+271: 
+272:     start_payload_val = None
+273:     try:
+274:         if start_t and end_t:
+275:             if within:
+276:                 start_payload_val = "maintenant"
+277:             else:
+278:                 if (
+279:                     detector_val == "desabonnement_journee_tarifs"
+280:                     and not desabo_is_urgent
+281:                     and now_local.time() < start_t
+282:                 ):
+283:                     start_payload_val = s_str
+284:     except Exception:
+285:         start_payload_val = None
+286: 
+287:     delivery_links = link_extraction.extract_provider_links_from_text(body)
+288: 
+289:     try:
+290:         _maybe_enrich_delivery_links_with_r2(
+291:             delivery_links=delivery_links or [],
+292:             email_id=email_id,
+293:             logger=current_app.logger,
+294:         )
+295:     except Exception:
+296:         pass
+297: 
+298:     payload_for_webhook = {
+299:         "microsoft_graph_email_id": email_id,
+300:         "subject": subject or "",
+301:         "receivedDateTime": email_date or "",
+302:         "sender_address": sender_raw,
+303:         "bodyPreview": (body or "")[:200],
+304:         "email_content": body or "",
+305:         "source": "gmail_push",
+306:     }
+307: 
+308:     try:
+309:         if detector_val:
+310:             payload_for_webhook["detector"] = detector_val
+311:         if detector_val == "recadrage" and delivery_time_val:
+312:             payload_for_webhook["delivery_time"] = delivery_time_val
+313:         payload_for_webhook["sender_email"] = sender_email
+314:     except Exception:
+315:         pass
+316: 
+317:     try:
+318:         if start_payload_val is not None:
+319:             payload_for_webhook["webhooks_time_start"] = start_payload_val
+320:         if e_str:
+321:             payload_for_webhook["webhooks_time_end"] = e_str
+322:     except Exception:
+323:         pass
+324: 
+325:     webhook_cfg = {}
+326:     try:
+327:         webhook_cfg = email_orchestrator._get_webhook_config_dict() or {}
+328:     except Exception:
+329:         webhook_cfg = {}
+330: 
+331:     webhook_url = ""
+332:     try:
+333:         webhook_url = str(webhook_cfg.get("webhook_url") or "").strip()
+334:     except Exception:
+335:         webhook_url = ""
+336:     if not webhook_url:
+337:         webhook_url = str(getattr(ar, "WEBHOOK_URL", "") or "").strip()
+338:     if not webhook_url:
+339:         return jsonify({"success": False, "message": "WEBHOOK_URL not configured"}), 500
+340: 
+341:     webhook_ssl_verify = True
+342:     try:
+343:         webhook_ssl_verify = bool(webhook_cfg.get("webhook_ssl_verify", True))
+344:     except Exception:
+345:         webhook_ssl_verify = True
+346: 
+347:     allow_without_links = bool(getattr(ar, "ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS", False))
+348:     try:
+349:         rfs = getattr(ar, "_runtime_flags_service", None)
+350:         if rfs is not None and hasattr(rfs, "get_flag"):
+351:             allow_without_links = bool(
+352:                 rfs.get_flag("allow_custom_webhook_without_links", allow_without_links)
+353:             )
+354:     except Exception:
+355:         pass
+356: 
+357:     processing_prefs = getattr(ar, "PROCESSING_PREFS", {})
+358: 
+359:     rate_limit_allow_send = getattr(ar, "_rate_limit_allow_send", None)
+360:     record_send_event = getattr(ar, "_record_send_event", None)
+361:     append_webhook_log = getattr(ar, "_append_webhook_log", None)
+362:     mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
+363: 
+364:     if not callable(rate_limit_allow_send) or not callable(record_send_event):
+365:         return jsonify({"success": False, "message": "Server misconfigured"}), 500
+366:     if not callable(append_webhook_log) or not callable(mark_processed_fn):
+367:         return jsonify({"success": False, "message": "Server misconfigured"}), 500
+368: 
+369:     import requests
+370:     import time
+371: 
+372:     try:
+373:         flow_result = email_orchestrator.send_custom_webhook_flow(
+374:             email_id=email_id,
+375:             subject=subject,
+376:             payload_for_webhook=payload_for_webhook,
+377:             delivery_links=delivery_links or [],
+378:             webhook_url=webhook_url,
+379:             webhook_ssl_verify=webhook_ssl_verify,
+380:             allow_without_links=allow_without_links,
+381:             processing_prefs=processing_prefs,
+382:             rate_limit_allow_send=rate_limit_allow_send,
+383:             record_send_event=record_send_event,
+384:             append_webhook_log=append_webhook_log,
+385:             mark_email_id_as_processed_redis=mark_processed_fn,
+386:             mark_email_as_read_imap=lambda *_a, **_kw: True,
+387:             mail=None,
+388:             email_num=None,
+389:             urlparse=None,
+390:             requests=requests,
+391:             time=time,
+392:             logger=current_app.logger,
+393:         )
+394: 
+395:         return (
+396:             jsonify(
+397:                 {
+398:                     "success": True,
+399:                     "status": "processed",
+400:                     "email_id": email_id,
+401:                     "flow_result": flow_result,
+402:                     "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+403:                 }
+404:             ),
+405:             200,
+406:         )
+407:     except Exception as e:
+408:         try:
+409:             current_app.logger.error("INGRESS: processing error for %s: %s", email_id, e)
+410:         except Exception:
+411:             pass
+412:         return jsonify({"success": False, "message": "Internal error"}), 500
+````
+
+## File: routes/api_logs.py
+````python
+ 1: from __future__ import annotations
+ 2: 
+ 3: from flask import Blueprint, jsonify, request
+ 4: from flask_login import login_required
+ 5: 
+ 6: from app_logging.webhook_logger import fetch_webhook_logs as _fetch_webhook_logs
+ 7: 
+ 8: bp = Blueprint("api_logs", __name__)
+ 9: 
+10: 
+11: @bp.route("/api/webhook_logs", methods=["GET"])
+12: @login_required
+13: def get_webhook_logs():
+14:     """
+15:     Retourne l'historique des webhooks envoyés (max 50 entrées) avec filtre ?days=N.
+16:     Utilise fetch_webhook_logs du helper avec tri spécifique par id si requis par les tests.
+17:     """
+18:     try:
+19:         # Lazy import to avoid circular dependency at module import time
+20:         import app_render as _ar  # type: ignore
+21: 
+22:         try:
+23:             days = int(request.args.get("days", 7))
+24:         except Exception:
+25:             days = 7
+26:         # Legacy behavior: values <1 default to 7; values >30 clamp to 30
+27:         if days < 1:
+28:             days = 7
+29:         if days > 30:
+30:             days = 30
+31: 
+32:         # Use centralized helper (resilient to missing files)
+33:         result = _fetch_webhook_logs(
+34:             redis_client=getattr(_ar, "redis_client", None),
+35:             logger=getattr(_ar, "app").logger if hasattr(_ar, "app") else None,
+36:             file_path=getattr(_ar, "WEBHOOK_LOGS_FILE"),
+37:             redis_list_key=getattr(_ar, "WEBHOOK_LOGS_REDIS_KEY"),
+38:             days=days,
+39:             limit=50,
+40:         )
+41: 
+42:         # Apply specific sorting by id if tests require it (all entries have integer id)
+43:         if result.get("success") and result.get("logs"):
+44:             logs = result["logs"]
+45:             try:
+46:                 if logs and all(isinstance(log.get("id"), int) for log in logs):
+47:                     # Sort by id descending (test expectation)
+48:                     logs.sort(key=lambda log: log.get("id", 0), reverse=True)
+49:                     result["logs"] = logs
+50:             except Exception:
+51:                 pass  # Keep original order if sorting fails
+52: 
+53:         # Diagnostics under TESTING
+54:         try:
+55:             _app_obj = getattr(_ar, "app", None)
+56:             if _app_obj and getattr(_app_obj, "config", {}).get("TESTING") and isinstance(result, dict):
+57:                 _app_obj.logger.info(
+58:                     "API_LOGS_DIAG: result_count=%s days=%s",
+59:                     result.get("count"), days,
+60:                 )
+61:         except Exception:
+62:             pass
+63: 
+64:         return jsonify(result), 200
+65:     except Exception as e:
+66:         # Best-effort error response
+67:         return (
+68:             jsonify({"success": False, "message": "Erreur lors de la récupération des logs."}),
+69:             500,
+70:         )
+````
+
+## File: routes/api_test.py
+````python
+  1: from __future__ import annotations
+  2: 
+  3: import json
+  4: from datetime import datetime, timedelta, timezone
+  5: 
+  6: from flask import Blueprint, jsonify, request
+  7: 
+  8: from auth.helpers import testapi_authorized as _testapi_authorized
+  9: from config.webhook_time_window import (
+ 10:     get_time_window_info,
+ 11:     update_time_window,
+ 12: )
+ 13: from config.webhook_config import load_webhook_config, save_webhook_config
+ 14: from config.settings import (
+ 15:     WEBHOOK_CONFIG_FILE,
+ 16:     WEBHOOK_LOGS_FILE,
+ 17:     WEBHOOK_URL,
+ 18:     WEBHOOK_SSL_VERIFY,
+ 19:     POLLING_TIMEZONE_STR,
+ 20:     POLLING_ACTIVE_DAYS,
+ 21:     POLLING_ACTIVE_START_HOUR,
+ 22:     POLLING_ACTIVE_END_HOUR,
+ 23:     EMAIL_POLLING_INTERVAL_SECONDS,
+ 24:     POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
+ 25:     ENABLE_SUBJECT_GROUP_DEDUP,
+ 26: )
+ 27: from utils.validators import normalize_make_webhook_url as _normalize_make_webhook_url
+ 28: 
+ 29: bp = Blueprint("api_test", __name__, url_prefix="/api/test")
+ 30: 
+ 31: 
+ 32: """Webhook config I/O helpers are centralized in config/webhook_config."""
+ 33: 
+ 34: 
+ 35: def _mask_url(url: str | None) -> str | None:
+ 36:     if not url:
+ 37:         return None
+ 38:     if url.startswith("http"):
+ 39:         parts = url.split("/")
+ 40:         if len(parts) > 3:
+ 41:             return f"{parts[0]}//{parts[2]}/***"
+ 42:         return url[:30] + "***"
+ 43:     return None
+ 44: 
+ 45: 
+ 46: # --- Endpoints ---
+ 47: 
+ 48: @bp.route("/get_webhook_time_window", methods=["GET"])
+ 49: def get_webhook_time_window():
+ 50:     if not _testapi_authorized(request):
+ 51:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+ 52:     try:
+ 53:         info = get_time_window_info()
+ 54:         return (
+ 55:             jsonify(
+ 56:                 {
+ 57:                     "success": True,
+ 58:                     "webhooks_time_start": info.get("start") or None,
+ 59:                     "webhooks_time_end": info.get("end") or None,
+ 60:                     "timezone": POLLING_TIMEZONE_STR,
+ 61:                 }
+ 62:             ),
+ 63:             200,
+ 64:         )
+ 65:     except Exception:
+ 66:         return (
+ 67:             jsonify({"success": False, "message": "Erreur lors de la récupération de la fenêtre horaire."}),
+ 68:             500,
+ 69:         )
+ 70: 
+ 71: 
+ 72: @bp.route("/set_webhook_time_window", methods=["POST"])
+ 73: def set_webhook_time_window():
+ 74:     if not _testapi_authorized(request):
+ 75:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+ 76:     try:
+ 77:         payload = request.get_json(silent=True) or {}
+ 78:         start = payload.get("start", "")
+ 79:         end = payload.get("end", "")
+ 80:         ok, msg = update_time_window(start, end)
+ 81:         status = 200 if ok else 400
+ 82:         info = get_time_window_info()
+ 83:         return (
+ 84:             jsonify(
+ 85:                 {
+ 86:                     "success": ok,
+ 87:                     "message": msg,
+ 88:                     "webhooks_time_start": info.get("start") or None,
+ 89:                     "webhooks_time_end": info.get("end") or None,
+ 90:                 }
+ 91:             ),
+ 92:             status,
+ 93:         )
+ 94:     except Exception:
+ 95:         return (
+ 96:             jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}),
+ 97:             500,
+ 98:         )
+ 99: 
+100: 
+101: @bp.route("/get_webhook_config", methods=["GET"])
+102: def get_webhook_config():
+103:     if not _testapi_authorized(request):
+104:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+105:     try:
+106:         persisted = load_webhook_config(WEBHOOK_CONFIG_FILE)
+107:         cfg = {
+108:             "webhook_url": persisted.get("webhook_url") or _mask_url(WEBHOOK_URL),
+109:             "webhook_ssl_verify": persisted.get("webhook_ssl_verify", WEBHOOK_SSL_VERIFY),
+110:             "polling_enabled": persisted.get("polling_enabled", False),
+111:         }
+112:         return jsonify({"success": True, "config": cfg}), 200
+113:     except Exception:
+114:         return (
+115:             jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration."}),
+116:             500,
+117:         )
+118: 
+119: 
+120: @bp.route("/update_webhook_config", methods=["POST"])
+121: def update_webhook_config():
+122:     if not _testapi_authorized(request):
+123:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+124:     try:
+125:         payload = request.get_json(silent=True) or {}
+126:         config = load_webhook_config(WEBHOOK_CONFIG_FILE)
+127: 
+128:         if "webhook_url" in payload:
+129:             val = payload["webhook_url"].strip() if payload["webhook_url"] else None
+130:             if val and not val.startswith("http"):
+131:                 return (
+132:                     jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}),
+133:                     400,
+134:                 )
+135:             config["webhook_url"] = val
+136: 
+137:         if "recadrage_webhook_url" in payload:
+138:             val = payload["recadrage_webhook_url"].strip() if payload["recadrage_webhook_url"] else None
+139:             if val and not val.startswith("http"):
+140:                 return (
+141:                     jsonify({"success": False, "message": "recadrage_webhook_url doit être une URL HTTPS valide."}),
+142:                     400,
+143:                 )
+144:             config["recadrage_webhook_url"] = val
+145: 
+146:         # presence fields removed
+147: 
+148:         if "autorepondeur_webhook_url" in payload:
+149:             val = payload["autorepondeur_webhook_url"].strip() if payload["autorepondeur_webhook_url"] else None
+150:             if val:
+151:                 val = _normalize_make_webhook_url(val)
+152:             config["autorepondeur_webhook_url"] = val
+153: 
+154:         if "webhook_ssl_verify" in payload:
+155:             config["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
+156: 
+157:         if not save_webhook_config(WEBHOOK_CONFIG_FILE, config):
+158:             return (
+159:                 jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration."}),
+160:                 500,
+161:             )
+162:         return jsonify({"success": True, "message": "Configuration mise à jour avec succès."}), 200
+163:     except Exception:
+164:         return (
+165:             jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}),
+166:             500,
+167:         )
+168: 
+169: 
+170: @bp.route("/get_polling_config", methods=["GET"])
+171: def get_polling_config():
+172:     if not _testapi_authorized(request):
+173:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+174:     try:
+175:         return (
+176:             jsonify(
+177:                 {
+178:                     "success": True,
+179:                     "timezone": POLLING_TIMEZONE_STR,
+180:                     "active_days": POLLING_ACTIVE_DAYS,
+181:                     "active_start_hour": POLLING_ACTIVE_START_HOUR,
+182:                     "active_end_hour": POLLING_ACTIVE_END_HOUR,
+183:                     "interval_seconds": EMAIL_POLLING_INTERVAL_SECONDS,
+184:                     "inactive_check_interval_seconds": POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
+185:                     "enable_subject_group_dedup": ENABLE_SUBJECT_GROUP_DEDUP,
+186:                 }
+187:             ),
+188:             200,
+189:         )
+190:     except Exception:
+191:         return (
+192:             jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration de polling."}),
+193:             500,
+194:         )
+195: 
+196: 
+197: @bp.route("/webhook_logs", methods=["GET"])
+198: def webhook_logs():
+199:     if not _testapi_authorized(request):
+200:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+201:     try:
+202:         days = int(request.args.get("days", 7))
+203:         if days < 1:
+204:             days = 7
+205:         if days > 30:
+206:             days = 30
+207: 
+208:         if not WEBHOOK_LOGS_FILE.exists():
+209:             return jsonify({"success": True, "logs": [], "count": 0, "days_filter": days}), 200
+210:         with open(WEBHOOK_LOGS_FILE, "r", encoding="utf-8") as f:
+211:             all_logs = json.load(f) or []
+212: 
+213:         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+214:         filtered = []
+215:         for log in all_logs:
+216:             try:
+217:                 log_time = datetime.fromisoformat(log.get("timestamp", ""))
+218:                 if log_time >= cutoff:
+219:                     filtered.append(log)
+220:             except Exception:
+221:                 filtered.append(log)
+222: 
+223:         filtered = filtered[-50:]
+224:         filtered.reverse()
+225:         return (
+226:             jsonify({"success": True, "logs": filtered, "count": len(filtered), "days_filter": days}),
+227:             200,
+228:         )
+229:     except Exception:
+230:         return (
+231:             jsonify({"success": False, "message": "Erreur lors de la récupération des logs."}),
+232:             500,
+233:         )
+234: 
+235: 
+236: @bp.route("/clear_email_dedup", methods=["POST"])
+237: def clear_email_dedup():
+238:     if not _testapi_authorized(request):
+239:         return jsonify({"success": False, "message": "Unauthorized"}), 401
+240:     try:
+241:         payload = request.get_json(silent=True) or {}
+242:         email_id = str(payload.get("email_id") or "").strip()
+243:         if not email_id:
+244:             return jsonify({"success": False, "message": "email_id manquant"}), 400
+245:         # Legacy endpoint: no in-memory store to clear. Redis not used here; report not removed.
+246:         return jsonify({"success": True, "removed": False, "email_id": email_id}), 200
+247:     except Exception:
+248:         return jsonify({"success": False, "message": "Erreur interne"}), 500
+````
+
+## File: routes/dashboard.py
+````python
+ 1: from __future__ import annotations
+ 2: 
+ 3: from flask import Blueprint, render_template, request, redirect, url_for
+ 4: from flask_login import login_required, login_user, logout_user, current_user
+ 5: 
+ 6: from services import AuthService, ConfigService, MagicLinkService
+ 7: 
+ 8: bp = Blueprint("dashboard", __name__)
+ 9: 
+10: # Initialiser AuthService pour ce module
+11: _config_service = ConfigService()
+12: _auth_service = AuthService(_config_service)
+13: _magic_link_service = MagicLinkService.get_instance()
+14: 
+15: 
+16: def _complete_login(username: str, next_page: str | None):
+17:     user_obj = _auth_service.create_user(username)
+18:     login_user(user_obj)
+19:     return redirect(next_page or url_for("dashboard.serve_dashboard_main"))
+20: 
+21: 
+22: @bp.route("/")
+23: @login_required
+24: def serve_dashboard_main():
+25:     # Keep same template rendering as legacy
+26:     return render_template("dashboard.html")
+27: 
+28: 
+29: @bp.route("/login", methods=["GET", "POST"])
+30: def login():
+31:     # If already authenticated, go to dashboard
+32:     if current_user and getattr(current_user, "is_authenticated", False):
+33:         return redirect(url_for("dashboard.serve_dashboard_main"))
+34: 
+35:     error_message = request.args.get("error")
+36: 
+37:     if request.method == "POST":
+38:         magic_token = request.form.get("magic_token")
+39:         if magic_token:
+40:             success, message = _magic_link_service.consume_token(magic_token.strip())
+41:             if success:
+42:                 next_page = request.args.get("next")
+43:                 return _complete_login(message, next_page)
+44:             error_message = message or "Token invalide."
+45:         else:
+46:             username = request.form.get("username")
+47:             password = request.form.get("password")
+48:             user_obj = _auth_service.create_user_from_credentials(username, password)
+49:             if user_obj is not None:
+50:                 next_page = request.args.get("next")
+51:                 return _complete_login(user_obj.id, next_page)
+52:             error_message = "Identifiants invalides."
+53: 
+54:     return render_template("login.html", url_for=url_for, error=error_message)
+55: 
+56: 
+57: @bp.route("/login/magic/<token>", methods=["GET"])
+58: def consume_magic_link_token(token: str):
+59:     success, message = _magic_link_service.consume_token(token)
+60:     if not success:
+61:         return redirect(url_for("dashboard.login", error=message))
+62:     next_page = request.args.get("next")
+63:     return _complete_login(message, next_page)
+64: 
+65: 
+66: @bp.route("/logout")
+67: @login_required
+68: def logout():
+69:     logout_user()
+70:     return redirect(url_for("dashboard.login"))
+````
+
+## File: scripts/google_script.js
+````javascript
+ 1: function processWebhookTransfer() {
+ 2:   // --- CONFIGURATION ---
+ 3:   // L'URL de votre route "Ingress" créée à l'étape précédente en Python
+ 4:   const SERVER_URL = "https://render-signal-server-latest.onrender.com/api/ingress/gmail";
+ 5:   // Le token défini dans votre fichier settings.py (PROCESS_API_TOKEN)
+ 6:   const API_TOKEN = PropertiesService.getScriptProperties().getProperty("PROCESS_API_TOKEN") || "";
+ 7:   // Le nom exact du libellé créé dans Gmail
+ 8:   const LABEL_NAME = "A_TRANSFERER_WEBHOOK";
+ 9:   // ---------------------
+10: 
+11:   if (!API_TOKEN) {
+12:     console.log("PROCESS_API_TOKEN manquant dans les Script Properties.");
+13:     return;
+14:   }
+15: 
+16:   const label = GmailApp.getUserLabelByName(LABEL_NAME);
+17:   
+18:   // Sécurité : si le libellé n'existe pas encore
+19:   if (!label) {
+20:     console.log("Le libellé " + LABEL_NAME + " n'existe pas.");
+21:     return;
+22:   }
+23: 
+24:   // On cherche les threads qui ont ce label ET qui sont non lus 
+25:   // (pour éviter de renvoyer 50 fois le même historique)
+26:   const threads = label.getThreads(0, 20); // Traite par lot de 20 max pour éviter timeout
+27: 
+28:   if (threads.length === 0) {
+29:     console.log("Aucun mail à traiter.");
+30:     return;
+31:   }
+32: 
+33:   for (const thread of threads) {
+34:     const messages = thread.getMessages();
+35:     
+36:     for (const message of messages) {
+37:       // On ne traite que les messages non lus du fil de discussion
+38:       if (message.isUnread()) {
+39:         
+40:         const payload = {
+41:           "subject": message.getSubject(),
+42:           "sender": message.getFrom(), // "Nom <email@domaine.com>"
+43:           "date": message.getDate().toISOString(),
+44:           "body": message.getBody(), // On envoie le HTML pour que votre extracteur de lien fonctionne
+45:           "snippet": message.getPlainBody().substring(0, 200) // Pour les logs
+46:         };
+47: 
+48:         const options = {
+49:           "method": "post",
+50:           "contentType": "application/json",
+51:           "headers": {
+52:             "Authorization": "Bearer " + API_TOKEN,
+53:             "X-Source": "GoogleAppsScript"
+54:           },
+55:           "payload": JSON.stringify(payload),
+56:           "muteHttpExceptions": true // Pour pouvoir lire le corps de l'erreur si échec
+57:         };
+58: 
+59:         try {
+60:           const response = UrlFetchApp.fetch(SERVER_URL, options);
+61:           const responseCode = response.getResponseCode();
+62:           
+63:           if (responseCode === 200) {
+64:             console.log("Succès pour : " + payload.subject);
+65:             // Marquer comme lu pour ne pas le renvoyer au prochain tour
+66:             message.markRead();
+67:           } else {
+68:             console.error("Erreur Serveur (" + responseCode + ") : " + response.getContentText());
+69:             // On laisse en "non lu" pour retenter plus tard, ou on loggue l'erreur
+70:           }
+71:         } catch (e) {
+72:           console.error("Erreur de connexion : " + e.toString());
+73:         }
+74:       }
+75:     }
+76:     
+77:     // Une fois le thread traité, on retire le label "A_TRANSFERER_WEBHOOK" 
+78:     // pour nettoyer la boite de réception visuellement (optionnel)
+79:     thread.removeLabel(label);
+80:   }
+81: }
+````
+
+## File: services/auth_service.py
+````python
+  1: """
+  2: services.auth_service
+  3: ~~~~~~~~~~~~~~~~~~~~~
+  4: 
+  5: Service centralisé pour toute l'authentification (dashboard + API).
+  6: 
+  7: Combine:
+  8: - Authentification dashboard (username/password via Flask-Login)
+  9: - Authentification API (X-API-Key pour Make.com)
+ 10: - Authentification endpoints de test (X-API-Key pour CORS)
+ 11: - Gestion du LoginManager Flask-Login
+ 12: 
+ 13: Usage:
+ 14:     from services import AuthService, ConfigService
+ 15:     
+ 16:     config = ConfigService()
+ 17:     auth = AuthService(config)
+ 18:     
+ 19:     auth.init_flask_login(app)
+ 20:     
+ 21:     if auth.verify_dashboard_credentials(username, password):
+ 22:         user = auth.create_user(username)
+ 23:         login_user(user)
+ 24:     
+ 25:     # Décorateur API
+ 26:     @auth.api_key_required
+ 27:     def my_endpoint():
+ 28:         ...
+ 29: """
+ 30: 
+ 31: from __future__ import annotations
+ 32: 
+ 33: from functools import wraps
+ 34: from typing import Optional, TYPE_CHECKING
+ 35: 
+ 36: if TYPE_CHECKING:
+ 37:     from flask import Flask, Request
+ 38:     from flask_login import LoginManager
+ 39:     from services.config_service import ConfigService
+ 40: 
+ 41: from flask_login import UserMixin
+ 42: 
+ 43: 
+ 44: class User(UserMixin):
+ 45:     """Classe utilisateur simple pour Flask-Login.
+ 46:     
+ 47:     Attributes:
+ 48:         id: Identifiant de l'utilisateur (username)
+ 49:     """
+ 50:     
+ 51:     def __init__(self, username: str):
+ 52:         """Initialise un utilisateur.
+ 53:         
+ 54:         Args:
+ 55:             username: Nom d'utilisateur
+ 56:         """
+ 57:         self.id = username
+ 58:     
+ 59:     def __repr__(self) -> str:
+ 60:         return f"<User(id={self.id})>"
+ 61: 
+ 62: 
+ 63: class AuthService:
+ 64:     """Service centralisé pour l'authentification.
+ 65:     
+ 66:     Attributes:
+ 67:         _config: Instance de ConfigService
+ 68:         _login_manager: Instance de Flask-Login LoginManager
+ 69:     """
+ 70:     
+ 71:     def __init__(self, config_service):
+ 72:         """Initialise le service d'authentification.
+ 73:         
+ 74:         Args:
+ 75:             config_service: Instance de ConfigService pour accès aux credentials
+ 76:         """
+ 77:         self._config = config_service
+ 78:         self._login_manager: Optional[LoginManager] = None
+ 79:     
+ 80:     # Authentification Dashboard (Flask-Login)
+ 81:     
+ 82:     def verify_dashboard_credentials(self, username: str, password: str) -> bool:
+ 83:         """Vérifie les credentials du dashboard.
+ 84:         
+ 85:         Args:
+ 86:             username: Nom d'utilisateur
+ 87:             password: Mot de passe
+ 88:             
+ 89:         Returns:
+ 90:             True si credentials valides
+ 91:         """
+ 92:         return self._config.verify_dashboard_credentials(username, password)
+ 93:     
+ 94:     def create_user(self, username: str) -> User:
+ 95:         return User(username)
+ 96:     
+ 97:     def create_user_from_credentials(self, username: str, password: str) -> Optional[User]:
+ 98:         if self.verify_dashboard_credentials(username, password):
+ 99:             return User(username)
+100:         return None
+101:     
+102:     def load_user(self, user_id: str) -> Optional[User]:
+103:         expected_user = self._config.get_dashboard_user()
+104:         if user_id == expected_user:
+105:             return User(user_id)
+106:         return None
+107:     
+108:     # Authentification API (Make.com endpoints)
+109:     
+110:     def verify_api_token(self, token: str) -> bool:
+111:         """Vérifie un token API pour les endpoints Make.com.
+112:         
+113:         Args:
+114:             token: Token à vérifier
+115:             
+116:         Returns:
+117:             True si le token est valide
+118:         """
+119:         return self._config.verify_api_token(token)
+120:     
+121:     def verify_api_key_from_request(self, request: Request) -> bool:
+122:         auth_header = request.headers.get("Authorization", "")
+123:         
+124:         if auth_header.startswith("Bearer "):
+125:             token = auth_header[7:]
+126:         else:
+127:             token = auth_header
+128:         
+129:         return self.verify_api_token(token)
+130:     
+131:     # Authentification Test Endpoints (CORS)
+132:     
+133:     def verify_test_api_key(self, key: str) -> bool:
+134:         """Vérifie une clé API pour les endpoints de test.
+135:         
+136:         Args:
+137:             key: Clé à vérifier
+138:             
+139:         Returns:
+140:             True si valide
+141:         """
+142:         return self._config.verify_test_api_key(key)
+143:     
+144:     def verify_test_api_key_from_request(self, request: Request) -> bool:
+145:         key = request.headers.get("X-API-Key", "")
+146:         return self.verify_test_api_key(key)
+147:     
+148:     # Flask-Login Integration
+149:     
+150:     def init_flask_login(self, app: Flask, login_view: str = 'dashboard.login') -> LoginManager:
+151:         """Initialise Flask-Login pour l'application.
+152:         
+153:         Args:
+154:             app: Instance Flask
+155:             login_view: Nom de la vue de login pour redirections
+156:             
+157:         Returns:
+158:             Instance LoginManager configurée
+159:         """
+160:         from flask_login import LoginManager
+161:         
+162:         self._login_manager = LoginManager()
+163:         self._login_manager.init_app(app)
+164:         self._login_manager.login_view = login_view
+165:         
+166:         # Enregistrer le user_loader
+167:         @self._login_manager.user_loader
+168:         def _user_loader(user_id: str):
+169:             return self.load_user(user_id)
+170:         
+171:         return self._login_manager
+172:     
+173:     def get_login_manager(self) -> Optional[LoginManager]:
+174:         return self._login_manager
+175:     
+176:     # Décorateurs
+177:     
+178:     def api_key_required(self, func):
+179:         """Décorateur pour protéger un endpoint avec authentification API token.
+180:         
+181:         Usage:
+182:             @app.route('/api/protected')
+183:             @auth_service.api_key_required
+184:             def protected_endpoint():
+185:                 return {"status": "ok"}
+186:         
+187:         Args:
+188:             func: Fonction à protéger
+189:             
+190:         Returns:
+191:             Wrapper qui vérifie l'authentification
+192:         """
+193:         @wraps(func)
+194:         def wrapper(*args, **kwargs):
+195:             from flask import request, jsonify
+196:             
+197:             if not self.verify_api_key_from_request(request):
+198:                 return jsonify({"error": "Unauthorized. Valid API token required."}), 401
+199:             
+200:             return func(*args, **kwargs)
+201:         
+202:         return wrapper
+203:     
+204:     def test_api_key_required(self, func):
+205:         """Décorateur pour protéger un endpoint de test avec X-API-Key.
+206:         
+207:         Usage:
+208:             @app.route('/api/test/endpoint')
+209:             @auth_service.test_api_key_required
+210:             def test_endpoint():
+211:                 return {"status": "ok"}
+212:         
+213:         Args:
+214:             func: Fonction à protéger
+215:             
+216:         Returns:
+217:             Wrapper qui vérifie l'authentification
+218:         """
+219:         @wraps(func)
+220:         def wrapper(*args, **kwargs):
+221:             from flask import request, jsonify
+222:             
+223:             if not self.verify_test_api_key_from_request(request):
+224:                 return jsonify({"error": "Unauthorized. Valid X-API-Key required."}), 401
+225:             
+226:             return func(*args, **kwargs)
+227:         
+228:         return wrapper
+229:     
+230:     # Fonctions Statiques (Compatibilité)
+231:     
+232:     @staticmethod
+233:     def testapi_authorized(request: Request) -> bool:
+234:         """Fonction de compatibilité pour auth.helpers.testapi_authorized.
+235:         
+236:         ⚠️ Déprécié - Utiliser verify_test_api_key_from_request() à la place.
+237:         
+238:         Args:
+239:             request: Objet Flask request
+240:             
+241:         Returns:
+242:             True si X-API-Key est valide
+243:         """
+244:         import os
+245:         expected = os.environ.get("TEST_API_KEY")
+246:         if not expected:
+247:             return False
+248:         return request.headers.get("X-API-Key") == expected
+249:     
+250:     def __repr__(self) -> str:
+251:         login_mgr = "initialized" if self._login_manager else "not initialized"
+252:         return f"<AuthService(login_manager={login_mgr})>"
 ````
 
 ## File: static/css/components.css
@@ -8851,674 +10730,6 @@ requirements.txt
 75:         return False
 ````
 
-## File: config/polling_config.py
-````python
-  1: """
-  2: config.polling_config
-  3: ~~~~~~~~~~~~~~~~~~~~~
-  4: 
-  5: Configuration et helpers pour le polling IMAP.
-  6: Gère le timezone, la fenêtre horaire, et les paramètres de vacances.
-  7: """
-  8: 
-  9: from datetime import timezone, datetime, date
- 10: from typing import Optional
- 11: import json
- 12: import re
- 13: 
- 14: from config import app_config_store as _app_config_store
- 15: from config.settings import (
- 16:     POLLING_TIMEZONE_STR,
- 17:     POLLING_CONFIG_FILE,
- 18:     POLLING_ACTIVE_DAYS as SETTINGS_POLLING_ACTIVE_DAYS,
- 19:     POLLING_ACTIVE_START_HOUR as SETTINGS_POLLING_ACTIVE_START_HOUR,
- 20:     POLLING_ACTIVE_END_HOUR as SETTINGS_POLLING_ACTIVE_END_HOUR,
- 21:     SENDER_LIST_FOR_POLLING as SETTINGS_SENDER_LIST_FOR_POLLING,
- 22:     EMAIL_POLLING_INTERVAL_SECONDS,
- 23:     POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
- 24: )
- 25: 
- 26: # Tentative d'import de ZoneInfo (Python 3.9+)
- 27: try:
- 28:     from zoneinfo import ZoneInfo
- 29: except ImportError:
- 30:     ZoneInfo = None
- 31: 
- 32: 
- 33: # =============================================================================
- 34: # TIMEZONE POUR LE POLLING
- 35: # =============================================================================
- 36: 
- 37: TZ_FOR_POLLING = None
- 38: 
- 39: def initialize_polling_timezone(logger):
- 40:     """
- 41:     Initialise le timezone pour le polling IMAP.
- 42:     
- 43:     Args:
- 44:         logger: Instance de logger Flask (app.logger)
- 45:     
- 46:     Returns:
- 47:         ZoneInfo ou timezone.utc
- 48:     """
- 49:     global TZ_FOR_POLLING
- 50:     
- 51:     if POLLING_TIMEZONE_STR.upper() != "UTC":
- 52:         if ZoneInfo:
- 53:             try:
- 54:                 TZ_FOR_POLLING = ZoneInfo(POLLING_TIMEZONE_STR)
- 55:                 logger.info(f"CFG POLL: Using timezone '{POLLING_TIMEZONE_STR}' for polling schedule.")
- 56:             except Exception as e:
- 57:                 logger.warning(f"CFG POLL: Error loading TZ '{POLLING_TIMEZONE_STR}': {e}. Using UTC.")
- 58:                 TZ_FOR_POLLING = timezone.utc
- 59:         else:
- 60:             logger.warning(f"CFG POLL: 'zoneinfo' module not available. Using UTC. '{POLLING_TIMEZONE_STR}' ignored.")
- 61:             TZ_FOR_POLLING = timezone.utc
- 62:     else:
- 63:         TZ_FOR_POLLING = timezone.utc
- 64:     
- 65:     if TZ_FOR_POLLING is None or TZ_FOR_POLLING == timezone.utc:
- 66:         logger.info(f"CFG POLL: Using timezone 'UTC' for polling schedule (default or fallback).")
- 67:     
- 68:     return TZ_FOR_POLLING
- 69: 
- 70: 
- 71: # =============================================================================
- 72: # GESTION DES VACANCES (VACATION MODE)
- 73: # =============================================================================
- 74: 
- 75: POLLING_VACATION_START_DATE = None
- 76: POLLING_VACATION_END_DATE = None
- 77: 
- 78: def set_vacation_period(start_date: date | None, end_date: date | None, logger):
- 79:     """
- 80:     Définit une période de vacances pendant laquelle le polling est désactivé.
- 81:     
- 82:     Args:
- 83:         start_date: Date de début (incluse) ou None pour désactiver
- 84:         end_date: Date de fin (incluse) ou None pour désactiver
- 85:         logger: Instance de logger Flask
- 86:     """
- 87:     global POLLING_VACATION_START_DATE, POLLING_VACATION_END_DATE
- 88:     
- 89:     POLLING_VACATION_START_DATE = start_date
- 90:     POLLING_VACATION_END_DATE = end_date
- 91:     
- 92:     if start_date and end_date:
- 93:         logger.info(f"CFG POLL: Vacation mode enabled from {start_date} to {end_date}")
- 94:     else:
- 95:         logger.info("CFG POLL: Vacation mode disabled")
- 96: 
- 97: 
- 98: def is_in_vacation_period(check_date: date = None) -> bool:
- 99:     """
-100:     Vérifie si une date donnée est dans la période de vacances.
-101:     
-102:     Args:
-103:         check_date: Date à vérifier (utilise aujourd'hui si None)
-104:     
-105:     Returns:
-106:         True si dans la période de vacances, False sinon
-107:     """
-108:     if not check_date:
-109:         check_date = datetime.now(TZ_FOR_POLLING if TZ_FOR_POLLING else timezone.utc).date()
-110:     
-111:     if not (POLLING_VACATION_START_DATE and POLLING_VACATION_END_DATE):
-112:         return False
-113:     
-114:     return POLLING_VACATION_START_DATE <= check_date <= POLLING_VACATION_END_DATE
-115: 
-116: 
-117: # =============================================================================
-118: # HELPERS POUR VALIDATION DES JOURS ET HEURES
-119: # =============================================================================
-120: 
-121: def is_polling_active(now_dt: datetime, active_days: list[int], 
-122:                      start_hour: int, end_hour: int) -> bool:
-123:     """
-124:     Vérifie si le polling est actif pour un datetime donné.
-125:     
-126:     Args:
-127:         now_dt: Datetime à vérifier (avec timezone)
-128:         active_days: Liste des jours actifs (0=Lundi, 6=Dimanche)
-129:         start_hour: Heure de début (0-23)
-130:         end_hour: Heure de fin (0-23)
-131:     
-132:     Returns:
-133:         True si le polling est actif, False sinon
-134:     """
-135:     if is_in_vacation_period(now_dt.date()):
-136:         return False
-137:     
-138:     is_active_day = now_dt.weekday() in active_days
-139:     
-140:     h = now_dt.hour
-141:     if 0 <= start_hour <= 23 and 0 <= end_hour <= 23:
-142:         if start_hour < end_hour:
-143:             # Fenêtre standard dans la même journée
-144:             is_active_time = (start_hour <= h < end_hour)
-145:         elif start_hour > end_hour:
-146:             # Fenêtre qui traverse minuit (ex: 23 -> 0 ou 22 -> 6)
-147:             is_active_time = (h >= start_hour) or (h < end_hour)
-148:         else:
-149:             # start == end : fenêtre vide (aucune heure active)
-150:             is_active_time = False
-151:     else:
-152:         # Valeurs hors bornes: considérer inactif par sécurité
-153:         is_active_time = False
-154: 
-155:     return is_active_day and is_active_time
-156: 
-157: 
-158: # =============================================================================
-159: # GLOBAL ENABLE (BOOT-TIME POLLER SWITCH)
-160: # =============================================================================
-161: 
-162: def get_enable_polling(default: bool = True) -> bool:
-163:     """Return whether polling is globally enabled from the persisted polling config.
-164: 
-165:     Why: UI may disable polling at the configuration level (in addition to the
-166:     environment flag ENABLE_BACKGROUND_TASKS). This helper centralizes reading
-167:     of the persisted switch stored alongside other polling parameters in
-168:     POLLING_CONFIG_FILE.
-169: 
-170:     Notes:
-171:     - If the file or the key is missing/invalid, we fall back to `default=True`
-172:       to preserve the existing behavior (polling enabled unless explicitly
-173:       disabled via UI).
-174:     """
-175:     try:
-176:         if not POLLING_CONFIG_FILE.exists():
-177:             return bool(default)
-178:         with open(POLLING_CONFIG_FILE, "r", encoding="utf-8") as f:
-179:             data = json.load(f) or {}
-180:         val = data.get("enable_polling")
-181:         # Accept truthy/falsy representations robustly
-182:         if isinstance(val, bool):
-183:             return val
-184:         if isinstance(val, (int, float)):
-185:             return bool(val)
-186:         if isinstance(val, str):
-187:             s = val.strip().lower()
-188:             if s in {"1", "true", "yes", "y", "on"}:
-189:                 return True
-190:             if s in {"0", "false", "no", "n", "off"}:
-191:                 return False
-192:         return bool(default)
-193:     except Exception:
-194:         return bool(default)
-195: 
-196: 
-197: # =============================================================================
-198: # POLLING CONFIG SERVICE
-199: # =============================================================================
-200: 
-201: class PollingConfigService:
-202:     """Service centralisé pour accéder à la configuration de polling.
-203:     
-204:     Ce service encapsule l'accès aux variables de configuration depuis le
-205:     module settings, offrant une interface cohérente et facilitant les tests
-206:     via injection de dépendances.
-207:     """
-208:     
-209:     def __init__(self, settings_module=None, config_store=None):
-210:         """Initialise le service avec un module de settings.
-211:         
-212:         Args:
-213:             settings_module: Module de configuration (par défaut: config.settings)
-214:         """
-215:         self._settings = settings_module
-216:         self._store = config_store
-217: 
-218:     def _get_persisted_polling_config(self) -> dict:
-219:         store = self._store or _app_config_store
-220:         file_fallback = None
-221:         try:
-222:             if self._settings is not None:
-223:                 file_fallback = getattr(self._settings, "POLLING_CONFIG_FILE", None)
-224:         except Exception:
-225:             file_fallback = None
-226: 
-227:         try:
-228:             cfg = store.get_config_json("polling_config", file_fallback=file_fallback)
-229:             return cfg if isinstance(cfg, dict) else {}
-230:         except Exception:
-231:             return {}
-232:     
-233:     def get_active_days(self) -> list[int]:
-234:         """Retourne la liste des jours actifs pour le polling (0=Lundi, 6=Dimanche)."""
-235:         cfg = self._get_persisted_polling_config()
-236:         raw = cfg.get("active_days")
-237:         parsed: list[int] = []
-238:         if isinstance(raw, list):
-239:             for d in raw:
-240:                 try:
-241:                     v = int(d)
-242:                     if 0 <= v <= 6:
-243:                         parsed.append(v)
-244:                 except Exception:
-245:                     continue
-246:         if parsed:
-247:             return sorted(set(parsed))
-248: 
-249:         if self._settings:
-250:             return self._settings.POLLING_ACTIVE_DAYS
-251:         from config import settings
-252:         return settings.POLLING_ACTIVE_DAYS
-253:     
-254:     def get_active_start_hour(self) -> int:
-255:         """Retourne l'heure de début de la fenêtre de polling (0-23)."""
-256:         cfg = self._get_persisted_polling_config()
-257:         if "active_start_hour" in cfg:
-258:             try:
-259:                 v = int(cfg.get("active_start_hour"))
-260:                 if 0 <= v <= 23:
-261:                     return v
-262:             except Exception:
-263:                 pass
-264: 
-265:         if self._settings:
-266:             return self._settings.POLLING_ACTIVE_START_HOUR
-267:         from config import settings
-268:         return settings.POLLING_ACTIVE_START_HOUR
-269:     
-270:     def get_active_end_hour(self) -> int:
-271:         """Retourne l'heure de fin de la fenêtre de polling (0-23)."""
-272:         cfg = self._get_persisted_polling_config()
-273:         if "active_end_hour" in cfg:
-274:             try:
-275:                 v = int(cfg.get("active_end_hour"))
-276:                 if 0 <= v <= 23:
-277:                     return v
-278:             except Exception:
-279:                 pass
-280: 
-281:         if self._settings:
-282:             return self._settings.POLLING_ACTIVE_END_HOUR
-283:         from config import settings
-284:         return settings.POLLING_ACTIVE_END_HOUR
-285:     
-286:     def get_sender_list(self) -> list[str]:
-287:         """Retourne la liste des expéditeurs d'intérêt pour le polling."""
-288:         cfg = self._get_persisted_polling_config()
-289:         raw = cfg.get("sender_of_interest_for_polling")
-290:         senders: list[str] = []
-291:         if isinstance(raw, list):
-292:             senders = [str(s).strip().lower() for s in raw if str(s).strip()]
-293:         elif isinstance(raw, str):
-294:             senders = [p.strip().lower() for p in raw.split(",") if p.strip()]
-295:         if senders:
-296:             email_re = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-297:             filtered = [s for s in senders if email_re.match(s)]
-298:             seen = set()
-299:             unique = []
-300:             for s in filtered:
-301:                 if s not in seen:
-302:                     seen.add(s)
-303:                     unique.append(s)
-304:             return unique
-305: 
-306:         if self._settings:
-307:             return self._settings.SENDER_LIST_FOR_POLLING
-308:         from config import settings
-309:         return settings.SENDER_LIST_FOR_POLLING
-310:     
-311:     def get_email_poll_interval_s(self) -> int:
-312:         """Retourne l'intervalle de polling actif en secondes."""
-313:         if self._settings:
-314:             return self._settings.EMAIL_POLLING_INTERVAL_SECONDS
-315:         from config import settings
-316:         return settings.EMAIL_POLLING_INTERVAL_SECONDS
-317:     
-318:     def get_inactive_check_interval_s(self) -> int:
-319:         """Retourne l'intervalle de vérification hors période active en secondes."""
-320:         if self._settings:
-321:             return self._settings.POLLING_INACTIVE_CHECK_INTERVAL_SECONDS
-322:         from config import settings
-323:         return settings.POLLING_INACTIVE_CHECK_INTERVAL_SECONDS
-324:     
-325:     def get_tz(self):
-326:         """Retourne le timezone configuré pour le polling.
-327:         
-328:         Returns:
-329:             ZoneInfo ou timezone.utc selon la configuration
-330:         """
-331:         return TZ_FOR_POLLING if TZ_FOR_POLLING else timezone.utc
-332:     
-333:     def is_in_vacation(self, check_date_or_dt) -> bool:
-334:         """Vérifie si une date/datetime est dans la période de vacances.
-335:         
-336:         Args:
-337:             check_date_or_dt: date ou datetime à vérifier (None = aujourd'hui)
-338:         
-339:         Returns:
-340:             True si dans la période de vacances, False sinon
-341:         """
-342:         if isinstance(check_date_or_dt, datetime):
-343:             check_date = check_date_or_dt.date()
-344:         elif isinstance(check_date_or_dt, date):
-345:             check_date = check_date_or_dt
-346:         else:
-347:             check_date = None
-348: 
-349:         cfg = self._get_persisted_polling_config()
-350:         vs = cfg.get("vacation_start")
-351:         ve = cfg.get("vacation_end")
-352:         if vs and ve:
-353:             try:
-354:                 start_date = datetime.fromisoformat(str(vs)).date()
-355:                 end_date = datetime.fromisoformat(str(ve)).date()
-356:                 if check_date is None:
-357:                     check_date = datetime.now(
-358:                         TZ_FOR_POLLING if TZ_FOR_POLLING else timezone.utc
-359:                     ).date()
-360:                 return start_date <= check_date <= end_date
-361:             except Exception:
-362:                 pass
-363: 
-364:         return is_in_vacation_period(check_date)
-365:     
-366:     def get_enable_polling(self, default: bool = True) -> bool:
-367:         """Retourne si le polling est activé globalement.
-368:         
-369:         Args:
-370:             default: Valeur par défaut si non configuré
-371:         
-372:         Returns:
-373:             True si le polling est activé, False sinon
-374:         """
-375:         cfg = self._get_persisted_polling_config()
-376:         val = cfg.get("enable_polling")
-377:         if isinstance(val, bool):
-378:             return val
-379:         if isinstance(val, (int, float)):
-380:             return bool(val)
-381:         if isinstance(val, str):
-382:             s = val.strip().lower()
-383:             if s in {"1", "true", "yes", "y", "on"}:
-384:                 return True
-385:             if s in {"0", "false", "no", "n", "off"}:
-386:                 return False
-387:         return bool(default)
-388: 
-389:     def is_subject_group_dedup_enabled(self) -> bool:
-390:         cfg = self._get_persisted_polling_config()
-391:         if "enable_subject_group_dedup" in cfg:
-392:             return bool(cfg.get("enable_subject_group_dedup"))
-393:         if self._settings:
-394:             return bool(getattr(self._settings, "ENABLE_SUBJECT_GROUP_DEDUP", False))
-395:         from config import settings
-396:         return bool(getattr(settings, "ENABLE_SUBJECT_GROUP_DEDUP", False))
-````
-
-## File: email_processing/link_extraction.py
-````python
-  1: """
-  2: email_processing.link_extraction
-  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  4: 
-  5: Extraction des liens de fournisseurs (Dropbox, FromSmash, SwissTransfer)
-  6: depuis un texte d'email.
-  7: 
-  8: Cette extraction réutilise le regex `URL_PROVIDERS_PATTERN` défini dans
-  9: `email_processing.pattern_matching` et le helper `detect_provider()` de
- 10: `utils.text_helpers`.
- 11: """
- 12: from __future__ import annotations
- 13: 
- 14: import html
- 15: from typing import List
- 16: from typing_extensions import TypedDict
- 17: 
- 18: from email_processing.pattern_matching import URL_PROVIDERS_PATTERN
- 19: from utils.text_helpers import detect_provider as _detect_provider
- 20: 
- 21: 
- 22: class ProviderLink(TypedDict):
- 23:     """Structure d'un lien de fournisseur extrait d'un email."""
- 24:     provider: str
- 25:     raw_url: str
- 26: 
- 27: 
- 28: def extract_provider_links_from_text(text: str) -> List[ProviderLink]:
- 29:     """Extrait toutes les URLs supportées présentes dans un texte.
- 30: 
- 31:     Les URLs sont dédupliquées tout en préservant l'ordre d'apparition.
- 32:     Normalisation appliquée: strip() des URLs avant déduplication.
- 33: 
- 34:     Args:
- 35:         text: Chaîne source (plain + HTML brut possible)
- 36: 
- 37:     Returns:
- 38:         Liste de dicts {"provider": str, "raw_url": str}
- 39:     """
- 40:     results: List[ProviderLink] = []
- 41:     if not text:
- 42:         return results
- 43: 
- 44:     def _should_skip_provider_url(provider: str, url: str) -> bool:
- 45:         if provider != "dropbox":
- 46:             return False
- 47:         if not url:
- 48:             return False
- 49: 
- 50:         # Dropbox peut inclure dans certains emails des assets de preview (ex: avatar/logo).
- 51:         # Cas observé: .../scl/fi/.../MS.png?...&raw=1
- 52:         try:
- 53:             parsed = html.unescape(url)
- 54:         except Exception:
- 55:             parsed = url
- 56: 
- 57:         try:
- 58:             from urllib.parse import urlsplit, parse_qs
- 59: 
- 60:             parts = urlsplit(parsed)
- 61:             host = (parts.hostname or "").lower()
- 62:             path = (parts.path or "")
- 63:             path_lower = path.lower()
- 64:             if not host.endswith("dropbox.com"):
- 65:                 return False
- 66: 
- 67:             filename = path_lower.split("/")[-1]
- 68:             if not filename:
- 69:                 return False
- 70: 
- 71:             qs = parse_qs(parts.query or "")
- 72:             raw_values = qs.get("raw", [])
- 73:             has_raw_one = any(str(v).strip() == "1" for v in raw_values)
- 74: 
- 75:             if path_lower.startswith("/scl/fi/") and has_raw_one:
- 76:                 is_image = filename.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
- 77:                 if not is_image:
- 78:                     return False
- 79: 
- 80:                 # Heuristique volontairement restrictive pour éviter de filtrer des livrables.
- 81:                 logo_like_prefixes = ("ms", "logo", "avatar", "profile")
- 82:                 base = filename.rsplit(".", 1)[0]
- 83:                 if base in logo_like_prefixes or any(base.startswith(p) for p in logo_like_prefixes):
- 84:                     return True
- 85: 
- 86:             return False
- 87:         except Exception:
- 88:             return False
- 89: 
- 90:     seen_urls = set()
- 91:     for m in URL_PROVIDERS_PATTERN.finditer(text):
- 92:         raw = m.group(1).strip()
- 93:         try:
- 94:             raw = html.unescape(raw)
- 95:         except Exception:
- 96:             pass
- 97:         if not raw:
- 98:             continue
- 99:         
-100:         provider = _detect_provider(raw)
-101:         if not provider:
-102:             continue
-103: 
-104:         if _should_skip_provider_url(provider, raw):
-105:             continue
-106:             
-107:         # Déduplication: garder la première occurrence de chaque URL
-108:         if raw not in seen_urls:
-109:             seen_urls.add(raw)
-110:             results.append({"provider": provider, "raw_url": raw})
-111:     
-112:     return results
-````
-
-## File: email_processing/webhook_sender.py
-````python
-  1: """
-  2: Webhook sending functions (Make.com, autoresponder, etc.).
-  3: Extracted from app_render.py for improved modularity and testability.
-  4: """
-  5: 
-  6: from __future__ import annotations
-  7: 
-  8: import logging
-  9: from datetime import datetime, timezone
- 10: from typing import Callable, Optional
- 11: 
- 12: import requests
- 13: 
- 14: from config import settings
- 15: from utils.text_helpers import mask_sensitive_data
- 16: 
- 17: 
- 18: def send_makecom_webhook(
- 19:     subject: str,
- 20:     delivery_time: Optional[str],
- 21:     sender_email: Optional[str],
- 22:     email_id: str,
- 23:     override_webhook_url: Optional[str] = None,
- 24:     extra_payload: Optional[dict] = None,
- 25:     *,
- 26:     attempts: int = 2,
- 27:     logger: Optional[logging.Logger] = None,
- 28:     log_hook: Optional[Callable[[dict], None]] = None,
- 29: ) -> bool:
- 30:     """Envoie un webhook vers Make.com.
- 31: 
- 32:     Cette fonction est une extraction de `app_render.py`. Elle supporte l'injection
- 33:     d'un logger et d'un hook de log pour éviter les dépendances directes sur Flask
- 34:     (`app.logger`) et sur les fonctions internes de logging du dashboard.
- 35: 
- 36:     Args:
- 37:         subject: Sujet de l'email
- 38:         delivery_time: Heure/fenêtre de livraison extraite (ex: "11h38" ou None)
- 39:         sender_email: Adresse e-mail de l'expéditeur
- 40:         email_id: Identifiant unique de l'email (pour les logs)
- 41:         override_webhook_url: URL Make.com alternative (prioritaire si fournie)
- 42:         extra_payload: Données supplémentaires à fusionner dans le payload JSON
- 43:         attempts: Nombre de tentatives d'envoi (défaut: 2, minimum: 1)
- 44:         logger: Logger optionnel (par défaut logging.getLogger(__name__))
- 45:         log_hook: Callback facultatif prenant un dict pour journaliser côté dashboard
- 46: 
- 47:     Returns:
- 48:         bool: True en cas de succès HTTP 200, False sinon
- 49:     """
- 50:     log = logger or logging.getLogger(__name__)
- 51: 
- 52:     payload = {
- 53:         "subject": subject,
- 54:         "delivery_time": delivery_time,
- 55:         "sender_email": sender_email,
- 56:     }
- 57:     if extra_payload:
- 58:         for k, v in extra_payload.items():
- 59:             if k not in payload:
- 60:                 payload[k] = v
- 61: 
- 62:     headers = {
- 63:         "Content-Type": "application/json",
- 64:         "Authorization": f"Bearer {settings.MAKECOM_API_KEY}",
- 65:     }
- 66: 
- 67:     target_url = override_webhook_url or settings.WEBHOOK_URL
- 68:     if not target_url:
- 69:         # Use placeholder URL to maintain retry behavior when no webhook is configured
- 70:         log.error("MAKECOM: No webhook URL configured (target_url is empty). Using placeholder for retry behavior.")
- 71:         target_url = "http://localhost/placeholder-webhook"
- 72: 
- 73:     # Valider le nombre de tentatives (au moins 1)
- 74:     attempts = max(1, attempts)
- 75:     last_ok = False
- 76:     for attempt in range(1, attempts + 1):
- 77:         try:
- 78:             log.info(
- 79:                 "MAKECOM: Sending webhook (attempt %s/%s) for email %s - Subject: %s, Delivery: %s, Sender: %s",
- 80:                 attempt,
- 81:                 attempts,
- 82:                 email_id,
- 83:                 mask_sensitive_data(subject or "", "subject"),
- 84:                 delivery_time,
- 85:                 mask_sensitive_data(sender_email or "", "email"),
- 86:             )
- 87: 
- 88:             response = requests.post(
- 89:                 target_url,
- 90:                 json=payload,
- 91:                 headers=headers,
- 92:                 timeout=30,
- 93:                 verify=True,
- 94:             )
- 95: 
- 96:             ok = response.status_code == 200
- 97:             last_ok = ok
- 98:             log_text = None if ok else (response.text[:200] if getattr(response, "text", None) else "Unknown error")
- 99: 
-100:             # Hook vers le dashboard log si disponible (par tentative)
-101:             if log_hook:
-102:                 try:
-103:                     log_entry = {
-104:                         "timestamp": datetime.now(timezone.utc).isoformat(),
-105:                         "type": "makecom",
-106:                         "email_id": email_id,
-107:                         "status": "success" if ok else "error",
-108:                         "status_code": response.status_code,
-109:                         "target_url": target_url[:50] + "..." if len(target_url) > 50 else target_url,
-110:                         "subject": mask_sensitive_data(subject or "", "subject") or None,
-111:                     }
-112:                     if not ok:
-113:                         log_entry["error"] = log_text
-114:                     log_hook(log_entry)
-115:                 except Exception:
-116:                     pass
-117: 
-118:             if ok:
-119:                 log.info("MAKECOM: Webhook sent successfully for email %s on attempt %s", email_id, attempt)
-120:                 return True
-121:             else:
-122:                 log.error(
-123:                     "MAKECOM: Webhook failed for email %s on attempt %s. Status: %s, Response: %s",
-124:                     email_id,
-125:                     attempt,
-126:                     response.status_code,
-127:                     log_text,
-128:                 )
-129:         except requests.exceptions.RequestException as e:
-130:             last_ok = False
-131:             log.error("MAKECOM: Exception during webhook call for email %s on attempt %s: %s", email_id, attempt, e)
-132:             if log_hook:
-133:                 try:
-134:                     log_hook(
-135:                         {
-136:                             "timestamp": datetime.now(timezone.utc).isoformat(),
-137:                             "type": "makecom",
-138:                             "email_id": email_id,
-139:                             "status": "error",
-140:                             "error": str(e)[:200],
-141:                             "target_url": target_url[:50] + "..." if len(target_url) > 50 else target_url,
-142:                             "subject": mask_sensitive_data(subject or "", "subject") or None,
-143:                         }
-144:                     )
-145:                 except Exception:
-146:                     pass
-147: 
-148:     return last_ok
-````
-
 ## File: routes/__init__.py
 ````python
  1: # routes package initializer
@@ -9540,1328 +10751,397 @@ requirements.txt
 17: from .api_ingress import bp as api_ingress_bp  # noqa: F401
 ````
 
-## File: routes/api_make.py
+## File: routes/api_admin.py
 ````python
   1: from __future__ import annotations
   2: 
-  3: import os
-  4: import requests
-  5: from typing import Dict, Tuple
-  6: 
-  7: from flask import Blueprint, jsonify, request, current_app
-  8: from flask_login import login_required
-  9: 
- 10: from config.settings import MAKECOM_API_KEY
- 11: 
- 12: bp = Blueprint("api_make", __name__, url_prefix="/api/make")
- 13: # Scenario IDs: can be overridden by env vars, fallback to provided IDs
- 14: # ENV overrides (optional): MAKE_SCENARIO_ID_AUTOREPONDEUR, MAKE_SCENARIO_ID_RECADRAGE
- 15: SCENARIO_IDS = {
- 16:     "autorepondeur": int(os.environ.get("MAKE_SCENARIO_ID_AUTOREPONDEUR", "7448207")),
- 17:     "recadrage": int(os.environ.get("MAKE_SCENARIO_ID_RECADRAGE", "6649843")),
- 18: }
- 19: 
- 20: # Configuration du webhook de contrôle (solution alternative)
- 21: MAKE_WEBHOOK_CONTROL_URL = os.environ.get("MAKE_WEBHOOK_CONTROL_URL", "").strip()
- 22: MAKE_WEBHOOK_API_KEY = os.environ.get("MAKE_WEBHOOK_API_KEY", "").strip()
- 23: 
- 24: # Configuration API directe (si webhook non configuré)
- 25: MAKE_HOST = os.environ.get("MAKE_API_HOST", "eu1.make.com").strip()
- 26: API_BASE = f"https://{MAKE_HOST}/api/v2"
- 27: 
- 28: # Auth type: Token (default) or Bearer (for OAuth access tokens)
- 29: MAKE_AUTH_TYPE = os.environ.get("MAKE_API_AUTH_TYPE", "Token").strip()
- 30: MAKE_ORG_ID = os.environ.get("MAKE_API_ORG_ID", "").strip()
- 31: 
- 32: TIMEOUT_SEC = 15
- 33: 
- 34: 
- 35: def build_headers() -> dict:
- 36:     headers = {}
- 37:     if MAKE_AUTH_TYPE.lower() == "bearer":
- 38:         headers["Authorization"] = f"Bearer {MAKECOM_API_KEY}"
- 39:     else:
- 40:         headers["Authorization"] = f"Token {MAKECOM_API_KEY}"
- 41:     if MAKE_ORG_ID:
- 42:         headers["X-Organization"] = MAKE_ORG_ID
- 43:     return headers
- 44: 
- 45: 
- 46: def _scenario_action_url(scenario_id: int, enable: bool) -> str:
- 47:     action = "start" if enable else "stop"
- 48:     return f"{API_BASE}/scenarios/{scenario_id}/{action}"
- 49: 
- 50: 
- 51: def _call_make_scenario(scenario_id: int, enable: bool) -> Tuple[bool, str, int]:
- 52:     """Appelle l'API Make soit directement, soit via webhook de contrôle"""
- 53:     action = "start" if enable else "stop"
- 54:     
- 55:     # Si webhook de contrôle configuré, l'utiliser
- 56:     if MAKE_WEBHOOK_CONTROL_URL and MAKE_WEBHOOK_API_KEY:
- 57:         try:
- 58:             response = requests.post(
- 59:                 MAKE_WEBHOOK_CONTROL_URL,
- 60:                 json={
- 61:                     "action": action,
- 62:                     "scenario_id": scenario_id,
- 63:                     "api_key": MAKE_WEBHOOK_API_KEY
- 64:                 },
- 65:                 timeout=TIMEOUT_SEC
- 66:             )
- 67:             ok = response.status_code == 200
- 68:             return ok, f"Webhook {action} for {scenario_id}", response.status_code
- 69:         except Exception as e:
- 70:             return False, f"Webhook error: {str(e)}", -1
- 71:     
- 72:     # Sinon, utiliser l'API directe
- 73:     url = _scenario_action_url(scenario_id, enable)
- 74:     try:
- 75:         resp = requests.post(url, headers=build_headers(), timeout=TIMEOUT_SEC)
- 76:         ok = resp.ok
- 77:         return ok, url, resp.status_code
- 78:     except Exception as e:
- 79:         return False, url, -1
- 80: 
- 81: 
- 82: # Exposed function for internal use from other blueprints
- 83: # Returns dict of results per scenario key
- 84: 
- 85: def toggle_all_scenarios(enable: bool, logger=None) -> Dict[str, dict]:
- 86:     results: Dict[str, dict] = {}
- 87:     for key, sid in SCENARIO_IDS.items():
- 88:         ok, url, status = _call_make_scenario(sid, enable)
- 89:         results[key] = {"scenario_id": sid, "ok": ok, "status": status, "url": url}
- 90:         if logger:
- 91:             logger.info(
- 92:                 "MAKE API: %s scenario '%s' (id=%s) -> ok=%s status=%s",
- 93:                 "start" if enable else "stop",
- 94:                 key,
- 95:                 sid,
- 96:                 ok,
- 97:                 status,
- 98:             )
- 99:     return results
-100: 
-101: 
-102: @bp.route("/toggle_all", methods=["POST"])
-103: @login_required
-104: def api_toggle_all():
-105:     try:
-106:         payload = request.get_json(silent=True) or {}
-107:         enable = bool(payload.get("enable", False))
-108:         if not MAKECOM_API_KEY:
-109:             return jsonify({"success": False, "message": "Clé API Make manquante (MAKECOM_API_KEY)."}), 400
-110:         res = toggle_all_scenarios(enable, logger=current_app.logger)
-111:         return jsonify({"success": True, "enable": enable, "results": res}), 200
-112:     except Exception:
-113:         return jsonify({"success": False, "message": "Erreur interne lors de l'appel Make."}), 500
-114: 
-115: 
-116: @bp.route("/status_all", methods=["GET"])
-117: @login_required
-118: def api_status_all():
-119:     # Make n'expose pas de /status simple par scénario dans v2 publique.
-120:     # On retourne simplement la configuration des IDs connus côté serveur.
-121:     try:
-122:         return jsonify({
-123:             "success": True,
-124:             "scenarios": {
-125:                 k: {"scenario_id": v} for k, v in SCENARIO_IDS.items()
-126:             },
-127:             "host": MAKE_HOST,
-128:         }), 200
-129:     except Exception:
-130:         return jsonify({"success": False, "message": "Erreur interne."}), 500
-````
-
-## File: routes/api_test.py
-````python
-  1: from __future__ import annotations
-  2: 
-  3: import json
-  4: from datetime import datetime, timedelta, timezone
-  5: 
-  6: from flask import Blueprint, jsonify, request
-  7: 
-  8: from auth.helpers import testapi_authorized as _testapi_authorized
-  9: from config.webhook_time_window import (
- 10:     get_time_window_info,
- 11:     update_time_window,
- 12: )
- 13: from config.webhook_config import load_webhook_config, save_webhook_config
- 14: from config.settings import (
- 15:     WEBHOOK_CONFIG_FILE,
- 16:     WEBHOOK_LOGS_FILE,
- 17:     WEBHOOK_URL,
- 18:     WEBHOOK_SSL_VERIFY,
- 19:     POLLING_TIMEZONE_STR,
- 20:     POLLING_ACTIVE_DAYS,
- 21:     POLLING_ACTIVE_START_HOUR,
- 22:     POLLING_ACTIVE_END_HOUR,
- 23:     EMAIL_POLLING_INTERVAL_SECONDS,
- 24:     POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
- 25:     ENABLE_SUBJECT_GROUP_DEDUP,
- 26: )
- 27: from utils.validators import normalize_make_webhook_url as _normalize_make_webhook_url
- 28: 
- 29: bp = Blueprint("api_test", __name__, url_prefix="/api/test")
- 30: 
- 31: 
- 32: """Webhook config I/O helpers are centralized in config/webhook_config."""
- 33: 
- 34: 
- 35: def _mask_url(url: str | None) -> str | None:
- 36:     if not url:
- 37:         return None
- 38:     if url.startswith("http"):
- 39:         parts = url.split("/")
- 40:         if len(parts) > 3:
- 41:             return f"{parts[0]}//{parts[2]}/***"
- 42:         return url[:30] + "***"
- 43:     return None
- 44: 
- 45: 
- 46: # --- Endpoints ---
- 47: 
- 48: @bp.route("/get_webhook_time_window", methods=["GET"])
- 49: def get_webhook_time_window():
- 50:     if not _testapi_authorized(request):
- 51:         return jsonify({"success": False, "message": "Unauthorized"}), 401
- 52:     try:
- 53:         info = get_time_window_info()
- 54:         return (
- 55:             jsonify(
- 56:                 {
- 57:                     "success": True,
- 58:                     "webhooks_time_start": info.get("start") or None,
- 59:                     "webhooks_time_end": info.get("end") or None,
- 60:                     "timezone": POLLING_TIMEZONE_STR,
- 61:                 }
- 62:             ),
- 63:             200,
- 64:         )
- 65:     except Exception:
- 66:         return (
- 67:             jsonify({"success": False, "message": "Erreur lors de la récupération de la fenêtre horaire."}),
- 68:             500,
- 69:         )
- 70: 
- 71: 
- 72: @bp.route("/set_webhook_time_window", methods=["POST"])
- 73: def set_webhook_time_window():
- 74:     if not _testapi_authorized(request):
- 75:         return jsonify({"success": False, "message": "Unauthorized"}), 401
- 76:     try:
- 77:         payload = request.get_json(silent=True) or {}
- 78:         start = payload.get("start", "")
- 79:         end = payload.get("end", "")
- 80:         ok, msg = update_time_window(start, end)
- 81:         status = 200 if ok else 400
- 82:         info = get_time_window_info()
- 83:         return (
- 84:             jsonify(
- 85:                 {
- 86:                     "success": ok,
- 87:                     "message": msg,
- 88:                     "webhooks_time_start": info.get("start") or None,
- 89:                     "webhooks_time_end": info.get("end") or None,
- 90:                 }
- 91:             ),
- 92:             status,
- 93:         )
- 94:     except Exception:
- 95:         return (
- 96:             jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}),
- 97:             500,
- 98:         )
- 99: 
-100: 
-101: @bp.route("/get_webhook_config", methods=["GET"])
-102: def get_webhook_config():
-103:     if not _testapi_authorized(request):
-104:         return jsonify({"success": False, "message": "Unauthorized"}), 401
-105:     try:
-106:         persisted = load_webhook_config(WEBHOOK_CONFIG_FILE)
-107:         cfg = {
-108:             "webhook_url": persisted.get("webhook_url") or _mask_url(WEBHOOK_URL),
-109:             "webhook_ssl_verify": persisted.get("webhook_ssl_verify", WEBHOOK_SSL_VERIFY),
-110:             "polling_enabled": persisted.get("polling_enabled", False),
-111:         }
-112:         return jsonify({"success": True, "config": cfg}), 200
-113:     except Exception:
-114:         return (
-115:             jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration."}),
-116:             500,
-117:         )
-118: 
-119: 
-120: @bp.route("/update_webhook_config", methods=["POST"])
-121: def update_webhook_config():
-122:     if not _testapi_authorized(request):
-123:         return jsonify({"success": False, "message": "Unauthorized"}), 401
-124:     try:
-125:         payload = request.get_json(silent=True) or {}
-126:         config = load_webhook_config(WEBHOOK_CONFIG_FILE)
-127: 
-128:         if "webhook_url" in payload:
-129:             val = payload["webhook_url"].strip() if payload["webhook_url"] else None
-130:             if val and not val.startswith("http"):
-131:                 return (
-132:                     jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}),
-133:                     400,
-134:                 )
-135:             config["webhook_url"] = val
-136: 
-137:         if "recadrage_webhook_url" in payload:
-138:             val = payload["recadrage_webhook_url"].strip() if payload["recadrage_webhook_url"] else None
-139:             if val and not val.startswith("http"):
-140:                 return (
-141:                     jsonify({"success": False, "message": "recadrage_webhook_url doit être une URL HTTPS valide."}),
-142:                     400,
-143:                 )
-144:             config["recadrage_webhook_url"] = val
-145: 
-146:         # presence fields removed
-147: 
-148:         if "autorepondeur_webhook_url" in payload:
-149:             val = payload["autorepondeur_webhook_url"].strip() if payload["autorepondeur_webhook_url"] else None
-150:             if val:
-151:                 val = _normalize_make_webhook_url(val)
-152:             config["autorepondeur_webhook_url"] = val
-153: 
-154:         if "webhook_ssl_verify" in payload:
-155:             config["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
-156: 
-157:         if not save_webhook_config(WEBHOOK_CONFIG_FILE, config):
-158:             return (
-159:                 jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration."}),
-160:                 500,
-161:             )
-162:         return jsonify({"success": True, "message": "Configuration mise à jour avec succès."}), 200
-163:     except Exception:
-164:         return (
-165:             jsonify({"success": False, "message": "Erreur interne lors de la mise à jour."}),
-166:             500,
-167:         )
-168: 
-169: 
-170: @bp.route("/get_polling_config", methods=["GET"])
-171: def get_polling_config():
-172:     if not _testapi_authorized(request):
-173:         return jsonify({"success": False, "message": "Unauthorized"}), 401
-174:     try:
-175:         return (
-176:             jsonify(
-177:                 {
-178:                     "success": True,
-179:                     "timezone": POLLING_TIMEZONE_STR,
-180:                     "active_days": POLLING_ACTIVE_DAYS,
-181:                     "active_start_hour": POLLING_ACTIVE_START_HOUR,
-182:                     "active_end_hour": POLLING_ACTIVE_END_HOUR,
-183:                     "interval_seconds": EMAIL_POLLING_INTERVAL_SECONDS,
-184:                     "inactive_check_interval_seconds": POLLING_INACTIVE_CHECK_INTERVAL_SECONDS,
-185:                     "enable_subject_group_dedup": ENABLE_SUBJECT_GROUP_DEDUP,
-186:                 }
-187:             ),
-188:             200,
-189:         )
-190:     except Exception:
-191:         return (
-192:             jsonify({"success": False, "message": "Erreur lors de la récupération de la configuration de polling."}),
-193:             500,
-194:         )
-195: 
-196: 
-197: @bp.route("/webhook_logs", methods=["GET"])
-198: def webhook_logs():
-199:     if not _testapi_authorized(request):
-200:         return jsonify({"success": False, "message": "Unauthorized"}), 401
-201:     try:
-202:         days = int(request.args.get("days", 7))
-203:         if days < 1:
-204:             days = 7
-205:         if days > 30:
-206:             days = 30
-207: 
-208:         if not WEBHOOK_LOGS_FILE.exists():
-209:             return jsonify({"success": True, "logs": [], "count": 0, "days_filter": days}), 200
-210:         with open(WEBHOOK_LOGS_FILE, "r", encoding="utf-8") as f:
-211:             all_logs = json.load(f) or []
-212: 
-213:         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-214:         filtered = []
-215:         for log in all_logs:
-216:             try:
-217:                 log_time = datetime.fromisoformat(log.get("timestamp", ""))
-218:                 if log_time >= cutoff:
-219:                     filtered.append(log)
-220:             except Exception:
-221:                 filtered.append(log)
-222: 
-223:         filtered = filtered[-50:]
-224:         filtered.reverse()
-225:         return (
-226:             jsonify({"success": True, "logs": filtered, "count": len(filtered), "days_filter": days}),
-227:             200,
-228:         )
-229:     except Exception:
-230:         return (
-231:             jsonify({"success": False, "message": "Erreur lors de la récupération des logs."}),
-232:             500,
-233:         )
-234: 
-235: 
-236: @bp.route("/clear_email_dedup", methods=["POST"])
-237: def clear_email_dedup():
-238:     if not _testapi_authorized(request):
-239:         return jsonify({"success": False, "message": "Unauthorized"}), 401
-240:     try:
-241:         payload = request.get_json(silent=True) or {}
-242:         email_id = str(payload.get("email_id") or "").strip()
-243:         if not email_id:
-244:             return jsonify({"success": False, "message": "email_id manquant"}), 400
-245:         # Legacy endpoint: no in-memory store to clear. Redis not used here; report not removed.
-246:         return jsonify({"success": True, "removed": False, "email_id": email_id}), 200
-247:     except Exception:
-248:         return jsonify({"success": False, "message": "Erreur interne"}), 500
-````
-
-## File: routes/dashboard.py
-````python
- 1: from __future__ import annotations
- 2: 
- 3: from flask import Blueprint, render_template, request, redirect, url_for
- 4: from flask_login import login_required, login_user, logout_user, current_user
- 5: 
- 6: from services import AuthService, ConfigService, MagicLinkService
- 7: 
- 8: bp = Blueprint("dashboard", __name__)
- 9: 
-10: # Initialiser AuthService pour ce module
-11: _config_service = ConfigService()
-12: _auth_service = AuthService(_config_service)
-13: _magic_link_service = MagicLinkService.get_instance()
-14: 
-15: 
-16: def _complete_login(username: str, next_page: str | None):
-17:     user_obj = _auth_service.create_user(username)
-18:     login_user(user_obj)
-19:     return redirect(next_page or url_for("dashboard.serve_dashboard_main"))
-20: 
-21: 
-22: @bp.route("/")
-23: @login_required
-24: def serve_dashboard_main():
-25:     # Keep same template rendering as legacy
-26:     return render_template("dashboard.html")
-27: 
-28: 
-29: @bp.route("/login", methods=["GET", "POST"])
-30: def login():
-31:     # If already authenticated, go to dashboard
-32:     if current_user and getattr(current_user, "is_authenticated", False):
-33:         return redirect(url_for("dashboard.serve_dashboard_main"))
-34: 
-35:     error_message = request.args.get("error")
-36: 
-37:     if request.method == "POST":
-38:         magic_token = request.form.get("magic_token")
-39:         if magic_token:
-40:             success, message = _magic_link_service.consume_token(magic_token.strip())
-41:             if success:
-42:                 next_page = request.args.get("next")
-43:                 return _complete_login(message, next_page)
-44:             error_message = message or "Token invalide."
-45:         else:
-46:             username = request.form.get("username")
-47:             password = request.form.get("password")
-48:             user_obj = _auth_service.create_user_from_credentials(username, password)
-49:             if user_obj is not None:
-50:                 next_page = request.args.get("next")
-51:                 return _complete_login(user_obj.id, next_page)
-52:             error_message = "Identifiants invalides."
-53: 
-54:     return render_template("login.html", url_for=url_for, error=error_message)
-55: 
-56: 
-57: @bp.route("/login/magic/<token>", methods=["GET"])
-58: def consume_magic_link_token(token: str):
-59:     success, message = _magic_link_service.consume_token(token)
-60:     if not success:
-61:         return redirect(url_for("dashboard.login", error=message))
-62:     next_page = request.args.get("next")
-63:     return _complete_login(message, next_page)
-64: 
-65: 
-66: @bp.route("/logout")
-67: @login_required
-68: def logout():
-69:     logout_user()
-70:     return redirect(url_for("dashboard.login"))
-````
-
-## File: scripts/check_config_store.py
-````python
-  1: """CLI utilitaire pour vérifier les configurations stockées dans Redis.
-  2: 
-  3: Usage:
-  4:     python -m scripts.check_config_store --keys processing_prefs webhook_config
-  5: """
-  6: 
-  7: from __future__ import annotations
-  8: 
-  9: import argparse
- 10: import json
- 11: import sys
- 12: from typing import Any, Dict, Iterable, Sequence, Tuple
- 13: 
- 14: from config import app_config_store
- 15: 
- 16: KEY_CHOICES: Tuple[str, ...] = (
- 17:     "magic_link_tokens",
- 18:     "polling_config",
- 19:     "processing_prefs",
- 20:     "routing_rules",
- 21:     "webhook_config",
- 22: )
- 23: 
- 24: 
- 25: def _validate_payload(key: str, payload: Dict[str, Any]) -> Tuple[bool, str]:
- 26:     if not isinstance(payload, dict):
- 27:         return False, "payload is not a dict"
- 28:     if key == "routing_rules" and not payload:
- 29:         return True, "empty (allowed)"
- 30:     if not payload:
- 31:         return False, "payload is empty"
- 32:     if key != "magic_link_tokens" and "_updated_at" not in payload:
- 33:         return False, "missing _updated_at"
- 34:     return True, "ok"
- 35: 
- 36: 
- 37: def _summarize_dict(payload: Dict[str, Any]) -> str:
- 38:     parts: list[str] = []
- 39:     updated_at = payload.get("_updated_at")
- 40:     if isinstance(updated_at, str):
- 41:         parts.append(f"_updated_at={updated_at}")
- 42: 
- 43:     dict_sizes = {
- 44:         k: len(v) for k, v in payload.items() if isinstance(v, dict)
- 45:     }
- 46:     if dict_sizes:
- 47:         formatted = ", ".join(f"{k}:{size}" for k, size in sorted(dict_sizes.items()))
- 48:         parts.append(f"dict_sizes={formatted}")
- 49: 
- 50:     list_sizes = {
- 51:         k: len(v) for k, v in payload.items() if isinstance(v, list)
- 52:     }
- 53:     if list_sizes:
- 54:         formatted = ", ".join(f"{k}:{size}" for k, size in sorted(list_sizes.items()))
- 55:         parts.append(f"list_sizes={formatted}")
- 56: 
- 57:     if not parts:
- 58:         parts.append(f"keys={len(payload)}")
- 59:     return "; ".join(parts)
- 60: 
- 61: 
- 62: def _format_payload(payload: Dict[str, Any], raw: bool) -> str:
- 63:     if raw:
- 64:         return json.dumps(payload, indent=2, ensure_ascii=False)
- 65:     return _summarize_dict(payload)
- 66: 
- 67: 
- 68: def _fetch(key: str) -> Dict[str, Any]:
- 69:     return app_config_store.get_config_json(key)
- 70: 
- 71: 
- 72: def inspect_configs(keys: Sequence[str], raw: bool = False) -> Tuple[int, list[dict[str, Any]]]:
- 73:     """Inspecte les clés demandées et retourne (exit_code, résultats structurés)."""
- 74:     exit_code = 0
- 75:     results: list[dict[str, Any]] = []
- 76:     for key in keys:
- 77:         payload = _fetch(key)
- 78:         has_payload = bool(payload)
- 79:         valid, reason = _validate_payload(key, payload)
- 80:         summary = _format_payload(payload, raw) if has_payload else "<vide>"
- 81:         if not valid:
- 82:             exit_code = 1
- 83:         results.append(
- 84:             {
- 85:                 "key": key,
- 86:                 "valid": bool(valid),
- 87:                 "status": "OK" if valid else "INVALID",
- 88:                 "message": reason,
- 89:                 "summary": summary,
- 90:                 "payload_present": has_payload,
- 91:                 "payload": payload if raw and has_payload else None,
- 92:             }
- 93:         )
- 94:     return exit_code, results
- 95: 
- 96: 
- 97: def _run(keys: Sequence[str], raw: bool) -> int:
- 98:     exit_code, results = inspect_configs(keys, raw)
- 99:     for entry in results:
-100:         status = entry["status"] if entry["valid"] else f"INVALID ({entry['message']})"
-101:         print(f"{entry['key']}: {status}")
-102:         print(entry["summary"])
-103:         print("-" * 40)
-104:     return exit_code
-105: 
-106: 
-107: def build_parser() -> argparse.ArgumentParser:
-108:     parser = argparse.ArgumentParser(
-109:         description="Inspecter les configs persistées dans Redis."
-110:     )
-111:     parser.add_argument(
-112:         "--keys",
-113:         nargs="+",
-114:         choices=KEY_CHOICES,
-115:         default=KEY_CHOICES,
-116:         help="Liste des clés à vérifier.",
-117:     )
-118:     parser.add_argument(
-119:         "--raw",
-120:         action="store_true",
-121:         help="Afficher le JSON complet (indent=2).",
-122:     )
-123:     return parser
-124: 
-125: 
-126: def main(argv: Iterable[str] | None = None) -> int:
-127:     parser = build_parser()
-128:     args = parser.parse_args(list(argv) if argv is not None else None)
-129:     return _run(tuple(args.keys), args.raw)
-130: 
-131: 
-132: if __name__ == "__main__":
-133:     sys.exit(main())
-````
-
-## File: services/auth_service.py
-````python
-  1: """
-  2: services.auth_service
-  3: ~~~~~~~~~~~~~~~~~~~~~
-  4: 
-  5: Service centralisé pour toute l'authentification (dashboard + API).
-  6: 
-  7: Combine:
-  8: - Authentification dashboard (username/password via Flask-Login)
-  9: - Authentification API (X-API-Key pour Make.com)
- 10: - Authentification endpoints de test (X-API-Key pour CORS)
- 11: - Gestion du LoginManager Flask-Login
- 12: 
- 13: Usage:
- 14:     from services import AuthService, ConfigService
- 15:     
- 16:     config = ConfigService()
- 17:     auth = AuthService(config)
- 18:     
- 19:     auth.init_flask_login(app)
- 20:     
- 21:     if auth.verify_dashboard_credentials(username, password):
- 22:         user = auth.create_user(username)
- 23:         login_user(user)
- 24:     
- 25:     # Décorateur API
- 26:     @auth.api_key_required
- 27:     def my_endpoint():
- 28:         ...
- 29: """
- 30: 
- 31: from __future__ import annotations
- 32: 
- 33: from functools import wraps
- 34: from typing import Optional, TYPE_CHECKING
- 35: 
- 36: if TYPE_CHECKING:
- 37:     from flask import Flask, Request
- 38:     from flask_login import LoginManager
- 39:     from services.config_service import ConfigService
- 40: 
- 41: from flask_login import UserMixin
- 42: 
- 43: 
- 44: class User(UserMixin):
- 45:     """Classe utilisateur simple pour Flask-Login.
- 46:     
- 47:     Attributes:
- 48:         id: Identifiant de l'utilisateur (username)
- 49:     """
- 50:     
- 51:     def __init__(self, username: str):
- 52:         """Initialise un utilisateur.
- 53:         
- 54:         Args:
- 55:             username: Nom d'utilisateur
- 56:         """
- 57:         self.id = username
- 58:     
- 59:     def __repr__(self) -> str:
- 60:         return f"<User(id={self.id})>"
- 61: 
- 62: 
- 63: class AuthService:
- 64:     """Service centralisé pour l'authentification.
- 65:     
- 66:     Attributes:
- 67:         _config: Instance de ConfigService
- 68:         _login_manager: Instance de Flask-Login LoginManager
- 69:     """
- 70:     
- 71:     def __init__(self, config_service):
- 72:         """Initialise le service d'authentification.
- 73:         
- 74:         Args:
- 75:             config_service: Instance de ConfigService pour accès aux credentials
- 76:         """
- 77:         self._config = config_service
- 78:         self._login_manager: Optional[LoginManager] = None
- 79:     
- 80:     # Authentification Dashboard (Flask-Login)
- 81:     
- 82:     def verify_dashboard_credentials(self, username: str, password: str) -> bool:
- 83:         """Vérifie les credentials du dashboard.
- 84:         
- 85:         Args:
- 86:             username: Nom d'utilisateur
- 87:             password: Mot de passe
- 88:             
- 89:         Returns:
- 90:             True si credentials valides
- 91:         """
- 92:         return self._config.verify_dashboard_credentials(username, password)
- 93:     
- 94:     def create_user(self, username: str) -> User:
- 95:         return User(username)
- 96:     
- 97:     def create_user_from_credentials(self, username: str, password: str) -> Optional[User]:
- 98:         if self.verify_dashboard_credentials(username, password):
- 99:             return User(username)
-100:         return None
-101:     
-102:     def load_user(self, user_id: str) -> Optional[User]:
-103:         expected_user = self._config.get_dashboard_user()
-104:         if user_id == expected_user:
-105:             return User(user_id)
-106:         return None
-107:     
-108:     # Authentification API (Make.com endpoints)
-109:     
-110:     def verify_api_token(self, token: str) -> bool:
-111:         """Vérifie un token API pour les endpoints Make.com.
-112:         
-113:         Args:
-114:             token: Token à vérifier
-115:             
-116:         Returns:
-117:             True si le token est valide
-118:         """
-119:         return self._config.verify_api_token(token)
-120:     
-121:     def verify_api_key_from_request(self, request: Request) -> bool:
-122:         auth_header = request.headers.get("Authorization", "")
-123:         
-124:         if auth_header.startswith("Bearer "):
-125:             token = auth_header[7:]
-126:         else:
-127:             token = auth_header
-128:         
-129:         return self.verify_api_token(token)
-130:     
-131:     # Authentification Test Endpoints (CORS)
-132:     
-133:     def verify_test_api_key(self, key: str) -> bool:
-134:         """Vérifie une clé API pour les endpoints de test.
-135:         
-136:         Args:
-137:             key: Clé à vérifier
-138:             
-139:         Returns:
-140:             True si valide
-141:         """
-142:         return self._config.verify_test_api_key(key)
-143:     
-144:     def verify_test_api_key_from_request(self, request: Request) -> bool:
-145:         key = request.headers.get("X-API-Key", "")
-146:         return self.verify_test_api_key(key)
-147:     
-148:     # Flask-Login Integration
-149:     
-150:     def init_flask_login(self, app: Flask, login_view: str = 'dashboard.login') -> LoginManager:
-151:         """Initialise Flask-Login pour l'application.
-152:         
-153:         Args:
-154:             app: Instance Flask
-155:             login_view: Nom de la vue de login pour redirections
-156:             
-157:         Returns:
-158:             Instance LoginManager configurée
-159:         """
-160:         from flask_login import LoginManager
-161:         
-162:         self._login_manager = LoginManager()
-163:         self._login_manager.init_app(app)
-164:         self._login_manager.login_view = login_view
-165:         
-166:         # Enregistrer le user_loader
-167:         @self._login_manager.user_loader
-168:         def _user_loader(user_id: str):
-169:             return self.load_user(user_id)
-170:         
-171:         return self._login_manager
-172:     
-173:     def get_login_manager(self) -> Optional[LoginManager]:
-174:         return self._login_manager
-175:     
-176:     # Décorateurs
-177:     
-178:     def api_key_required(self, func):
-179:         """Décorateur pour protéger un endpoint avec authentification API token.
-180:         
-181:         Usage:
-182:             @app.route('/api/protected')
-183:             @auth_service.api_key_required
-184:             def protected_endpoint():
-185:                 return {"status": "ok"}
-186:         
-187:         Args:
-188:             func: Fonction à protéger
-189:             
-190:         Returns:
-191:             Wrapper qui vérifie l'authentification
-192:         """
-193:         @wraps(func)
-194:         def wrapper(*args, **kwargs):
-195:             from flask import request, jsonify
-196:             
-197:             if not self.verify_api_key_from_request(request):
-198:                 return jsonify({"error": "Unauthorized. Valid API token required."}), 401
-199:             
-200:             return func(*args, **kwargs)
-201:         
-202:         return wrapper
-203:     
-204:     def test_api_key_required(self, func):
-205:         """Décorateur pour protéger un endpoint de test avec X-API-Key.
-206:         
-207:         Usage:
-208:             @app.route('/api/test/endpoint')
-209:             @auth_service.test_api_key_required
-210:             def test_endpoint():
-211:                 return {"status": "ok"}
-212:         
-213:         Args:
-214:             func: Fonction à protéger
-215:             
-216:         Returns:
-217:             Wrapper qui vérifie l'authentification
-218:         """
-219:         @wraps(func)
-220:         def wrapper(*args, **kwargs):
-221:             from flask import request, jsonify
-222:             
-223:             if not self.verify_test_api_key_from_request(request):
-224:                 return jsonify({"error": "Unauthorized. Valid X-API-Key required."}), 401
-225:             
-226:             return func(*args, **kwargs)
-227:         
-228:         return wrapper
-229:     
-230:     # Fonctions Statiques (Compatibilité)
-231:     
-232:     @staticmethod
-233:     def testapi_authorized(request: Request) -> bool:
-234:         """Fonction de compatibilité pour auth.helpers.testapi_authorized.
-235:         
-236:         ⚠️ Déprécié - Utiliser verify_test_api_key_from_request() à la place.
-237:         
-238:         Args:
-239:             request: Objet Flask request
-240:             
-241:         Returns:
-242:             True si X-API-Key est valide
-243:         """
-244:         import os
-245:         expected = os.environ.get("TEST_API_KEY")
-246:         if not expected:
-247:             return False
-248:         return request.headers.get("X-API-Key") == expected
-249:     
-250:     def __repr__(self) -> str:
-251:         login_mgr = "initialized" if self._login_manager else "not initialized"
-252:         return f"<AuthService(login_manager={login_mgr})>"
-````
-
-## File: services/config_service.py
-````python
-  1: """
-  2: services.config_service
-  3: ~~~~~~~~~~~~~~~~~~~~~~~
-  4: 
-  5: Service centralisé pour accéder à la configuration applicative.
-  6: 
-  7: Ce service remplace l'accès direct aux variables de config.settings et fournit:
-  8: - Validation des valeurs de configuration
-  9: - Transformation et normalisation
- 10: - Interface stable indépendante de l'implémentation sous-jacente
- 11: - Méthodes typées pour accès sécurisé
- 12: 
- 13: Usage:
- 14:     from services import ConfigService
- 15:     
- 16:     config = ConfigService()
- 17:     
- 18:     if config.is_email_config_valid():
- 19:         email_cfg = config.get_email_config()
- 20:         # ... use email_cfg
- 21: """
+  3: import io
+  4: import os
+  5: import subprocess
+  6: import threading
+  7: from contextlib import redirect_stdout, redirect_stderr
+  8: from datetime import datetime
+  9: from typing import Iterable, List, Tuple
+ 10: 
+ 11: import requests
+ 12: from flask import Blueprint, jsonify, request, current_app
+ 13: from flask_login import login_required, current_user
+ 14: 
+ 15: from services import ConfigService
+ 16: from email_processing import webhook_sender as email_webhook_sender
+ 17: from email_processing import orchestrator as email_orchestrator
+ 18: from app_logging.webhook_logger import append_webhook_log as _append_webhook_log
+ 19: from migrate_configs_to_redis import main as migrate_configs_main
+ 20: from scripts.check_config_store import KEY_CHOICES as CONFIG_STORE_KEYS
+ 21: from scripts.check_config_store import inspect_configs
  22: 
- 23: from __future__ import annotations
- 24: from typing import Optional
- 25: 
- 26: 
- 27: class ConfigService:
- 28:     """Service centralisé pour accéder à la configuration applicative.
- 29:     
- 30:     Attributes:
- 31:         _settings: Module de configuration (config.settings par défaut)
- 32:     """
- 33:     
- 34:     def __init__(self, settings_module=None):
- 35:         """Initialise le service avec un module de configuration.
- 36:         
- 37:         Args:
- 38:             settings_module: Module contenant la configuration (None = import dynamique)
- 39:         """
- 40:         if settings_module:
- 41:             self._settings = settings_module
- 42:         else:
- 43:             from config import settings
- 44:             self._settings = settings
- 45:     
- 46:     # Configuration IMAP / Email
- 47:     
- 48:     def get_email_config(self) -> dict:
- 49:         """Retourne la configuration email complète et validée.
- 50:         
- 51:         Returns:
- 52:             dict avec clés: address, password, server, port, use_ssl
- 53:         """
- 54:         return {
- 55:             "address": self._settings.EMAIL_ADDRESS,
- 56:             "password": self._settings.EMAIL_PASSWORD,
- 57:             "server": self._settings.IMAP_SERVER,
- 58:             "port": self._settings.IMAP_PORT,
- 59:             "use_ssl": self._settings.IMAP_USE_SSL,
- 60:         }
- 61:     
- 62:     def is_email_config_valid(self) -> bool:
- 63:         """Vérifie si la configuration email est complète et valide.
- 64:         
- 65:         Returns:
- 66:             True si tous les champs requis sont présents
- 67:         """
- 68:         return bool(
- 69:             self._settings.EMAIL_ADDRESS
- 70:             and self._settings.EMAIL_PASSWORD
- 71:             and self._settings.IMAP_SERVER
- 72:         )
- 73:     
- 74:     def get_email_address(self) -> str:
- 75:         return self._settings.EMAIL_ADDRESS
- 76:     
- 77:     def get_email_password(self) -> str:
- 78:         return self._settings.EMAIL_PASSWORD
- 79:     
- 80:     def get_imap_server(self) -> str:
- 81:         return self._settings.IMAP_SERVER
- 82:     
- 83:     def get_imap_port(self) -> int:
- 84:         return self._settings.IMAP_PORT
- 85:     
- 86:     def get_imap_use_ssl(self) -> bool:
- 87:         return self._settings.IMAP_USE_SSL
- 88:     
- 89:     # Configuration Webhooks
- 90:     
- 91:     def get_webhook_url(self) -> str:
- 92:         return self._settings.WEBHOOK_URL
- 93:     
- 94:     def get_webhook_ssl_verify(self) -> bool:
- 95:         return self._settings.WEBHOOK_SSL_VERIFY
- 96:     
- 97:     def has_webhook_url(self) -> bool:
- 98:         return bool(self._settings.WEBHOOK_URL)
- 99:     
-100:     # Configuration API / Tokens
-101:     
-102:     def get_api_token(self) -> str:
-103:         return self._settings.EXPECTED_API_TOKEN or ""
-104:     
-105:     def verify_api_token(self, token: str) -> bool:
-106:         """Vérifie si un token correspond au token API configuré.
-107:         
-108:         Args:
-109:             token: Token à vérifier
-110:             
-111:         Returns:
-112:             True si le token est valide
-113:         """
-114:         expected = self.get_api_token()
-115:         if not expected:
-116:             return False
-117:         return token == expected
-118:     
-119:     def has_api_token(self) -> bool:
-120:         return bool(self._settings.EXPECTED_API_TOKEN)
-121:     
-122:     def get_test_api_key(self) -> str:
-123:         import os
-124:         return os.environ.get("TEST_API_KEY", "")
-125:     
-126:     def verify_test_api_key(self, key: str) -> bool:
-127:         expected = self.get_test_api_key()
-128:         if not expected:
-129:             return False
-130:         return key == expected
-131:     
-132:     # Configuration Render (Déploiement)
-133:     
-134:     def get_render_config(self) -> dict:
-135:         """Retourne la configuration Render pour déploiement.
-136:         
-137:         Returns:
-138:             dict avec api_key, service_id, deploy_hook_url, clear_cache
-139:         """
-140:         return {
-141:             "api_key": self._settings.RENDER_API_KEY,
-142:             "service_id": self._settings.RENDER_SERVICE_ID,
-143:             "deploy_hook_url": self._settings.RENDER_DEPLOY_HOOK_URL,
-144:             "clear_cache": self._settings.RENDER_DEPLOY_CLEAR_CACHE,
-145:         }
-146:     
-147:     def has_render_config(self) -> bool:
-148:         return bool(
-149:             self._settings.RENDER_API_KEY and self._settings.RENDER_SERVICE_ID
-150:         ) or bool(self._settings.RENDER_DEPLOY_HOOK_URL)
-151:     
-152:     # Présence: feature removed
-153:     
-154:     # Configuration Authentification Dashboard
-155:     
-156:     def get_dashboard_user(self) -> str:
-157:         return self._settings.TRIGGER_PAGE_USER
-158:     
-159:     def get_dashboard_password(self) -> str:
-160:         return self._settings.TRIGGER_PAGE_PASSWORD
-161:     
-162:     def verify_dashboard_credentials(self, username: str, password: str) -> bool:
-163:         """Vérifie les credentials du dashboard.
-164:         
-165:         Args:
-166:             username: Nom d'utilisateur
-167:             password: Mot de passe
-168:             
-169:         Returns:
-170:             True si credentials valides
-171:         """
-172:         return (
-173:             username == self._settings.TRIGGER_PAGE_USER
-174:             and password == self._settings.TRIGGER_PAGE_PASSWORD
-175:         )
-176:     
-177:     # Configuration Déduplication
-178:     
-179:     def is_email_id_dedup_disabled(self) -> bool:
-180:         return bool(self._settings.DISABLE_EMAIL_ID_DEDUP)
-181:     
-182:     def is_subject_group_dedup_enabled(self) -> bool:
-183:         return bool(self._settings.ENABLE_SUBJECT_GROUP_DEDUP)
-184:     
-185:     def get_dedup_redis_keys(self) -> dict:
-186:         """Retourne les clés Redis pour la déduplication.
-187:         
-188:         Returns:
-189:             dict avec email_ids_key, subject_groups_key, subject_group_prefix
-190:         """
-191:         return {
-192:             "email_ids_key": self._settings.PROCESSED_EMAIL_IDS_REDIS_KEY,
-193:             "subject_groups_key": self._settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
-194:             "subject_group_prefix": self._settings.SUBJECT_GROUP_REDIS_PREFIX,
-195:             "subject_group_ttl": self._settings.SUBJECT_GROUP_TTL_SECONDS,
-196:         }
-197:     
-198:     # Configuration Make.com
-199:     
-200:     def get_makecom_api_key(self) -> str:
-201:         return self._settings.MAKECOM_API_KEY or ""
-202:     
-203:     def has_makecom_api_key(self) -> bool:
-204:         return bool(self._settings.MAKECOM_API_KEY)
-205:     
-206:     # Configuration Tâches de Fond
-207:     
-208:     def is_background_tasks_enabled(self) -> bool:
-209:         return bool(getattr(self._settings, "ENABLE_BACKGROUND_TASKS", False))
-210:     
-211:     def get_bg_poller_lock_file(self) -> str:
-212:         return getattr(
-213:             self._settings,
-214:             "BG_POLLER_LOCK_FILE",
-215:             "/tmp/render_signal_server_email_poller.lock",
-216:         )
-217:     
-218:     # Chemins de Fichiers
-219:     
-220:     def get_runtime_flags_file(self):
-221:         return self._settings.RUNTIME_FLAGS_FILE
-222:     
-223:     def get_polling_config_file(self):
-224:         return self._settings.POLLING_CONFIG_FILE
-225:     
-226:     def get_trigger_signal_file(self):
-227:         return self._settings.TRIGGER_SIGNAL_FILE
-228:     
-229:     # Méthodes Utilitaires
-230:     
-231:     def get_raw_settings(self):
-232:         return self._settings
-233:     
-234:     def __repr__(self) -> str:
-235:         return f"<ConfigService(email_valid={self.is_email_config_valid()}, webhook={self.has_webhook_url()})>"
-````
-
-## File: static/services/ApiService.js
-````javascript
- 1: export class ApiService {
- 2:     /** Gère la réponse HTTP et redirige en cas d'erreur 401/403 */
- 3:     static async handleResponse(res) {
- 4:         if (res.status === 401) {
- 5:             window.location.href = '/login';
- 6:             throw new Error('Session expirée');
- 7:         }
- 8:         if (res.status === 403) {
- 9:             throw new Error('Accès refusé');
-10:         }
-11:         if (res.status >= 500) {
-12:             throw new Error('Erreur serveur');
-13:         }
-14:         return res;
-15:     }
-16:     
-17:     /** Effectue une requête API avec gestion centralisée des erreurs */
-18:     static async request(url, options = {}) {
-19:         const res = await fetch(url, options);
-20:         return ApiService.handleResponse(res);
-21:     }
-22: 
-23:     /** Requête GET avec parsing JSON automatique */
-24:     static async get(url) {
-25:         const res = await ApiService.request(url);
-26:         return res.json();
-27:     }
-28: 
-29:     /** Requête POST avec envoi JSON */
-30:     static async post(url, data) {
-31:         const res = await ApiService.request(url, {
-32:             method: 'POST',
-33:             headers: { 'Content-Type': 'application/json' },
-34:             body: JSON.stringify(data)
-35:         });
-36:         return res.json();
-37:     }
-38: 
-39:     /** Requête PUT avec envoi JSON */
-40:     static async put(url, data) {
-41:         const res = await ApiService.request(url, {
-42:             method: 'PUT',
-43:             headers: { 'Content-Type': 'application/json' },
-44:             body: JSON.stringify(data)
-45:         });
-46:         return res.json();
-47:     }
-48: 
-49:     /** Requête DELETE */
-50:     static async delete(url) {
-51:         const res = await ApiService.request(url, { method: 'DELETE' });
-52:         return res.json();
-53:     }
-54: }
-````
-
-## File: Dockerfile
-````dockerfile
- 1: # syntax=docker/dockerfile:1
- 2: FROM python:3.11-slim
- 3: 
- 4: ENV PYTHONDONTWRITEBYTECODE=1 \
- 5:     PYTHONUNBUFFERED=1 \
- 6:     PIP_NO_CACHE_DIR=1
- 7: 
- 8: WORKDIR /app
- 9: 
-10: # Les dépendances Python actuelles n'exigent pas de bibliothèques système exotiques,
-11: # mais on installe les utilitaires essentiels pour sécuriser les builds futurs.
-12: RUN apt-get update \
-13:     && apt-get install -y --no-install-recommends build-essential \
-14:     && rm -rf /var/lib/apt/lists/*
-15: 
-16: COPY requirements.txt requirements.txt
-17: RUN pip install --upgrade pip \
-18:     && pip install -r requirements.txt
-19: 
-20: COPY . .
-21: 
-22: # Utilisateur non root pour l'exécution.
-23: RUN useradd --create-home --shell /bin/bash appuser \
-24:     && chown -R appuser:appuser /app
-25: 
-26: USER appuser
-27: 
-28: ENV PORT=8000 \
-29:     GUNICORN_WORKERS=1 \
-30:     GUNICORN_THREADS=4 \
-31:     GUNICORN_TIMEOUT=120 \
-32:     GUNICORN_GRACEFUL_TIMEOUT=30 \
-33:     GUNICORN_KEEP_ALIVE=75 \
-34:     GUNICORN_MAX_REQUESTS=15000 \
-35:     GUNICORN_MAX_REQUESTS_JITTER=3000
-36: EXPOSE 8000
-37: 
-38: # Gunicorn écrit déjà ses logs sur stdout/stderr ;
-39: # PYTHONUNBUFFERED assure la remontée immédiate des logs applicatifs (BG_POLLER, HEARTBEAT, etc.).
-40: CMD gunicorn \
-41:     --bind 0.0.0.0:$PORT \
-42:     --workers $GUNICORN_WORKERS \
-43:     --threads $GUNICORN_THREADS \
-44:     --timeout $GUNICORN_TIMEOUT \
-45:     --graceful-timeout $GUNICORN_GRACEFUL_TIMEOUT \
-46:     --keep-alive $GUNICORN_KEEP_ALIVE \
-47:     --max-requests $GUNICORN_MAX_REQUESTS \
-48:     --max-requests-jitter $GUNICORN_MAX_REQUESTS_JITTER \
-49:     app_render:app
-````
-
-## File: routes/api_logs.py
-````python
- 1: from __future__ import annotations
- 2: 
- 3: from flask import Blueprint, jsonify, request
- 4: from flask_login import login_required
- 5: 
- 6: from app_logging.webhook_logger import fetch_webhook_logs as _fetch_webhook_logs
- 7: 
- 8: bp = Blueprint("api_logs", __name__)
- 9: 
-10: 
-11: @bp.route("/api/webhook_logs", methods=["GET"])
-12: @login_required
-13: def get_webhook_logs():
-14:     """
-15:     Retourne l'historique des webhooks envoyés (max 50 entrées) avec filtre ?days=N.
-16:     Utilise fetch_webhook_logs du helper avec tri spécifique par id si requis par les tests.
-17:     """
-18:     try:
-19:         # Lazy import to avoid circular dependency at module import time
-20:         import app_render as _ar  # type: ignore
-21: 
-22:         try:
-23:             days = int(request.args.get("days", 7))
-24:         except Exception:
-25:             days = 7
-26:         # Legacy behavior: values <1 default to 7; values >30 clamp to 30
-27:         if days < 1:
-28:             days = 7
-29:         if days > 30:
-30:             days = 30
-31: 
-32:         # Use centralized helper (resilient to missing files)
-33:         result = _fetch_webhook_logs(
-34:             redis_client=getattr(_ar, "redis_client", None),
-35:             logger=getattr(_ar, "app").logger if hasattr(_ar, "app") else None,
-36:             file_path=getattr(_ar, "WEBHOOK_LOGS_FILE"),
-37:             redis_list_key=getattr(_ar, "WEBHOOK_LOGS_REDIS_KEY"),
-38:             days=days,
-39:             limit=50,
-40:         )
-41: 
-42:         # Apply specific sorting by id if tests require it (all entries have integer id)
-43:         if result.get("success") and result.get("logs"):
-44:             logs = result["logs"]
-45:             try:
-46:                 if logs and all(isinstance(log.get("id"), int) for log in logs):
-47:                     # Sort by id descending (test expectation)
-48:                     logs.sort(key=lambda log: log.get("id", 0), reverse=True)
-49:                     result["logs"] = logs
-50:             except Exception:
-51:                 pass  # Keep original order if sorting fails
-52: 
-53:         # Diagnostics under TESTING
-54:         try:
-55:             _app_obj = getattr(_ar, "app", None)
-56:             if _app_obj and getattr(_app_obj, "config", {}).get("TESTING") and isinstance(result, dict):
-57:                 _app_obj.logger.info(
-58:                     "API_LOGS_DIAG: result_count=%s days=%s",
-59:                     result.get("count"), days,
-60:                 )
-61:         except Exception:
-62:             pass
-63: 
-64:         return jsonify(result), 200
-65:     except Exception as e:
-66:         # Best-effort error response
-67:         return (
-68:             jsonify({"success": False, "message": "Erreur lors de la récupération des logs."}),
-69:             500,
-70:         )
-````
-
-## File: services/__init__.py
-````python
- 1: """
- 2: services
- 3: ~~~~~~~~
- 4: 
- 5: Module contenant les services applicatifs pour une architecture orientée services.
- 6: 
- 7: Les services encapsulent la logique métier et fournissent des interfaces cohérentes
- 8: pour accéder aux différentes fonctionnalités de l'application.
- 9: 
-10: Services disponibles:
-11: - ConfigService: Configuration applicative centralisée
-12: - RuntimeFlagsService: Gestion des flags runtime avec cache
-13: - WebhookConfigService: Configuration webhooks avec validation
-14: - AuthService: Authentification unifiée (dashboard + API)
-15: - DeduplicationService: Déduplication emails et subject groups
-16: - R2TransferService: Transfert de fichiers vers Cloudflare R2
-17: 
-18: Usage:
-19:     from services import ConfigService, AuthService
-20:     
-21:     config = ConfigService()
-22:     auth = AuthService(config)
-23: """
-24: 
-25: from services.config_service import ConfigService
-26: from services.runtime_flags_service import RuntimeFlagsService
-27: from services.webhook_config_service import WebhookConfigService
-28: from services.auth_service import AuthService
-29: from services.deduplication_service import DeduplicationService
-30: from services.magic_link_service import MagicLinkService
-31: from services.r2_transfer_service import R2TransferService
-32: from services.routing_rules_service import RoutingRulesService
-33: 
-34: __all__ = [
-35:     "ConfigService",
-36:     "RuntimeFlagsService",
-37:     "WebhookConfigService",
-38:     "AuthService",
-39:     "DeduplicationService",
-40:     "MagicLinkService",
-41:     "R2TransferService",
-42:     "RoutingRulesService",
-43: ]
+ 23: bp = Blueprint("api_admin", __name__, url_prefix="/api")
+ 24: 
+ 25: _config_service = ConfigService()
+ 26: ALLOWED_CONFIG_KEYS = CONFIG_STORE_KEYS
+ 27: 
+ 28: 
+ 29: def _invoke_config_migration(selected_keys: Iterable[str]) -> Tuple[int, str]:
+ 30:     argv: List[str] = ["--require-redis", "--verify"]
+ 31:     for key in selected_keys:
+ 32:         argv.extend(["--only", key])
+ 33: 
+ 34:     stdout_buffer = io.StringIO()
+ 35:     stderr_buffer = io.StringIO()
+ 36:     with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+ 37:         exit_code = migrate_configs_main(argv)
+ 38: 
+ 39:     combined_output = "\n".join(
+ 40:         segment
+ 41:         for segment in (stdout_buffer.getvalue().strip(), stderr_buffer.getvalue().strip())
+ 42:         if segment
+ 43:     )
+ 44:     return exit_code, combined_output
+ 45: 
+ 46: 
+ 47: def _run_config_store_verification(selected_keys: Iterable[str], raw: bool = False) -> Tuple[int, list[dict]]:
+ 48:     keys = tuple(selected_keys) or ALLOWED_CONFIG_KEYS
+ 49:     exit_code, results = inspect_configs(keys, raw=raw)
+ 50:     return exit_code, results
+ 51: 
+ 52: 
+ 53: @bp.route("/restart_server", methods=["POST"])
+ 54: @login_required
+ 55: def restart_server():
+ 56:     try:
+ 57:         restart_cmd = os.environ.get("RESTART_CMD", "sudo systemctl restart render-signal-server")
+ 58:         # Journaliser explicitement la demande de redémarrage pour traçabilité
+ 59:         try:
+ 60:             current_app.logger.info(
+ 61:                 "ADMIN: Server restart requested by '%s' with command: %s",
+ 62:                 getattr(current_user, "id", "unknown"),
+ 63:                 restart_cmd,
+ 64:             )
+ 65:         except Exception:
+ 66:             pass
+ 67: 
+ 68:         # Exécuter la commande en arrière-plan pour ne pas bloquer la requête HTTP
+ 69:         subprocess.Popen(
+ 70:             ["/bin/bash", "-lc", f"sleep 1; {restart_cmd}"],
+ 71:             stdout=subprocess.DEVNULL,
+ 72:             stderr=subprocess.DEVNULL,
+ 73:             start_new_session=True,
+ 74:         )
+ 75: 
+ 76:         try:
+ 77:             current_app.logger.info("ADMIN: Restart command scheduled (background).")
+ 78:         except Exception:
+ 79:             pass
+ 80:         return jsonify({"success": True, "message": "Redémarrage planifié. L'application sera indisponible quelques secondes."}), 200
+ 81:     except Exception as e:
+ 82:         return jsonify({"success": False, "message": str(e)}), 500
+ 83: 
+ 84: 
+ 85: @bp.route("/migrate_configs_to_redis", methods=["POST"])
+ 86: @login_required
+ 87: def migrate_configs_to_redis_endpoint():
+ 88:     """Migrer les configurations critiques vers Redis directement depuis le dashboard."""
+ 89:     try:
+ 90:         payload = request.get_json(silent=True) or {}
+ 91:         requested_keys = payload.get("keys")
+ 92: 
+ 93:         if requested_keys is None:
+ 94:             selected_keys = ALLOWED_CONFIG_KEYS
+ 95:         elif isinstance(requested_keys, list) and all(isinstance(k, str) for k in requested_keys):
+ 96:             invalid = [k for k in requested_keys if k not in ALLOWED_CONFIG_KEYS]
+ 97:             if invalid:
+ 98:                 return (
+ 99:                     jsonify(
+100:                         {
+101:                             "success": False,
+102:                             "message": f"Clés invalides: {', '.join(invalid)}",
+103:                             "allowed_keys": ALLOWED_CONFIG_KEYS,
+104:                         }
+105:                     ),
+106:                     400,
+107:                 )
+108:             # Conserver l'ordre fourni par l'utilisateur (mais éviter doublons)
+109:             seen = set()
+110:             selected_keys = tuple(k for k in requested_keys if not (k in seen or seen.add(k)))
+111:         else:
+112:             return (
+113:                 jsonify(
+114:                     {
+115:                         "success": False,
+116:                         "message": "Le champ 'keys' doit être une liste de chaînes.",
+117:                         "allowed_keys": ALLOWED_CONFIG_KEYS,
+118:                     }
+119:                 ),
+120:                 400,
+121:             )
+122: 
+123:         exit_code, output = _invoke_config_migration(selected_keys)
+124:         success = exit_code == 0
+125:         status_code = 200 if success else 502
+126: 
+127:         try:
+128:             current_app.logger.info(
+129:                 "ADMIN: Config migration requested by '%s' (keys=%s, exit=%s)",
+130:                 getattr(current_user, "id", "unknown"),
+131:                 list(selected_keys),
+132:                 exit_code,
+133:             )
+134:         except Exception:
+135:             pass
+136: 
+137:         return (
+138:             jsonify(
+139:                 {
+140:                     "success": success,
+141:                     "exit_code": exit_code,
+142:                     "keys": list(selected_keys),
+143:                     "log": output,
+144:                 }
+145:             ),
+146:             status_code,
+147:         )
+148:     except Exception as exc:
+149:         return jsonify({"success": False, "message": str(exc)}), 500
+150: 
+151: 
+152: @bp.route("/verify_config_store", methods=["POST"])
+153: @login_required
+154: def verify_config_store():
+155:     """Vérifie les configurations persistées (Redis + fallback) directement depuis le dashboard."""
+156:     try:
+157:         payload = request.get_json(silent=True) or {}
+158:         requested_keys = payload.get("keys")
+159:         raw = bool(payload.get("raw"))
+160: 
+161:         if requested_keys is None:
+162:             selected_keys = ALLOWED_CONFIG_KEYS
+163:         elif isinstance(requested_keys, list) and all(isinstance(k, str) for k in requested_keys):
+164:             invalid = [k for k in requested_keys if k not in ALLOWED_CONFIG_KEYS]
+165:             if invalid:
+166:                 return (
+167:                     jsonify(
+168:                         {
+169:                             "success": False,
+170:                             "message": f"Clés invalides: {', '.join(invalid)}",
+171:                             "allowed_keys": ALLOWED_CONFIG_KEYS,
+172:                         }
+173:                     ),
+174:                     400,
+175:                 )
+176:             seen = set()
+177:             selected_keys = tuple(k for k in requested_keys if not (k in seen or seen.add(k)))
+178:         else:
+179:             return (
+180:                 jsonify(
+181:                     {
+182:                         "success": False,
+183:                         "message": "Le champ 'keys' doit être une liste de chaînes.",
+184:                         "allowed_keys": ALLOWED_CONFIG_KEYS,
+185:                     }
+186:                 ),
+187:                 400,
+188:             )
+189: 
+190:         exit_code, results = _run_config_store_verification(selected_keys, raw=raw)
+191:         success = exit_code == 0
+192:         status_code = 200 if success else 502
+193: 
+194:         try:
+195:             current_app.logger.info(
+196:                 "ADMIN: Config store verification requested by '%s' (keys=%s, exit=%s)",
+197:                 getattr(current_user, "id", "unknown"),
+198:                 list(selected_keys),
+199:                 exit_code,
+200:             )
+201:         except Exception:
+202:             pass
+203: 
+204:         return (
+205:             jsonify(
+206:                 {
+207:                     "success": success,
+208:                     "exit_code": exit_code,
+209:                     "keys": list(selected_keys),
+210:                     "results": results,
+211:                 }
+212:             ),
+213:             status_code,
+214:         )
+215:     except Exception as exc:
+216:         return jsonify({"success": False, "message": str(exc)}), 500
+217: 
+218: 
+219: @bp.route("/deploy_application", methods=["POST"])
+220: @login_required
+221: def deploy_application():
+222:     """Déclenche un déploiement applicatif côté serveur.
+223: 
+224:     La commande est définie via la variable d'environnement DEPLOY_CMD.
+225:     Par défaut, on effectue un reload-or-restart du service applicatif et un reload de Nginx.
+226:     L'exécution est asynchrone (arrière-plan) pour ne pas bloquer la requête HTTP.
+227:     """
+228:     try:
+229:         # 1) Si un Deploy Hook Render est configuré, l'utiliser en priorité (plus simple)
+230:         render_config = _config_service.get_render_config()
+231:         hook_url = render_config.get("deploy_hook_url")
+232:         if hook_url:
+233:             try:
+234:                 # Validation basique de l'URL (éviter appels arbitraires)
+235:                 if not hook_url.startswith("https://api.render.com/deploy/"):
+236:                     return jsonify({"success": False, "message": "RENDER_DEPLOY_HOOK_URL invalide (préfixe inattendu)."}), 400
+237: 
+238:                 # Masquer la clé dans les logs
+239:                 masked = hook_url
+240:                 try:
+241:                     if "?key=" in masked:
+242:                         masked = masked.split("?key=")[0] + "?key=***"
+243:                 except Exception:
+244:                     masked = "<masked>"
+245: 
+246:                 current_app.logger.info(
+247:                     "ADMIN: Deploy via Render Deploy Hook requested by '%s' (url=%s)",
+248:                     getattr(current_user, "id", "unknown"),
+249:                     masked,
+250:                 )
+251:             except Exception:
+252:                 pass
+253: 
+254:             try:
+255:                 resp = requests.get(hook_url, timeout=15)
+256:                 ok_status = resp.status_code in (200, 201, 202, 204)
+257:                 if ok_status:
+258:                     current_app.logger.info(
+259:                         "ADMIN: Deploy hook accepted (http=%s)", resp.status_code
+260:                     )
+261:                     return jsonify({
+262:                         "success": True,
+263:                         "message": "Déploiement Render déclenché via Deploy Hook. Consultez le dashboard Render.",
+264:                     }), 200
+265:                 else:
+266:                     # Continuer vers la méthode API si disponible, sinon fallback local
+267:                     current_app.logger.warning(
+268:                         "ADMIN: Deploy hook returned non-success http=%s; will try alternative method.",
+269:                         resp.status_code,
+270:                     )
+271:             except Exception as e:
+272:                 current_app.logger.warning("ADMIN: Deploy hook call failed: %s", e)
+273: 
+274:         # 2) Sinon, si variables Render API sont définies, utiliser l'API Render
+275:         # Phase 5: Utilisation de ConfigService
+276:         if render_config["api_key"] and render_config["service_id"]:
+277:             try:
+278:                 current_app.logger.info(
+279:                     "ADMIN: Deploy via Render API requested by '%s' (service_id=%s, clearCache=%s)",
+280:                     getattr(current_user, "id", "unknown"),
+281:                     render_config["service_id"],
+282:                     render_config["clear_cache"],
+283:                 )
+284:             except Exception:
+285:                 pass
+286: 
+287:             url = f"https://api.render.com/v1/services/{render_config['service_id']}/deploys"
+288:             headers = {
+289:                 "Authorization": f"Bearer {render_config['api_key']}",
+290:                 "Content-Type": "application/json",
+291:                 "Accept": "application/json",
+292:             }
+293:             payload = {"clearCache": render_config["clear_cache"]}
+294:             resp = requests.post(url, json=payload, headers=headers, timeout=20)
+295:             ok_status = resp.status_code in (200, 201, 202)
+296:             data = {}
+297:             try:
+298:                 data = resp.json()
+299:             except Exception:
+300:                 data = {"raw": resp.text[:400]}
+301: 
+302:             if ok_status:
+303:                 deploy_id = data.get("id") or data.get("deployId")
+304:                 status = data.get("status") or "queued"
+305:                 try:
+306:                     current_app.logger.info(
+307:                         "ADMIN: Render deploy accepted (id=%s, status=%s, http=%s)",
+308:                         deploy_id,
+309:                         status,
+310:                         resp.status_code,
+311:                     )
+312:                 except Exception:
+313:                     pass
+314:                 return jsonify({
+315:                     "success": True,
+316:                     "message": "Déploiement Render lancé (voir dashboard Render).",
+317:                     "deploy_id": deploy_id,
+318:                     "status": status,
+319:                 }), 200
+320:             else:
+321:                 msg = data.get("message") or data.get("error") or f"HTTP {resp.status_code}"
+322:                 return jsonify({"success": False, "message": f"Render API error: {msg}"}), 502
+323: 
+324:         # 3) Fallback: commande système locale (DEPLOY_CMD)
+325:         default_cmd = (
+326:             "sudo systemctl reload-or-restart render-signal-server; "
+327:             "sudo nginx -s reload || sudo systemctl reload nginx"
+328:         )
+329:         deploy_cmd = os.environ.get("DEPLOY_CMD", default_cmd)
+330: 
+331:         try:
+332:             current_app.logger.info(
+333:                 "ADMIN: Deploy (fallback cmd) requested by '%s' with command: %s",
+334:                 getattr(current_user, "id", "unknown"),
+335:                 deploy_cmd,
+336:             )
+337:         except Exception:
+338:             pass
+339: 
+340:         subprocess.Popen(
+341:             ["/bin/bash", "-lc", f"sleep 1; {deploy_cmd}"],
+342:             stdout=subprocess.DEVNULL,
+343:             stderr=subprocess.DEVNULL,
+344:             start_new_session=True,
+345:         )
+346: 
+347:         try:
+348:             current_app.logger.info("ADMIN: Deploy command scheduled (background).")
+349:         except Exception:
+350:             pass
+351: 
+352:         return jsonify({
+353:             "success": True,
+354:             "message": "Déploiement planifié (fallback local). L'application peut être indisponible pendant quelques secondes."
+355:         }), 200
+356:     except Exception as e:
+357:         return jsonify({"success": False, "message": str(e)}), 500
+358: 
+359: 
+360: # Obsolete presence test endpoint removed
+361: 
+362: 
+363: @bp.route("/check_emails_and_download", methods=["POST"])
+364: @login_required
+365: def check_emails_and_download():
+366:     try:
+367:         current_app.logger.info(f"API_EMAIL_CHECK: Déclenchement manuel par '{current_user.id}'.")
+368: 
+369:         # Validate minimal email config and required runtime settings
+370:         # Phase 5: Utilisation de ConfigService
+371:         if not _config_service.is_email_config_valid():
+372:             return jsonify({"status": "error", "message": "Config serveur email incomplète (email/IMAP)."}), 503
+373:         if not _config_service.has_webhook_url():
+374:             return jsonify({"status": "error", "message": "Config serveur email incomplète (webhook URL)."}), 503
+375: 
+376:         def run_task():
+377:             try:
+378:                 with current_app.app_context():
+379:                     email_orchestrator.check_new_emails_and_trigger_webhook()
+380:             except Exception as e:
+381:                 try:
+382:                     current_app.logger.error(f"API_EMAIL_CHECK: Exception background task: {e}")
+383:                 except Exception:
+384:                     pass
+385: 
+386:         threading.Thread(target=run_task, daemon=True).start()
+387:         return jsonify({"status": "success", "message": "Vérification en arrière-plan lancée."}), 202
+388:     except Exception as e:
+389:         return jsonify({"status": "error", "message": str(e)}), 500
 ````
 
 ## File: routes/api_config.py
@@ -11238,6 +11518,459 @@ requirements.txt
 370:         }), 200
 371:     except Exception:
 372:         return jsonify({"success": False, "message": "Erreur interne lors de la mise à jour du polling."}), 500
+````
+
+## File: scripts/check_config_store.py
+````python
+  1: """CLI utilitaire pour vérifier les configurations stockées dans Redis.
+  2: 
+  3: Usage:
+  4:     python -m scripts.check_config_store --keys processing_prefs webhook_config
+  5: """
+  6: 
+  7: from __future__ import annotations
+  8: 
+  9: import argparse
+ 10: import json
+ 11: import sys
+ 12: from typing import Any, Dict, Iterable, Sequence, Tuple
+ 13: 
+ 14: from config import app_config_store
+ 15: 
+ 16: KEY_CHOICES: Tuple[str, ...] = (
+ 17:     "magic_link_tokens",
+ 18:     "polling_config",
+ 19:     "processing_prefs",
+ 20:     "routing_rules",
+ 21:     "webhook_config",
+ 22: )
+ 23: 
+ 24: 
+ 25: def _validate_payload(key: str, payload: Dict[str, Any]) -> Tuple[bool, str]:
+ 26:     if not isinstance(payload, dict):
+ 27:         return False, "payload is not a dict"
+ 28:     if key == "routing_rules" and not payload:
+ 29:         return True, "empty (allowed)"
+ 30:     if not payload:
+ 31:         return False, "payload is empty"
+ 32:     if key != "magic_link_tokens" and "_updated_at" not in payload:
+ 33:         return False, "missing _updated_at"
+ 34:     return True, "ok"
+ 35: 
+ 36: 
+ 37: def _summarize_dict(payload: Dict[str, Any]) -> str:
+ 38:     parts: list[str] = []
+ 39:     updated_at = payload.get("_updated_at")
+ 40:     if isinstance(updated_at, str):
+ 41:         parts.append(f"_updated_at={updated_at}")
+ 42: 
+ 43:     dict_sizes = {
+ 44:         k: len(v) for k, v in payload.items() if isinstance(v, dict)
+ 45:     }
+ 46:     if dict_sizes:
+ 47:         formatted = ", ".join(f"{k}:{size}" for k, size in sorted(dict_sizes.items()))
+ 48:         parts.append(f"dict_sizes={formatted}")
+ 49: 
+ 50:     list_sizes = {
+ 51:         k: len(v) for k, v in payload.items() if isinstance(v, list)
+ 52:     }
+ 53:     if list_sizes:
+ 54:         formatted = ", ".join(f"{k}:{size}" for k, size in sorted(list_sizes.items()))
+ 55:         parts.append(f"list_sizes={formatted}")
+ 56: 
+ 57:     if not parts:
+ 58:         parts.append(f"keys={len(payload)}")
+ 59:     return "; ".join(parts)
+ 60: 
+ 61: 
+ 62: def _format_payload(payload: Dict[str, Any], raw: bool) -> str:
+ 63:     if raw:
+ 64:         return json.dumps(payload, indent=2, ensure_ascii=False)
+ 65:     return _summarize_dict(payload)
+ 66: 
+ 67: 
+ 68: def _fetch(key: str) -> Dict[str, Any]:
+ 69:     return app_config_store.get_config_json(key)
+ 70: 
+ 71: 
+ 72: def inspect_configs(keys: Sequence[str], raw: bool = False) -> Tuple[int, list[dict[str, Any]]]:
+ 73:     """Inspecte les clés demandées et retourne (exit_code, résultats structurés)."""
+ 74:     exit_code = 0
+ 75:     results: list[dict[str, Any]] = []
+ 76:     for key in keys:
+ 77:         payload = _fetch(key)
+ 78:         has_payload = bool(payload)
+ 79:         valid, reason = _validate_payload(key, payload)
+ 80:         summary = _format_payload(payload, raw) if has_payload else "<vide>"
+ 81:         if not valid:
+ 82:             exit_code = 1
+ 83:         results.append(
+ 84:             {
+ 85:                 "key": key,
+ 86:                 "valid": bool(valid),
+ 87:                 "status": "OK" if valid else "INVALID",
+ 88:                 "message": reason,
+ 89:                 "summary": summary,
+ 90:                 "payload_present": has_payload,
+ 91:                 "payload": payload if raw and has_payload else None,
+ 92:             }
+ 93:         )
+ 94:     return exit_code, results
+ 95: 
+ 96: 
+ 97: def _run(keys: Sequence[str], raw: bool) -> int:
+ 98:     exit_code, results = inspect_configs(keys, raw)
+ 99:     for entry in results:
+100:         status = entry["status"] if entry["valid"] else f"INVALID ({entry['message']})"
+101:         print(f"{entry['key']}: {status}")
+102:         print(entry["summary"])
+103:         print("-" * 40)
+104:     return exit_code
+105: 
+106: 
+107: def build_parser() -> argparse.ArgumentParser:
+108:     parser = argparse.ArgumentParser(
+109:         description="Inspecter les configs persistées dans Redis."
+110:     )
+111:     parser.add_argument(
+112:         "--keys",
+113:         nargs="+",
+114:         choices=KEY_CHOICES,
+115:         default=KEY_CHOICES,
+116:         help="Liste des clés à vérifier.",
+117:     )
+118:     parser.add_argument(
+119:         "--raw",
+120:         action="store_true",
+121:         help="Afficher le JSON complet (indent=2).",
+122:     )
+123:     return parser
+124: 
+125: 
+126: def main(argv: Iterable[str] | None = None) -> int:
+127:     parser = build_parser()
+128:     args = parser.parse_args(list(argv) if argv is not None else None)
+129:     return _run(tuple(args.keys), args.raw)
+130: 
+131: 
+132: if __name__ == "__main__":
+133:     sys.exit(main())
+````
+
+## File: services/__init__.py
+````python
+ 1: """
+ 2: services
+ 3: ~~~~~~~~
+ 4: 
+ 5: Module contenant les services applicatifs pour une architecture orientée services.
+ 6: 
+ 7: Les services encapsulent la logique métier et fournissent des interfaces cohérentes
+ 8: pour accéder aux différentes fonctionnalités de l'application.
+ 9: 
+10: Services disponibles:
+11: - ConfigService: Configuration applicative centralisée
+12: - RuntimeFlagsService: Gestion des flags runtime avec cache
+13: - WebhookConfigService: Configuration webhooks avec validation
+14: - AuthService: Authentification unifiée (dashboard + API)
+15: - DeduplicationService: Déduplication emails et subject groups
+16: - R2TransferService: Transfert de fichiers vers Cloudflare R2
+17: 
+18: Usage:
+19:     from services import ConfigService, AuthService
+20:     
+21:     config = ConfigService()
+22:     auth = AuthService(config)
+23: """
+24: 
+25: from services.config_service import ConfigService
+26: from services.runtime_flags_service import RuntimeFlagsService
+27: from services.webhook_config_service import WebhookConfigService
+28: from services.auth_service import AuthService
+29: from services.deduplication_service import DeduplicationService
+30: from services.magic_link_service import MagicLinkService
+31: from services.r2_transfer_service import R2TransferService
+32: from services.routing_rules_service import RoutingRulesService
+33: 
+34: __all__ = [
+35:     "ConfigService",
+36:     "RuntimeFlagsService",
+37:     "WebhookConfigService",
+38:     "AuthService",
+39:     "DeduplicationService",
+40:     "MagicLinkService",
+41:     "R2TransferService",
+42:     "RoutingRulesService",
+43: ]
+````
+
+## File: static/services/ApiService.js
+````javascript
+ 1: export class ApiService {
+ 2:     /** Gère la réponse HTTP et redirige en cas d'erreur 401/403 */
+ 3:     static async handleResponse(res) {
+ 4:         if (res.status === 401) {
+ 5:             window.location.href = '/login';
+ 6:             throw new Error('Session expirée');
+ 7:         }
+ 8:         if (res.status === 403) {
+ 9:             throw new Error('Accès refusé');
+10:         }
+11:         if (res.status >= 500) {
+12:             throw new Error('Erreur serveur');
+13:         }
+14:         return res;
+15:     }
+16:     
+17:     /** Effectue une requête API avec gestion centralisée des erreurs */
+18:     static async request(url, options = {}) {
+19:         const res = await fetch(url, options);
+20:         return ApiService.handleResponse(res);
+21:     }
+22: 
+23:     /** Requête GET avec parsing JSON automatique */
+24:     static async get(url) {
+25:         const res = await ApiService.request(url);
+26:         return res.json();
+27:     }
+28: 
+29:     /** Requête POST avec envoi JSON */
+30:     static async post(url, data) {
+31:         const res = await ApiService.request(url, {
+32:             method: 'POST',
+33:             headers: { 'Content-Type': 'application/json' },
+34:             body: JSON.stringify(data)
+35:         });
+36:         return res.json();
+37:     }
+38: 
+39:     /** Requête PUT avec envoi JSON */
+40:     static async put(url, data) {
+41:         const res = await ApiService.request(url, {
+42:             method: 'PUT',
+43:             headers: { 'Content-Type': 'application/json' },
+44:             body: JSON.stringify(data)
+45:         });
+46:         return res.json();
+47:     }
+48: 
+49:     /** Requête DELETE */
+50:     static async delete(url) {
+51:         const res = await ApiService.request(url, { method: 'DELETE' });
+52:         return res.json();
+53:     }
+54: }
+````
+
+## File: Dockerfile
+````dockerfile
+ 1: # syntax=docker/dockerfile:1
+ 2: FROM python:3.11-slim
+ 3: 
+ 4: ENV PYTHONDONTWRITEBYTECODE=1 \
+ 5:     PYTHONUNBUFFERED=1 \
+ 6:     PIP_NO_CACHE_DIR=1
+ 7: 
+ 8: WORKDIR /app
+ 9: 
+10: # Les dépendances Python actuelles n'exigent pas de bibliothèques système exotiques,
+11: # mais on installe les utilitaires essentiels pour sécuriser les builds futurs.
+12: RUN apt-get update \
+13:     && apt-get install -y --no-install-recommends build-essential \
+14:     && rm -rf /var/lib/apt/lists/*
+15: 
+16: COPY requirements.txt requirements.txt
+17: RUN pip install --upgrade pip \
+18:     && pip install -r requirements.txt
+19: 
+20: COPY . .
+21: 
+22: # Utilisateur non root pour l'exécution.
+23: RUN useradd --create-home --shell /bin/bash appuser \
+24:     && chown -R appuser:appuser /app
+25: 
+26: USER appuser
+27: 
+28: ENV PORT=8000 \
+29:     GUNICORN_WORKERS=1 \
+30:     GUNICORN_THREADS=4 \
+31:     GUNICORN_TIMEOUT=120 \
+32:     GUNICORN_GRACEFUL_TIMEOUT=30 \
+33:     GUNICORN_KEEP_ALIVE=75 \
+34:     GUNICORN_MAX_REQUESTS=15000 \
+35:     GUNICORN_MAX_REQUESTS_JITTER=3000
+36: EXPOSE 8000
+37: 
+38: # Gunicorn écrit déjà ses logs sur stdout/stderr ;
+39: # PYTHONUNBUFFERED assure la remontée immédiate des logs applicatifs (BG_POLLER, HEARTBEAT, etc.).
+40: CMD gunicorn \
+41:     --bind 0.0.0.0:$PORT \
+42:     --workers $GUNICORN_WORKERS \
+43:     --threads $GUNICORN_THREADS \
+44:     --timeout $GUNICORN_TIMEOUT \
+45:     --graceful-timeout $GUNICORN_GRACEFUL_TIMEOUT \
+46:     --keep-alive $GUNICORN_KEEP_ALIVE \
+47:     --max-requests $GUNICORN_MAX_REQUESTS \
+48:     --max-requests-jitter $GUNICORN_MAX_REQUESTS_JITTER \
+49:     app_render:app
+````
+
+## File: config/settings.py
+````python
+  1: """
+  2: Centralized configuration for render_signal_server.
+  3: Contains all reference constants and environment variables.
+  4: """
+  5: 
+  6: import os
+  7: from pathlib import Path
+  8: from utils.validators import env_bool
+  9: 
+ 10: 
+ 11: REF_TRIGGER_PAGE_USER = "admin"
+ 12: REF_POLLING_TIMEZONE = "Europe/Paris"
+ 13: REF_POLLING_ACTIVE_START_HOUR = 9
+ 14: REF_POLLING_ACTIVE_END_HOUR = 23
+ 15: REF_POLLING_ACTIVE_DAYS = "0,1,2,3,4"
+ 16: REF_EMAIL_POLLING_INTERVAL_SECONDS = 30
+ 17: 
+ 18: 
+ 19: # --- Environment Variables ---
+ 20: def _get_required_env(name: str) -> str:
+ 21:     value = os.environ.get(name, "").strip()
+ 22:     if not value:
+ 23:         raise ValueError(f"Missing required environment variable: {name}")
+ 24:     return value
+ 25: 
+ 26: 
+ 27: FLASK_SECRET_KEY = _get_required_env("FLASK_SECRET_KEY")
+ 28: 
+ 29: TRIGGER_PAGE_USER = os.environ.get("TRIGGER_PAGE_USER", REF_TRIGGER_PAGE_USER)
+ 30: TRIGGER_PAGE_PASSWORD = _get_required_env("TRIGGER_PAGE_PASSWORD")
+ 31: 
+ 32: EMAIL_ADDRESS = _get_required_env("EMAIL_ADDRESS")
+ 33: EMAIL_PASSWORD = _get_required_env("EMAIL_PASSWORD")
+ 34: IMAP_SERVER = _get_required_env("IMAP_SERVER")
+ 35: IMAP_PORT = int(os.environ.get("IMAP_PORT", 993))
+ 36: IMAP_USE_SSL = env_bool("IMAP_USE_SSL", True)
+ 37: 
+ 38: EXPECTED_API_TOKEN = _get_required_env("PROCESS_API_TOKEN")
+ 39: 
+ 40: WEBHOOK_URL = _get_required_env("WEBHOOK_URL")
+ 41: MAKECOM_API_KEY = _get_required_env("MAKECOM_API_KEY")
+ 42: WEBHOOK_SSL_VERIFY = env_bool("WEBHOOK_SSL_VERIFY", default=True)
+ 43: 
+ 44: # --- Render API Configuration ---
+ 45: RENDER_API_KEY = os.environ.get("RENDER_API_KEY", "")
+ 46: RENDER_SERVICE_ID = os.environ.get("RENDER_SERVICE_ID", "")
+ 47: _CLEAR_DEFAULT = "do_not_clear"
+ 48: RENDER_DEPLOY_CLEAR_CACHE = os.environ.get("RENDER_DEPLOY_CLEAR_CACHE", _CLEAR_DEFAULT)
+ 49: if RENDER_DEPLOY_CLEAR_CACHE not in ("clear", "do_not_clear"):
+ 50:     RENDER_DEPLOY_CLEAR_CACHE = _CLEAR_DEFAULT
+ 51: 
+ 52: RENDER_DEPLOY_HOOK_URL = os.environ.get("RENDER_DEPLOY_HOOK_URL", "")
+ 53: 
+ 54: 
+ 55: SENDER_OF_INTEREST_FOR_POLLING_RAW = os.environ.get(
+ 56:     "SENDER_OF_INTEREST_FOR_POLLING",
+ 57:     "",
+ 58: )
+ 59: SENDER_LIST_FOR_POLLING = [
+ 60:     e.strip().lower() for e in SENDER_OF_INTEREST_FOR_POLLING_RAW.split(',') 
+ 61:     if e.strip()
+ 62: ] if SENDER_OF_INTEREST_FOR_POLLING_RAW else []
+ 63: 
+ 64: POLLING_TIMEZONE_STR = os.environ.get("POLLING_TIMEZONE", REF_POLLING_TIMEZONE)
+ 65: POLLING_ACTIVE_START_HOUR = int(os.environ.get("POLLING_ACTIVE_START_HOUR", REF_POLLING_ACTIVE_START_HOUR))
+ 66: POLLING_ACTIVE_END_HOUR = int(os.environ.get("POLLING_ACTIVE_END_HOUR", REF_POLLING_ACTIVE_END_HOUR))
+ 67: 
+ 68: POLLING_ACTIVE_DAYS_RAW = os.environ.get("POLLING_ACTIVE_DAYS", REF_POLLING_ACTIVE_DAYS)
+ 69: POLLING_ACTIVE_DAYS = []
+ 70: if POLLING_ACTIVE_DAYS_RAW:
+ 71:     try:
+ 72:         POLLING_ACTIVE_DAYS = [
+ 73:             int(d.strip()) for d in POLLING_ACTIVE_DAYS_RAW.split(',') 
+ 74:             if d.strip().isdigit() and 0 <= int(d.strip()) <= 6
+ 75:         ]
+ 76:     except ValueError:
+ 77:         POLLING_ACTIVE_DAYS = [0, 1, 2, 3, 4]
+ 78: if not POLLING_ACTIVE_DAYS:
+ 79:     POLLING_ACTIVE_DAYS = [0, 1, 2, 3, 4]
+ 80: 
+ 81: EMAIL_POLLING_INTERVAL_SECONDS = int(
+ 82:     os.environ.get("EMAIL_POLLING_INTERVAL_SECONDS", REF_EMAIL_POLLING_INTERVAL_SECONDS)
+ 83: )
+ 84: POLLING_INACTIVE_CHECK_INTERVAL_SECONDS = int(
+ 85:     os.environ.get("POLLING_INACTIVE_CHECK_INTERVAL_SECONDS", 600)
+ 86: )
+ 87: 
+ 88: ENABLE_BACKGROUND_TASKS = env_bool("ENABLE_BACKGROUND_TASKS", False)
+ 89: BG_POLLER_LOCK_FILE = os.environ.get(
+ 90:     "BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock"
+ 91: )
+ 92: 
+ 93: ENABLE_SUBJECT_GROUP_DEDUP = env_bool("ENABLE_SUBJECT_GROUP_DEDUP", True)
+ 94: DISABLE_EMAIL_ID_DEDUP = env_bool("DISABLE_EMAIL_ID_DEDUP", False)
+ 95: ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = env_bool("ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS", False)
+ 96: 
+ 97: BASE_DIR = Path(__file__).resolve().parent.parent
+ 98: DEBUG_DIR = BASE_DIR / "debug"
+ 99: WEBHOOK_CONFIG_FILE = DEBUG_DIR / "webhook_config.json"
+100: WEBHOOK_LOGS_FILE = DEBUG_DIR / "webhook_logs.json"
+101: PROCESSING_PREFS_FILE = DEBUG_DIR / "processing_prefs.json"
+102: TIME_WINDOW_OVERRIDE_FILE = DEBUG_DIR / "webhook_time_window.json"
+103: POLLING_CONFIG_FILE = DEBUG_DIR / "polling_config.json"
+104: RUNTIME_FLAGS_FILE = DEBUG_DIR / "runtime_flags.json"
+105: SIGNAL_DIR = BASE_DIR / "signal_data_app_render"
+106: TRIGGER_SIGNAL_FILE = SIGNAL_DIR / "local_workflow_trigger_signal.json"
+107: _MAGIC_LINK_FILE_DEFAULT = DEBUG_DIR / "magic_links.json"
+108: MAGIC_LINK_TOKENS_FILE = Path(os.environ.get("MAGIC_LINK_TOKENS_FILE", str(_MAGIC_LINK_FILE_DEFAULT)))
+109: 
+110: R2_FETCH_ENABLED = env_bool("R2_FETCH_ENABLED", False)
+111: R2_FETCH_ENDPOINT = os.environ.get("R2_FETCH_ENDPOINT", "")
+112: R2_PUBLIC_BASE_URL = os.environ.get("R2_PUBLIC_BASE_URL", "")
+113: R2_BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "")
+114: WEBHOOK_LINKS_FILE = os.environ.get(
+115:     "WEBHOOK_LINKS_FILE",
+116:     str(BASE_DIR / "deployment" / "data" / "webhook_links.json")
+117: )
+118: R2_LINKS_MAX_ENTRIES = int(os.environ.get("R2_LINKS_MAX_ENTRIES", 1000))
+119: 
+120: # Magic link TTL (seconds)
+121: MAGIC_LINK_TTL_SECONDS = int(os.environ.get("MAGIC_LINK_TTL_SECONDS", 900))
+122: 
+123: WEBHOOK_LOGS_REDIS_KEY = "r:ss:webhook_logs:v1"
+124: 
+125: PROCESSED_EMAIL_IDS_REDIS_KEY = os.environ.get("PROCESSED_EMAIL_IDS_REDIS_KEY", "r:ss:processed_email_ids:v1")
+126: PROCESSED_SUBJECT_GROUPS_REDIS_KEY = os.environ.get(
+127:     "PROCESSED_SUBJECT_GROUPS_REDIS_KEY", "r:ss:processed_subject_groups:v1"
+128: )
+129: SUBJECT_GROUP_REDIS_PREFIX = os.environ.get("SUBJECT_GROUP_REDIS_PREFIX", "r:ss:subject_group_ttl:")
+130: 
+131: SUBJECT_GROUP_TTL_SECONDS = int(os.environ.get("SUBJECT_GROUP_TTL_SECONDS", 0))
+132: 
+133: 
+134: def log_configuration(logger):
+135:     logger.info(f"CFG WEBHOOK: Custom webhook URL configured to: {WEBHOOK_URL}")
+136:     logger.info(f"CFG WEBHOOK: SSL verification = {WEBHOOK_SSL_VERIFY}")
+137:     
+138:     if SENDER_LIST_FOR_POLLING:
+139:         logger.info(
+140:             f"CFG POLL: Monitoring emails from {len(SENDER_LIST_FOR_POLLING)} senders: {SENDER_LIST_FOR_POLLING}"
+141:         )
+142:     else:
+143:         logger.warning("CFG POLL: SENDER_OF_INTEREST_FOR_POLLING not set. Email polling likely ineffective.")
+144:     
+145:     if not EXPECTED_API_TOKEN:
+146:         logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
+147:     else:
+148:         logger.info("CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured.")
+149:     
+150:     logger.info(f"CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP={ENABLE_SUBJECT_GROUP_DEDUP}")
+151:     logger.info(f"CFG DEDUP: DISABLE_EMAIL_ID_DEDUP={DISABLE_EMAIL_ID_DEDUP}")
+152:     
+153:     logger.info(f"CFG BG: ENABLE_BACKGROUND_TASKS={ENABLE_BACKGROUND_TASKS}")
+154:     logger.info(f"CFG BG: BG_POLLER_LOCK_FILE={BG_POLLER_LOCK_FILE}")
 ````
 
 ## File: services/r2_transfer_service.py
@@ -12474,557 +13207,6 @@ requirements.txt
 364: }
 ````
 
-## File: config/settings.py
-````python
-  1: """
-  2: Centralized configuration for render_signal_server.
-  3: Contains all reference constants and environment variables.
-  4: """
-  5: 
-  6: import os
-  7: from pathlib import Path
-  8: from utils.validators import env_bool
-  9: 
- 10: 
- 11: REF_TRIGGER_PAGE_USER = "admin"
- 12: REF_POLLING_TIMEZONE = "Europe/Paris"
- 13: REF_POLLING_ACTIVE_START_HOUR = 9
- 14: REF_POLLING_ACTIVE_END_HOUR = 23
- 15: REF_POLLING_ACTIVE_DAYS = "0,1,2,3,4"
- 16: REF_EMAIL_POLLING_INTERVAL_SECONDS = 30
- 17: 
- 18: 
- 19: # --- Environment Variables ---
- 20: def _get_required_env(name: str) -> str:
- 21:     value = os.environ.get(name, "").strip()
- 22:     if not value:
- 23:         raise ValueError(f"Missing required environment variable: {name}")
- 24:     return value
- 25: 
- 26: 
- 27: FLASK_SECRET_KEY = _get_required_env("FLASK_SECRET_KEY")
- 28: 
- 29: TRIGGER_PAGE_USER = os.environ.get("TRIGGER_PAGE_USER", REF_TRIGGER_PAGE_USER)
- 30: TRIGGER_PAGE_PASSWORD = _get_required_env("TRIGGER_PAGE_PASSWORD")
- 31: 
- 32: EMAIL_ADDRESS = _get_required_env("EMAIL_ADDRESS")
- 33: EMAIL_PASSWORD = _get_required_env("EMAIL_PASSWORD")
- 34: IMAP_SERVER = _get_required_env("IMAP_SERVER")
- 35: IMAP_PORT = int(os.environ.get("IMAP_PORT", 993))
- 36: IMAP_USE_SSL = env_bool("IMAP_USE_SSL", True)
- 37: 
- 38: EXPECTED_API_TOKEN = _get_required_env("PROCESS_API_TOKEN")
- 39: 
- 40: WEBHOOK_URL = _get_required_env("WEBHOOK_URL")
- 41: MAKECOM_API_KEY = _get_required_env("MAKECOM_API_KEY")
- 42: WEBHOOK_SSL_VERIFY = env_bool("WEBHOOK_SSL_VERIFY", default=True)
- 43: 
- 44: # --- Render API Configuration ---
- 45: RENDER_API_KEY = os.environ.get("RENDER_API_KEY", "")
- 46: RENDER_SERVICE_ID = os.environ.get("RENDER_SERVICE_ID", "")
- 47: _CLEAR_DEFAULT = "do_not_clear"
- 48: RENDER_DEPLOY_CLEAR_CACHE = os.environ.get("RENDER_DEPLOY_CLEAR_CACHE", _CLEAR_DEFAULT)
- 49: if RENDER_DEPLOY_CLEAR_CACHE not in ("clear", "do_not_clear"):
- 50:     RENDER_DEPLOY_CLEAR_CACHE = _CLEAR_DEFAULT
- 51: 
- 52: RENDER_DEPLOY_HOOK_URL = os.environ.get("RENDER_DEPLOY_HOOK_URL", "")
- 53: 
- 54: 
- 55: SENDER_OF_INTEREST_FOR_POLLING_RAW = os.environ.get(
- 56:     "SENDER_OF_INTEREST_FOR_POLLING",
- 57:     "",
- 58: )
- 59: SENDER_LIST_FOR_POLLING = [
- 60:     e.strip().lower() for e in SENDER_OF_INTEREST_FOR_POLLING_RAW.split(',') 
- 61:     if e.strip()
- 62: ] if SENDER_OF_INTEREST_FOR_POLLING_RAW else []
- 63: 
- 64: POLLING_TIMEZONE_STR = os.environ.get("POLLING_TIMEZONE", REF_POLLING_TIMEZONE)
- 65: POLLING_ACTIVE_START_HOUR = int(os.environ.get("POLLING_ACTIVE_START_HOUR", REF_POLLING_ACTIVE_START_HOUR))
- 66: POLLING_ACTIVE_END_HOUR = int(os.environ.get("POLLING_ACTIVE_END_HOUR", REF_POLLING_ACTIVE_END_HOUR))
- 67: 
- 68: POLLING_ACTIVE_DAYS_RAW = os.environ.get("POLLING_ACTIVE_DAYS", REF_POLLING_ACTIVE_DAYS)
- 69: POLLING_ACTIVE_DAYS = []
- 70: if POLLING_ACTIVE_DAYS_RAW:
- 71:     try:
- 72:         POLLING_ACTIVE_DAYS = [
- 73:             int(d.strip()) for d in POLLING_ACTIVE_DAYS_RAW.split(',') 
- 74:             if d.strip().isdigit() and 0 <= int(d.strip()) <= 6
- 75:         ]
- 76:     except ValueError:
- 77:         POLLING_ACTIVE_DAYS = [0, 1, 2, 3, 4]
- 78: if not POLLING_ACTIVE_DAYS:
- 79:     POLLING_ACTIVE_DAYS = [0, 1, 2, 3, 4]
- 80: 
- 81: EMAIL_POLLING_INTERVAL_SECONDS = int(
- 82:     os.environ.get("EMAIL_POLLING_INTERVAL_SECONDS", REF_EMAIL_POLLING_INTERVAL_SECONDS)
- 83: )
- 84: POLLING_INACTIVE_CHECK_INTERVAL_SECONDS = int(
- 85:     os.environ.get("POLLING_INACTIVE_CHECK_INTERVAL_SECONDS", 600)
- 86: )
- 87: 
- 88: ENABLE_BACKGROUND_TASKS = env_bool("ENABLE_BACKGROUND_TASKS", False)
- 89: BG_POLLER_LOCK_FILE = os.environ.get(
- 90:     "BG_POLLER_LOCK_FILE", "/tmp/render_signal_server_email_poller.lock"
- 91: )
- 92: 
- 93: ENABLE_SUBJECT_GROUP_DEDUP = env_bool("ENABLE_SUBJECT_GROUP_DEDUP", True)
- 94: DISABLE_EMAIL_ID_DEDUP = env_bool("DISABLE_EMAIL_ID_DEDUP", False)
- 95: ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = env_bool("ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS", False)
- 96: 
- 97: BASE_DIR = Path(__file__).resolve().parent.parent
- 98: DEBUG_DIR = BASE_DIR / "debug"
- 99: WEBHOOK_CONFIG_FILE = DEBUG_DIR / "webhook_config.json"
-100: WEBHOOK_LOGS_FILE = DEBUG_DIR / "webhook_logs.json"
-101: PROCESSING_PREFS_FILE = DEBUG_DIR / "processing_prefs.json"
-102: TIME_WINDOW_OVERRIDE_FILE = DEBUG_DIR / "webhook_time_window.json"
-103: POLLING_CONFIG_FILE = DEBUG_DIR / "polling_config.json"
-104: RUNTIME_FLAGS_FILE = DEBUG_DIR / "runtime_flags.json"
-105: SIGNAL_DIR = BASE_DIR / "signal_data_app_render"
-106: TRIGGER_SIGNAL_FILE = SIGNAL_DIR / "local_workflow_trigger_signal.json"
-107: _MAGIC_LINK_FILE_DEFAULT = DEBUG_DIR / "magic_links.json"
-108: MAGIC_LINK_TOKENS_FILE = Path(os.environ.get("MAGIC_LINK_TOKENS_FILE", str(_MAGIC_LINK_FILE_DEFAULT)))
-109: 
-110: R2_FETCH_ENABLED = env_bool("R2_FETCH_ENABLED", False)
-111: R2_FETCH_ENDPOINT = os.environ.get("R2_FETCH_ENDPOINT", "")
-112: R2_PUBLIC_BASE_URL = os.environ.get("R2_PUBLIC_BASE_URL", "")
-113: R2_BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "")
-114: WEBHOOK_LINKS_FILE = os.environ.get(
-115:     "WEBHOOK_LINKS_FILE",
-116:     str(BASE_DIR / "deployment" / "data" / "webhook_links.json")
-117: )
-118: R2_LINKS_MAX_ENTRIES = int(os.environ.get("R2_LINKS_MAX_ENTRIES", 1000))
-119: 
-120: # Magic link TTL (seconds)
-121: MAGIC_LINK_TTL_SECONDS = int(os.environ.get("MAGIC_LINK_TTL_SECONDS", 900))
-122: 
-123: WEBHOOK_LOGS_REDIS_KEY = "r:ss:webhook_logs:v1"
-124: 
-125: PROCESSED_EMAIL_IDS_REDIS_KEY = os.environ.get("PROCESSED_EMAIL_IDS_REDIS_KEY", "r:ss:processed_email_ids:v1")
-126: PROCESSED_SUBJECT_GROUPS_REDIS_KEY = os.environ.get(
-127:     "PROCESSED_SUBJECT_GROUPS_REDIS_KEY", "r:ss:processed_subject_groups:v1"
-128: )
-129: SUBJECT_GROUP_REDIS_PREFIX = os.environ.get("SUBJECT_GROUP_REDIS_PREFIX", "r:ss:subject_group_ttl:")
-130: 
-131: SUBJECT_GROUP_TTL_SECONDS = int(os.environ.get("SUBJECT_GROUP_TTL_SECONDS", 0))
-132: 
-133: 
-134: def log_configuration(logger):
-135:     logger.info(f"CFG WEBHOOK: Custom webhook URL configured to: {WEBHOOK_URL}")
-136:     logger.info(f"CFG WEBHOOK: SSL verification = {WEBHOOK_SSL_VERIFY}")
-137:     
-138:     if SENDER_LIST_FOR_POLLING:
-139:         logger.info(
-140:             f"CFG POLL: Monitoring emails from {len(SENDER_LIST_FOR_POLLING)} senders: {SENDER_LIST_FOR_POLLING}"
-141:         )
-142:     else:
-143:         logger.warning("CFG POLL: SENDER_OF_INTEREST_FOR_POLLING not set. Email polling likely ineffective.")
-144:     
-145:     if not EXPECTED_API_TOKEN:
-146:         logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
-147:     else:
-148:         logger.info("CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured.")
-149:     
-150:     logger.info(f"CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP={ENABLE_SUBJECT_GROUP_DEDUP}")
-151:     logger.info(f"CFG DEDUP: DISABLE_EMAIL_ID_DEDUP={DISABLE_EMAIL_ID_DEDUP}")
-152:     
-153:     logger.info(f"CFG BG: ENABLE_BACKGROUND_TASKS={ENABLE_BACKGROUND_TASKS}")
-154:     logger.info(f"CFG BG: BG_POLLER_LOCK_FILE={BG_POLLER_LOCK_FILE}")
-````
-
-## File: routes/api_admin.py
-````python
-  1: from __future__ import annotations
-  2: 
-  3: import io
-  4: import os
-  5: import subprocess
-  6: import threading
-  7: from contextlib import redirect_stdout, redirect_stderr
-  8: from datetime import datetime
-  9: from typing import Iterable, List, Tuple
- 10: 
- 11: import requests
- 12: from flask import Blueprint, jsonify, request, current_app
- 13: from flask_login import login_required, current_user
- 14: 
- 15: from services import ConfigService
- 16: from email_processing import webhook_sender as email_webhook_sender
- 17: from email_processing import orchestrator as email_orchestrator
- 18: from app_logging.webhook_logger import append_webhook_log as _append_webhook_log
- 19: from migrate_configs_to_redis import main as migrate_configs_main
- 20: from scripts.check_config_store import KEY_CHOICES as CONFIG_STORE_KEYS
- 21: from scripts.check_config_store import inspect_configs
- 22: 
- 23: bp = Blueprint("api_admin", __name__, url_prefix="/api")
- 24: 
- 25: _config_service = ConfigService()
- 26: ALLOWED_CONFIG_KEYS = CONFIG_STORE_KEYS
- 27: 
- 28: 
- 29: def _invoke_config_migration(selected_keys: Iterable[str]) -> Tuple[int, str]:
- 30:     argv: List[str] = ["--require-redis", "--verify"]
- 31:     for key in selected_keys:
- 32:         argv.extend(["--only", key])
- 33: 
- 34:     stdout_buffer = io.StringIO()
- 35:     stderr_buffer = io.StringIO()
- 36:     with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
- 37:         exit_code = migrate_configs_main(argv)
- 38: 
- 39:     combined_output = "\n".join(
- 40:         segment
- 41:         for segment in (stdout_buffer.getvalue().strip(), stderr_buffer.getvalue().strip())
- 42:         if segment
- 43:     )
- 44:     return exit_code, combined_output
- 45: 
- 46: 
- 47: def _run_config_store_verification(selected_keys: Iterable[str], raw: bool = False) -> Tuple[int, list[dict]]:
- 48:     keys = tuple(selected_keys) or ALLOWED_CONFIG_KEYS
- 49:     exit_code, results = inspect_configs(keys, raw=raw)
- 50:     return exit_code, results
- 51: 
- 52: 
- 53: @bp.route("/restart_server", methods=["POST"])
- 54: @login_required
- 55: def restart_server():
- 56:     try:
- 57:         restart_cmd = os.environ.get("RESTART_CMD", "sudo systemctl restart render-signal-server")
- 58:         # Journaliser explicitement la demande de redémarrage pour traçabilité
- 59:         try:
- 60:             current_app.logger.info(
- 61:                 "ADMIN: Server restart requested by '%s' with command: %s",
- 62:                 getattr(current_user, "id", "unknown"),
- 63:                 restart_cmd,
- 64:             )
- 65:         except Exception:
- 66:             pass
- 67: 
- 68:         # Exécuter la commande en arrière-plan pour ne pas bloquer la requête HTTP
- 69:         subprocess.Popen(
- 70:             ["/bin/bash", "-lc", f"sleep 1; {restart_cmd}"],
- 71:             stdout=subprocess.DEVNULL,
- 72:             stderr=subprocess.DEVNULL,
- 73:             start_new_session=True,
- 74:         )
- 75: 
- 76:         try:
- 77:             current_app.logger.info("ADMIN: Restart command scheduled (background).")
- 78:         except Exception:
- 79:             pass
- 80:         return jsonify({"success": True, "message": "Redémarrage planifié. L'application sera indisponible quelques secondes."}), 200
- 81:     except Exception as e:
- 82:         return jsonify({"success": False, "message": str(e)}), 500
- 83: 
- 84: 
- 85: @bp.route("/migrate_configs_to_redis", methods=["POST"])
- 86: @login_required
- 87: def migrate_configs_to_redis_endpoint():
- 88:     """Migrer les configurations critiques vers Redis directement depuis le dashboard."""
- 89:     try:
- 90:         payload = request.get_json(silent=True) or {}
- 91:         requested_keys = payload.get("keys")
- 92: 
- 93:         if requested_keys is None:
- 94:             selected_keys = ALLOWED_CONFIG_KEYS
- 95:         elif isinstance(requested_keys, list) and all(isinstance(k, str) for k in requested_keys):
- 96:             invalid = [k for k in requested_keys if k not in ALLOWED_CONFIG_KEYS]
- 97:             if invalid:
- 98:                 return (
- 99:                     jsonify(
-100:                         {
-101:                             "success": False,
-102:                             "message": f"Clés invalides: {', '.join(invalid)}",
-103:                             "allowed_keys": ALLOWED_CONFIG_KEYS,
-104:                         }
-105:                     ),
-106:                     400,
-107:                 )
-108:             # Conserver l'ordre fourni par l'utilisateur (mais éviter doublons)
-109:             seen = set()
-110:             selected_keys = tuple(k for k in requested_keys if not (k in seen or seen.add(k)))
-111:         else:
-112:             return (
-113:                 jsonify(
-114:                     {
-115:                         "success": False,
-116:                         "message": "Le champ 'keys' doit être une liste de chaînes.",
-117:                         "allowed_keys": ALLOWED_CONFIG_KEYS,
-118:                     }
-119:                 ),
-120:                 400,
-121:             )
-122: 
-123:         exit_code, output = _invoke_config_migration(selected_keys)
-124:         success = exit_code == 0
-125:         status_code = 200 if success else 502
-126: 
-127:         try:
-128:             current_app.logger.info(
-129:                 "ADMIN: Config migration requested by '%s' (keys=%s, exit=%s)",
-130:                 getattr(current_user, "id", "unknown"),
-131:                 list(selected_keys),
-132:                 exit_code,
-133:             )
-134:         except Exception:
-135:             pass
-136: 
-137:         return (
-138:             jsonify(
-139:                 {
-140:                     "success": success,
-141:                     "exit_code": exit_code,
-142:                     "keys": list(selected_keys),
-143:                     "log": output,
-144:                 }
-145:             ),
-146:             status_code,
-147:         )
-148:     except Exception as exc:
-149:         return jsonify({"success": False, "message": str(exc)}), 500
-150: 
-151: 
-152: @bp.route("/verify_config_store", methods=["POST"])
-153: @login_required
-154: def verify_config_store():
-155:     """Vérifie les configurations persistées (Redis + fallback) directement depuis le dashboard."""
-156:     try:
-157:         payload = request.get_json(silent=True) or {}
-158:         requested_keys = payload.get("keys")
-159:         raw = bool(payload.get("raw"))
-160: 
-161:         if requested_keys is None:
-162:             selected_keys = ALLOWED_CONFIG_KEYS
-163:         elif isinstance(requested_keys, list) and all(isinstance(k, str) for k in requested_keys):
-164:             invalid = [k for k in requested_keys if k not in ALLOWED_CONFIG_KEYS]
-165:             if invalid:
-166:                 return (
-167:                     jsonify(
-168:                         {
-169:                             "success": False,
-170:                             "message": f"Clés invalides: {', '.join(invalid)}",
-171:                             "allowed_keys": ALLOWED_CONFIG_KEYS,
-172:                         }
-173:                     ),
-174:                     400,
-175:                 )
-176:             seen = set()
-177:             selected_keys = tuple(k for k in requested_keys if not (k in seen or seen.add(k)))
-178:         else:
-179:             return (
-180:                 jsonify(
-181:                     {
-182:                         "success": False,
-183:                         "message": "Le champ 'keys' doit être une liste de chaînes.",
-184:                         "allowed_keys": ALLOWED_CONFIG_KEYS,
-185:                     }
-186:                 ),
-187:                 400,
-188:             )
-189: 
-190:         exit_code, results = _run_config_store_verification(selected_keys, raw=raw)
-191:         success = exit_code == 0
-192:         status_code = 200 if success else 502
-193: 
-194:         try:
-195:             current_app.logger.info(
-196:                 "ADMIN: Config store verification requested by '%s' (keys=%s, exit=%s)",
-197:                 getattr(current_user, "id", "unknown"),
-198:                 list(selected_keys),
-199:                 exit_code,
-200:             )
-201:         except Exception:
-202:             pass
-203: 
-204:         return (
-205:             jsonify(
-206:                 {
-207:                     "success": success,
-208:                     "exit_code": exit_code,
-209:                     "keys": list(selected_keys),
-210:                     "results": results,
-211:                 }
-212:             ),
-213:             status_code,
-214:         )
-215:     except Exception as exc:
-216:         return jsonify({"success": False, "message": str(exc)}), 500
-217: 
-218: 
-219: @bp.route("/deploy_application", methods=["POST"])
-220: @login_required
-221: def deploy_application():
-222:     """Déclenche un déploiement applicatif côté serveur.
-223: 
-224:     La commande est définie via la variable d'environnement DEPLOY_CMD.
-225:     Par défaut, on effectue un reload-or-restart du service applicatif et un reload de Nginx.
-226:     L'exécution est asynchrone (arrière-plan) pour ne pas bloquer la requête HTTP.
-227:     """
-228:     try:
-229:         # 1) Si un Deploy Hook Render est configuré, l'utiliser en priorité (plus simple)
-230:         render_config = _config_service.get_render_config()
-231:         hook_url = render_config.get("deploy_hook_url")
-232:         if hook_url:
-233:             try:
-234:                 # Validation basique de l'URL (éviter appels arbitraires)
-235:                 if not hook_url.startswith("https://api.render.com/deploy/"):
-236:                     return jsonify({"success": False, "message": "RENDER_DEPLOY_HOOK_URL invalide (préfixe inattendu)."}), 400
-237: 
-238:                 # Masquer la clé dans les logs
-239:                 masked = hook_url
-240:                 try:
-241:                     if "?key=" in masked:
-242:                         masked = masked.split("?key=")[0] + "?key=***"
-243:                 except Exception:
-244:                     masked = "<masked>"
-245: 
-246:                 current_app.logger.info(
-247:                     "ADMIN: Deploy via Render Deploy Hook requested by '%s' (url=%s)",
-248:                     getattr(current_user, "id", "unknown"),
-249:                     masked,
-250:                 )
-251:             except Exception:
-252:                 pass
-253: 
-254:             try:
-255:                 resp = requests.get(hook_url, timeout=15)
-256:                 ok_status = resp.status_code in (200, 201, 202, 204)
-257:                 if ok_status:
-258:                     current_app.logger.info(
-259:                         "ADMIN: Deploy hook accepted (http=%s)", resp.status_code
-260:                     )
-261:                     return jsonify({
-262:                         "success": True,
-263:                         "message": "Déploiement Render déclenché via Deploy Hook. Consultez le dashboard Render.",
-264:                     }), 200
-265:                 else:
-266:                     # Continuer vers la méthode API si disponible, sinon fallback local
-267:                     current_app.logger.warning(
-268:                         "ADMIN: Deploy hook returned non-success http=%s; will try alternative method.",
-269:                         resp.status_code,
-270:                     )
-271:             except Exception as e:
-272:                 current_app.logger.warning("ADMIN: Deploy hook call failed: %s", e)
-273: 
-274:         # 2) Sinon, si variables Render API sont définies, utiliser l'API Render
-275:         # Phase 5: Utilisation de ConfigService
-276:         if render_config["api_key"] and render_config["service_id"]:
-277:             try:
-278:                 current_app.logger.info(
-279:                     "ADMIN: Deploy via Render API requested by '%s' (service_id=%s, clearCache=%s)",
-280:                     getattr(current_user, "id", "unknown"),
-281:                     render_config["service_id"],
-282:                     render_config["clear_cache"],
-283:                 )
-284:             except Exception:
-285:                 pass
-286: 
-287:             url = f"https://api.render.com/v1/services/{render_config['service_id']}/deploys"
-288:             headers = {
-289:                 "Authorization": f"Bearer {render_config['api_key']}",
-290:                 "Content-Type": "application/json",
-291:                 "Accept": "application/json",
-292:             }
-293:             payload = {"clearCache": render_config["clear_cache"]}
-294:             resp = requests.post(url, json=payload, headers=headers, timeout=20)
-295:             ok_status = resp.status_code in (200, 201, 202)
-296:             data = {}
-297:             try:
-298:                 data = resp.json()
-299:             except Exception:
-300:                 data = {"raw": resp.text[:400]}
-301: 
-302:             if ok_status:
-303:                 deploy_id = data.get("id") or data.get("deployId")
-304:                 status = data.get("status") or "queued"
-305:                 try:
-306:                     current_app.logger.info(
-307:                         "ADMIN: Render deploy accepted (id=%s, status=%s, http=%s)",
-308:                         deploy_id,
-309:                         status,
-310:                         resp.status_code,
-311:                     )
-312:                 except Exception:
-313:                     pass
-314:                 return jsonify({
-315:                     "success": True,
-316:                     "message": "Déploiement Render lancé (voir dashboard Render).",
-317:                     "deploy_id": deploy_id,
-318:                     "status": status,
-319:                 }), 200
-320:             else:
-321:                 msg = data.get("message") or data.get("error") or f"HTTP {resp.status_code}"
-322:                 return jsonify({"success": False, "message": f"Render API error: {msg}"}), 502
-323: 
-324:         # 3) Fallback: commande système locale (DEPLOY_CMD)
-325:         default_cmd = (
-326:             "sudo systemctl reload-or-restart render-signal-server; "
-327:             "sudo nginx -s reload || sudo systemctl reload nginx"
-328:         )
-329:         deploy_cmd = os.environ.get("DEPLOY_CMD", default_cmd)
-330: 
-331:         try:
-332:             current_app.logger.info(
-333:                 "ADMIN: Deploy (fallback cmd) requested by '%s' with command: %s",
-334:                 getattr(current_user, "id", "unknown"),
-335:                 deploy_cmd,
-336:             )
-337:         except Exception:
-338:             pass
-339: 
-340:         subprocess.Popen(
-341:             ["/bin/bash", "-lc", f"sleep 1; {deploy_cmd}"],
-342:             stdout=subprocess.DEVNULL,
-343:             stderr=subprocess.DEVNULL,
-344:             start_new_session=True,
-345:         )
-346: 
-347:         try:
-348:             current_app.logger.info("ADMIN: Deploy command scheduled (background).")
-349:         except Exception:
-350:             pass
-351: 
-352:         return jsonify({
-353:             "success": True,
-354:             "message": "Déploiement planifié (fallback local). L'application peut être indisponible pendant quelques secondes."
-355:         }), 200
-356:     except Exception as e:
-357:         return jsonify({"success": False, "message": str(e)}), 500
-358: 
-359: 
-360: # Obsolete presence test endpoint removed
-361: 
-362: 
-363: @bp.route("/check_emails_and_download", methods=["POST"])
-364: @login_required
-365: def check_emails_and_download():
-366:     try:
-367:         current_app.logger.info(f"API_EMAIL_CHECK: Déclenchement manuel par '{current_user.id}'.")
-368: 
-369:         # Validate minimal email config and required runtime settings
-370:         # Phase 5: Utilisation de ConfigService
-371:         if not _config_service.is_email_config_valid():
-372:             return jsonify({"status": "error", "message": "Config serveur email incomplète (email/IMAP)."}), 503
-373:         if not _config_service.has_webhook_url():
-374:             return jsonify({"status": "error", "message": "Config serveur email incomplète (webhook URL)."}), 503
-375: 
-376:         def run_task():
-377:             try:
-378:                 with current_app.app_context():
-379:                     email_orchestrator.check_new_emails_and_trigger_webhook()
-380:             except Exception as e:
-381:                 try:
-382:                     current_app.logger.error(f"API_EMAIL_CHECK: Exception background task: {e}")
-383:                 except Exception:
-384:                     pass
-385: 
-386:         threading.Thread(target=run_task, daemon=True).start()
-387:         return jsonify({"status": "success", "message": "Vérification en arrière-plan lancée."}), 202
-388:     except Exception as e:
-389:         return jsonify({"status": "error", "message": str(e)}), 500
-````
-
 ## File: routes/api_routing_rules.py
 ````python
   1: from __future__ import annotations
@@ -13301,6 +13483,738 @@ requirements.txt
 272:         return jsonify({"success": True, "message": msg, "config": updated}), 200
 273:     except Exception as exc:
 274:         return jsonify({"success": False, "message": str(exc)}), 500
+````
+
+## File: routes/api_webhooks.py
+````python
+  1: from __future__ import annotations
+  2: 
+  3: import os
+  4: import json
+  5: from pathlib import Path
+  6: 
+  7: from flask import Blueprint, jsonify, request
+  8: from flask_login import login_required, current_user
+  9: 
+ 10: from utils.time_helpers import parse_time_hhmm
+ 11: from config import app_config_store as _store
+ 12: 
+ 13: from services import WebhookConfigService
+ 14: 
+ 15: bp = Blueprint("api_webhooks", __name__, url_prefix="/api/webhooks")
+ 16: 
+ 17: # Storage path kept compatible with legacy location used in app_render.py
+ 18: WEBHOOK_CONFIG_FILE = (
+ 19:     Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
+ 20: )
+ 21: 
+ 22: try:
+ 23:     _webhook_service = WebhookConfigService.get_instance()
+ 24: except ValueError:
+ 25:     # Fallback: initialiser si pas encore fait (cas tests)
+ 26:     _webhook_service = WebhookConfigService.get_instance(
+ 27:         file_path=WEBHOOK_CONFIG_FILE,
+ 28:         external_store=_store
+ 29:     )
+ 30: 
+ 31: 
+ 32: def _load_webhook_config() -> dict:
+ 33:     """Load persisted config from DB if available, else file fallback.
+ 34:     
+ 35:     Uses WebhookConfigService (cache + validation).
+ 36:     """
+ 37:     # Force a reload to avoid serving stale values when another endpoint
+ 38:     # or external store updated the data recently (cache TTL = 60s).
+ 39:     _webhook_service.reload()
+ 40:     return _webhook_service.get_all_config()
+ 41: 
+ 42: 
+ 43: def _save_webhook_config(config: dict) -> bool:
+ 44:     """Persist config to DB with file fallback.
+ 45:     
+ 46:     Uses WebhookConfigService (validation automatique + cache invalidation).
+ 47:     """
+ 48:     success, _ = _webhook_service.update_config(config)
+ 49:     return success
+ 50: 
+ 51: 
+ 52: def _mask_url(url: str | None) -> str | None:
+ 53:     if not url:
+ 54:         return None
+ 55:     if url.startswith("http"):
+ 56:         parts = url.split("/")
+ 57:         if len(parts) > 3:
+ 58:             return f"{parts[0]}//{parts[2]}/***"
+ 59:         return url[:30] + "***"
+ 60:     return None
+ 61: 
+ 62: 
+ 63: @bp.route("/config", methods=["GET"])
+ 64: @login_required
+ 65: def get_webhook_config():
+ 66:     persisted = _load_webhook_config()
+ 67: 
+ 68:     # Environment defaults for webhook configuration
+ 69:     webhook_url = persisted.get("webhook_url") or os.environ.get("WEBHOOK_URL")
+ 70:     webhook_ssl_verify = persisted.get(
+ 71:         "webhook_ssl_verify",
+ 72:         os.environ.get("WEBHOOK_SSL_VERIFY", "true").strip().lower()
+ 73:         in ("1", "true", "yes", "on"),
+ 74:     )
+ 75:     # New: global enable/disable for sending webhooks (default: true)
+ 76:     webhook_sending_enabled = persisted.get(
+ 77:         "webhook_sending_enabled",
+ 78:         os.environ.get("WEBHOOK_SENDING_ENABLED", "true").strip().lower()
+ 79:         in ("1", "true", "yes", "on"),
+ 80:     )
+ 81:     # Time window for global webhook toggle (may be empty strings)
+ 82:     webhook_time_start = (persisted.get("webhook_time_start") or "").strip()
+ 83:     webhook_time_end = (persisted.get("webhook_time_end") or "").strip()
+ 84:     
+ 85:     # Absence pause configuration
+ 86:     absence_pause_enabled = persisted.get("absence_pause_enabled", False)
+ 87:     absence_pause_days = persisted.get("absence_pause_days", [])
+ 88:     if not isinstance(absence_pause_days, list):
+ 89:         absence_pause_days = []
+ 90: 
+ 91:     config = {
+ 92:         # Always mask webhook_url in API response for safety
+ 93:         "webhook_url": _mask_url(webhook_url),
+ 94:         "webhook_ssl_verify": webhook_ssl_verify,
+ 95:         "webhook_sending_enabled": bool(webhook_sending_enabled),
+ 96:         # Expose as None when empty to be explicit in API response
+ 97:         "webhook_time_start": webhook_time_start or None,
+ 98:         "webhook_time_end": webhook_time_end or None,
+ 99:         "absence_pause_enabled": bool(absence_pause_enabled),
+100:         "absence_pause_days": absence_pause_days,
+101:     }
+102:     return jsonify({"success": True, "config": config}), 200
+103: 
+104: 
+105: @bp.route("/config", methods=["POST"])
+106: @login_required
+107: def update_webhook_config():
+108:     payload = request.get_json(silent=True) or {}
+109:     # Build a minimal updates dict to avoid clobbering unrelated fields with
+110:     # potentially stale cached values.
+111:     updates = {}
+112: 
+113:     if "webhook_url" in payload:
+114:         val = payload["webhook_url"].strip() if payload["webhook_url"] else None
+115:         # Exiger HTTPS strict
+116:         if val and not val.startswith("https://"):
+117:             return (
+118:                 jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}),
+119:                 400,
+120:             )
+121:         updates["webhook_url"] = val
+122: 
+123:     if "webhook_ssl_verify" in payload:
+124:         updates["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
+125: 
+126:     # New flag: webhook_sending_enabled
+127:     if "webhook_sending_enabled" in payload:
+128:         updates["webhook_sending_enabled"] = bool(payload["webhook_sending_enabled"])
+129:     
+130:     # Absence pause configuration
+131:     if "absence_pause_enabled" in payload:
+132:         updates["absence_pause_enabled"] = bool(payload["absence_pause_enabled"])
+133:     
+134:     if "absence_pause_days" in payload:
+135:         days = payload["absence_pause_days"]
+136:         if not isinstance(days, list):
+137:             return jsonify({"success": False, "message": "absence_pause_days doit être une liste."}), 400
+138:         
+139:         # Valider les jours
+140:         valid_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+141:         normalized_days = [str(d).strip().lower() for d in days if isinstance(d, str)]
+142:         invalid_days = [d for d in normalized_days if d not in valid_days]
+143:         
+144:         if invalid_days:
+145:             return jsonify({"success": False, "message": f"Jours invalides: {', '.join(invalid_days)}"}), 400
+146:         
+147:         updates["absence_pause_days"] = normalized_days
+148:     
+149:     # Validation: si absence_pause_enabled est True, vérifier qu'au moins un jour est sélectionné
+150:     if updates.get("absence_pause_enabled") and not updates.get("absence_pause_days"):
+151:         return jsonify({"success": False, "message": "Au moins un jour doit être sélectionné pour activer la pause absence."}), 400
+152: 
+153:     # Optional: accept time window fields here too, for convenience
+154:     # Validate format using parse_time_hhmm when provided and non-empty
+155:     if "webhook_time_start" in payload or "webhook_time_end" in payload:
+156:         start = (str(payload.get("webhook_time_start", "")) or "").strip()
+157:         end = (str(payload.get("webhook_time_end", "")) or "").strip()
+158:         # If both empty -> clear
+159:         if start == "" and end == "":
+160:             updates["webhook_time_start"] = ""
+161:             updates["webhook_time_end"] = ""
+162:         else:
+163:             # Require both if one is provided
+164:             if not start or not end:
+165:                 return jsonify({"success": False, "message": "Both webhook_time_start and webhook_time_end are required (or both empty to clear)."}), 400
+166:             if parse_time_hhmm(start) is None or parse_time_hhmm(end) is None:
+167:                 return jsonify({"success": False, "message": "Invalid time format. Use HHhMM or HH:MM (e.g., 11h30, 17:45)."}), 400
+168:             updates["webhook_time_start"] = start
+169:             updates["webhook_time_end"] = end
+170: 
+171:     # Nettoyer les champs obsolètes s'ils existent (ne pas supprimer presence_* gérés ci-dessus)
+172:     obsolete_fields = [
+173:         "recadrage_webhook_url",
+174:         "autorepondeur_webhook_url",
+175:         "polling_enabled",
+176:     ]
+177:     for field in obsolete_fields:
+178:         if field in updates:
+179:             try:
+180:                 del updates[field]
+181:             except Exception:
+182:                 pass
+183: 
+184:     success, _msg = _webhook_service.update_config(updates)
+185:     if not success:
+186:         return (
+187:             jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration."}),
+188:             500,
+189:         )
+190: 
+191:     return jsonify({"success": True, "message": "Configuration mise à jour avec succès."}), 200
+192: 
+193: 
+194: # ---- Dedicated time window for global webhook toggle ----
+195: 
+196: @bp.route("/time-window", methods=["GET"])
+197: @login_required
+198: def get_webhook_global_time_window():
+199:     cfg = _load_webhook_config()
+200:     start = (cfg.get("webhook_time_start") or "").strip()
+201:     end = (cfg.get("webhook_time_end") or "").strip()
+202:     return jsonify({
+203:         "success": True,
+204:         "webhooks_time_start": start or None,
+205:         "webhooks_time_end": end or None,
+206:     }), 200
+207: 
+208: 
+209: @bp.route("/time-window", methods=["POST"])
+210: @login_required
+211: def set_webhook_global_time_window():
+212:     payload = request.get_json(silent=True) or {}
+213:     start = (payload.get("start") or "").strip()
+214:     end = (payload.get("end") or "").strip()
+215: 
+216:     # Clear both -> disable constraint
+217:     if start == "" and end == "":
+218:         success, _ = _webhook_service.update_config({
+219:             "webhook_time_start": "",
+220:             "webhook_time_end": "",
+221:         })
+222:         if not success:
+223:             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
+224:         return jsonify({
+225:             "success": True,
+226:             "message": "Time window cleared (no constraints).",
+227:             "webhooks_time_start": None,
+228:             "webhooks_time_end": None,
+229:         }), 200
+230: 
+231:     # Require both values when not clearing
+232:     if not start or not end:
+233:         return jsonify({"success": False, "message": "Both start and end are required (or both empty to clear)."}), 400
+234: 
+235:     # Validate format using parse_time_hhmm
+236:     if parse_time_hhmm(start) is None or parse_time_hhmm(end) is None:
+237:         return jsonify({"success": False, "message": "Invalid time format. Use HHhMM or HH:MM (e.g., 11h30, 17:45)."}), 400
+238: 
+239:     success, _ = _webhook_service.update_config({
+240:         "webhook_time_start": start,
+241:         "webhook_time_end": end,
+242:     })
+243:     if not success:
+244:         return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
+245:     return jsonify({
+246:         "success": True,
+247:         "message": "Time window updated.",
+248:         "webhooks_time_start": start,
+249:         "webhooks_time_end": end,
+250:     }), 200
+````
+
+## File: services/webhook_config_service.py
+````python
+  1: """
+  2: services.webhook_config_service
+  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  4: 
+  5: Service pour gérer la configuration des webhooks avec validation stricte.
+  6: 
+  7: Features:
+  8: - Pattern Singleton
+  9: - Validation stricte des URLs (HTTPS requis)
+ 10: - Normalisation URLs Make.com (format token@domain)
+ 11: - Cache avec invalidation
+ 12: - Persistence JSON
+ 13: - Intégration avec external store optionnel
+ 14: 
+ 15: Usage:
+ 16:     from services import WebhookConfigService
+ 17:     from pathlib import Path
+ 18:     
+ 19:     service = WebhookConfigService.get_instance(
+ 20:         file_path=Path("debug/webhook_config.json")
+ 21:     )
+ 22:     
+ 23:     # Valider et définir une URL
+ 24:     ok, msg = service.set_webhook_url("https://hook.eu2.make.com/abc123")
+ 25:     if ok:
+ 26:         url = service.get_webhook_url()
+ 27: """
+ 28: 
+ 29: from __future__ import annotations
+ 30: 
+ 31: import json
+ 32: import os
+ 33: import threading
+ 34: import time
+ 35: from pathlib import Path
+ 36: from typing import Dict, Optional, Any, Tuple
+ 37: 
+ 38: from utils.validators import normalize_make_webhook_url
+ 39: 
+ 40: 
+ 41: class WebhookConfigService:
+ 42:     """Service pour gérer la configuration des webhooks.
+ 43:     
+ 44:     Attributes:
+ 45:         _instance: Instance singleton
+ 46:         _file_path: Chemin du fichier JSON
+ 47:         _external_store: Store externe optionnel (app_config_store)
+ 48:         _cache: Cache en mémoire
+ 49:         _cache_timestamp: Timestamp du cache
+ 50:         _cache_ttl: TTL du cache en secondes
+ 51:     """
+ 52:     
+ 53:     _instance: Optional[WebhookConfigService] = None
+ 54:     
+ 55:     def __init__(self, file_path: Path, external_store=None):
+ 56:         """Initialise le service (utiliser get_instance() de préférence).
+ 57:         
+ 58:         Args:
+ 59:             file_path: Chemin du fichier JSON
+ 60:             external_store: Module app_config_store optionnel
+ 61:         """
+ 62:         self._lock = threading.RLock()
+ 63:         self._file_path = file_path
+ 64:         self._external_store = external_store
+ 65:         self._cache: Optional[Dict[str, Any]] = None
+ 66:         self._cache_timestamp: Optional[float] = None
+ 67:         self._cache_ttl = 60  # 60 secondes
+ 68:     
+ 69:     @classmethod
+ 70:     def get_instance(
+ 71:         cls,
+ 72:         file_path: Optional[Path] = None,
+ 73:         external_store=None
+ 74:     ) -> WebhookConfigService:
+ 75:         """Récupère ou crée l'instance singleton.
+ 76:         
+ 77:         Args:
+ 78:             file_path: Chemin du fichier (requis à la première création)
+ 79:             external_store: Store externe optionnel
+ 80:             
+ 81:         Returns:
+ 82:             Instance unique du service
+ 83:         """
+ 84:         if cls._instance is None:
+ 85:             if file_path is None:
+ 86:                 raise ValueError("WebhookConfigService: file_path required for first initialization")
+ 87:             cls._instance = cls(file_path, external_store)
+ 88:         return cls._instance
+ 89:     
+ 90:     @classmethod
+ 91:     def reset_instance(cls) -> None:
+ 92:         """Réinitialise l'instance (pour tests)."""
+ 93:         cls._instance = None
+ 94:     
+ 95:     # Configuration Webhook Principal
+ 96:     
+ 97:     def get_webhook_url(self) -> str:
+ 98:         config = self._get_cached_config()
+ 99:         return config.get("webhook_url", "")
+100:     
+101:     def set_webhook_url(self, url: str) -> Tuple[bool, str]:
+102:         """Définit l'URL webhook avec validation stricte.
+103:         
+104:         Args:
+105:             url: URL webhook (doit être HTTPS)
+106:             
+107:         Returns:
+108:             Tuple (success: bool, message: str)
+109:         """
+110:         # Normaliser si c'est un format Make.com
+111:         normalized_url = normalize_make_webhook_url(url)
+112:         
+113:         # Valider
+114:         ok, msg = self.validate_webhook_url(normalized_url)
+115:         if not ok:
+116:             return False, msg
+117:         
+118:         with self._lock:
+119:             config = self._load_from_disk()
+120:             config["webhook_url"] = normalized_url
+121:             if self._save_to_disk(config):
+122:                 self._invalidate_cache()
+123:                 return True, "Webhook URL mise à jour avec succès."
+124:             return False, "Erreur lors de la sauvegarde."
+125:     
+126:     def has_webhook_url(self) -> bool:
+127:         return bool(self.get_webhook_url())
+128:     
+129:     # Absence Globale (Pause Webhook)
+130:     
+131:     def get_absence_pause_enabled(self) -> bool:
+132:         """Retourne si la pause absence est activée.
+133:         
+134:         Returns:
+135:             False par défaut
+136:         """
+137:         config = self._get_cached_config()
+138:         return config.get("absence_pause_enabled", False)
+139:     
+140:     def set_absence_pause_enabled(self, enabled: bool) -> bool:
+141:         """Active/désactive la pause absence.
+142:         
+143:         Args:
+144:             enabled: True pour activer la pause
+145:             
+146:         Returns:
+147:             True si sauvegarde réussie
+148:         """
+149:         with self._lock:
+150:             config = self._load_from_disk()
+151:             config["absence_pause_enabled"] = bool(enabled)
+152:             if self._save_to_disk(config):
+153:                 self._invalidate_cache()
+154:                 return True
+155:             return False
+156:     
+157:     def get_absence_pause_days(self) -> list[str]:
+158:         """Retourne la liste des jours de pause.
+159:         
+160:         Returns:
+161:             Liste des jours (format lowercase: monday, tuesday, etc.)
+162:         """
+163:         config = self._get_cached_config()
+164:         days = config.get("absence_pause_days", [])
+165:         return days if isinstance(days, list) else []
+166:     
+167:     def set_absence_pause_days(self, days: list[str]) -> Tuple[bool, str]:
+168:         """Définit les jours de pause avec validation.
+169:         
+170:         Args:
+171:             days: Liste des jours (monday, tuesday, etc.)
+172:             
+173:         Returns:
+174:             Tuple (success: bool, message: str)
+175:         """
+176:         # Valider les jours
+177:         valid_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+178:         normalized_days = [str(d).strip().lower() for d in days if isinstance(d, str)]
+179:         
+180:         invalid_days = [d for d in normalized_days if d not in valid_days]
+181:         if invalid_days:
+182:             return False, f"Jours invalides: {', '.join(invalid_days)}"
+183:         
+184:         with self._lock:
+185:             config = self._load_from_disk()
+186:             config["absence_pause_days"] = normalized_days
+187:             if self._save_to_disk(config):
+188:                 self._invalidate_cache()
+189:                 return True, "Jours de pause mis à jour avec succès."
+190:             return False, "Erreur lors de la sauvegarde."
+191:     
+192:     # Configuration SSL et Enabled
+193:     
+194:     def get_ssl_verify(self) -> bool:
+195:         """Retourne si la vérification SSL est activée.
+196:         
+197:         Returns:
+198:             True par défaut
+199:         """
+200:         config = self._get_cached_config()
+201:         return config.get("webhook_ssl_verify", True)
+202:     
+203:     def set_ssl_verify(self, enabled: bool) -> bool:
+204:         """Active/désactive la vérification SSL.
+205:         
+206:         Args:
+207:             enabled: True pour activer
+208:             
+209:         Returns:
+210:             True si sauvegarde réussie
+211:         """
+212:         with self._lock:
+213:             config = self._load_from_disk()
+214:             config["webhook_ssl_verify"] = bool(enabled)
+215:             if self._save_to_disk(config):
+216:                 self._invalidate_cache()
+217:                 return True
+218:             return False
+219:     
+220:     def is_webhook_sending_enabled(self) -> bool:
+221:         """Vérifie si l'envoi de webhooks est activé globalement.
+222:         
+223:         Returns:
+224:             True par défaut
+225:         """
+226:         config = self._get_cached_config()
+227:         return config.get("webhook_sending_enabled", True)
+228:     
+229:     def set_webhook_sending_enabled(self, enabled: bool) -> bool:
+230:         """Active/désactive l'envoi de webhooks.
+231:         
+232:         Args:
+233:             enabled: True pour activer
+234:             
+235:         Returns:
+236:             True si succès
+237:         """
+238:         with self._lock:
+239:             config = self._load_from_disk()
+240:             config["webhook_sending_enabled"] = bool(enabled)
+241:             if self._save_to_disk(config):
+242:                 self._invalidate_cache()
+243:                 return True
+244:             return False
+245:     
+246:     # Fenêtre Horaire
+247:     
+248:     def get_time_window(self) -> Dict[str, str]:
+249:         """Retourne la fenêtre horaire pour les webhooks.
+250:         
+251:         Returns:
+252:             dict avec webhook_time_start, webhook_time_end, global_time_start, global_time_end
+253:         """
+254:         config = self._get_cached_config()
+255:         return {
+256:             "webhook_time_start": config.get("webhook_time_start", ""),
+257:             "webhook_time_end": config.get("webhook_time_end", ""),
+258:             "global_time_start": config.get("global_time_start", ""),
+259:             "global_time_end": config.get("global_time_end", ""),
+260:         }
+261:     
+262:     def update_time_window(self, updates: Dict[str, str]) -> bool:
+263:         """Met à jour la fenêtre horaire.
+264:         
+265:         Args:
+266:             updates: dict avec les champs à mettre à jour
+267:             
+268:         Returns:
+269:             True si succès
+270:         """
+271:         with self._lock:
+272:             config = self._load_from_disk()
+273:             for key in ["webhook_time_start", "webhook_time_end", "global_time_start", "global_time_end"]:
+274:                 if key in updates:
+275:                     config[key] = updates[key]
+276:             if self._save_to_disk(config):
+277:                 self._invalidate_cache()
+278:                 return True
+279:             return False
+280:     
+281:     # Validation
+282:     
+283:     @staticmethod
+284:     def validate_webhook_url(url: str) -> Tuple[bool, str]:
+285:         """Valide une URL webhook.
+286:         
+287:         Args:
+288:             url: URL à valider
+289:             
+290:         Returns:
+291:             Tuple (is_valid, message)
+292:         """
+293:         if not url:
+294:             return True, "URL vide autorisée (désactivation)"
+295:         
+296:         if not url.startswith("https://"):
+297:             return False, "L'URL doit commencer par https://"
+298:         
+299:         if len(url) < 10 or "." not in url:
+300:             return False, "Format d'URL invalide"
+301:         
+302:         return True, "URL valide"
+303:     
+304:     # =========================================================================
+305:     # Accès Complet
+306:     # =========================================================================
+307:     
+308:     def get_all_config(self) -> Dict[str, Any]:
+309:         """Retourne toute la configuration webhook.
+310:         
+311:         Returns:
+312:             Dictionnaire complet
+313:         """
+314:         return dict(self._get_cached_config())
+315:     
+316:     def update_config(self, updates: Dict[str, Any]) -> Tuple[bool, str]:
+317:         """Met à jour plusieurs champs de configuration.
+318:         
+319:         Args:
+320:             updates: Dictionnaire des champs à mettre à jour
+321:             
+322:         Returns:
+323:             Tuple (success, message)
+324:         """
+325:         with self._lock:
+326:             config = self._load_from_disk()
+327: 
+328:             if "absence_pause_enabled" in updates:
+329:                 updates["absence_pause_enabled"] = bool(updates.get("absence_pause_enabled"))
+330: 
+331:             if "absence_pause_days" in updates:
+332:                 days_val = updates.get("absence_pause_days")
+333:                 if not isinstance(days_val, list):
+334:                     return False, "absence_pause_days invalide: doit être une liste"
+335:                 valid_days = [
+336:                     "monday",
+337:                     "tuesday",
+338:                     "wednesday",
+339:                     "thursday",
+340:                     "friday",
+341:                     "saturday",
+342:                     "sunday",
+343:                 ]
+344:                 normalized_days = [
+345:                     str(d).strip().lower() for d in days_val if isinstance(d, str)
+346:                 ]
+347:                 invalid_days = [d for d in normalized_days if d not in valid_days]
+348:                 if invalid_days:
+349:                     return False, f"absence_pause_days invalide: {', '.join(invalid_days)}"
+350:                 updates["absence_pause_days"] = normalized_days
+351: 
+352:             enabled_effective = bool(
+353:                 updates.get("absence_pause_enabled", config.get("absence_pause_enabled", False))
+354:             )
+355:             days_effective = updates.get("absence_pause_days", config.get("absence_pause_days", []))
+356:             if enabled_effective and (not isinstance(days_effective, list) or not days_effective):
+357:                 return False, "absence_pause_enabled=true requiert au moins un jour dans absence_pause_days"
+358:             
+359:             # Valider les URLs si présentes
+360:             for key in ["webhook_url"]:
+361:                 if key in updates and updates[key]:
+362:                     normalized = normalize_make_webhook_url(updates[key])
+363:                     ok, msg = self.validate_webhook_url(normalized)
+364:                     if not ok:
+365:                         return False, f"{key} invalide: {msg}"
+366:                     updates[key] = normalized
+367:             
+368:             # Appliquer les mises à jour
+369:             config.update(updates)
+370:             if self._save_to_disk(config):
+371:                 self._invalidate_cache()
+372:                 return True, "Configuration mise à jour."
+373:             return False, "Erreur lors de la sauvegarde."
+374:     
+375:     # =========================================================================
+376:     # Gestion du Cache
+377:     # =========================================================================
+378:     
+379:     def _get_cached_config(self) -> Dict[str, Any]:
+380:         """Récupère la config depuis le cache ou recharge."""
+381:         now = time.time()
+382: 
+383:         with self._lock:
+384:             if (
+385:                 self._cache is not None
+386:                 and self._cache_timestamp is not None
+387:                 and (now - self._cache_timestamp) < self._cache_ttl
+388:             ):
+389:                 return dict(self._cache)
+390: 
+391:             self._cache = self._load_from_disk()
+392:             self._cache_timestamp = now
+393:             return dict(self._cache)
+394:     
+395:     def _invalidate_cache(self) -> None:
+396:         """Invalide le cache."""
+397:         with self._lock:
+398:             self._cache = None
+399:             self._cache_timestamp = None
+400:     
+401:     def reload(self) -> None:
+402:         """Force le rechargement."""
+403:         self._invalidate_cache()
+404:     
+405:     # =========================================================================
+406:     # Persistence
+407:     # =========================================================================
+408:     
+409:     def _load_from_disk(self) -> Dict[str, Any]:
+410:         """Charge la configuration depuis le fichier ou external store.
+411:         
+412:         Returns:
+413:             Dictionnaire de configuration
+414:         """
+415:         # Essayer external store d'abord
+416:         if self._external_store:
+417:             try:
+418:                 data = self._external_store.get_config_json("webhook_config", file_fallback=self._file_path)
+419:                 if data and isinstance(data, dict):
+420:                     return data
+421:             except Exception:
+422:                 pass
+423:         
+424:         # Fallback sur fichier local
+425:         try:
+426:             if self._file_path.exists():
+427:                 with open(self._file_path, "r", encoding="utf-8") as f:
+428:                     data = json.load(f) or {}
+429:                     if isinstance(data, dict):
+430:                         return data
+431:         except Exception:
+432:             pass
+433:         
+434:         return {}
+435:     
+436:     def _save_to_disk(self, data: Dict[str, Any]) -> bool:
+437:         """Sauvegarde la configuration.
+438:         
+439:         Args:
+440:             data: Configuration à sauvegarder
+441:             
+442:         Returns:
+443:             True si succès
+444:         """
+445:         # Essayer external store d'abord
+446:         if self._external_store:
+447:             try:
+448:                 if self._external_store.set_config_json("webhook_config", data, file_fallback=self._file_path):
+449:                     return True
+450:             except Exception:
+451:                 pass
+452:         
+453:         tmp_path = None
+454:         try:
+455:             self._file_path.parent.mkdir(parents=True, exist_ok=True)
+456:             tmp_path = self._file_path.with_name(self._file_path.name + ".tmp")
+457:             with open(tmp_path, "w", encoding="utf-8") as f:
+458:                 json.dump(data, f, indent=2, ensure_ascii=False)
+459:                 f.flush()
+460:                 os.fsync(f.fileno())
+461:             os.replace(tmp_path, self._file_path)
+462:             return True
+463:         except Exception:
+464:             try:
+465:                 if tmp_path is not None and tmp_path.exists():
+466:                     tmp_path.unlink()
+467:             except Exception:
+468:                 pass
+469:             return False
+470:     
+471:     def __repr__(self) -> str:
+472:         """Représentation du service."""
+473:         has_url = "yes" if self.has_webhook_url() else "no"
+474:         return f"<WebhookConfigService(file={self._file_path.name}, has_url={has_url})>"
 ````
 
 ## File: services/magic_link_service.py
@@ -14926,738 +15840,6 @@ requirements.txt
 295:         return Array.from(new Set(selectedDays));
 296:     }
 297: }
-````
-
-## File: routes/api_webhooks.py
-````python
-  1: from __future__ import annotations
-  2: 
-  3: import os
-  4: import json
-  5: from pathlib import Path
-  6: 
-  7: from flask import Blueprint, jsonify, request
-  8: from flask_login import login_required, current_user
-  9: 
- 10: from utils.time_helpers import parse_time_hhmm
- 11: from config import app_config_store as _store
- 12: 
- 13: from services import WebhookConfigService
- 14: 
- 15: bp = Blueprint("api_webhooks", __name__, url_prefix="/api/webhooks")
- 16: 
- 17: # Storage path kept compatible with legacy location used in app_render.py
- 18: WEBHOOK_CONFIG_FILE = (
- 19:     Path(__file__).resolve().parents[1] / "debug" / "webhook_config.json"
- 20: )
- 21: 
- 22: try:
- 23:     _webhook_service = WebhookConfigService.get_instance()
- 24: except ValueError:
- 25:     # Fallback: initialiser si pas encore fait (cas tests)
- 26:     _webhook_service = WebhookConfigService.get_instance(
- 27:         file_path=WEBHOOK_CONFIG_FILE,
- 28:         external_store=_store
- 29:     )
- 30: 
- 31: 
- 32: def _load_webhook_config() -> dict:
- 33:     """Load persisted config from DB if available, else file fallback.
- 34:     
- 35:     Uses WebhookConfigService (cache + validation).
- 36:     """
- 37:     # Force a reload to avoid serving stale values when another endpoint
- 38:     # or external store updated the data recently (cache TTL = 60s).
- 39:     _webhook_service.reload()
- 40:     return _webhook_service.get_all_config()
- 41: 
- 42: 
- 43: def _save_webhook_config(config: dict) -> bool:
- 44:     """Persist config to DB with file fallback.
- 45:     
- 46:     Uses WebhookConfigService (validation automatique + cache invalidation).
- 47:     """
- 48:     success, _ = _webhook_service.update_config(config)
- 49:     return success
- 50: 
- 51: 
- 52: def _mask_url(url: str | None) -> str | None:
- 53:     if not url:
- 54:         return None
- 55:     if url.startswith("http"):
- 56:         parts = url.split("/")
- 57:         if len(parts) > 3:
- 58:             return f"{parts[0]}//{parts[2]}/***"
- 59:         return url[:30] + "***"
- 60:     return None
- 61: 
- 62: 
- 63: @bp.route("/config", methods=["GET"])
- 64: @login_required
- 65: def get_webhook_config():
- 66:     persisted = _load_webhook_config()
- 67: 
- 68:     # Environment defaults for webhook configuration
- 69:     webhook_url = persisted.get("webhook_url") or os.environ.get("WEBHOOK_URL")
- 70:     webhook_ssl_verify = persisted.get(
- 71:         "webhook_ssl_verify",
- 72:         os.environ.get("WEBHOOK_SSL_VERIFY", "true").strip().lower()
- 73:         in ("1", "true", "yes", "on"),
- 74:     )
- 75:     # New: global enable/disable for sending webhooks (default: true)
- 76:     webhook_sending_enabled = persisted.get(
- 77:         "webhook_sending_enabled",
- 78:         os.environ.get("WEBHOOK_SENDING_ENABLED", "true").strip().lower()
- 79:         in ("1", "true", "yes", "on"),
- 80:     )
- 81:     # Time window for global webhook toggle (may be empty strings)
- 82:     webhook_time_start = (persisted.get("webhook_time_start") or "").strip()
- 83:     webhook_time_end = (persisted.get("webhook_time_end") or "").strip()
- 84:     
- 85:     # Absence pause configuration
- 86:     absence_pause_enabled = persisted.get("absence_pause_enabled", False)
- 87:     absence_pause_days = persisted.get("absence_pause_days", [])
- 88:     if not isinstance(absence_pause_days, list):
- 89:         absence_pause_days = []
- 90: 
- 91:     config = {
- 92:         # Always mask webhook_url in API response for safety
- 93:         "webhook_url": _mask_url(webhook_url),
- 94:         "webhook_ssl_verify": webhook_ssl_verify,
- 95:         "webhook_sending_enabled": bool(webhook_sending_enabled),
- 96:         # Expose as None when empty to be explicit in API response
- 97:         "webhook_time_start": webhook_time_start or None,
- 98:         "webhook_time_end": webhook_time_end or None,
- 99:         "absence_pause_enabled": bool(absence_pause_enabled),
-100:         "absence_pause_days": absence_pause_days,
-101:     }
-102:     return jsonify({"success": True, "config": config}), 200
-103: 
-104: 
-105: @bp.route("/config", methods=["POST"])
-106: @login_required
-107: def update_webhook_config():
-108:     payload = request.get_json(silent=True) or {}
-109:     # Build a minimal updates dict to avoid clobbering unrelated fields with
-110:     # potentially stale cached values.
-111:     updates = {}
-112: 
-113:     if "webhook_url" in payload:
-114:         val = payload["webhook_url"].strip() if payload["webhook_url"] else None
-115:         # Exiger HTTPS strict
-116:         if val and not val.startswith("https://"):
-117:             return (
-118:                 jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}),
-119:                 400,
-120:             )
-121:         updates["webhook_url"] = val
-122: 
-123:     if "webhook_ssl_verify" in payload:
-124:         updates["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
-125: 
-126:     # New flag: webhook_sending_enabled
-127:     if "webhook_sending_enabled" in payload:
-128:         updates["webhook_sending_enabled"] = bool(payload["webhook_sending_enabled"])
-129:     
-130:     # Absence pause configuration
-131:     if "absence_pause_enabled" in payload:
-132:         updates["absence_pause_enabled"] = bool(payload["absence_pause_enabled"])
-133:     
-134:     if "absence_pause_days" in payload:
-135:         days = payload["absence_pause_days"]
-136:         if not isinstance(days, list):
-137:             return jsonify({"success": False, "message": "absence_pause_days doit être une liste."}), 400
-138:         
-139:         # Valider les jours
-140:         valid_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-141:         normalized_days = [str(d).strip().lower() for d in days if isinstance(d, str)]
-142:         invalid_days = [d for d in normalized_days if d not in valid_days]
-143:         
-144:         if invalid_days:
-145:             return jsonify({"success": False, "message": f"Jours invalides: {', '.join(invalid_days)}"}), 400
-146:         
-147:         updates["absence_pause_days"] = normalized_days
-148:     
-149:     # Validation: si absence_pause_enabled est True, vérifier qu'au moins un jour est sélectionné
-150:     if updates.get("absence_pause_enabled") and not updates.get("absence_pause_days"):
-151:         return jsonify({"success": False, "message": "Au moins un jour doit être sélectionné pour activer la pause absence."}), 400
-152: 
-153:     # Optional: accept time window fields here too, for convenience
-154:     # Validate format using parse_time_hhmm when provided and non-empty
-155:     if "webhook_time_start" in payload or "webhook_time_end" in payload:
-156:         start = (str(payload.get("webhook_time_start", "")) or "").strip()
-157:         end = (str(payload.get("webhook_time_end", "")) or "").strip()
-158:         # If both empty -> clear
-159:         if start == "" and end == "":
-160:             updates["webhook_time_start"] = ""
-161:             updates["webhook_time_end"] = ""
-162:         else:
-163:             # Require both if one is provided
-164:             if not start or not end:
-165:                 return jsonify({"success": False, "message": "Both webhook_time_start and webhook_time_end are required (or both empty to clear)."}), 400
-166:             if parse_time_hhmm(start) is None or parse_time_hhmm(end) is None:
-167:                 return jsonify({"success": False, "message": "Invalid time format. Use HHhMM or HH:MM (e.g., 11h30, 17:45)."}), 400
-168:             updates["webhook_time_start"] = start
-169:             updates["webhook_time_end"] = end
-170: 
-171:     # Nettoyer les champs obsolètes s'ils existent (ne pas supprimer presence_* gérés ci-dessus)
-172:     obsolete_fields = [
-173:         "recadrage_webhook_url",
-174:         "autorepondeur_webhook_url",
-175:         "polling_enabled",
-176:     ]
-177:     for field in obsolete_fields:
-178:         if field in updates:
-179:             try:
-180:                 del updates[field]
-181:             except Exception:
-182:                 pass
-183: 
-184:     success, _msg = _webhook_service.update_config(updates)
-185:     if not success:
-186:         return (
-187:             jsonify({"success": False, "message": "Erreur lors de la sauvegarde de la configuration."}),
-188:             500,
-189:         )
-190: 
-191:     return jsonify({"success": True, "message": "Configuration mise à jour avec succès."}), 200
-192: 
-193: 
-194: # ---- Dedicated time window for global webhook toggle ----
-195: 
-196: @bp.route("/time-window", methods=["GET"])
-197: @login_required
-198: def get_webhook_global_time_window():
-199:     cfg = _load_webhook_config()
-200:     start = (cfg.get("webhook_time_start") or "").strip()
-201:     end = (cfg.get("webhook_time_end") or "").strip()
-202:     return jsonify({
-203:         "success": True,
-204:         "webhooks_time_start": start or None,
-205:         "webhooks_time_end": end or None,
-206:     }), 200
-207: 
-208: 
-209: @bp.route("/time-window", methods=["POST"])
-210: @login_required
-211: def set_webhook_global_time_window():
-212:     payload = request.get_json(silent=True) or {}
-213:     start = (payload.get("start") or "").strip()
-214:     end = (payload.get("end") or "").strip()
-215: 
-216:     # Clear both -> disable constraint
-217:     if start == "" and end == "":
-218:         success, _ = _webhook_service.update_config({
-219:             "webhook_time_start": "",
-220:             "webhook_time_end": "",
-221:         })
-222:         if not success:
-223:             return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
-224:         return jsonify({
-225:             "success": True,
-226:             "message": "Time window cleared (no constraints).",
-227:             "webhooks_time_start": None,
-228:             "webhooks_time_end": None,
-229:         }), 200
-230: 
-231:     # Require both values when not clearing
-232:     if not start or not end:
-233:         return jsonify({"success": False, "message": "Both start and end are required (or both empty to clear)."}), 400
-234: 
-235:     # Validate format using parse_time_hhmm
-236:     if parse_time_hhmm(start) is None or parse_time_hhmm(end) is None:
-237:         return jsonify({"success": False, "message": "Invalid time format. Use HHhMM or HH:MM (e.g., 11h30, 17:45)."}), 400
-238: 
-239:     success, _ = _webhook_service.update_config({
-240:         "webhook_time_start": start,
-241:         "webhook_time_end": end,
-242:     })
-243:     if not success:
-244:         return jsonify({"success": False, "message": "Erreur lors de la sauvegarde."}), 500
-245:     return jsonify({
-246:         "success": True,
-247:         "message": "Time window updated.",
-248:         "webhooks_time_start": start,
-249:         "webhooks_time_end": end,
-250:     }), 200
-````
-
-## File: services/webhook_config_service.py
-````python
-  1: """
-  2: services.webhook_config_service
-  3: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  4: 
-  5: Service pour gérer la configuration des webhooks avec validation stricte.
-  6: 
-  7: Features:
-  8: - Pattern Singleton
-  9: - Validation stricte des URLs (HTTPS requis)
- 10: - Normalisation URLs Make.com (format token@domain)
- 11: - Cache avec invalidation
- 12: - Persistence JSON
- 13: - Intégration avec external store optionnel
- 14: 
- 15: Usage:
- 16:     from services import WebhookConfigService
- 17:     from pathlib import Path
- 18:     
- 19:     service = WebhookConfigService.get_instance(
- 20:         file_path=Path("debug/webhook_config.json")
- 21:     )
- 22:     
- 23:     # Valider et définir une URL
- 24:     ok, msg = service.set_webhook_url("https://hook.eu2.make.com/abc123")
- 25:     if ok:
- 26:         url = service.get_webhook_url()
- 27: """
- 28: 
- 29: from __future__ import annotations
- 30: 
- 31: import json
- 32: import os
- 33: import threading
- 34: import time
- 35: from pathlib import Path
- 36: from typing import Dict, Optional, Any, Tuple
- 37: 
- 38: from utils.validators import normalize_make_webhook_url
- 39: 
- 40: 
- 41: class WebhookConfigService:
- 42:     """Service pour gérer la configuration des webhooks.
- 43:     
- 44:     Attributes:
- 45:         _instance: Instance singleton
- 46:         _file_path: Chemin du fichier JSON
- 47:         _external_store: Store externe optionnel (app_config_store)
- 48:         _cache: Cache en mémoire
- 49:         _cache_timestamp: Timestamp du cache
- 50:         _cache_ttl: TTL du cache en secondes
- 51:     """
- 52:     
- 53:     _instance: Optional[WebhookConfigService] = None
- 54:     
- 55:     def __init__(self, file_path: Path, external_store=None):
- 56:         """Initialise le service (utiliser get_instance() de préférence).
- 57:         
- 58:         Args:
- 59:             file_path: Chemin du fichier JSON
- 60:             external_store: Module app_config_store optionnel
- 61:         """
- 62:         self._lock = threading.RLock()
- 63:         self._file_path = file_path
- 64:         self._external_store = external_store
- 65:         self._cache: Optional[Dict[str, Any]] = None
- 66:         self._cache_timestamp: Optional[float] = None
- 67:         self._cache_ttl = 60  # 60 secondes
- 68:     
- 69:     @classmethod
- 70:     def get_instance(
- 71:         cls,
- 72:         file_path: Optional[Path] = None,
- 73:         external_store=None
- 74:     ) -> WebhookConfigService:
- 75:         """Récupère ou crée l'instance singleton.
- 76:         
- 77:         Args:
- 78:             file_path: Chemin du fichier (requis à la première création)
- 79:             external_store: Store externe optionnel
- 80:             
- 81:         Returns:
- 82:             Instance unique du service
- 83:         """
- 84:         if cls._instance is None:
- 85:             if file_path is None:
- 86:                 raise ValueError("WebhookConfigService: file_path required for first initialization")
- 87:             cls._instance = cls(file_path, external_store)
- 88:         return cls._instance
- 89:     
- 90:     @classmethod
- 91:     def reset_instance(cls) -> None:
- 92:         """Réinitialise l'instance (pour tests)."""
- 93:         cls._instance = None
- 94:     
- 95:     # Configuration Webhook Principal
- 96:     
- 97:     def get_webhook_url(self) -> str:
- 98:         config = self._get_cached_config()
- 99:         return config.get("webhook_url", "")
-100:     
-101:     def set_webhook_url(self, url: str) -> Tuple[bool, str]:
-102:         """Définit l'URL webhook avec validation stricte.
-103:         
-104:         Args:
-105:             url: URL webhook (doit être HTTPS)
-106:             
-107:         Returns:
-108:             Tuple (success: bool, message: str)
-109:         """
-110:         # Normaliser si c'est un format Make.com
-111:         normalized_url = normalize_make_webhook_url(url)
-112:         
-113:         # Valider
-114:         ok, msg = self.validate_webhook_url(normalized_url)
-115:         if not ok:
-116:             return False, msg
-117:         
-118:         with self._lock:
-119:             config = self._load_from_disk()
-120:             config["webhook_url"] = normalized_url
-121:             if self._save_to_disk(config):
-122:                 self._invalidate_cache()
-123:                 return True, "Webhook URL mise à jour avec succès."
-124:             return False, "Erreur lors de la sauvegarde."
-125:     
-126:     def has_webhook_url(self) -> bool:
-127:         return bool(self.get_webhook_url())
-128:     
-129:     # Absence Globale (Pause Webhook)
-130:     
-131:     def get_absence_pause_enabled(self) -> bool:
-132:         """Retourne si la pause absence est activée.
-133:         
-134:         Returns:
-135:             False par défaut
-136:         """
-137:         config = self._get_cached_config()
-138:         return config.get("absence_pause_enabled", False)
-139:     
-140:     def set_absence_pause_enabled(self, enabled: bool) -> bool:
-141:         """Active/désactive la pause absence.
-142:         
-143:         Args:
-144:             enabled: True pour activer la pause
-145:             
-146:         Returns:
-147:             True si sauvegarde réussie
-148:         """
-149:         with self._lock:
-150:             config = self._load_from_disk()
-151:             config["absence_pause_enabled"] = bool(enabled)
-152:             if self._save_to_disk(config):
-153:                 self._invalidate_cache()
-154:                 return True
-155:             return False
-156:     
-157:     def get_absence_pause_days(self) -> list[str]:
-158:         """Retourne la liste des jours de pause.
-159:         
-160:         Returns:
-161:             Liste des jours (format lowercase: monday, tuesday, etc.)
-162:         """
-163:         config = self._get_cached_config()
-164:         days = config.get("absence_pause_days", [])
-165:         return days if isinstance(days, list) else []
-166:     
-167:     def set_absence_pause_days(self, days: list[str]) -> Tuple[bool, str]:
-168:         """Définit les jours de pause avec validation.
-169:         
-170:         Args:
-171:             days: Liste des jours (monday, tuesday, etc.)
-172:             
-173:         Returns:
-174:             Tuple (success: bool, message: str)
-175:         """
-176:         # Valider les jours
-177:         valid_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-178:         normalized_days = [str(d).strip().lower() for d in days if isinstance(d, str)]
-179:         
-180:         invalid_days = [d for d in normalized_days if d not in valid_days]
-181:         if invalid_days:
-182:             return False, f"Jours invalides: {', '.join(invalid_days)}"
-183:         
-184:         with self._lock:
-185:             config = self._load_from_disk()
-186:             config["absence_pause_days"] = normalized_days
-187:             if self._save_to_disk(config):
-188:                 self._invalidate_cache()
-189:                 return True, "Jours de pause mis à jour avec succès."
-190:             return False, "Erreur lors de la sauvegarde."
-191:     
-192:     # Configuration SSL et Enabled
-193:     
-194:     def get_ssl_verify(self) -> bool:
-195:         """Retourne si la vérification SSL est activée.
-196:         
-197:         Returns:
-198:             True par défaut
-199:         """
-200:         config = self._get_cached_config()
-201:         return config.get("webhook_ssl_verify", True)
-202:     
-203:     def set_ssl_verify(self, enabled: bool) -> bool:
-204:         """Active/désactive la vérification SSL.
-205:         
-206:         Args:
-207:             enabled: True pour activer
-208:             
-209:         Returns:
-210:             True si sauvegarde réussie
-211:         """
-212:         with self._lock:
-213:             config = self._load_from_disk()
-214:             config["webhook_ssl_verify"] = bool(enabled)
-215:             if self._save_to_disk(config):
-216:                 self._invalidate_cache()
-217:                 return True
-218:             return False
-219:     
-220:     def is_webhook_sending_enabled(self) -> bool:
-221:         """Vérifie si l'envoi de webhooks est activé globalement.
-222:         
-223:         Returns:
-224:             True par défaut
-225:         """
-226:         config = self._get_cached_config()
-227:         return config.get("webhook_sending_enabled", True)
-228:     
-229:     def set_webhook_sending_enabled(self, enabled: bool) -> bool:
-230:         """Active/désactive l'envoi de webhooks.
-231:         
-232:         Args:
-233:             enabled: True pour activer
-234:             
-235:         Returns:
-236:             True si succès
-237:         """
-238:         with self._lock:
-239:             config = self._load_from_disk()
-240:             config["webhook_sending_enabled"] = bool(enabled)
-241:             if self._save_to_disk(config):
-242:                 self._invalidate_cache()
-243:                 return True
-244:             return False
-245:     
-246:     # Fenêtre Horaire
-247:     
-248:     def get_time_window(self) -> Dict[str, str]:
-249:         """Retourne la fenêtre horaire pour les webhooks.
-250:         
-251:         Returns:
-252:             dict avec webhook_time_start, webhook_time_end, global_time_start, global_time_end
-253:         """
-254:         config = self._get_cached_config()
-255:         return {
-256:             "webhook_time_start": config.get("webhook_time_start", ""),
-257:             "webhook_time_end": config.get("webhook_time_end", ""),
-258:             "global_time_start": config.get("global_time_start", ""),
-259:             "global_time_end": config.get("global_time_end", ""),
-260:         }
-261:     
-262:     def update_time_window(self, updates: Dict[str, str]) -> bool:
-263:         """Met à jour la fenêtre horaire.
-264:         
-265:         Args:
-266:             updates: dict avec les champs à mettre à jour
-267:             
-268:         Returns:
-269:             True si succès
-270:         """
-271:         with self._lock:
-272:             config = self._load_from_disk()
-273:             for key in ["webhook_time_start", "webhook_time_end", "global_time_start", "global_time_end"]:
-274:                 if key in updates:
-275:                     config[key] = updates[key]
-276:             if self._save_to_disk(config):
-277:                 self._invalidate_cache()
-278:                 return True
-279:             return False
-280:     
-281:     # Validation
-282:     
-283:     @staticmethod
-284:     def validate_webhook_url(url: str) -> Tuple[bool, str]:
-285:         """Valide une URL webhook.
-286:         
-287:         Args:
-288:             url: URL à valider
-289:             
-290:         Returns:
-291:             Tuple (is_valid, message)
-292:         """
-293:         if not url:
-294:             return True, "URL vide autorisée (désactivation)"
-295:         
-296:         if not url.startswith("https://"):
-297:             return False, "L'URL doit commencer par https://"
-298:         
-299:         if len(url) < 10 or "." not in url:
-300:             return False, "Format d'URL invalide"
-301:         
-302:         return True, "URL valide"
-303:     
-304:     # =========================================================================
-305:     # Accès Complet
-306:     # =========================================================================
-307:     
-308:     def get_all_config(self) -> Dict[str, Any]:
-309:         """Retourne toute la configuration webhook.
-310:         
-311:         Returns:
-312:             Dictionnaire complet
-313:         """
-314:         return dict(self._get_cached_config())
-315:     
-316:     def update_config(self, updates: Dict[str, Any]) -> Tuple[bool, str]:
-317:         """Met à jour plusieurs champs de configuration.
-318:         
-319:         Args:
-320:             updates: Dictionnaire des champs à mettre à jour
-321:             
-322:         Returns:
-323:             Tuple (success, message)
-324:         """
-325:         with self._lock:
-326:             config = self._load_from_disk()
-327: 
-328:             if "absence_pause_enabled" in updates:
-329:                 updates["absence_pause_enabled"] = bool(updates.get("absence_pause_enabled"))
-330: 
-331:             if "absence_pause_days" in updates:
-332:                 days_val = updates.get("absence_pause_days")
-333:                 if not isinstance(days_val, list):
-334:                     return False, "absence_pause_days invalide: doit être une liste"
-335:                 valid_days = [
-336:                     "monday",
-337:                     "tuesday",
-338:                     "wednesday",
-339:                     "thursday",
-340:                     "friday",
-341:                     "saturday",
-342:                     "sunday",
-343:                 ]
-344:                 normalized_days = [
-345:                     str(d).strip().lower() for d in days_val if isinstance(d, str)
-346:                 ]
-347:                 invalid_days = [d for d in normalized_days if d not in valid_days]
-348:                 if invalid_days:
-349:                     return False, f"absence_pause_days invalide: {', '.join(invalid_days)}"
-350:                 updates["absence_pause_days"] = normalized_days
-351: 
-352:             enabled_effective = bool(
-353:                 updates.get("absence_pause_enabled", config.get("absence_pause_enabled", False))
-354:             )
-355:             days_effective = updates.get("absence_pause_days", config.get("absence_pause_days", []))
-356:             if enabled_effective and (not isinstance(days_effective, list) or not days_effective):
-357:                 return False, "absence_pause_enabled=true requiert au moins un jour dans absence_pause_days"
-358:             
-359:             # Valider les URLs si présentes
-360:             for key in ["webhook_url"]:
-361:                 if key in updates and updates[key]:
-362:                     normalized = normalize_make_webhook_url(updates[key])
-363:                     ok, msg = self.validate_webhook_url(normalized)
-364:                     if not ok:
-365:                         return False, f"{key} invalide: {msg}"
-366:                     updates[key] = normalized
-367:             
-368:             # Appliquer les mises à jour
-369:             config.update(updates)
-370:             if self._save_to_disk(config):
-371:                 self._invalidate_cache()
-372:                 return True, "Configuration mise à jour."
-373:             return False, "Erreur lors de la sauvegarde."
-374:     
-375:     # =========================================================================
-376:     # Gestion du Cache
-377:     # =========================================================================
-378:     
-379:     def _get_cached_config(self) -> Dict[str, Any]:
-380:         """Récupère la config depuis le cache ou recharge."""
-381:         now = time.time()
-382: 
-383:         with self._lock:
-384:             if (
-385:                 self._cache is not None
-386:                 and self._cache_timestamp is not None
-387:                 and (now - self._cache_timestamp) < self._cache_ttl
-388:             ):
-389:                 return dict(self._cache)
-390: 
-391:             self._cache = self._load_from_disk()
-392:             self._cache_timestamp = now
-393:             return dict(self._cache)
-394:     
-395:     def _invalidate_cache(self) -> None:
-396:         """Invalide le cache."""
-397:         with self._lock:
-398:             self._cache = None
-399:             self._cache_timestamp = None
-400:     
-401:     def reload(self) -> None:
-402:         """Force le rechargement."""
-403:         self._invalidate_cache()
-404:     
-405:     # =========================================================================
-406:     # Persistence
-407:     # =========================================================================
-408:     
-409:     def _load_from_disk(self) -> Dict[str, Any]:
-410:         """Charge la configuration depuis le fichier ou external store.
-411:         
-412:         Returns:
-413:             Dictionnaire de configuration
-414:         """
-415:         # Essayer external store d'abord
-416:         if self._external_store:
-417:             try:
-418:                 data = self._external_store.get_config_json("webhook_config", file_fallback=self._file_path)
-419:                 if data and isinstance(data, dict):
-420:                     return data
-421:             except Exception:
-422:                 pass
-423:         
-424:         # Fallback sur fichier local
-425:         try:
-426:             if self._file_path.exists():
-427:                 with open(self._file_path, "r", encoding="utf-8") as f:
-428:                     data = json.load(f) or {}
-429:                     if isinstance(data, dict):
-430:                         return data
-431:         except Exception:
-432:             pass
-433:         
-434:         return {}
-435:     
-436:     def _save_to_disk(self, data: Dict[str, Any]) -> bool:
-437:         """Sauvegarde la configuration.
-438:         
-439:         Args:
-440:             data: Configuration à sauvegarder
-441:             
-442:         Returns:
-443:             True si succès
-444:         """
-445:         # Essayer external store d'abord
-446:         if self._external_store:
-447:             try:
-448:                 if self._external_store.set_config_json("webhook_config", data, file_fallback=self._file_path):
-449:                     return True
-450:             except Exception:
-451:                 pass
-452:         
-453:         tmp_path = None
-454:         try:
-455:             self._file_path.parent.mkdir(parents=True, exist_ok=True)
-456:             tmp_path = self._file_path.with_name(self._file_path.name + ".tmp")
-457:             with open(tmp_path, "w", encoding="utf-8") as f:
-458:                 json.dump(data, f, indent=2, ensure_ascii=False)
-459:                 f.flush()
-460:                 os.fsync(f.fileno())
-461:             os.replace(tmp_path, self._file_path)
-462:             return True
-463:         except Exception:
-464:             try:
-465:                 if tmp_path is not None and tmp_path.exists():
-466:                     tmp_path.unlink()
-467:             except Exception:
-468:                 pass
-469:             return False
-470:     
-471:     def __repr__(self) -> str:
-472:         """Représentation du service."""
-473:         has_url = "yes" if self.has_webhook_url() else "no"
-474:         return f"<WebhookConfigService(file={self._file_path.name}, has_url={has_url})>"
 ````
 
 ## File: email_processing/orchestrator.py
@@ -18542,166 +18724,148 @@ requirements.txt
 374:         </div>
 375:       </div>
 376: 
-377:       <!-- Section: Vue d'ensemble (métriques + logs) -->
+377:       <!-- Section: Vue d'ensemble (logs) -->
 378:       <div id="sec-overview" class="section-panel monitoring active">
-379:         <div class="card">
-380:           <div class="card-title">📊 Monitoring & Métriques (24h)</div>
-381:           <div class="inline-group" style="margin-bottom: 10px;">
-382:             <label class="toggle-switch">
-383:               <input type="checkbox" id="enableMetricsToggle" checked>
-384:               <span class="toggle-slider"></span>
-385:             </label>
-386:             <span style="margin-left: 10px;">Activer le calcul de métriques locales</span>
-387:           </div>
-388:           <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
-389:             <div class="form-group"><label>Emails traités</label><div id="metricEmailsProcessed" class="small-text">—</div></div>
-390:             <div class="form-group"><label>Webhooks envoyés</label><div id="metricWebhooksSent" class="small-text">—</div></div>
-391:             <div class="form-group"><label>Erreurs</label><div id="metricErrors" class="small-text">—</div></div>
-392:             <div class="form-group"><label>Taux de succès (%)</label><div id="metricSuccessRate" class="small-text">—</div></div>
-393:           </div>
-394:           <div id="metricsMiniChart" style="height: 60px; background: rgba(255,255,255,0.05); border:1px solid var(--cork-border-color); border-radius:4px; margin-top:10px; position: relative; overflow:hidden;"></div>
-395:           <div class="small-text">Graphique simplifié généré côté client à partir de `/api/webhook_logs`.</div>
-396:         </div>
-397:         <div class="logs-container">
-398:           <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
-399:           <div style="margin-bottom: 15px;">
-400:             <button id="refreshLogsBtn" class="btn btn-primary">🔄 Actualiser</button>
-401:           </div>
-402:           <div id="webhookLogs">
-403:             <div class="log-empty">Chargement des logs...</div>
-404:           </div>
-405:         </div>
-406:       </div>
-407: 
-408:       <!-- Section: Outils (config mgmt + outils de test) -->
-409:       <div id="sec-tools" class="section-panel">
-410:         <div class="card">
-411:           <div class="card-title">💾 Gestion des Configurations</div>
-412:           <div class="inline-group" style="margin-bottom: 10px;">
-413:             <button id="exportConfigBtn" class="btn btn-primary">⬇️ Exporter</button>
-414:             <input id="importConfigFile" type="file" accept="application/json" style="display:none;"/>
-415:             <button id="importConfigBtn" class="btn btn-primary">⬆️ Importer</button>
-416:           </div>
-417:           <div id="configMgmtMsg" class="status-msg"></div>
-418:           <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
-419:         </div>
-420:         <div class="card" style="margin-top: 20px;">
-421:           <div class="card-title">🚀 Déploiement de l'application</div>
-422:           <div class="form-group">
-423:             <p class="small-text">Certaines modifications (ex: paramètres applicatifs, configuration reverse proxy) nécessitent un déploiement pour être pleinement appliquées.</p>
-424:           </div>
-425:           <div class="inline-group" style="margin-bottom: 10px;">
-426:             <button id="restartServerBtn" class="btn btn-success">🚀 Déployer l'application</button>
-427:           </div>
-428:           <div id="restartMsg" class="status-msg"></div>
-429:           <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
-430:         </div>
-431:         <div class="card" style="margin-top: 20px;">
-432:           <div class="card-title">🗂️ Migration configs → Redis</div>
-433:           <p>Rejouez le script <code>migrate_configs_to_redis.py</code> directement sur le serveur Render avec toutes les variables d'environnement de production.</p>
-434:           <div class="inline-group" style="margin-bottom: 10px;">
-435:             <button id="migrateConfigsBtn" class="btn btn-warning">📦 Migrer les configurations</button>
-436:           </div>
-437:           <div id="migrateConfigsMsg" class="status-msg"></div>
-438:           <pre id="migrateConfigsLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-439:           <hr style="margin: 18px 0; border-color: rgba(255,255,255,0.1);">
-440:           <p style="margin-bottom:10px;">Vérifiez l'état des données persistées dans Redis (structures JSON, attributs requis, dates de mise à jour).</p>
-441:           <div class="inline-group" style="margin-bottom: 10px;">
-442:             <button id="verifyConfigStoreBtn" class="btn btn-info">🔍 Vérifier les données en Redis</button>
-443:           </div>
-444:           <label for="verifyConfigStoreRawToggle" class="small-text" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-445:             <input type="checkbox" id="verifyConfigStoreRawToggle">
-446:             <span>Inclure le JSON complet dans le log pour faciliter le debug.</span>
-447:           </label>
-448:           <div id="verifyConfigStoreMsg" class="status-msg"></div>
-449:           <pre id="verifyConfigStoreLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-450:           <div id="verifyConfigStoreViewer" class="json-viewer-container" style="display:none;"></div>
-451:         </div>
-452:         <div class="card" style="margin-top: 20px;">
-453:           <div class="card-title">🔐 Accès Magic Link</div>
-454:           <p>Générez un lien pré-authentifié à usage unique pour ouvrir rapidement le dashboard sans retaper vos identifiants. Le lien est automatiquement copié.</p>
-455:           <div class="inline-group" style="margin-bottom: 12px;">
-456:             <label class="toggle-switch">
-457:               <input type="checkbox" id="magicLinkUnlimitedToggle">
-458:               <span class="toggle-slider"></span>
-459:             </label>
-460:             <span style="margin-left: 10px;">
-461:               Mode illimité (désactivé = lien one-shot avec expiration)
-462:             </span>
-463:           </div>
-464:           <button id="generateMagicLinkBtn" class="btn btn-primary">✨ Générer un magic link</button>
-465:           <div id="magicLinkOutput" class="status-msg" style="margin-top: 12px;"></div>
-466:           <div class="small-text">
-467:             Important : partagez ce lien uniquement avec des personnes autorisées.
-468:             En mode one-shot, il expire après quelques minutes et s'invalide dès qu'il est utilisé.
-469:             En mode illimité, aucun délai mais vous devez révoquer manuellement en cas de fuite.
-470:           </div>
-471:         </div>
-472:         <div class="card" style="margin-top: 20px;">
-473:           <div class="card-title">🧪 Outils de Test</div>
-474:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
-475:             <div class="form-group">
-476:               <label for="testWebhookUrl">Valider une URL de webhook</label>
-477:               <input id="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
-478:               <button id="validateWebhookUrlBtn" class="btn btn-primary" style="margin-top: 8px;">Valider</button>
-479:               <div id="webhookUrlValidationMsg" class="status-msg"></div>
-480:             </div>
-481:             <div class="form-group">
-482:               <label>Prévisualiser un payload</label>
-483:               <input id="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
-484:               <input id="previewSender" type="email" placeholder="Expéditeur (ex: media@solution.fr)" style="margin-top: 6px;">
-485:               <textarea id="previewBody" rows="4" placeholder="Corps de l'email (coller du texte)" style="margin-top: 6px; width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-486:               <button id="buildPayloadPreviewBtn" class="btn btn-primary" style="margin-top: 8px;">Générer</button>
-487:               <pre id="payloadPreview" style="margin-top:8px; background: rgba(0,0,0,0.2); border:1px solid var(--cork-border-color); padding:10px; border-radius:4px; max-height:200px; overflow:auto; color: var(--cork-text-primary);"></pre>
-488:             </div>
-489:           </div>
-490:           <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
-491:         </div>
-492:         <div class="card" style="margin-top: 20px;">
-493:           <div class="card-title">🔗 Ouvrir une page de téléchargement</div>
-494:           <div class="form-group">
-495:             <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
-496:             <input id="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
-497:             <button id="openDownloadPageBtn" class="btn btn-primary" style="margin-top: 8px;">Ouvrir la page</button>
-498:             <div id="openDownloadMsg" class="status-msg"></div>
-499:             <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
-500:           </div>
-501:         </div>
-502:         <div class="card" style="margin-top: 20px;">
-503:           <div class="card-title"> Flags Runtime (Debug)</div>
-504:           <div class="form-group">
-505:             <label>Bypass déduplication par ID d’email (debug)</label>
-506:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
-507:               <input type="checkbox" id="disableEmailIdDedupToggle">
-508:               <span class="toggle-slider"></span>
-509:             </label>
-510:             <div class="small-text">Quand activé, ignore la déduplication par ID d'email. À utiliser uniquement pour des tests.
-511:             </div>
-512:           </div>
-513:           <div class="form-group" style="margin-top: 10px;">
-514:             <label>Autoriser envoi CUSTOM sans liens de livraison</label>
-515:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
-516:               <input type="checkbox" id="allowCustomWithoutLinksToggle">
-517:               <span class="toggle-slider"></span>
-518:             </label>
-519:             <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu’aucun lien (Dropbox/FromSmash/SwissTransfer) n’est détecté, pour éviter les 422.</div>
-520:           </div>
-521:           <div style="margin-top: 12px;">
-522:             <button id="runtimeFlagsSaveBtn" class="btn btn-primary"> Enregistrer Flags Runtime</button>
-523:             <div id="runtimeFlagsMsg" class="status-msg"></div>
-524:           </div>
-525:         </div>
-526:       </div>
-527:     </div>
-528:     <!-- Chargement des modules JavaScript -->
-529:     <script type="module" src="{{ url_for('static', filename='utils/MessageHelper.js') }}"></script>
-530:     <script type="module" src="{{ url_for('static', filename='services/ApiService.js') }}"></script>
-531:     <script type="module" src="{{ url_for('static', filename='services/WebhookService.js') }}"></script>
-532:     <script type="module" src="{{ url_for('static', filename='services/LogService.js') }}"></script>
-533:     <script type="module" src="{{ url_for('static', filename='components/TabManager.js') }}"></script>
-534:     <script type="module" src="{{ url_for('static', filename='dashboard.js') }}?v=20260202-json-viewer"></script>
-535:   </body>
-536: </html>
+379:         <div class="logs-container">
+380:           <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
+381:           <div style="margin-bottom: 15px;">
+382:             <button id="refreshLogsBtn" class="btn btn-primary">🔄 Actualiser</button>
+383:           </div>
+384:           <div id="webhookLogs">
+385:             <div class="log-empty">Chargement des logs...</div>
+386:           </div>
+387:         </div>
+388:       </div>
+389: 
+390:       <!-- Section: Outils (config mgmt + outils de test) -->
+391:       <div id="sec-tools" class="section-panel">
+392:         <div class="card">
+393:           <div class="card-title">💾 Gestion des Configurations</div>
+394:           <div class="inline-group" style="margin-bottom: 10px;">
+395:             <button id="exportConfigBtn" class="btn btn-primary">⬇️ Exporter</button>
+396:             <input id="importConfigFile" type="file" accept="application/json" style="display:none;"/>
+397:             <button id="importConfigBtn" class="btn btn-primary">⬆️ Importer</button>
+398:           </div>
+399:           <div id="configMgmtMsg" class="status-msg"></div>
+400:           <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
+401:         </div>
+402:         <div class="card" style="margin-top: 20px;">
+403:           <div class="card-title">🚀 Déploiement de l'application</div>
+404:           <div class="form-group">
+405:             <p class="small-text">Certaines modifications (ex: paramètres applicatifs, configuration reverse proxy) nécessitent un déploiement pour être pleinement appliquées.</p>
+406:           </div>
+407:           <div class="inline-group" style="margin-bottom: 10px;">
+408:             <button id="restartServerBtn" class="btn btn-success">🚀 Déployer l'application</button>
+409:           </div>
+410:           <div id="restartMsg" class="status-msg"></div>
+411:           <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
+412:         </div>
+413:         <div class="card" style="margin-top: 20px;">
+414:           <div class="card-title">🗂️ Migration configs → Redis</div>
+415:           <p>Rejouez le script <code>migrate_configs_to_redis.py</code> directement sur le serveur Render avec toutes les variables d'environnement de production.</p>
+416:           <div class="inline-group" style="margin-bottom: 10px;">
+417:             <button id="migrateConfigsBtn" class="btn btn-warning">📦 Migrer les configurations</button>
+418:           </div>
+419:           <div id="migrateConfigsMsg" class="status-msg"></div>
+420:           <pre id="migrateConfigsLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
+421:           <hr style="margin: 18px 0; border-color: rgba(255,255,255,0.1);">
+422:           <p style="margin-bottom:10px;">Vérifiez l'état des données persistées dans Redis (structures JSON, attributs requis, dates de mise à jour).</p>
+423:           <div class="inline-group" style="margin-bottom: 10px;">
+424:             <button id="verifyConfigStoreBtn" class="btn btn-info">🔍 Vérifier les données en Redis</button>
+425:           </div>
+426:           <label for="verifyConfigStoreRawToggle" class="small-text" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+427:             <input type="checkbox" id="verifyConfigStoreRawToggle">
+428:             <span>Inclure le JSON complet dans le log pour faciliter le debug.</span>
+429:           </label>
+430:           <div id="verifyConfigStoreMsg" class="status-msg"></div>
+431:           <pre id="verifyConfigStoreLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
+432:           <div id="verifyConfigStoreViewer" class="json-viewer-container" style="display:none;"></div>
+433:         </div>
+434:         <div class="card" style="margin-top: 20px;">
+435:           <div class="card-title">🔐 Accès Magic Link</div>
+436:           <p>Générez un lien pré-authentifié à usage unique pour ouvrir rapidement le dashboard sans retaper vos identifiants. Le lien est automatiquement copié.</p>
+437:           <div class="inline-group" style="margin-bottom: 12px;">
+438:             <label class="toggle-switch">
+439:               <input type="checkbox" id="magicLinkUnlimitedToggle">
+440:               <span class="toggle-slider"></span>
+441:             </label>
+442:             <span style="margin-left: 10px;">
+443:               Mode illimité (désactivé = lien one-shot avec expiration)
+444:             </span>
+445:           </div>
+446:           <button id="generateMagicLinkBtn" class="btn btn-primary">✨ Générer un magic link</button>
+447:           <div id="magicLinkOutput" class="status-msg" style="margin-top: 12px;"></div>
+448:           <div class="small-text">
+449:             Important : partagez ce lien uniquement avec des personnes autorisées.
+450:             En mode one-shot, il expire après quelques minutes et s'invalide dès qu'il est utilisé.
+451:             En mode illimité, aucun délai mais vous devez révoquer manuellement en cas de fuite.
+452:           </div>
+453:         </div>
+454:         <div class="card" style="margin-top: 20px;">
+455:           <div class="card-title">🧪 Outils de Test</div>
+456:           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+457:             <div class="form-group">
+458:               <label for="testWebhookUrl">Valider une URL de webhook</label>
+459:               <input id="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
+460:               <button id="validateWebhookUrlBtn" class="btn btn-primary" style="margin-top: 8px;">Valider</button>
+461:               <div id="webhookUrlValidationMsg" class="status-msg"></div>
+462:             </div>
+463:             <div class="form-group">
+464:               <label>Prévisualiser un payload</label>
+465:               <input id="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
+466:               <input id="previewSender" type="email" placeholder="Expéditeur (ex: media@solution.fr)" style="margin-top: 6px;">
+467:               <textarea id="previewBody" rows="4" placeholder="Corps de l'email (coller du texte)" style="margin-top: 6px; width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+468:               <button id="buildPayloadPreviewBtn" class="btn btn-primary" style="margin-top: 8px;">Générer</button>
+469:               <pre id="payloadPreview" style="margin-top:8px; background: rgba(0,0,0,0.2); border:1px solid var(--cork-border-color); padding:10px; border-radius:4px; max-height:200px; overflow:auto; color: var(--cork-text-primary);"></pre>
+470:             </div>
+471:           </div>
+472:           <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
+473:         </div>
+474:         <div class="card" style="margin-top: 20px;">
+475:           <div class="card-title">🔗 Ouvrir une page de téléchargement</div>
+476:           <div class="form-group">
+477:             <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
+478:             <input id="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
+479:             <button id="openDownloadPageBtn" class="btn btn-primary" style="margin-top: 8px;">Ouvrir la page</button>
+480:             <div id="openDownloadMsg" class="status-msg"></div>
+481:             <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
+482:           </div>
+483:         </div>
+484:         <div class="card" style="margin-top: 20px;">
+485:           <div class="card-title"> Flags Runtime (Debug)</div>
+486:           <div class="form-group">
+487:             <label>Bypass déduplication par ID d’email (debug)</label>
+488:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+489:               <input type="checkbox" id="disableEmailIdDedupToggle">
+490:               <span class="toggle-slider"></span>
+491:             </label>
+492:             <div class="small-text">Quand activé, ignore la déduplication par ID d'email. À utiliser uniquement pour des tests.
+493:             </div>
+494:           </div>
+495:           <div class="form-group" style="margin-top: 10px;">
+496:             <label>Autoriser envoi CUSTOM sans liens de livraison</label>
+497:             <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+498:               <input type="checkbox" id="allowCustomWithoutLinksToggle">
+499:               <span class="toggle-slider"></span>
+500:             </label>
+501:             <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu’aucun lien (Dropbox/FromSmash/SwissTransfer) n’est détecté, pour éviter les 422.</div>
+502:           </div>
+503:           <div style="margin-top: 12px;">
+504:             <button id="runtimeFlagsSaveBtn" class="btn btn-primary"> Enregistrer Flags Runtime</button>
+505:             <div id="runtimeFlagsMsg" class="status-msg"></div>
+506:           </div>
+507:         </div>
+508:       </div>
+509:     </div>
+510:     <!-- Chargement des modules JavaScript -->
+511:     <script type="module" src="{{ url_for('static', filename='utils/MessageHelper.js') }}"></script>
+512:     <script type="module" src="{{ url_for('static', filename='services/ApiService.js') }}"></script>
+513:     <script type="module" src="{{ url_for('static', filename='services/WebhookService.js') }}"></script>
+514:     <script type="module" src="{{ url_for('static', filename='services/LogService.js') }}"></script>
+515:     <script type="module" src="{{ url_for('static', filename='components/TabManager.js') }}"></script>
+516:     <script type="module" src="{{ url_for('static', filename='dashboard.js') }}?v=20260202-json-viewer"></script>
+517:   </body>
+518: </html>
 ````
 
 ## File: static/dashboard.js
@@ -19052,18 +19216,18 @@ requirements.txt
  344:         verifyBtn.addEventListener('click', handleConfigVerification);
  345:     }
  346:     
- 347:     // Metrics toggle event
- 348:     const enableMetricsToggle = document.getElementById('enableMetricsToggle');
- 349:     if (enableMetricsToggle) {
- 350:         enableMetricsToggle.addEventListener('change', async () => {
- 351:             saveLocalPreferences();
- 352:             if (enableMetricsToggle.checked) {
- 353:                 await computeAndRenderMetrics();
- 354:             } else {
- 355:                 clearMetrics();
- 356:             }
- 357:         });
- 358:     }
+ 347:     // Metrics toggle event - REMOVED: Monitoring section deleted from dashboard
+ 348:     // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+ 349:     // if (enableMetricsToggle) {
+ 350:     //     enableMetricsToggle.addEventListener('change', async () => {
+ 351:     //         saveLocalPreferences();
+ 352:     //         if (enableMetricsToggle.checked) {
+ 353:     //             await computeAndRenderMetrics();
+ 354:     //         } else {
+ 355:     //             clearMetrics();
+ 356:     //         }
+ 357:     //     });
+ 358:     // }
  359: }
  360: 
  361: async function loadInitialData() {
@@ -19084,103 +19248,103 @@ requirements.txt
  376:         
  377:         await updateGlobalStatus();
  378:         
- 379:         // Trigger metrics computation if toggle is enabled (default)
- 380:         const enableMetricsToggle = document.getElementById('enableMetricsToggle');
- 381:         if (enableMetricsToggle && enableMetricsToggle.checked) {
- 382:             await computeAndRenderMetrics();
- 383:         }
+ 379:         // Trigger metrics computation if toggle is enabled - REMOVED: Monitoring section deleted
+ 380:         // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+ 381:         // if (enableMetricsToggle && enableMetricsToggle.checked) {
+ 382:         //     await computeAndRenderMetrics();
+ 383:         // }
  384:         
  385:     } catch (e) {
  386:         console.error('Erreur lors du chargement des données initiales:', e);
  387:     }
  388: }
  389: 
- 390: // Metrics functions
- 391: async function computeAndRenderMetrics() {
- 392:     try {
- 393:         const res = await ApiService.get('/api/webhook_logs?days=1');
- 394:         if (!res.ok) { 
- 395:             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 396:                 console.warn('metrics: non-200', res.status);
- 397:             }
- 398:             clearMetrics(); return; 
- 399:         }
- 400:         const data = await res.json();
- 401:         const logs = (data.success && Array.isArray(data.logs)) ? data.logs : [];
- 402:         const total = logs.length;
- 403:         const sent = logs.filter(l => l.status === 'success').length;
- 404:         const errors = logs.filter(l => l.status === 'error').length;
- 405:         const successRate = total ? Math.round((sent / total) * 100) : 0;
- 406:         setMetric('metricEmailsProcessed', String(total));
- 407:         setMetric('metricWebhooksSent', String(sent));
- 408:         setMetric('metricErrors', String(errors));
- 409:         setMetric('metricSuccessRate', String(successRate));
- 410:         renderMiniChart(logs);
- 411:     } catch (e) {
- 412:         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
- 413:             console.warn('metrics error', e);
- 414:         }
- 415:         clearMetrics();
- 416:     }
- 417: }
+ 390: // Metrics functions - REMOVED: Monitoring section deleted from dashboard
+ 391: // async function computeAndRenderMetrics() {
+ 392: //     try {
+ 393: //         const res = await ApiService.get('/api/webhook_logs?days=1');
+ 394: //         if (!res.ok) { 
+ 395: //             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 396: //                 console.warn('metrics: non-200', res.status);
+ 397: //             }
+ 398: //             clearMetrics(); return; 
+ 399: //         }
+ 400: //         const data = await res.json();
+ 401: //         const logs = (data.success && Array.isArray(data.logs)) ? data.logs : [];
+ 402: //         const total = logs.length;
+ 403: //         const sent = logs.filter(l => l.status === 'success').length;
+ 404: //         const errors = logs.filter(l => l.status === 'error').length;
+ 405: //         const successRate = total ? Math.round((sent / total) * 100) : 0;
+ 406: //         setMetric('metricEmailsProcessed', String(total));
+ 407: //         setMetric('metricWebhooksSent', String(sent));
+ 408: //         setMetric('metricErrors', String(errors));
+ 409: //         setMetric('metricSuccessRate', String(successRate));
+ 410: //         renderMiniChart(logs);
+ 411: //     } catch (e) {
+ 412: //         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+ 413: //             console.warn('metrics error', e);
+ 414: //         }
+ 415: //         clearMetrics();
+ 416: //     }
+ 417: // }
  418: 
- 419: function clearMetrics() {
- 420:     setMetric('metricEmailsProcessed', '—');
- 421:     setMetric('metricWebhooksSent', '—');
- 422:     setMetric('metricErrors', '—');
- 423:     setMetric('metricSuccessRate', '—');
- 424:     const chart = document.getElementById('metricsMiniChart');
- 425:     if (chart) chart.innerHTML = '';
- 426: }
+ 419: // function clearMetrics() {
+ 420: //     setMetric('metricEmailsProcessed', '—');
+ 421: //     setMetric('metricWebhooksSent', '—');
+ 422: //     setMetric('metricErrors', '—');
+ 423: //     setMetric('metricSuccessRate', '—');
+ 424: //     const chart = document.getElementById('metricsMiniChart');
+ 425: //     if (chart) chart.innerHTML = '';
+ 426: // }
  427: 
- 428: function setMetric(id, text) {
- 429:     const el = document.getElementById(id);
- 430:     if (el) el.textContent = text;
- 431: }
+ 428: // function setMetric(id, text) {
+ 429: //     const el = document.getElementById(id);
+ 430: //     if (el) el.textContent = text;
+ 431: // }
  432: 
- 433: function renderMiniChart(logs) {
- 434:     const chart = document.getElementById('metricsMiniChart');
- 435:     if (!chart) return;
- 436:     chart.innerHTML = '';
- 437:     const width = chart.clientWidth || 300;
- 438:     const height = chart.clientHeight || 60;
- 439:     const canvas = document.createElement('canvas');
- 440:     canvas.width = width; canvas.height = height;
- 441:     const ctx = canvas.getContext('2d');
+ 433: // function renderMiniChart(logs) {
+ 434: //     const chart = document.getElementById('metricsMiniChart');
+ 435: //     if (!chart) return;
+ 436: //     chart.innerHTML = '';
+ 437: //     const width = chart.clientWidth || 300;
+ 438: //     const height = chart.clientHeight || 60;
+ 439: //     const canvas = document.createElement('canvas');
+ 440: //     canvas.width = width; canvas.height = height;
+ 441: //     const ctx = canvas.getContext('2d');
  442:     
- 443:     // Simple line chart implementation
- 444:     const padding = 5;
- 445:     const chartWidth = width - 2 * padding;
- 446:     const chartHeight = height - 2 * padding;
+ 443: //     // Simple line chart implementation
+ 444: //     const padding = 5;
+ 445: //     const chartWidth = width - 2 * padding;
+ 446: //     const chartHeight = height - 2 * padding;
  447:     
- 448:     // Group logs by hour
- 449:     const hourlyData = new Array(24).fill(0);
- 450:     logs.forEach(log => {
- 451:         const hour = new Date(log.timestamp).getHours();
- 452:         hourlyData[hour]++;
- 453:     });
+ 448: //     // Group logs by hour
+ 449: //     const hourlyData = new Array(24).fill(0);
+ 450: //     logs.forEach(log => {
+ 451: //         const hour = new Date(log.timestamp).getHours();
+ 452: //         hourlyData[hour]++;
+ 453: //     });
  454:     
- 455:     const maxCount = Math.max(...hourlyData, 1);
- 456:     const stepX = chartWidth / 23;
+ 455: //     const maxCount = Math.max(...hourlyData, 1);
+ 456: //     const stepX = chartWidth / 23;
  457:     
- 458:     ctx.strokeStyle = '#4CAF50';
- 459:     ctx.lineWidth = 2;
- 460:     ctx.beginPath();
+ 458: //     ctx.strokeStyle = '#4CAF50';
+ 459: //     ctx.lineWidth = 2;
+ 460: //     ctx.beginPath();
  461:     
- 462:     hourlyData.forEach((count, i) => {
- 463:         const x = padding + i * stepX;
- 464:         const y = padding + chartHeight - (count / maxCount) * chartHeight;
+ 462: //     hourlyData.forEach((count, i) => {
+ 463: //         const x = padding + i * stepX;
+ 464: //         const y = padding + chartHeight - (count / maxCount) * chartHeight;
  465:         
- 466:         if (i === 0) {
- 467:             ctx.moveTo(x, y);
- 468:         } else {
- 469:             ctx.lineTo(x, y);
- 470:         }
- 471:     });
+ 466: //         if (i === 0) {
+ 467: //             ctx.moveTo(x, y);
+ 468: //         } else {
+ 469: //             ctx.lineTo(x, y);
+ 470: //         }
+ 471: //     });
  472:     
- 473:     ctx.stroke();
- 474:     chart.appendChild(canvas);
- 475: }
+ 473: //     ctx.stroke();
+ 474: //     chart.appendChild(canvas);
+ 475: // }
  476: 
  477: function showCopiedFeedback() {
  478:     let toast = document.querySelector('.copied-feedback');
@@ -19727,23 +19891,23 @@ requirements.txt
 1019:     try {
 1020:         const raw = localStorage.getItem('dashboard_prefs_v1');
 1021:         if (!raw) {
-1022:             // Default: enable metrics if no preference exists
-1023:             const enableMetricsToggle = document.getElementById('enableMetricsToggle');
-1024:             if (enableMetricsToggle) {
-1025:                 enableMetricsToggle.checked = true;
-1026:             }
+1022:             // Default preferences - REMOVED: enableMetricsToggle default
+1023:             // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+1024:             // if (enableMetricsToggle) {
+1025:             //     enableMetricsToggle.checked = true;
+1026:             // }
 1027:             return;
 1028:         }
 1029:         
 1030:         const prefs = JSON.parse(raw);
 1031:         
-1032:         // Apply metrics preference if exists, otherwise default to true
-1033:         if (prefs.hasOwnProperty('enableMetricsToggle')) {
-1034:             const enableMetricsToggle = document.getElementById('enableMetricsToggle');
-1035:             if (enableMetricsToggle) {
-1036:                 enableMetricsToggle.checked = prefs.enableMetricsToggle;
-1037:             }
-1038:         }
+1032:         // Apply metrics preference if exists - REMOVED: Monitoring section deleted
+1033:         // if (prefs.hasOwnProperty('enableMetricsToggle')) {
+1034:         //     const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+1035:         //     if (enableMetricsToggle) {
+1036:         //         enableMetricsToggle.checked = prefs.enableMetricsToggle;
+1037:         //     }
+1038:         // }
 1039:         
 1040:         // Appliquer les préférences locales
 1041:         Object.keys(prefs).forEach(key => {
@@ -19776,11 +19940,11 @@ requirements.txt
 1068:             }
 1069:         });
 1070:         
-1071:         // Always save enableMetricsToggle preference
-1072:         const enableMetricsToggle = document.getElementById('enableMetricsToggle');
-1073:         if (enableMetricsToggle) {
-1074:             prefs.enableMetricsToggle = enableMetricsToggle.checked;
-1075:         }
+1071:         // Always save enableMetricsToggle preference - REMOVED: Monitoring section deleted
+1072:         // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+1073:         // if (enableMetricsToggle) {
+1074:         //     prefs.enableMetricsToggle = enableMetricsToggle.checked;
+1075:         // }
 1076:         
 1077:         localStorage.setItem('dashboard_prefs_v1', JSON.stringify(prefs));
 1078:     } catch (e) {

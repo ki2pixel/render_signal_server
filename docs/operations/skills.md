@@ -5,10 +5,6 @@ Ce document référence les skills Windsurf du projet avec leurs helpers et work
 ## 📋 Skills disponibles
 
 ### Architecture & Résilience
-- **background-poller-resilience-lab** - Durcissement du poller IMAP (locks, watchdog, HTML caps)
-  - Helper : `run_poller_resilience_suite.sh` (tests résilience + lock Redis)
-  - Cible : `background/polling_thread.py`, `background/lock.py`, `email_processing/orchestrator.py`
-
 - **routing-rules-orchestrator** - Gestion du moteur de routage dynamique
   - Helper : `test_routing_rules.sh` (service + API + orchestrator)
   - Cible : `services/routing_rules_service.py`, `routes/api_routing_rules.py`, `email_processing/orchestrator.py`
@@ -73,7 +69,7 @@ Ce document référence les skills Windsurf du projet avec leurs helpers et work
 ./.windsurf/skills/check-config/inspect_store.sh
 
 # Lancer les tests de résilience
-./.windsurf/skills/background-poller-resilience-lab/run_poller_resilience_suite.sh
+pytest -m "redis or r2 or resilience" --cov=. tests/test_r2_resilience.py
 
 # Auditer les configs Redis avec diff
 ./.windsurf/skills/redis-config-guardian/audit_redis_configs.sh

@@ -46,16 +46,13 @@ Notes:
 
 ### Variables obligatoires (enforcement au démarrage)
 
-Les 8 variables suivantes sont requises avec `ValueError` au démarrage si manquantes :
+Les 5 variables suivantes sont requises avec `ValueError` au démarrage si manquantes :
 
 | Variable | Description |
 | --- | --- |
 | `FLASK_SECRET_KEY` | Clé secrète HMAC pour sessions et magic links |
 | `TRIGGER_PAGE_PASSWORD` | Mot de passe dashboard (anciennement `DASHBOARD_PASSWORD`) |
-| `EMAIL_ADDRESS` | Adresse email pour le polling IMAP |
-| `EMAIL_PASSWORD` | Mot de passe email IMAP |
-| `IMAP_SERVER` | Serveur IMAP (ex: `imap.gmail.com`) |
-| `PROCESS_API_TOKEN` | Token pour API de traitement |
+| `PROCESS_API_TOKEN` | Token pour API de traitement (Gmail Push ingress) |
 | `WEBHOOK_URL` | URL webhook sortant |
 | `MAKECOM_API_KEY` | Clé API Make.com |
 
@@ -315,11 +312,6 @@ Fichiers supplémentaires (services):
 
 ## Fenêtres horaires
 
-### Fenêtre horaire des e-mails
-- `POLLING_ACTIVE_START_HOUR` - Heure de début de la fenêtre d'envoi (0-23)
-- `POLLING_ACTIVE_END_HOUR` - Heure de fin de fenêtre d'envoi (0-23)
-- `POLLING_ACTIVE_DAYS` - Jours actifs (0=dimanche à 6=samedi, séparés par des virgules, ex: `1,2,3,4,5` pour du lundi au vendredi)
-
 ### Fenêtre horaire des webhooks
 Une fenêtre horaire dédiée est disponible pour contrôler l'envoi des webhooks, indépendamment de la réception des e-mails :
 - Configurable via l'interface utilisateur ou l'API (`GET/POST /api/webhooks/time-window`)
@@ -356,20 +348,13 @@ Exemple de réponse :
 }
 ```
 
-### Store-as-Source-of-Truth (Polling Config)
-
-- `routes/api_config.py::update_polling_config` persiste exclusivement via `AppConfigStore` (Redis prioritaire, JSON fallback) et ne modifie plus les globals en mémoire.
-- `config/polling_config.py::PollingConfigService` relit le store à chaque appel (jours actifs, heures, senders, vacances, flags) et expose des getters typés.
-- `background/polling_thread.py` appelle ces getters à chaque cycle pour appliquer immédiatement les changements UI/API sans redémarrage.
-- Tests de référence : `tests/test_polling_dynamic_reload.py` (recharge dynamique) et `tests/test_routes_api_config_happy.py` (validation API + persistence).
-
 ## Log niveau
 - `FLASK_LOG_LEVEL` – `DEBUG|INFO|WARNING|ERROR` (défaut: `INFO`).
 
 
 ## Préférences de Traitement (processing_prefs.json)
 
-Le fichier `debug/processing_prefs.json` contient des paramètres de traitement des e-mails qui peuvent être modifiés sans redémarrage du serveur. Ces préférences sont chargées au démarrage et peuvent être mises à jour via l'API ou l'interface utilisateur.
+Le fichier `debug/processing_prefs.json` contient des paramètres de traitement des e-mails qui peuvent être modifiés sans redémarrage du serveur. Ces préférences sont chargées au démarrage et peuvent être mises à jour via l'API ou l'interface utilisateur. Elles s'appliquent à l'ingestion Gmail Push.
 
 ### Paramètres disponibles
 
@@ -414,7 +399,7 @@ Le fichier `debug/processing_prefs.json` contient des paramètres de traitement 
   - **Paramètre critique** - Active l'envoi des liens de téléchargement (SwissTransfer, Dropbox, FromSmash) vers le webhook personnalisé configuré dans `WEBHOOK_URL`.
   - `true` : Active le miroir vers le webhook personnalisé (défaut depuis `routes/api_processing.py`).
   - `false` : Désactive l'envoi des liens au webhook personnalisé.
-  - Lorsqu'il est désactivé, seuls les flux Make.com (s'ils sont configurés) reçoivent les liens médias; ce paramètre n'affecte pas la détection `delivery_links` ou la journalisation côté poller.
+  - Lorsqu'il est désactivé, seuls les flux Make.com (s'ils sont configurés) reçoivent les liens médias; ce paramètre n'affecte pas la détection `delivery_links` ou la journalisation.
 
 - `enable_subject_group_dedup` (bool) :
   - Active la déduplication par groupe de sujets

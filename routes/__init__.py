@@ -2,7 +2,6 @@
 
 from .health import bp as health_bp  # noqa: F401
 from .api_webhooks import bp as api_webhooks_bp  # noqa: F401
-from .api_polling import bp as api_polling_bp  # noqa: F401
 from .api_processing import bp as api_processing_bp  # noqa: F401
 from .api_processing import legacy_bp as api_processing_legacy_bp  # noqa: F401
 from .api_test import bp as api_test_bp  # noqa: F401

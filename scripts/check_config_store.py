@@ -15,7 +15,6 @@ from config import app_config_store
 
 KEY_CHOICES: Tuple[str, ...] = (
     "magic_link_tokens",
-    "polling_config",
     "processing_prefs",
     "routing_rules",
     "webhook_config",

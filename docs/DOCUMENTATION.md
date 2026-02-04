@@ -2,9 +2,9 @@
 
 ## Project Vital Signs
 
-- **Languages (cloc 2026-01-25)** : Python 387 271 LOC / 1 665 fichiers, JavaScript 61 069 LOC / 301 fichiers, Markdown 19 393 LOC / 25 fichiers, TypeScript 12 550 LOC / 4 fichiers. Les autres langages (YAML, HTML, CSS, shells, C/C++) représentent <2 % du volume.
-- **Scale** : 2 105 fichiers sources actifs (après exclusion `tests/`, `docs/`, `debug/`, `deployment/`, `memory-bank/`).
-- **Complexity** : cloc a signalé `./.venv/.../fetch.js` hors périmètre; l’exclusion automatique de `venv` suffit à éviter toute fuite de dépendance dans les métriques CI.
+- **Languages (cloc 2026-02-04)** : Python 387 679 LOC / 1 667 fichiers, JavaScript 61 665 LOC / 304 fichiers, Markdown 23 227 LOC / 33 fichiers, TypeScript 12 550 LOC / 4 fichiers. Les autres langages (YAML, HTML, CSS, shells, C/C++) restent <2 % du volume.
+- **Scale** : 2 128 fichiers sources actifs (après exclusion `tests/`, `docs/`, `debug/`, `deployment/`, `memory-bank/`).
+- **Complexity Hotspots: cloc remonte toujours `./.venv/.../fetch.js`; l’exclusion stricte du virtualenv côté CI empêche l’ingestion de dépendances externes dans les métriques officielles.
 - **Dependencies** : Aucune dépendance externe pour la documentation elle-même; tous les extraits référencent le code du dépôt.
 
 ## Architecture
@@ -23,10 +23,12 @@ docs/
 │   ├── storage.md              # Redis Config Store + backend JSON externe
 │   └── installation.md        # Guide installation initiale
 ├── features/                   # Fonctionnalités métier
-│   ├── email_polling.md       # Polling IMAP + store-as-source-of-truth
+│   ├── email_polling_legacy.md       # Polling IMAP (retiré) + historique store-as-source-of-truth
 │   ├── webhooks.md             # Flux webhooks + Offload R2 + Absence Globale
 │   ├── magic_link_auth.md      # Authentification Magic Link
 │   ├── gmail_push_ingress.md  # Endpoint POST /api/ingress/gmail pour Apps Script
+│   ├── gmail_push_patterns.md  # Patterns de détection et règles de traitement
+│   ├── r2_transfer_service.md  # Service offload Cloudflare R2 complet
 │   ├── resilience_lot2.md      # Résilience & Architecture (Lot 2)
 │   ├── ui.md                   # Interface utilisateur
 │   └── frontend_dashboard_features.md # Architecture modulaire ES6
@@ -48,26 +50,26 @@ docs/
 
 ### Points Clés
 
-- **Architecture orientée services** : 8 services principaux (Config, Auth, RuntimeFlags, Webhook, Deduplication, Polling, MagicLink, R2)
+- **Architecture orientée services** : 8 services principaux (Config, Auth, RuntimeFlags, Webhook, Deduplication, RoutingRules, MagicLink, R2)
 - **Store-as-Source-of-Truth** : Redis Config Store prioritaire, backend JSON externe fallback, fichiers locaux dernier recours
 - **Frontend modulaire ES6** : Architecture découplée avec services spécialisés (ApiService, WebhookService, LogService)
-- **Ingress Gmail** : Endpoint `POST /api/ingress/gmail` pour push Apps Script avec auth Bearer et orchestration complète
-- **Résilience Lot 2** : Verrou distribué Redis, fallback R2 garanti, watchdog IMAP
+- **Ingress Gmail unique** : Endpoint `POST /api/ingress/gmail` (Apps Script + Bearer token) remplace définitivement le polling IMAP depuis le 2026-02-04
+- **Résilience Lot 2** : Verrou distribué Redis, fallback R2 garanti, surveillance opératoire renforcée
 - **Sécurité Lot 1** : Anonymisation logs, écriture atomique, validation domaines R2, variables ENV obligatoires
 
 ## Complexity Hotspots
 
-### Complexity Hotspots (radon 2026-01-25)
+### Complexity Hotspots (radon 2026-02-04)
 
 | Rang | Fichier & fonction | Grade | Observations |
 | --- | --- | --- | --- |
-| 1 | `email_processing/orchestrator.py::check_new_emails_and_trigger_webhook` | F | Flux complet IMAP → webhooks; dépend fortement des helpers `_fetch_and_parse_email`, `_load_webhook_global_time_window`. Priorité: découper les règles DESABO/Media Solution en sous-fonctions testables. |
-| 2 | `routes/api_config.py::update_polling_config` | F | Traite validations bool/jours/heures + persistance Redis. À surveiller après passage 100% store-as-source-of-truth. |
-| 3 | `services/r2_transfer_service.py::normalize_source_url` | E | Normalisation Dropbox/FromSmash, gestion d’erreurs multi-domaines. Simplifier via mapping fournisseur → stratégie. |
-| 4 | `preferences/processing_prefs.py::validate_processing_prefs` | E | Validation imbriquée (globals + overrides). Opportunité d’introduire un schéma formel (pydantic ou marshmallow). |
-| 5 | `routes/api_webhooks.py::update_webhook_config` | E | Normalisation URLs, SSL, Absence Globale. Encourager le délestage vers `WebhookConfigService`. |
+| 1 | `email_processing/orchestrator.py::check_new_emails_and_trigger_webhook` | F (239) | Flux Gmail Push complet → webhooks; extraction accrue des branches Media Solution/DESABO reste prioritaire. |
+| 2 | `routes/api_ingress.py::ingest_gmail` | F (85) | Validation Apps Script (payload JSON, allowlist expéditeur, fenêtre horaire, enrichissement R2). Découpage par helper recommandé. |
+| 3 | `services/r2_transfer_service.py::normalize_source_url` | E (31) | Normalisation Dropbox/FromSmash/SwissTransfer; Strategy Pattern toujours envisagé. |
+| 4 | `preferences/processing_prefs.py::validate_processing_prefs` | E (32) | Validation imbriquée; bascule vers Pydantic/Marshmallow à planifier. |
+| 5 | `email_processing/pattern_matching.py::check_media_solution_pattern` | E (33) | Multiples branches regex; extraction d’un moteur dédié suggérée. |
 
-> Les sections `configuration/configuration.md`, `architecture/overview.md`, `quality/testing.md` et `features/email_polling.md` restent les documents à la densité la plus élevée; elles doivent mentionner explicitement toute réduction de complexité lors des refactors futurs.
+> Les sections `configuration/configuration.md`, `architecture/overview.md`, `quality/testing.md` et `features/gmail_push_ingress.md` restent les documents à la densité la plus élevée; elles doivent refléter toute réduction de complexité future.
 
 ### Recommandations
 

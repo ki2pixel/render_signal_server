@@ -2,12 +2,18 @@
 
 ## Problèmes courants
 
-- Connexion IMAP échoue
-  - Vérifier `EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `IMAP_SERVER`, `IMAP_PORT`, `IMAP_USE_SSL`.
-  - Pare-feu sortant et extensions SSL.
+- Gmail Push Ingress échoue
+  - Vérifier `PROCESS_API_TOKEN` dans les variables d'environnement Render.
+  - Confirmer que le Google Apps Script est correctement configuré.
+  - Vérifier les logs pour `INGRESS: 401 Unauthorized` ou `INGRESS: 400 Invalid JSON payload`.
 
-- `POST /api/check_emails_and_download` retourne 503
-  - Variables d'environnement manquantes: email, `SENDER_OF_INTEREST_FOR_POLLING`, `WEBHOOK_URL`.
+- `POST /api/ingress/gmail` retourne 401
+  - Token `PROCESS_API_TOKEN` manquant ou incorrect.
+  - Vérifier l'en-tête `Authorization: Bearer <token>`.
+
+- `POST /api/ingress/gmail` retourne 400
+  - Payload JSON invalide ou champs obligatoires manquants (`sender`, `body`).
+  - Corriger le format du payload Apps Script.
 
 - Pas d'envoi webhook
   - `WEBHOOK_URL` non défini ou non joignable.
@@ -21,7 +27,7 @@
 ### Erreurs SSL lors des appels webhook
 
 - Symptômes
-  - Logs `POLLER`: `SSLError: certificate verify failed: Hostname mismatch, certificate is not valid for '<host>'`.
+  - Logs `WEBHOOK_SENDER`: `SSLError: certificate verify failed: Hostname mismatch, certificate is not valid for '<host>'`.
   - `curl -I https://<host>/...` échoue avec `subjectAltName does not match <host>`.
 
 - Diagnostic rapide
@@ -57,8 +63,14 @@
 ## Tests recommandés
 - Appel `GET /api/ping` doit répondre `200`.
 - Connexion/déconnexion via `/login` et `/logout`.
-- Déclenchement manuel: `POST /api/check_emails_and_download` (observables dans les logs).
-- Simulation IMAP: placer un e-mail test avec expéditeur autorisé, sujet conforme, URL Dropbox.
-- Simulation sans réseau: utilisez `debug/simulate_webhooks.py` pour générer et inspecter les payloads sans IMAP ni appels HTTP réels.
-  - Commande: `DISABLE_BACKGROUND_TASKS=true python debug/simulate_webhooks.py`
+- Test Gmail Push: `POST /api/ingress/gmail` avec payload de test (observables dans les logs).
+- Simulation Gmail Push: utilisez `curl` pour tester l'endpoint sans Apps Script.
+  ```bash
+  curl -X POST https://votre-instance.onrender.com/api/ingress/gmail \
+    -H "Authorization: Bearer PROCESS_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"sender":"test@example.com","body":"test","subject":"test"}'
+  ```
+- Simulation sans réseau: utilisez `debug/simulate_webhooks.py` pour générer et inspecter les payloads sans appels HTTP réels.
+  - Commande: `python debug/simulate_webhooks.py`
   - Scénarios: Dropbox, non-Dropbox (FromSmash/SwissTransfer), e-mails Media Solution / Désabonnement (DESABO) et autres types personnalisés. Les POST sont mockés et imprimés.

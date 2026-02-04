@@ -12,13 +12,13 @@ La documentation est organisée pour répondre aux besoins des développeurs, op
 - `features/frontend_dashboard_features.md` - Architecture modulaire ES6 et fonctionnalités UX avancées
 
 ### Traitement des e-mails & Webhooks
-- `features/email_polling.md` - Polling IMAP et orchestrateur de traitement (store-as-source-of-truth)
+- `features/gmail_push_ingress.md` - Gmail Push Ingress endpoint et orchestrateur de traitement
 - `features/webhooks.md` - Flux webhooks sortants, Absence Globale et fenêtres horaires
 - `features/magic_link_auth.md` - Authentification Magic Link sans mot de passe
 
 ### Résilience & Sécurité
 - `securite.md` - Durcissement sécurité (Lot 1) : Anonymisation logs, écriture atomique, validation R2, variables ENV obligatoires
-- `features/resilience_lot2.md` - Résilience & Architecture (Lot 2) : Verrou Redis, Fallback R2, Watchdog IMAP
+- `features/resilience_lot2.md` - Résilience & Architecture (Lot 2) : Verrou Redis, Fallback R2
 
 ### Déploiement et Opérations
 - `operations/deploiement.md` - Déploiement Flask (Gunicorn/Nginx) et couche PHP associée

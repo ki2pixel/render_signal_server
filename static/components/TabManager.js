@@ -253,10 +253,6 @@ export class TabManager {
                 case 'sec-webhooks':
                     // La configuration webhooks est chargée au démarrage
                     break;
-                case 'sec-email':
-                    // Charger les préférences email si nécessaire
-                    await this.loadEmailPreferences();
-                    break;
                 case 'sec-preferences':
                     // Charger les préférences de traitement si nécessaire
                     await this.loadProcessingPreferences();
@@ -297,10 +293,7 @@ export class TabManager {
      * Charge les préférences email (lazy loading)
      */
     async loadEmailPreferences() {
-        // Cette fonction sera implémentée dans dashboard.js
-        if (typeof window.loadPollingConfig === 'function') {
-            await window.loadPollingConfig();
-        }
+        // Polling configuration retired - no-op
     }
 
     /**

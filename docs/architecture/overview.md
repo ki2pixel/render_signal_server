@@ -13,25 +13,22 @@
 - **"Absence Globale"** : Fonctionnalité de blocage configurable par jour de semaine
 
 ### Engagements Lot 2 (Résilience & Architecture)
-- ✅ **Verrou distribué Redis** : Implémenté avec clé `render_signal:poller_lock`, TTL 5 min
+- ✅ **Verrou distribué Redis** : Implémenté avec clé `render_signal:poller_lock`, TTL 5 min (legacy pour IMAP, conservé pour autres tâches critiques)
 - ✅ **Fallback R2 garanti** : Conservation URLs sources si Worker R2 indisponible
-- ✅ **Watchdog IMAP** : Timeout 30s pour éviter processus zombies
-- ✅ **Tests résilience** : `test_lock_redis.py`, `test_r2_resilience.py` avec marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`
+- ✅ **Tests résilience** : `test_r2_resilience.py`, scénarios Redis pour routing/logs
 - ✅ **Store-as-Source-of-Truth** : Configuration dynamique depuis Redis/fichier, pas d'écriture runtime dans les globals
 
-### Complexity Watchlist (radon 2026-01-29)
+### Complexity Watchlist (radon 2026-02-04)
 
-| Domaine | Fonction critique | Grade | Actions réalisées |
+| Domaine | Fonction critique | Grade | Actions réalisées / Plans |
 | --- | --- | --- | --- |
-| Orchestrateur IMAP | `email_processing/orchestrator.py::check_new_emails_and_trigger_webhook` | F | ✅ **Extraction routing rules** : `_find_matching_routing_rule()` et `_match_routing_condition()` extraits, complexité réduite à 12 |
-| API Config Polling | `routes/api_config.py::update_polling_config` | F | ✅ **Délégation service** : Validation via `PollingConfigService`, complexité maintenue à D |
-| Service Offload R2 | `services/r2_transfer_service.py::normalize_source_url` | E | ⚠️ **Action requise** : Introduire une stratégie par fournisseur pour réduire les branches conditionnelles |
-| Webhook Config API | `routes/api_webhooks.py::update_webhook_config` | E | ✅ **Délegation service** : Validation via `WebhookConfigService`, complexité réduite à C |
-| Preferences Service | `preferences/processing_prefs.py::validate_processing_prefs` | E | ⚠️ **Action requise** : Formaliser le schéma via un validateur typé (pydantic/marshmallow) |
-| Routing Rules Service | `services/routing_rules_service.py::_normalize_rules` | D | ✅ **Service stable** : Validation et normalisation centralisées |
-| Pattern Matching DESABO | `email_processing/pattern_matching.py::check_media_solution_pattern` | E | ⚠️ **Nouveau point chaud** : Complexité élevée due aux multiples branches de détection |
-| Magic Link Service | `services/magic_link_service.py::consume_token` | C | ✅ **Service stabilisé** : Logique de consommation et validation bien structurée |
-| Gmail Ingress API | `routes/api_ingress.py::ingest_gmail` | F | ✅ **Nouveau endpoint** : Auth Bearer, validation payload, orchestration complète via `send_custom_webhook_flow` |
+| Orchestrateur Gmail Push | `email_processing/orchestrator.py::check_new_emails_and_trigger_webhook` | F (239) | ✅ Extraction routing rules. ⚠️ Besoin d’extraire davantage les branches Media Solution/DESABO pour réduire la complexité héritée du polling. |
+| API Ingress Gmail | `routes/api_ingress.py::ingest_gmail` | F (85) | ✅ Endpoint Apps Script en production. ⚠️ Découpage par helpers (validation payload, fenêtre horaire, enrichissement R2) recommandé. |
+| Service Offload R2 | `services/r2_transfer_service.py::normalize_source_url` | E (31) | ⚠️ Stratégie par fournisseur encore à implémenter pour supprimer les grosses branches conditionnelles. |
+| Preferences Service | `preferences/processing_prefs.py::validate_processing_prefs` | E (32) | ⚠️ Migration vers Pydantic/Marshmallow à planifier pour formaliser le schéma. |
+| Pattern Matching Media Solution | `email_processing/pattern_matching.py::check_media_solution_pattern` | E (33) | ⚠️ Extraction d’un moteur dédié (regex + heuristiques) suggérée. |
+| Routing Rules Service | `services/routing_rules_service.py::_normalize_rules` | D (26) | ✅ Service stabilisé (validation + normalisation). |
+| Magic Link Service | `services/magic_link_service.py::consume_token` | C (18) | ✅ Service stabilisé : gestion TTL, révocation, logs. |
 
 > Ces surveillances garantissent que les sections « Services dédiés » ci-dessous restent alignées avec l’état réel du code; toute réduction de complexité doit être documentée ici.
 
@@ -45,12 +42,12 @@
 
 ---
 
-Cette application fournit une télécommande web sécurisée (Flask + Flask-Login) et un service de polling d'e-mails IMAP exécuté en tâche de fond.
+Cette application fournit une télécommande web sécurisée (Flask + Flask-Login) et un service d'ingestion d'e-mails via Gmail Push.
 
 ## Vue d'ensemble
 
 - **Backend orienté services** : les responsabilités de configuration, d'authentification, de flags runtime, de webhooks et de déduplication sont encapsulées dans des services dédiés (voir ci‑dessous et `services/`).
-- **Traitement des e‑mails** : orchestré par `email_processing/orchestrator.py` (polling IMAP, déduplication, détection des motifs, envoi des webhooks). Les détails métier sont approfondis dans `docs/email_polling.md` et `docs/webhooks.md`. **Ingress Gmail** : endpoint `POST /api/ingress/gmail` pour push Apps Script (voir `docs/features/gmail_push_ingress.md`).
+- **Traitement des e‑mails** : orchestré par `email_processing/orchestrator.py` (déduplication, détection des motifs, envoi des webhooks). Les détails métier sont approfondis dans `docs/features/gmail_push_ingress.md` et `docs/webhooks.md`. **Ingress Gmail unique** : endpoint `POST /api/ingress/gmail` est le seul mécanisme d'ingestion (voir `docs/features/gmail_push_ingress.md`).
 - **Routes Flask** : organisées en blueprints dans `routes/` (API config, admin, logs, webhooks, test, utilitaires, dashboard, health), consommant directement les services.
 - **Configuration et stockage** : centralisés dans `config/` et `config/app_config_store.py` avec backend JSON externe + fallback fichiers (`debug/*.json`). Voir `docs/configuration.md` et `docs/storage.md`.
 - **Aspects transverses** :
@@ -74,13 +71,12 @@ Cette application fournit une télécommande web sécurisée (Flask + Flask-Logi
 | `AuthService` | `services/auth_service.py` | Initialise Flask-Login, fournit les helpers d’authentification (sessions dashboard + API) @app_render.py#137-185 |
 | `RuntimeFlagsService` (Singleton) | `services/runtime_flags_service.py` | Charge/persiste `runtime_flags.json`, applique cache TTL=60 s, protège les écritures via `RLock` + fichiers temporaires (`os.replace`) et expose `get_all_flags()` / `update_flags()` @routes/api_config.py#27-158 |
 | `WebhookConfigService` (Singleton) | `services/webhook_config_service.py` | Gère la config webhook (validation HTTPS forcée, normalisation Make.com, cache + store externe `app_config_store`, RLock + écritures atomiques + fsync) @app_render.py#299-310 |
-| `DeduplicationService` | `services/deduplication_service.py` | Orchestration du dedup email/subject (Redis + fallback mémoire) injectée dans le poller @app_render.py#425-437 |
-| `PollingConfigService` | `config/polling_config.py` | Exposé comme service léger pour lire jours/heures actifs, timezone et flag UI `enable_polling` @config/polling_config.py#202-295 |
+| `DeduplicationService` | `services/deduplication_service.py` | Orchestration du dedup email/subject (Redis + fallback mémoire) utilisée par Gmail Push @app_render.py#425-437 |
 | `RoutingRulesService` (Singleton) | `services/routing_rules_service.py` | Moteur de routage dynamique (Redis-first, validation/normalisation, cache TTL) avec API `/api/routing_rules` et intégration orchestrateur @services/routing_rules_service.py#66-143 |
 | `R2TransferService` (Singleton) | `services/r2_transfer_service.py` | Offload Cloudflare R2 (normalisation Dropbox, fetch distant signé `X-R2-FETCH-TOKEN`, persistance des paires `source_url`/`r2_url` + `original_filename`) @email_processing/orchestrator.py#645-711 |
 | `MagicLinkService` (Singleton) | `services/magic_link_service.py` | Génération/validation de magic links signés HMAC, TTL configurable, stockage JSON verrouillé, expose l’endpoint `/api/auth/magic-link` @routes/api_auth.py |
 
-> `PollingConfigService` réside dans `config/polling_config.py` pour rester proche des helpers historiques; `app_render.py` l’instancie et l’injecte dans le poller et le watcher Make @app_render.py#278-735.
+> Les anciens services liés au polling IMAP sont archivés; seule l’ingestion Gmail Push (Apps Script → `/api/ingress/gmail`) reste active.
 
 Bootstrap `app_render.py` (ordre d'initialisation, simplifié):
 - Initialisation `ConfigService` → `AuthService.init_flask_login()` (sessions dashboard & API) @app_render.py#129-185
@@ -91,7 +87,7 @@ Bootstrap `app_render.py` (ordre d'initialisation, simplifié):
 - Initialisation conditionnelle de `R2TransferService` (variables `R2_FETCH_*`) et du stockage des tokens Magic Link (permissions disque vérifiées dès le boot) pour surfacer les erreurs de configuration avant le premier cycle opératoire.
 - Observabilité: heartbeat périodique, handler SIGTERM, contrôles d’activation des threads (poller + watcher Make) @app_render.py#230-735
 
-Orchestrateur (2025-11-18): helpers module-level extraits (`_is_webhook_sending_enabled`, `_load_webhook_global_time_window`, `_fetch_and_parse_email`), `TypedDict ParsedEmail`, constantes `IMAP_*`, `DETECTOR_*`, `ROUTE_*`, parsing plain+HTML @email_processing/orchestrator.py#26-188.
+Orchestrateur (2025-11-18 → 2026-02-04): helpers module-level extraits (`_is_webhook_sending_enabled`, `_load_webhook_global_time_window`, `_fetch_and_parse_email`), `TypedDict ParsedEmail`, constantes `DETECTOR_*`, `ROUTE_*`, parsing plain+HTML @email_processing/orchestrator.py#26-188. Depuis la retraite IMAP, l’orchestrateur est alimenté exclusivement par Gmail Push (`/api/ingress/gmail`) et applique les mêmes garde-fous (déduplication, fenêtres horaires, routing dynamique).
 
 Règles de fenêtre horaire (webhooks dédiés):
 - DESABO non urgent: bypass hors fenêtre et envoi immédiat.
@@ -116,13 +112,6 @@ Règles de fenêtre horaire (webhooks dédiés):
 - **Garanties** : économies de bande passante Render (~$5/mois pour 50 GB), fallback gracieux (si l’offload échoue, le webhook conserve uniquement `raw_url`/`direct_url`).
 ### Résilience & Architecture (Lot 2, 2026-01-14)
 
-#### Verrou Distribué Redis
-- **Implémentation** : `background/lock.py` avec clé `render_signal:poller_lock` et TTL 5 minutes
-- **Fallback** : Verrou fichier `fcntl` si Redis indisponible (non idéal pour multi-conteneurs)
-- **Usage** : Prévention du multi-polling sur Render multi-conteneurs
-- **Logging** : WARNING en cas de fallback vers verrou fichier ("Using file-based lock (unsafe for multi-container deployments)")
-- **Configuration** : `REDIS_URL` obligatoire pour multi-conteneurs, `REDIS_LOCK_TTL_SECONDS` configurable
-
 #### Fallback R2 Garanti
 - **Service** : `services/r2_transfer_service.py` avec gestion d'erreurs robuste
 - **Comportement** : Conservation explicite de `raw_url` en cas d'échec d'offload
@@ -130,14 +119,7 @@ Règles de fenêtre horaire (webhooks dédiés):
 - **Garantie** : Aucune perte de lien, même si Worker R2 indisponible
 - **Timeouts** : 120s pour Dropbox `/scl/fo/`, 15s par défaut
 
-#### Watchdog IMAP
-- **Timeout** : 30s pour éviter les processus zombies IMAP
-- **Sécurité** : Anti-blocage automatique des connexions
-- **Implémentation** : Timeout sur toutes les opérations IMAP dans `email_processing/imap_client.py`
-- **Configuration** : `IMAP_TIMEOUT_SECONDS` pour surcharge
-
 #### Tests Résilience
-- **Redis Lock** : `tests/test_lock_redis.py` avec scénarios distributed/fallback
 - **R2 Resilience** : `tests/test_r2_resilience.py` (exception/None/timeout)
 - **Anti-OOM** : Limite 1MB sur parsing HTML dans `email_processing/orchestrator.py`
 - **Commandes** : `pytest -m "redis or r2 or resilience"` avec environnement `/mnt/venv_ext4/venv_render_signal_server`
@@ -249,11 +231,6 @@ static/
 
 ### email_processing/
 
-#### imap_client.py
-- Gestion robuste des connexions IMAP
-- Reconnexion automatique en cas d'échec
-- Gestion des timeouts et des erreurs réseau
-
 #### pattern_matching.py
 - Détection des motifs spécifiques :
   - Média Solution
@@ -266,10 +243,9 @@ static/
 - Journalisation détaillée des échecs
 
 #### orchestrator.py
-- Point d'entrée principal du traitement
-- Gestion du cycle de vie des emails
-- Application des règles métier
-- Coordination des différents modules
+- Point d'entrée principal du traitement Gmail Push (validation payloads Apps Script, déduplication, routing dynamique)
+- Application des règles métier (Media Solution, DESABO, Absence Globale, fenêtres horaires)
+- Coordination des différents modules (pattern matching, payloads, webhook sender, R2 offload)
 
 #### link_extraction.py
 - Extraction des URLs de livraison :
@@ -298,10 +274,8 @@ static/
 - Support de Redis avec fallback
 - Gestion des TTL
 
-### background/
-- Tâches asynchrones
-- Gestion des verrous
-- Surveillance de l'état du système
+### background/ (legacy)
+- Regroupe les composants historiques (poller IMAP, watcher Make). Conservés pour archivage et tests mais **non utilisés** dans le flux Gmail Push.
 
 #### Modules de Support
 - **`app_logging/`** - Journalisation centralisée avec fallback Redis
@@ -313,10 +287,7 @@ static/
 - **`deduplication/`** - Prévention des doublons
   - `redis_client.py` - Implémentation basée sur Redis avec fallback en mémoire
   
-- **`background/`** - Tâches en arrière-plan
-  - `polling_thread.py` - Gestion du thread de polling avec injection de dépendances
-  - `lock.py` - Verrouillage singleton pour empêcher l'exécution simultanée de tâches critiques (ex: polling IMAP) dans un environnement multi-processus
-  - `heartbeat.py` - Boucle de diagnostic qui envoie périodiquement des signaux de vie et surveille l'état des threads de fond
+- **`background/`** - Modules legacy (polling IMAP, lock, heartbeat) conservés uniquement pour référence documentaire.
 
 #### Utilitaires
 - **`utils/`** - Fonctions utilitaires réutilisables
@@ -327,7 +298,6 @@ static/
 #### Configuration
 - **`config/`** - Gestion de la configuration
   - `settings.py` - Variables d'environnement et constantes
-  - `polling_config.py` - Configuration du polling (fuseau horaire, vacances, etc.)
   - `webhook_time_window.py` - Gestion des fenêtres horaires des webhooks
   - `runtime_flags.py` - Helpers de persistance des flags runtime (`load_runtime_flags()/save_runtime_flags()`)
   - `webhook_config.py` - Helpers de persistance de la configuration webhooks (`load_webhook_config()/save_webhook_config()`)
@@ -335,13 +305,12 @@ static/
 
 #### Routes API
   - `api_webhooks.py` - Gestion de la configuration des webhooks (URL, fenêtre globale, flags SSL)
-  - `api_polling.py` - Endpoint legacy `POST /api/polling/toggle` conservé pour la rétrocompatibilité des tests
   - `api_processing.py` - Gestion des préférences de traitement (avec routes legacy exposées via `legacy_bp`)
   - `api_test.py` - Endpoints de test (CORS) authentifiés par clé API
   - `api_logs.py` - Consultation des journaux de webhooks
   - `api_admin.py` - Endpoints administratifs (présence Make, redémarrage, déclenchement manuel `/api/check_emails_and_download`, déploiement Render)
   - `api_utility.py` - Utilitaires (ping ouvert, trigger local, statut local protégé)
-  - `api_config.py` - Endpoints protégés de configuration (fenêtre horaire webhooks legacy, runtime flags, configuration polling)
+  - `api_config.py` - Endpoints protégés de configuration (fenêtre horaire webhooks, runtime flags)
   - `api_make.py` - Pilotage manuel des scénarios Make (toggle all / status)
   - `dashboard.py` - Routes de l'interface utilisateur
   - `health.py` - Endpoint de santé
@@ -350,12 +319,10 @@ static/
   - `helpers.py` : auth API par clé (`X-API-Key`) pour les endpoints `/api/test/*`
 - `config/`
   - `settings.py` : constantes, variables d'environnement, flags et chemins
-  - `polling_config.py` : timezone, jours/heures actifs, vacances, validations
   - `webhook_time_window.py` : fenêtre horaire des webhooks (override UI + persistance JSON)
 - `routes/`
   - `__init__.py` : export des blueprints
   - `api_logs.py` : gestion des logs de webhooks (`GET /api/webhook_logs`)
-  - `api_polling.py` : contrôle du polling d'emails
   - `api_processing.py` : gestion des préférences de traitement, avec support des URLs legacy
   - `api_test.py` : endpoints de test et débogage
   - `api_webhooks.py` : gestion des webhooks entrants
@@ -364,17 +331,10 @@ static/
 - `utils/`
   - `time_helpers.py`, `text_helpers.py`, `validators.py` : fonctions pures réutilisables (parsing heures, normalisation texte, env bool, etc.)
 - `email_processing/`
-  - `imap_client.py` : création de la connexion IMAP
   - `pattern_matching.py` : détection des patterns e-mail (Média Solution, DESABO), constante `URL_PROVIDERS_PATTERN`
-  - `orchestrator.py` : point d'entrée unique pour le cycle de polling et helpers d'orchestration
-    - `check_new_emails_and_trigger_webhook()` : Flux natif complet (délégation legacy désactivée par défaut) qui gère
-      - la connexion IMAP, la déduplication, l'extraction des contenus plain/HTML
-      - l'inférence de `detector` (`recadrage` via `check_media_solution_pattern`, `desabonnement_journee_tarifs` via `check_desabo_conditions`)
-      - le contrôle de la fenêtre horaire globale avec exceptions par détecteur :
-        - `desabonnement_journee_tarifs` contourne la fenêtre et force l'envoi
-        - `recadrage` est marqué lu/traité hors fenêtre pour éviter les retraits
-      - le déclenchement du flux webhook personnalisé `send_custom_webhook_flow()` (payloads unifiés + miroir médias)
-    - La logique historique `handle_presence_route()` a été retirée : les emails de présence ne sont plus routés via l'application.
+  - `pattern_matching.py` : détection des patterns e-mail (Média Solution, DESABO), constante `URL_PROVIDERS_PATTERN`
+  - `orchestrator.py` : point d'entrée unique pour le flux Gmail Push et helpers d'orchestration
+    - `check_new_emails_and_trigger_webhook()` : Flux complet côté orchestrateur (validation, déduplication, routing, envoi webhooks) déclenché par `/api/ingress/gmail`
     - `compute_desabo_time_window()` : Calcule la fenêtre temporelle pour les webhooks DESABO (`early_ok`, start=`maintenant`)
     - `send_custom_webhook_flow()` : Flux complet d'envoi de webhook avec gestion des erreurs
   - `link_extraction.py` : extraction des URLs fournisseurs (Dropbox, FromSmash, SwissTransfer)
@@ -396,8 +356,7 @@ Objectifs: séparation des responsabilités, testabilité améliorée, réductio
 
 ##### Points d'Accès Principaux
 - `GET /api/ping` : Vérification de la disponibilité
-- `GET /api/check_trigger` : Lecture des signaux locaux
-- `POST /api/check_emails_and_download` : Déclenchement manuel du polling
+- `POST /api/ingress/gmail` : Réception des notifications Apps Script (ingestion Gmail Push)
 - `POST /api/make/toggle_all` : Contrôle des scénarios Make
 
 ##### Gestion des Erreurs
@@ -406,10 +365,7 @@ Objectifs: séparation des responsabilités, testabilité améliorée, réductio
 - Journalisation des incidents
 
 #### Tâches de Fond
-- **`background_email_poller`** :
-  - S'exécute selon la configuration
-  - Gère les erreurs et les reprises
-  - Met à jour l'état du système
+- **Watchers legacy** : Les threads historiques (poller IMAP, make watcher) sont conservés pour compatibilité mais **désactivés** par défaut depuis Gmail Push. Aucune tâche de fond n'est requise pour l’ingestion courante.
 
 ### Frontend
 

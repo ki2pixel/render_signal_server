@@ -395,19 +395,17 @@ function renderMiniChart(logs) {
 async function exportFullConfiguration() {
     try {
         // Gather server-side configs
-        const [webhookCfgRes, pollingCfgRes, timeWinRes] = await Promise.all([
+        const [webhookCfgRes, timeWinRes] = await Promise.all([
             ApiClient.request('/api/webhooks/config'),
-            ApiClient.request('/api/get_polling_config'),
             ApiClient.request('/api/get_webhook_time_window')
         ]);
-        const [webhookCfg, pollingCfg, timeWin] = await Promise.all([
-            webhookCfgRes.json(), pollingCfgRes.json(), timeWinRes.json()
+        const [webhookCfg, timeWin] = await Promise.all([
+            webhookCfgRes.json(), timeWinRes.json()
         ]);
         const prefsRaw = localStorage.getItem('dashboard_prefs_v1');
         const exportObj = {
             exported_at: new Date().toISOString(),
             webhook_config: webhookCfg,
-            polling_config: pollingCfg,
             time_window: timeWin,
             ui_preferences: prefsRaw ? JSON.parse(prefsRaw) : {}
         };
@@ -461,24 +459,7 @@ async function applyImportedServerConfig(obj) {
             await loadWebhookConfig();
         }
     }
-    // polling config
-    if (obj?.polling_config?.config) {
-        const cfg = obj.polling_config.config;
-        const payload = {};
-        if (Array.isArray(cfg.active_days)) payload.active_days = cfg.active_days;
-        if (Number.isInteger(cfg.active_start_hour)) payload.active_start_hour = cfg.active_start_hour;
-        if (Number.isInteger(cfg.active_end_hour)) payload.active_end_hour = cfg.active_end_hour;
-        if (typeof cfg.enable_subject_group_dedup === 'boolean') payload.enable_subject_group_dedup = cfg.enable_subject_group_dedup;
-        if (Array.isArray(cfg.sender_of_interest_for_polling)) payload.sender_of_interest_for_polling = cfg.sender_of_interest_for_polling;
-        if ('vacation_start' in cfg) payload.vacation_start = cfg.vacation_start || null;
-        if ('vacation_end' in cfg) payload.vacation_end = cfg.vacation_end || null;
-        if (Object.keys(payload).length) {
-            await ApiClient.request('/api/update_polling_config', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-            });
-            await loadPollingConfig();
-        }
-    }
+    // polling config removed
     // time window
     if (obj?.time_window) {
         const start = obj.time_window.webhooks_time_start ?? '';
@@ -530,76 +511,7 @@ function buildPayloadPreview() {
 
 
 // Nouvelle approche: gestion via cases à cocher (0=Mon .. 6=Sun)
-function setDayCheckboxes(days) {
-    const group = document.getElementById('pollingActiveDaysGroup');
-    if (!group) return;
-    const set = new Set(Array.isArray(days) ? days : []);
-    const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
-    boxes.forEach(cb => {
-        const idx = parseInt(cb.value, 10);
-        cb.checked = set.has(idx);
-    });
-}
 
-function collectDayCheckboxes() {
-    const group = document.getElementById('pollingActiveDaysGroup');
-    if (!group) return [];
-    const boxes = group.querySelectorAll('input[name="pollingDay"][type="checkbox"]');
-    const out = [];
-    boxes.forEach(cb => {
-        if (cb.checked) out.push(parseInt(cb.value, 10));
-    });
-    // tri croissant et unique par sécurité
-    return Array.from(new Set(out)).sort((a,b)=>a-b);
-}
-
-// ---- UI dynamique pour la liste d'emails ----
-function addEmailField(value) {
-    const container = document.getElementById('senderOfInterestContainer');
-    if (!container) return;
-    const row = document.createElement('div');
-    row.className = 'inline-group';
-    const input = document.createElement('input');
-    input.type = 'email';
-    input.placeholder = 'ex: email@example.com';
-    input.value = value || '';
-    input.style.flex = '1';
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'email-remove-btn';
-    btn.textContent = '❌';
-    btn.title = 'Supprimer cet email';
-    btn.addEventListener('click', () => row.remove());
-    row.appendChild(input);
-    row.appendChild(btn);
-    container.appendChild(row);
-}
-
-function renderSenderInputs(list) {
-    const container = document.getElementById('senderOfInterestContainer');
-    if (!container) return;
-    container.innerHTML = '';
-    (list || []).forEach(e => addEmailField(e));
-    if (!list || list.length === 0) addEmailField('');
-}
-
-function collectSenderInputs() {
-    const container = document.getElementById('senderOfInterestContainer');
-    if (!container) return [];
-    const inputs = Array.from(container.querySelectorAll('input[type="email"]'));
-    const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-    const out = [];
-    const seen = new Set();
-    for (const i of inputs) {
-        const v = (i.value || '').trim().toLowerCase();
-        if (!v) continue;
-        if (emailRe.test(v) && !seen.has(v)) {
-            seen.add(v);
-            out.push(v);
-        }
-    }
-    return out;
-}
 
 // Affiche le statut des vacances sous les sélecteurs de dates
 // vacation helpers removed with UI
@@ -689,48 +601,6 @@ async function saveTimeWindow() {
     }
 }
 
-// Section 2: Contrôle du polling
-async function loadPollingStatus() {
-    try {
-        const res = await ApiClient.request('/api/webhooks/config');
-        const data = await res.json();
-        
-        if (data.success) {
-            const isEnabled = data.config.polling_enabled;
-            document.getElementById('pollingToggle').checked = isEnabled;
-            document.getElementById('pollingStatusText').textContent = 
-                isEnabled ? '✅ Polling activé' : '❌ Polling désactivé';
-        }
-    } catch (e) {
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.error('Erreur chargement statut polling:', e);
-        }
-        document.getElementById('pollingStatusText').textContent = '⚠️ Erreur de chargement';
-    }
-}
-
-async function togglePolling() {
-    const enable = document.getElementById('pollingToggle').checked;
-    
-    try {
-        const res = await ApiClient.request('/api/toggle_polling', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enable })
-        });
-        const data = await res.json();
-        
-        if (data.success) {
-            showMessage('pollingMsg', data.message, 'info');
-            document.getElementById('pollingStatusText').textContent = 
-                enable ? '✅ Polling activé' : '❌ Polling désactivé';
-        } else {
-            showMessage('pollingMsg', data.message || 'Erreur lors du changement.', 'error');
-        }
-    } catch (e) {
-        showMessage('pollingMsg', 'Erreur de communication avec le serveur.', 'error');
-    }
-}
 
 // Section 3: Configuration des webhooks
 async function loadWebhookConfig() {
@@ -1029,9 +899,6 @@ function initTabs() {
     const mapHashToId = {
         '#overview': '#sec-overview',
         '#webhooks': '#sec-webhooks',
-        '#email': '#sec-email',
-        '#make': '#sec-email',      // legacy alias kept for backward compatibility
-        '#polling': '#sec-email',   // legacy alias kept
         '#preferences': '#sec-preferences',
         '#tools': '#sec-tools',
     };
@@ -1079,8 +946,6 @@ function initTabs() {
         } else if (targetSelector === '#sec-webhooks') {
             loadTimeWindow();
             loadWebhookConfig();
-        } else if (targetSelector === '#sec-email') {
-            loadPollingConfig();
         }
     }
 
@@ -1094,8 +959,7 @@ function initTabs() {
             if (target) {
                 // Update URL hash for deep-linking (without scrolling)
                 // Prefer canonical hash for the target
-                const preferred = (target === '#sec-email') ? '#email' :
-                                  (target === '#sec-overview') ? '#overview' :
+                const preferred = (target === '#sec-overview') ? '#overview' :
                                   (target === '#sec-webhooks') ? '#webhooks' :
                                   (target === '#sec-preferences') ? '#preferences' :
                                   (target === '#sec-tools') ? '#tools' : '';
@@ -1184,9 +1048,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Charger les données initiales (protégées)
     try { console.log('[init] loadTimeWindow'); loadTimeWindow(); } catch (e) { console.error('[init] loadTimeWindow failed', e); }
-    // old loadPollingStatus removed
-    try { console.log('[init] loadWebhookConfig'); loadWebhookConfig(); } catch (e) { console.error('[init] loadWebhookConfig failed', e); }
-    try { console.log('[init] loadPollingConfig'); loadPollingConfig(); } catch (e) { console.error('[init] loadPollingConfig failed', e); }
     try { console.log('[init] loadWebhookLogs'); loadWebhookLogs(); } catch (e) { console.error('[init] loadWebhookLogs failed', e); }
     
     // Attacher les gestionnaires d'événements (avec garde)
@@ -1197,11 +1058,6 @@ document.addEventListener('DOMContentLoaded', () => {
     elSaveConfig && elSaveConfig.addEventListener('click', saveWebhookConfig);
     const elRefreshLogs = document.getElementById('refreshLogsBtn');
     elRefreshLogs && elRefreshLogs.addEventListener('click', loadWebhookLogs);
-    const elSavePollingCfg = document.getElementById('savePollingCfgBtn');
-    // Removed from UI; keep guard in case of legacy DOM
-    elSavePollingCfg && elSavePollingCfg.addEventListener('click', savePollingConfig);
-    const addSenderBtn = document.getElementById('addSenderBtn');
-    if (addSenderBtn) addSenderBtn.addEventListener('click', () => addEmailField(''));
     // Mettre à jour le statut vacances quand l'utilisateur change les dates
     // vacation inputs removed
     
@@ -1374,7 +1230,7 @@ document.addEventListener('DOMContentLoaded', () => {
             allBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             // Mettre à jour le hash pour deep-linking
-            const map = { '#sec-overview': '#overview', '#sec-webhooks': '#webhooks', '#sec-email': '#email', '#sec-preferences': '#preferences', '#sec-tools': '#tools' };
+            const map = { '#sec-overview': '#overview', '#sec-webhooks': '#webhooks', '#sec-preferences': '#preferences', '#sec-tools': '#tools' };
             const hash = map[target]; if (hash) history.replaceState(null, '', hash);
         } catch (e) {
             console.error('[tabs-fallback] activation failed:', e);
@@ -1382,106 +1238,4 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-// --- Gestionnaire du bouton d'enregistrement des préférences email ---
-document.addEventListener('DOMContentLoaded', () => {
-    const saveEmailPrefsBtn = document.getElementById('saveEmailPrefsBtn');
-    if (saveEmailPrefsBtn) {
-        saveEmailPrefsBtn.addEventListener('click', savePollingConfig);
-    }
-});
 
-// --- Polling Config (jours, heures, dédup) ---
-
-async function loadPollingConfig() {
-    try {
-        const res = await ApiClient.request('/api/get_polling_config');
-        const data = await res.json();
-        if (data.success) {
-            const cfg = data.config || {};
-            const dedupEl = document.getElementById('enableSubjectGroupDedup');
-            if (dedupEl) dedupEl.checked = !!cfg.enable_subject_group_dedup;
-            const senders = Array.isArray(cfg.sender_of_interest_for_polling) ? cfg.sender_of_interest_for_polling : [];
-            renderSenderInputs(senders);
-            // New: populate active days and hours if present
-            try {
-                if (Array.isArray(cfg.active_days)) setDayCheckboxes(cfg.active_days);
-                const sh = document.getElementById('pollingStartHour');
-                const eh = document.getElementById('pollingEndHour');
-                if (sh && Number.isInteger(cfg.active_start_hour)) sh.value = String(cfg.active_start_hour);
-                if (eh && Number.isInteger(cfg.active_end_hour)) eh.value = String(cfg.active_end_hour);
-            } catch (e) {
-                console.warn('loadPollingConfig: applying days/hours failed', e);
-            }
-            // vacations and global enable removed from UI
-        }
-    } catch (e) {
-        console.error('Erreur chargement config polling:', e);
-    }
-}
-
-async function savePollingConfig(event) {
-    // Désactiver le bouton qui a déclenché l'événement
-    const btn = event?.target || document.getElementById('savePollingCfgBtn');
-    if (btn) btn.disabled = true;
-    
-    const dedup = document.getElementById('enableSubjectGroupDedup')?.checked;
-    const senders = collectSenderInputs();
-    const activeDays = collectDayCheckboxes();
-    const startHourStr = document.getElementById('pollingStartHour')?.value?.trim() ?? '';
-    const endHourStr = document.getElementById('pollingEndHour')?.value?.trim() ?? '';
-    const statusId = document.getElementById('emailPrefsSaveStatus') ? 'emailPrefsSaveStatus' : 'pollingCfgMsg';
-
-    // Basic validation
-    const startHour = startHourStr === '' ? null : Number.parseInt(startHourStr, 10);
-    const endHour = endHourStr === '' ? null : Number.parseInt(endHourStr, 10);
-    if (!activeDays || activeDays.length === 0) {
-        showMessage(statusId, 'Veuillez sélectionner au moins un jour actif.', 'error');
-        if (btn) btn.disabled = false;
-        return;
-    }
-    if (startHour === null || Number.isNaN(startHour) || startHour < 0 || startHour > 23) {
-        showMessage(statusId, 'Heure de début invalide (0-23).', 'error');
-        if (btn) btn.disabled = false;
-        return;
-    }
-    if (endHour === null || Number.isNaN(endHour) || endHour < 0 || endHour > 23) {
-        showMessage(statusId, 'Heure de fin invalide (0-23).', 'error');
-        if (btn) btn.disabled = false;
-        return;
-    }
-    if (startHour === endHour) {
-        showMessage(statusId, 'L\'heure de début et de fin ne peuvent pas être identiques.', 'error');
-        if (btn) btn.disabled = false;
-        return;
-    }
-
-    const payload = {};
-    payload.enable_subject_group_dedup = dedup;
-
-    payload.sender_of_interest_for_polling = senders;
-    payload.active_days = activeDays;
-    payload.active_start_hour = startHour;
-    payload.active_end_hour = endHour;
-    // Dates ISO (ou null)
-    // vacations and global enable removed
-
-    try {
-        const res = await ApiClient.request('/api/update_polling_config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (data.success) {
-            showMessage(statusId, data.message || 'Préférences enregistrées avec succès !', 'success');
-            // Recharger pour refléter la normalisation côté serveur
-            loadPollingConfig();
-        } else {
-            showMessage(statusId, data.message || 'Erreur lors de la sauvegarde.', 'error');
-        }
-    } catch (e) {
-        showMessage(statusId, 'Erreur de communication avec le serveur.', 'error');
-    } finally {
-        if (btn) btn.disabled = false;
-    }
-}
