@@ -17,6 +17,7 @@ KEY_CHOICES: Tuple[str, ...] = (
     "magic_link_tokens",
     "processing_prefs",
     "routing_rules",
+    "runtime_flags",
     "webhook_config",
 )
 
@@ -26,9 +27,11 @@ def _validate_payload(key: str, payload: Dict[str, Any]) -> Tuple[bool, str]:
         return False, "payload is not a dict"
     if key == "routing_rules" and not payload:
         return True, "empty (allowed)"
+    if key == "runtime_flags" and not payload:
+        return False, "payload is empty"
     if not payload:
         return False, "payload is empty"
-    if key != "magic_link_tokens" and "_updated_at" not in payload:
+    if key != "magic_link_tokens" and key != "runtime_flags" and "_updated_at" not in payload:
         return False, "missing _updated_at"
     return True, "ok"
 
@@ -65,6 +68,13 @@ def _format_payload(payload: Dict[str, Any], raw: bool) -> str:
 
 
 def _fetch(key: str) -> Dict[str, Any]:
+    from pathlib import Path
+    
+    # Provide file fallback for runtime_flags
+    if key == "runtime_flags":
+        file_path = Path("debug/runtime_flags.json")
+        return app_config_store.get_config_json(key, file_fallback=file_path)
+    
     return app_config_store.get_config_json(key)
 
 
