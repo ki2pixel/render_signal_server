@@ -157,7 +157,43 @@ def ingest_gmail():
     try:
         rfs = getattr(ar, "_runtime_flags_service", None)
         if rfs is not None and hasattr(rfs, "get_flag"):
-            if not bool(rfs.get_flag("gmail_ingress_enabled", True)):
+            gmail_ingress_enabled = bool(rfs.get_flag("gmail_ingress_enabled", True))
+            if not gmail_ingress_enabled:
+                # Debug logging: vérifier les données en Redis
+                try:
+                    redis_client = getattr(ar, "redis_client", None)
+                    redis_debug = {}
+                    if redis_client is not None:
+                        try:
+                            # Vérifier les flags runtime en Redis
+                            if hasattr(redis_client, "get"):
+                                runtime_flags_raw = redis_client.get("config:runtime_flags")
+                                if runtime_flags_raw:
+                                    redis_debug["runtime_flags_redis"] = runtime_flags_raw.decode("utf-8")
+                                else:
+                                    redis_debug["runtime_flags_redis"] = None
+                            
+                            # Vérifier d'autres clés pertinentes
+                            for key in ["config:webhook_config", "config:processing_prefs"]:
+                                try:
+                                    value = redis_client.get(key)
+                                    redis_debug[key] = value.decode("utf-8") if value else None
+                                except Exception:
+                                    redis_debug[key] = "ERROR"
+                        except Exception as e:
+                            redis_debug["redis_error"] = str(e)
+                    
+                    current_app.logger.warning(
+                        "INGRESS: Gmail ingress disabled - gmail_ingress_enabled=%s | Redis debug: %s",
+                        gmail_ingress_enabled,
+                        redis_debug,
+                    )
+                except Exception:
+                    current_app.logger.warning(
+                        "INGRESS: Gmail ingress disabled - gmail_ingress_enabled=%s (Redis debug failed)",
+                        gmail_ingress_enabled,
+                    )
+                
                 return (
                     jsonify({"success": False, "message": "Gmail ingress disabled"}),
                     409,
