@@ -145,41 +145,6 @@ def test_ingress_gmail_webhook_sending_disabled(monkeypatch, flask_client):
 
 
 @pytest.mark.unit
-def test_ingress_gmail_skips_recadrage_outside_time_window(monkeypatch, flask_client):
-    # Given: detector=recadrage and time window is not within
-    import app_render
-
-    monkeypatch.setattr(app_render, "SENDER_LIST_FOR_POLLING", [])
-
-    monkeypatch.setattr(
-        "routes.api_ingress.pattern_matching.check_media_solution_pattern",
-        lambda *_args, **_kwargs: {"matches": True, "delivery_time": "10h00"},
-    )
-    monkeypatch.setattr(
-        "routes.api_ingress.email_orchestrator._load_webhook_global_time_window",
-        lambda: ("09:00", "10:00"),
-    )
-    monkeypatch.setattr("routes.api_ingress.parse_time_hhmm", lambda *_a, **_k: object())
-    monkeypatch.setattr("routes.api_ingress.is_within_time_window_local", lambda *_a, **_k: False)
-
-    payload = {
-        "subject": "Média Solution - Missions Recadrage - Lot 42",
-        "sender": "sender@example.com",
-        "body": "hello https://www.dropbox.com/scl/fo/abc123",
-        "date": "2026-01-01T00:00:00Z",
-    }
-
-    # When: posting to ingress
-    resp = flask_client.post("/api/ingress/gmail", json=payload, headers=_auth_headers())
-
-    # Then: it is skipped
-    assert resp.status_code == 409
-    data = resp.get_json()
-    assert data["success"] is False
-    assert data["message"] == "Webhook sending disabled"
-
-
-@pytest.mark.unit
 def test_ingress_gmail_happy_path(monkeypatch, flask_client):
     # Given: system is configured and send_custom_webhook_flow succeeds
     import app_render

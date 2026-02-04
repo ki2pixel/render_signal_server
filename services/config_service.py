@@ -195,14 +195,6 @@ class ConfigService:
             "subject_group_ttl": self._settings.SUBJECT_GROUP_TTL_SECONDS,
         }
     
-    # Configuration Make.com
-    
-    def get_makecom_api_key(self) -> str:
-        return self._settings.MAKECOM_API_KEY or ""
-    
-    def has_makecom_api_key(self) -> bool:
-        return bool(self._settings.MAKECOM_API_KEY)
-    
     # Configuration Tâches de Fond (legacy - background tasks disabled)
     
     def is_background_tasks_enabled(self) -> bool:

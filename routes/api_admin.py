@@ -13,7 +13,6 @@ from flask import Blueprint, jsonify, request, current_app
 from flask_login import login_required, current_user
 
 from services import ConfigService
-from email_processing import webhook_sender as email_webhook_sender
 from email_processing import orchestrator as email_orchestrator
 from app_logging.webhook_logger import append_webhook_log as _append_webhook_log
 from migrate_configs_to_redis import main as migrate_configs_main

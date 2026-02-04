@@ -37,7 +37,6 @@ from auth import helpers as auth_helpers
 from auth.helpers import testapi_authorized as _testapi_authorized
 
 from email_processing import pattern_matching as email_pattern_matching
-from email_processing import webhook_sender as email_webhook_sender
 from email_processing import orchestrator as email_orchestrator
 from email_processing import link_extraction as email_link_extraction
 from email_processing import payloads as email_payloads
@@ -63,7 +62,6 @@ from routes import (
     api_admin_bp,
     api_utility_bp,
     api_config_bp,
-    api_make_bp,
     api_auth_bp,
     api_routing_rules_bp,
     api_ingress_bp,
@@ -127,7 +125,6 @@ app.register_blueprint(api_logs_bp)
 app.register_blueprint(api_admin_bp)
 app.register_blueprint(api_utility_bp)
 app.register_blueprint(api_config_bp)
-app.register_blueprint(api_make_bp)
 app.register_blueprint(api_auth_bp)
 app.register_blueprint(api_routing_rules_bp)
 app.register_blueprint(api_ingress_bp)
@@ -152,7 +149,6 @@ login_manager = _auth_service.init_flask_login(app, login_view='dashboard.login'
 auth_user.init_login_manager(app, login_view='dashboard.login')
 
 WEBHOOK_URL = settings.WEBHOOK_URL
-MAKECOM_API_KEY = settings.MAKECOM_API_KEY
 WEBHOOK_SSL_VERIFY = settings.WEBHOOK_SSL_VERIFY
 
 EXPECTED_API_TOKEN = settings.EXPECTED_API_TOKEN
@@ -318,23 +314,6 @@ def check_media_solution_pattern(subject, email_content):
         except Exception:
             pass
         return {"matches": False, "delivery_time": None}
-
-
-def send_makecom_webhook(subject, delivery_time, sender_email, email_id, override_webhook_url: str | None = None, extra_payload: dict | None = None):
-    """Délègue l'envoi du webhook Make.com au module email_processing.webhook_sender.
-
-    Maintient la compatibilité tout en centralisant la logique d'envoi.
-    """
-    return email_webhook_sender.send_makecom_webhook(
-        subject=subject,
-        delivery_time=delivery_time,
-        sender_email=sender_email,
-        email_id=email_id,
-        override_webhook_url=override_webhook_url,
-        extra_payload=extra_payload,
-        logger=app.logger,
-        log_hook=_append_webhook_log,
-    )
 
 
 # --- Fonctions de Déduplication avec Redis ---

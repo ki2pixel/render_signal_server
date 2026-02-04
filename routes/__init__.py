@@ -10,7 +10,6 @@ from .api_logs import bp as api_logs_bp  # noqa: F401
 from .api_admin import bp as api_admin_bp  # noqa: F401
 from .api_utility import bp as api_utility_bp  # noqa: F401
 from .api_config import bp as api_config_bp  # noqa: F401
-from .api_make import bp as api_make_bp  # noqa: F401
 from .api_auth import bp as api_auth_bp  # noqa: F401
 from .api_routing_rules import bp as api_routing_rules_bp  # noqa: F401
 from .api_ingress import bp as api_ingress_bp  # noqa: F401

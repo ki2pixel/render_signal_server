@@ -40,7 +40,6 @@ IMAP_USE_SSL = env_bool("IMAP_USE_SSL", True)
 EXPECTED_API_TOKEN = _get_required_env("PROCESS_API_TOKEN")
 
 WEBHOOK_URL = _get_required_env("WEBHOOK_URL")
-MAKECOM_API_KEY = _get_required_env("MAKECOM_API_KEY")
 WEBHOOK_SSL_VERIFY = env_bool("WEBHOOK_SSL_VERIFY", default=True)
 
 # --- Render API Configuration ---
@@ -164,9 +163,9 @@ def log_configuration(logger):
         logger.debug("CFG POLL: SENDER_OF_INTEREST_FOR_POLLING not set (legacy polling disabled)")
     
     if not EXPECTED_API_TOKEN:
-        logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
+        logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints will be insecure.")
     else:
-        logger.info("CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured.")
+        logger.info("CFG TOKEN: PROCESS_API_TOKEN (for Gmail Push ingress) configured.")
     
     logger.info(f"CFG DEDUP: ENABLE_SUBJECT_GROUP_DEDUP={ENABLE_SUBJECT_GROUP_DEDUP}")
     logger.info(f"CFG DEDUP: DISABLE_EMAIL_ID_DEDUP={DISABLE_EMAIL_ID_DEDUP}")

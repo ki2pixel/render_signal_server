@@ -19,9 +19,38 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 ## En cours
 - Aucune tâche active.
 
----
-
 ## Terminé
+
+[2026-02-05 00:30:00] - Suppression complète de MAKECOM_API_KEY et logiques associées Terminée
+- **Objectif** : Supprimer MAKECOM_API_KEY et toutes les logiques Make.com obsolètes du codebase, car les scénarios recadrage sont gérés par WEBHOOK_URL + PHP handler.
+- **Actions réalisées** :
+  1. **Configuration** : Suppression de MAKECOM_API_KEY des variables obligatoires dans config/settings.py (passage de 5 à 4 variables).
+  2. **Blueprint API** : Suppression complète de routes/api_make.py et de ses références (imports, enregistrement).
+  3. **Services** : Suppression des méthodes get_makecom_api_key() et has_makecom_api_key() dans services/config_service.py.
+  4. **Webhook Sender** : Suppression du fichier email_processing/webhook_sender.py et de ses imports.
+  5. **Orchestrator** : Suppression de la fonction handle_media_solution_route() dans orchestrator.py.
+  6. **Documentation** : Mise à jour de docs/configuration/configuration.md pour refléter les 4 variables obligatoires.
+  7. **Tests** : Adaptation de tests/test_settings_required_env.py et suppression des tests obsolètes (test_email_processing_e2e.py, test_email_processing_orchestrator_extra.py, etc.).
+- **Validation** : 324 tests passants / 0 échec, architecture simplifiée, scénarios recadrage préservés.
+- **Résultat** : MAKECOM_API_KEY entièrement supprimé sans impact fonctionnel. Architecture unifiée autour de WEBHOOK_URL + PHP handler pour les scénarios recadrage.
+- **Fichiers supprimés** : routes/api_make.py, email_processing/webhook_sender.py, tests/test_email_processing_e2e.py, tests/test_email_processing_orchestrator_extra.py, tests/test_email_processing_orchestrator_helpers.py, tests/test_app_render_more.py.
+- **Fichiers modifiés** : config/settings.py, app_render.py, services/config_service.py, email_processing/orchestrator.py, routes/__init__.py, routes/api_admin.py, docs/configuration/configuration.md, tests/test_settings_required_env.py, tests/routes/test_api_ingress.py.
+- **Statut** : Terminé avec succès, architecture simplifiée et tests validés.
+
+[2026-02-04 23:59:00] - Implémentation Gmail Push Toggle avec Debug Logging Complété
+- **Objectif** : Implémenter un toggle dans le dashboard pour activer/désactiver l'ingestion Gmail Push, avec persistance Redis-first et logging complet pour faciliter le debug.
+- **Actions réalisées** :
+  1. **Backend Runtime Flag** : Extension de RuntimeFlagsService pour supporter la persistance Redis-first via app_config_store, ajout du flag `gmail_ingress_enabled` avec défaut `True` dans app_render.py.
+  2. **API Endpoint Protection** : Modification de `/api/ingress/gmail` pour vérifier le flag et retourner HTTP 409 quand désactivé, avec logging détaillé des données Redis pour debug.
+  3. **Dashboard UI Toggle** : Ajout du toggle dans dashboard.html (onglet Outils) avec wiring complet dans static/dashboard.js utilisant les patterns existants (ApiService, MessageHelper).
+  4. **Google Apps Script Safety** : Adaptation de scripts/google_script.js pour ne retirer le label Gmail que si tous les messages du thread sont traités avec HTTP 200, préservant le backlog quand désactivé.
+  5. **Test Coverage** : Ajout du test `test_ingress_gmail_runtime_flag_disabled` dans tests/routes/test_api_ingress.py pour valider le comportement 409.
+  6. **Debug Logging Enhancement** : Ajout de logging complet avec données Redis (runtime_flags, webhook_config, processing_prefs) quand le flag est désactivé, pour faciliter le diagnostic.
+  7. **Debug Script Support** : Mise à jour de scripts/check_config_store.py pour inclure `runtime_flags` dans les clés vérifiables, avec validation adaptée et file fallback.
+- **Validation** : Tests unitaires passants (10/10 runtime tests), debug logging fonctionnel, toggle UI opérationnel, Google Apps Script protégé contre la perte d'emails.
+- **Résultat** : Toggle Gmail Push entièrement fonctionnel avec persistance Redis, protection contre la perte d'emails, et debug logging complet pour faciliter le diagnostic en production.
+- **Fichiers modifiés** : services/runtime_flags_service.py (Redis persistence), app_render.py (flag + external_store), routes/api_config.py (API endpoints), routes/api_ingress.py (409 + debug logging), dashboard.html (toggle UI), static/dashboard.js (wiring), scripts/google_script.js (safety), scripts/check_config_store.py (debug support), tests/routes/test_api_ingress.py (test).
+- **Statut** : Implémentation terminée avec succès, toggle prêt pour production avec debug logging complet.
 
 [2026-02-04 23:59:00] - Documentation mise à jour via workflow /docs-updater
 - **Objectif** : Exécuter le workflow `/docs-updater` pour analyser la Memory Bank, inspecter le code source impacté et synchroniser toute la documentation avec les évolutions récentes du projet.

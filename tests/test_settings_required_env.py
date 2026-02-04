@@ -9,7 +9,6 @@ _REQUIRED_ENV = {
     "TRIGGER_PAGE_PASSWORD": "test-dashboard-password",
     "PROCESS_API_TOKEN": "test-process-api-token",
     "WEBHOOK_URL": "https://example.com/webhook",
-    "MAKECOM_API_KEY": "test-makecom-api-key",
 }
 
 
@@ -34,7 +33,6 @@ def test_settings_import_succeeds_when_required_env_present(monkeypatch):
         "TRIGGER_PAGE_PASSWORD",
         "PROCESS_API_TOKEN",
         "WEBHOOK_URL",
-        "MAKECOM_API_KEY",
     ],
 )
 def test_settings_import_raises_when_required_env_missing(monkeypatch, missing_env):

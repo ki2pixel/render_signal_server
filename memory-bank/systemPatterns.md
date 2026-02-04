@@ -138,7 +138,34 @@ Ce document recense les patrons de conception et les standards récurrents dans 
 - Découpage fetch/parse vs. logique de routing pour réduire la complexité cyclomatique.
 - Logs défensifs: messages concis, pas de contenu sensible, format %s, early-returns.
 
-## Moteur de Routage Dynamique (2026-01-25)
+## Gmail Push Toggle avec Debug Logging (2026-02-04)
+
+- **Toggle dynamique** : Implémentation d'un toggle dans le dashboard (onglet "Outils") pour activer/désactiver l'ingestion Gmail Push via le flag `gmail_ingress_enabled`.
+- **Persistance Redis-first** : Extension de RuntimeFlagsService pour supporter la persistance Redis via app_config_store, avec fallback fichier pour résilience.
+- **Protection API** : Modification de `/api/ingress/gmail` pour retourner HTTP 409 quand désactivé, empêchant le traitement tout en préservant les emails.
+- **Debug logging complet** : Logging détaillé des données Redis (runtime_flags, webhook_config, processing_prefs) quand le flag est désactivé pour faciliter le diagnostic.
+- **Google Apps Script Safety** : Adaptation pour ne retirer le label Gmail que si tous les messages du thread reçoivent HTTP 200, préservant le backlog quand désactivé.
+- **Test Coverage** : Ajout de tests unitaires pour valider le comportement 409 et la persistance Redis.
+- **Debug Script Support** : Mise à jour de `scripts/check_config_store.py` pour inclure `runtime_flags` dans les clés vérifiables.
+
+## Ingress Gmail Push Patterns (2026-02-04)
+
+- **Endpoint unique** : `POST /api/ingress/gmail` comme seul mécanisme d'ingestion, remplaçant complètement le polling IMAP.
+- **Authentification Bearer** : Validation via `AuthService.verify_api_key_from_request()` avec token `PROCESS_API_TOKEN`.
+- **Allowlist expéditeurs** : Validation `GMAIL_SENDER_ALLOWLIST` avec marquage automatique comme traité pour les expéditeurs non autorisés.
+- **Validation payload** : Champs requis (subject, sender, body, date) et génération `email_id` via MD5 pour déduplication.
+- **Fenêtres horaires** : Application des règles de temps via `webhook_time_window.is_within_global_time_window()`.
+- **Enrichissement R2** : Appel `_maybe_enrich_delivery_links_with_r2()` pour offload best-effort des liens Dropbox.
+- **Routing dynamique** : Évaluation des règles via `RoutingRulesService` avant envoi webhook par défaut.
+- **Déduplication Redis** : Vérification `is_email_id_processed_redis()` et marquage `mark_email_id_as_processed_redis()`.
+- **Logging structuré** : Logs `INGRESS:*` avec masquage PII et métadonnées complètes pour debug.
+
+## Tâches d'arrière-plan (Poller IMAP) - LEGACY
+
+-   **Singleton inter-processus pour le poller** : Le thread `background_email_poller()` ne doit s'exécuter qu'une seule fois par machine/cluster d'app. On applique un verrou fichier via `fcntl` et on exige `ENABLE_BACKGROUND_TASKS=1|true|yes` pour le démarrer. Le lockfile par défaut est `/tmp/render_signal_server_email_poller.lock` et peut être surchargé par `BG_POLLER_LOCK_FILE`.
+    - Avantages: évite les multi-instances en environnement Gunicorn multi-workers, réduit les risques d'OOM/timeouts, clarifie l'intention opératoire.
+    - Bonnes pratiques: activer le poller sur un seul process (ou service dédié), garder les autres workers sans poller.
+    - **STATUT** : Non utilisé depuis la migration Gmail Push (2026-02-04), conservé pour référence historique.
 
 - **Service Redis-first** : `RoutingRulesService` (singleton, cache TTL 30s) avec validation stricte et normalisation des URLs webhook.
 - **Pattern d'évaluation séquentielle** : Les règles sont évaluées dans l'ordre, la première correspondance est utilisée, support du flag `stop_processing`.

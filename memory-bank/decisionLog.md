@@ -7,6 +7,20 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 
 ## Décisions 2026
 
+[2026-02-04 23:59:00] - **Implémentation Gmail Push Toggle avec Debug Logging**
+- **Décision** : Implémenter un toggle dans le dashboard pour activer/désactiver l'ingestion Gmail Push, avec persistance Redis-first et logging complet pour faciliter le debug.
+- **Raisonnement** : Le Google Apps Script s'exécute toutes les minutes et ne peut pas être arrêté manuellement. Un toggle côté serveur permet de contrôler l'ingestion sans perdre d'emails, avec persistance Redis pour survivre aux redéploiements et logging complet pour faciliter le diagnostic en production.
+- **Implémentation** :
+  1. **RuntimeFlagsService étendu** : Support de la persistance Redis-first via app_config_store, ajout du flag `gmail_ingress_enabled` avec défaut `True`.
+  2. **API Endpoint protection** : Modification de `/api/ingress/gmail` pour retourner HTTP 409 quand désactivé, avec logging détaillé des données Redis (runtime_flags, webhook_config, processing_prefs).
+  3. **Dashboard UI** : Toggle dans l'onglet "Outils" avec wiring complet via ApiService/MessageHelper, respectant les patterns existants.
+  4. **Google Apps Script Safety** : Adaptation pour ne retirer le label Gmail que si tous les messages du thread reçoivent HTTP 200, préservant le backlog quand désactivé.
+  5. **Test Coverage** : Ajout de `test_ingress_gmail_runtime_flag_disabled` pour valider le comportement 409.
+  6. **Debug Script Support** : Mise à jour de `scripts/check_config_store.py` pour inclure `runtime_flags` dans les clés vérifiables.
+- **Alternatives considérées** : Désactiver le script Apps Script (rejeté, pas possible); utiliser uniquement des variables d'environnement (rejeté, pas dynamique); stockage fichier uniquement (rejeté, pas persistant aux redéploiements).
+- **Impact** : Toggle Gmail Push entièrement fonctionnel avec persistance Redis, protection contre la perte d'emails, et debug logging complet. Prêt pour production.
+- **Statut** : Implémentation terminée avec succès.
+
 [2026-02-04 23:59:00] - **Phase 7 IMAP Polling Retirement - Validation et Préparation au Déploiement**
 - **Décision** : Finaliser la phase 7 du plan de retraite IMAP en exécutant les validations finales et préparant le déploiement.
 - **Raisonnement** : Après les phases 1-6 qui avaient retiré tout le code backend, frontend, les tests et la documentation, il restait à valider que le système Gmail Push est fonctionnel et prêt pour la production. Une validation complète des tests, de la configuration et des procédures de rollback était nécessaire.

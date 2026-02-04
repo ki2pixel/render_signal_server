@@ -54,7 +54,6 @@ Les 5 variables suivantes sont requises avec `ValueError` au démarrage si manqu
 | `TRIGGER_PAGE_PASSWORD` | Mot de passe dashboard (anciennement `DASHBOARD_PASSWORD`) |
 | `PROCESS_API_TOKEN` | Token pour API de traitement (Gmail Push ingress) |
 | `WEBHOOK_URL` | URL webhook sortant |
-| `MAKECOM_API_KEY` | Clé API Make.com |
 
 **Mécanisme** : `_get_required_env()` trace la clé absente dans les logs puis lève `ValueError`. Les tests `tests/test_settings_required_env.py` couvrent les scénarios succès/échec.
 
@@ -136,12 +135,8 @@ L'application refuse de démarrer si les variables suivantes ne sont pas défini
 
 - `FLASK_SECRET_KEY` – Clé secrète Flask pour sessions et signatures
 - `TRIGGER_PAGE_PASSWORD` – Mot de passe du dashboard
-- `EMAIL_ADDRESS` – Adresse email IMAP
-- `EMAIL_PASSWORD` – Mot de passe IMAP
-- `IMAP_SERVER` – Serveur IMAP
 - `PROCESS_API_TOKEN` – Token API pour les appels externes
 - `WEBHOOK_URL` – URL du webhook personnalisé
-- `MAKECOM_API_KEY` – Clé API Make.com
 
 Ces variables sont validées par la fonction `_get_required_env()` dans `config/settings.py` qui lève un `ValueError` explicite si une variable est manquante. Exemple d'erreur :
 
@@ -264,7 +259,6 @@ Pour plus de détails sur la configuration avancée, consultez le fichier `deplo
 ### Contrôle d'exécution des tâches de fond (sécurité opérationnelle)
 - `ENABLE_BACKGROUND_TASKS` (`true|false`) – doit être `true` pour démarrer `background_email_poller()`. Laissez `false` sur les workers secondaires.
 - `BG_POLLER_LOCK_FILE` (chemin) – fichier de verrou pour assurer un singleton inter-processus (défaut: `/tmp/render_signal_server_email_poller.lock`).
- - Watcher Make (optionnel) – ne démarre que si `ENABLE_BACKGROUND_TASKS=true` ET `MAKECOM_API_KEY` est défini (réduction du bruit 401 en absence de clé).
 
 ## Webhooks
 - `DEBUG_EMAIL` – active le mode débogage pour les e-mails (pas d'envoi réel)
