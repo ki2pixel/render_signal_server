@@ -3,10 +3,15 @@ function processWebhookTransfer() {
   // L'URL de votre route "Ingress" créée à l'étape précédente en Python
   const SERVER_URL = "https://render-signal-server-latest.onrender.com/api/ingress/gmail";
   // Le token défini dans votre fichier settings.py (PROCESS_API_TOKEN)
-  const API_TOKEN = "rnd_PW5cGYVf4gl3limu9cYkFw27u8dY";
+  const API_TOKEN = PropertiesService.getScriptProperties().getProperty("PROCESS_API_TOKEN") || "";
   // Le nom exact du libellé créé dans Gmail
   const LABEL_NAME = "A_TRANSFERER_WEBHOOK";
   // ---------------------
+
+  if (!API_TOKEN) {
+    console.log("PROCESS_API_TOKEN manquant dans les Script Properties.");
+    return;
+  }
 
   const label = GmailApp.getUserLabelByName(LABEL_NAME);
   
