@@ -154,6 +154,26 @@ function pushEmailToIngress(subject, sender, body, date) {
 - Si `R2_FETCH_ENABLED=true`, les liens Dropbox/FromSmash/SwissTransfer sont offloadés vers R2.
 - Le payload webhook inclut les paires `source_url`/`r2_url` et `original_filename`.
 
+#### Helper `_maybe_enrich_delivery_links_with_r2`
+
+- **Localisation** : `routes/api_ingress.py` avant l'appel à `send_custom_webhook_flow()`.
+- **Pipeline** :
+  1. Vérifie que `R2TransferService` est disponible et activé (`R2_FETCH_ENABLED=true` + endpoint configuré).
+  2. Normalise chaque `raw_url` et garantit un `direct_url` fallback avant tout offload.
+  3. Adapte le timeout remote fetch en fonction du provider (15s par défaut, 120s pour Dropbox `/scl/fo/`).
+  4. Enrichit chaque entrée avec `r2_url`/`original_filename` lorsqu'un tuple `(url, filename)` est retourné.
+  5. Persiste la paire via `R2TransferService.persist_link_pair()` pour que le backend PHP puisse la logger.
+
+- **Résilience** :
+  - Tous les appels sont best-effort : exception → warning + continuité du flux (webhook envoyé avec URLs sources).
+  - Les logs `R2_TRANSFER` sont produits même côté ingress pour suivre les succès/échecs Gmail.
+  - Les timeouts/fallbacks sont alignés sur l'orchestrateur IMAP afin de conserver un comportement homogène entre polling et push.
+
+- **Tests associés** :
+  - `test_ingress_gmail_enriches_delivery_links_with_r2_when_enabled`
+  - `test_ingress_gmail_r2_errors_do_not_block_send`
+  Ces tests valident que l'enrichissement est présent lorsqu'il réussit et que l'envoi webhook n'est jamais bloqué lorsque le Worker R2 échoue.
+
 ---
 
 ## Sécurité

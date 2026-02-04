@@ -23,6 +23,17 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-02-04 18:30:00] - Ajout Offload R2 dans le flux Gmail Push (/api/ingress/gmail)
+- **Objectif** : Enrichir delivery_links avec r2_url dans le flux Gmail Push pour que le webhook PHP puisse logger les paires R2 (source_url/r2_url) au lieu de seulement les URLs Dropbox legacy.
+- **Actions réalisées** :
+  1. **routes/api_ingress.py** : Ajout de la fonction `_maybe_enrich_delivery_links_with_r2()` qui tente l'offload R2 best-effort sur chaque lien provider trouvé, enrichit l'item avec r2_url/original_filename si succès, et persiste la paire via `persist_link_pair()`. Log `R2_TRANSFER: Successfully transferred <provider> link to R2 for email <email_id>` en cas de succès.
+  2. **Import testable** : Import de R2TransferService au niveau module avec fallback à None pour permettre le monkeypatch dans les tests.
+  3. **Tests** : Ajout de 2 tests dans `tests/routes/test_api_ingress.py` : un cas où R2 est activé et enrichit delivery_links avec r2_url; un cas où R2 échoue et le webhook part quand même sans r2_url.
+  4. **Intégration** : Appel de `_maybe_enrich_delivery_links_with_r2()` juste après extraction des liens et avant construction du payload webhook.
+- **Résultat** : Le flux Gmail Push inclut désormais les paires R2 dans delivery_links quand le service est activé, permettant au PHP de logger les deux formats (legacy + R2). Les erreurs R2 ne bloquent pas l'envoi webhook.
+- **Fichiers modifiés** : `routes/api_ingress.py` (enrichissement R2 + logs), `tests/routes/test_api_ingress.py` (tests unitaires).
+- **Statut** : Terminé avec succès, prêt pour déploiement et validation en production.
+
 [2026-02-04 14:30:00] - Suppression section "📊 Monitoring & Métriques (24h)" du dashboard
 - **Objectif** : Supprimer la section monitoring de l'onglet "Vue d'ensemble" selon la demande utilisateur.
 - **Actions réalisées** :

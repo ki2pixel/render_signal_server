@@ -13,10 +13,97 @@ from services import AuthService, ConfigService
 from utils.text_helpers import mask_sensitive_data
 from utils.time_helpers import is_within_time_window_local, parse_time_hhmm
 
+try:
+    from services import R2TransferService
+except Exception:
+    R2TransferService = None
+
 bp = Blueprint("api_ingress", __name__, url_prefix="/api/ingress")
 
 _config_service = ConfigService()
 _auth_service = AuthService(_config_service)
+
+
+def _maybe_enrich_delivery_links_with_r2(
+    *, delivery_links: list, email_id: str, logger
+) -> None:
+    if not delivery_links:
+        return
+
+    try:
+        if R2TransferService is None:
+            return
+
+        r2_service = R2TransferService.get_instance()
+        if not r2_service.is_enabled():
+            return
+    except Exception:
+        return
+
+    for item in delivery_links:
+        if not isinstance(item, dict):
+            continue
+
+        raw_url = item.get("raw_url")
+        provider = item.get("provider")
+        if not isinstance(raw_url, str) or not raw_url.strip():
+            continue
+        if not isinstance(provider, str) or not provider.strip():
+            continue
+
+        if not isinstance(item.get("direct_url"), str) or not item.get("direct_url"):
+            item["direct_url"] = raw_url
+
+        try:
+            normalized_source_url = r2_service.normalize_source_url(raw_url, provider)
+        except Exception:
+            normalized_source_url = raw_url
+
+        remote_fetch_timeout = 15
+        try:
+            if provider == "dropbox" and "/scl/fo/" in normalized_source_url.lower():
+                remote_fetch_timeout = 120
+        except Exception:
+            remote_fetch_timeout = 15
+
+        try:
+            r2_url, original_filename = r2_service.request_remote_fetch(
+                source_url=normalized_source_url,
+                provider=provider,
+                email_id=email_id,
+                timeout=remote_fetch_timeout,
+            )
+        except Exception:
+            continue
+
+        if not isinstance(r2_url, str) or not r2_url.strip():
+            continue
+
+        item["r2_url"] = r2_url
+        if isinstance(original_filename, str) and original_filename.strip():
+            item["original_filename"] = original_filename.strip()
+
+        try:
+            logger.info(
+                "R2_TRANSFER: Successfully transferred %s link to R2 for email %s",
+                provider,
+                email_id,
+            )
+        except Exception:
+            pass
+
+        try:
+            r2_service.persist_link_pair(
+                source_url=normalized_source_url,
+                r2_url=r2_url,
+                provider=provider,
+                original_filename=(original_filename if isinstance(original_filename, str) else None),
+            )
+        except Exception as ex:
+            try:
+                logger.debug("R2_TRANSFER: persist_link_pair failed for email %s: %s", email_id, ex)
+            except Exception:
+                pass
 
 
 def _compute_email_id(*, subject: str, sender: str, date: str) -> str:
@@ -198,6 +285,15 @@ def ingest_gmail():
         start_payload_val = None
 
     delivery_links = link_extraction.extract_provider_links_from_text(body)
+
+    try:
+        _maybe_enrich_delivery_links_with_r2(
+            delivery_links=delivery_links or [],
+            email_id=email_id,
+            logger=current_app.logger,
+        )
+    except Exception:
+        pass
 
     payload_for_webhook = {
         "microsoft_graph_email_id": email_id,
