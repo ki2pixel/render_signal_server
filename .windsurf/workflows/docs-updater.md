@@ -79,3 +79,17 @@ Générer un plan de modification avant d'appliquer :
 1.  **Exécution** : Après validation, utiliser `apply_patch` ou `multi_edit`.
 2.  **Mise à jour Memory Bank** :
     - Si une logique critique est découverte, l'ajouter dans `systemPatterns.md`.
+
+### Sous-protocole Rédaction — Application de documentation/SKILL.md
+
+1. **Point d'entrée** : Après validation du plan (Étape 4), charger `.windsurf/skills/documentation/SKILL.md` via `read_file`.
+2. **Modèle à appliquer** : Identifier le modèle (article deep-dive, README, note technique) préconisé par le skill et l'indiquer dans le plan.
+3. **Checkpoints obligatoires** :
+   - TL;DR présent (section 1 du skill)
+   - Problem-first opening (section 2)
+   - Bloc ❌/✅ le cas échéant (section 4)
+   - Trade-offs table si comparaison (section 7)
+   - Golden Rule / principe clé en conclusion (section 8)
+   - Checklist « Avoiding AI-Generated Feel » appliquée
+4. **Traçabilité** : Ajouter dans la proposition de mise à jour la mention « Guidé par documentation/SKILL.md — [sections appliquées] ».
+5. **Validation finale** : Vérifier la ponctuation (remplacer " - " par ;/:/—) avant de clôturer la tâche.

@@ -36,7 +36,7 @@ Utilise ce skill lorsqu'une tâche touche :
    - Lancer le helper `./.windsurf/skills/r2-transfer-service-playbook/test_r2_worker.sh`.
    - Compléter si besoin avec des tests ciblés sur les nouvelles sources.
 6. **Documentation & Memory Bank**
-   - Mettre à jour `docs/r2_offload.md` ou `docs/r2_dropbox_limitations.md`.
+   - Mettre à jour `docs/processing/file-offload.md` ou section dédiée R2.
    - Ajouter une entrée dans la Memory Bank si de nouvelles sources sont supportées.
 
 ## Ressources

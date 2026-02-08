@@ -20,7 +20,7 @@ Skill à invoquer pour exécuter une mise à jour documentaire complète selon l
    - Lancer le helper `./.windsurf/skills/docs-sync-automaton/run_docs_audit.sh`.
    - Noter les modules modifiés pour guider les docs.
 3. **Plan Docs**
-   - Associer chaque changement à un fichier dans `docs/` (architecture, features, operations, quality, etc.) ou README.
+   - Associer chaque changement à un fichier dans `docs/` (access/, core/, ingestion/, ops/, processing/) ou README.
    - Prévoir les sections à mettre à jour (tables de services, workflows, API, UX, etc.).
 4. **Écriture**
    - Utiliser un ton descriptif, mentionner les dates si pertinent.
@@ -36,5 +36,6 @@ Skill à invoquer pour exécuter une mise à jour documentaire complète selon l
 
 ## Conseils
 - Toujours citer les fichiers modifiés dans le récap final.
-- Pour les guides longs, déplacer les détails dans `docs/features/*` et résumer dans `docs/README.md`.
+- Pour les guides longs, déplacer les détails dans `docs/processing/*` ou `docs/ops/*` et résumer dans `docs/README.md`.
 - Synchroniser les captures JSON/ENV si de nouvelles variables sont introduites.
+- La nouvelle structure docs utilise 5 dossiers : access/ (auth, UI), core/ (architecture, config), ingestion/ (gmail push, legacy IMAP), ops/ (déploiement, monitoring, dépannage), processing/ (offload R2, routing, webhooks).

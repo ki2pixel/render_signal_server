@@ -31,7 +31,7 @@ Utilise ce skill pour modifier ou étendre le moteur de routage dynamique introd
    - Lancer le helper `./.windsurf/skills/routing-rules-orchestrator/test_routing_rules.sh`.
    - Compléter si besoin avec des tests ciblés sur les nouvelles fonctionnalités.
 7. **Documentation**
-   - Documenter toute nouvelle action/condition dans `docs/features/routing_rules_engine.md`.
+   - Documenter toute nouvelle action/condition dans `docs/processing/routing-engine.md`.
    - Mettre à jour la Memory Bank si des décisions architecturales sont prises.
 
 ## Ressources

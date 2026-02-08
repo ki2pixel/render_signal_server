@@ -37,7 +37,7 @@ description: Manage MagicLinkService changes across backend, storage (Redis/exte
    - Ajouter tests API (`tests/routes/test_api_auth_magic_link.py` si présent) pour les nouveaux paramètres.
    - QA manuelle : génération one-shot, permanent, révocation.
 6. **Documentation & Memory Bank**
-   - Mettre à jour `docs/auth/magic_link.md` ou section correspondante.
+   - Mettre à jour `docs/access/authentication.md` (section Magic Links) ou section correspondante.
    - Consigner toute nouvelle option de sécurité dans la Memory Bank.
 7. **Revocation (urgence)**
    - Utiliser le helper `./.windsurf/skills/magic-link-auth-companion/revoke_magic_links.py` pour révoquer en masse ou individuellement.

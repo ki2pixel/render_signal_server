@@ -13,10 +13,10 @@ else
 fi
 
 echo "[info] Inspecting Redis configs"
-python -m scripts.check_config_store --keys magic_link_tokens routing_rules processing_prefs webhook_config --raw
+python -m scripts.check_config_store --keys magic_link_tokens routing_rules processing_prefs webhook_config runtime_flags --raw
 
 echo "\n[info] Comparing with debug/*.json fallbacks"
-for key in magic_link_tokens routing_rules processing_prefs webhook_config; do
+for key in magic_link_tokens routing_rules processing_prefs webhook_config runtime_flags; do
   echo "--- $key ---"
   if [ -f "debug/${key}.json" ]; then
     diff -u "debug/${key}.json" <(python -c "import json, sys; from config import app_config_store; print(json.dumps(app_config_store.get_config_json('$key'), indent=2))") || true

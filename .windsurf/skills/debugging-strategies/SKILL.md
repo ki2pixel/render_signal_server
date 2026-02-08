@@ -525,3 +525,21 @@ afterEach(() => {
 - **assets/debugging-checklist.md**: Quick reference checklist
 - **assets/common-bugs.md**: Common bug patterns
 - **scripts/debug-helper.ts**: Debugging utility functions
+
+## Note on Documentation Paths
+
+When referencing documentation in this project, use the current structure:
+- `docs/access/` - Authentication and UI documentation  
+- `docs/core/` - Architecture and configuration reference
+- `docs/ingestion/` - Email ingestion (Gmail Push only, IMAP retired)
+- `docs/ops/` - Deployment, monitoring, and troubleshooting
+- `docs/processing/` - File offload, routing engine, and outbound webhooks
+
+**Current active paths:**
+- `docs/features/` → **DEPRECATED** (moved to `docs/processing/` and `docs/ingestion/`)
+- `docs/v2/` → **DEPRECATED** (consolidated into main structure)
+
+**Key references for debugging:**
+- `docs/operations/depannage.md` - Production troubleshooting
+- `docs/quality/testing.md` - Test suite structure and coverage
+- `docs/complexity_hotspots.md` - Performance bottleneck identification
