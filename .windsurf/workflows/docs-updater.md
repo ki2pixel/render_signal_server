@@ -38,7 +38,7 @@ Comparer les sources pour détecter les incohérences :
 | **Réalité** | Le "Quoi" & "Comment" | `radon` (complexité), `cloc` (volume), `code_search` |
 | **Existant** | L'état actuel | `find_by_name` (sur `docs/`), `read_file` |
 
-**Action** : Identifier les divergences. Ex: "Le module `deduplication` contient une logique Redis complexe (Lock) non documentée dans `docs/features`."
+**Action** : Identifier les divergences. Ex: "Le module `deduplication` contient une logique Redis complexe (Lock) non documentée dans `docs/processing`."
 
 ## Étape 3 — Sélection du Standard de Rédaction
 Choisir le modèle approprié selon le dossier ciblé :
@@ -66,7 +66,7 @@ Générer un plan de modification avant d'appliquer :
 - **Métriques** : Complexité (B), Dépendance forte aux Regex.
 
 ### Modifications Proposées
-#### 📄 docs/features/email-processing.md
+#### 📄 docs/ingestion/gmail-push.md
 - **Type** : [Logic/Algo]
 - **Manque** : Les patterns Regex exacts ne sont pas listés.
 - **Correction** :

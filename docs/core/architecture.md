@@ -256,9 +256,30 @@ def upload_to_r2(self, source_url):
 |-----------|------------------|---------------|
 | `orchestrator.py::check_new_emails_and_trigger_webhook` | F (239) | Extraire les solos Media Solution/DESABO |
 | `api_ingress.py::ingest_gmail` | F (85) | Découper par helpers (validation, fenêtre, R2) |
-| `r2_transfer_service.py::normalize_source_url` | E (31) | Stratégie par fournisseur |
+| `email_processing/orchestrator.py::send_custom_webhook_flow` | E (22) | Isoler la logique de routing et enrichissement |
+| `preferences/processing_prefs.py::validate_processing_prefs` | E (22) | Simplifier la validation par schéma |
+| `services/routing_rules_service.py::_normalize_rules` | D (17) | Extraire la normalisation des URLs |
+| `services/r2_transfer_service.py::normalize_source_url` | E (31) | Stratégie par fournisseur |
+| `services/webhook_config_service.py::update_config` | C (18) | Nettoyage de la logique de cache |
+| `services/magic_link_service.py::consume_token` | C (18) | Simplifier la validation HMAC |
+
+**Moyenne actuelle** : D (25.44) sur 43 blocs analysés
 
 **La règle** : aucun solo ne doit dépasser 40 lignes logiques. Si c'est le cas, on extrait.
+
+### ❌ Pourquoi ces hotspots sont critiques
+
+Les fonctions F/E concentrent la logique métier et les points de défaillance :
+
+- **`ingest_gmail (F)`** : Endpoint unique qui gère auth, validation, routing, R2, et envoi webhook. Une erreur ici bloque toute l'ingestion.
+- **`send_custom_webhook_flow (E)`** : Orchestrateur qui mélange pattern matching, routing, et construction payload. Difficile à tester unitairement.
+- **`validate_processing_prefs (E)`** : Validation monolithique qui mélange schéma et logique métier.
+
+### ✅ Stratégie de refactoring en cours
+
+1. **Extraction des helpers** : `ingest_gmail` → `validate_payload()`, `check_time_window()`, `enrich_links_r2()`
+2. **Isolation des responsabilités** : `send_custom_webhook_flow` → `PatternMatcher`, `RoutingEvaluator`, `PayloadBuilder`
+3. **Validation par schéma** : Remplacer `validate_processing_prefs` par Pydantic models
 
 ---
 

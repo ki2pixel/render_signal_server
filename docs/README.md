@@ -357,8 +357,8 @@ ENABLE_BACKGROUND_TASKS=false  # Un seul conteneur actif
 
 ### Couverture de tests
 
-- **Tests unitaires** : 418/431 passants (97%)
-- **Couverture code** : 70.12% (objectif : 80%+)
+- **Tests unitaires** : 356/356 passants (100%)
+- **Couverture code** : 67.73% (objectif : 80%+)
 - **Tests résilience** : Marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`/`@pytest.mark.resilience`
 
 ### Tests de résilience
@@ -391,10 +391,15 @@ def test_r2_fallback_on_worker_failure():
 
 ### Documentation complète
 
-- **Guide d'installation** : `docs/v2/ops/deployment.md`
-- **Guide de dépannage** : `docs/v2/ops/troubleshooting.md`
-- **Référence API** : `docs/v2/core/configuration-reference.md`
-- **Architecture** : `docs/v2/core/architecture.md`
+- **Guide d'installation** : `docs/ops/deployment.md`
+- **Guide de dépannage** : `docs/ops/troubleshooting.md`
+- **Référence API** : `docs/core/configuration-reference.md`
+- **Architecture** : `docs/core/architecture.md`
+- **Ingestion Gmail Push** : `docs/ingestion/gmail-push.md`
+- **Routing dynamique** : `docs/processing/routing-engine.md`
+- **Offload R2** : `docs/processing/file-offload.md`
+- **Authentification** : `docs/access/authentication.md`
+- **Dashboard UI** : `docs/access/dashboard-ui.md`
 
 ### Communauté
 
