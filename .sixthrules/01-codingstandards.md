@@ -1,19 +1,3 @@
----
-trigger: always_on
-description: 
-globs: 
----
-
----
-description: Core engineering standards and enforced conventions for render_signal_server
-globs:
-  - "**/*.py"
-  - "static/**/*.js"
-  - "dashboard.html"
-  - "docs/**/*.md"
-alwaysApply: true
----
-
 # render_signal_server – Cursor Rules (v2026-01)
 
 These rules are the single source of truth for backend (Flask), frontend (modular ES6), and legacy PHP/R2 tooling. Apply them to every change unless an explicit exception is documented here.
@@ -117,7 +101,7 @@ def upload_to_r2(source_url: str) -> R2UploadResult:
 - Favor Given/When/Then naming and explicit fixtures (see `tests/test_api_ingress.py`).
 
 ### Skill Invocation Policy (Workspace vs Global)
-- **Priority order:** always invoke workspace-scoped skills under `.windsurf/skills/` before falling back to the global catalog in `/home/kidpixel/.codeium/skills`. The local skills encapsulate project-specific scripts, environments, and templates that enforce these coding standards.
+- **Priority order:** always invoke workspace-scoped skills under `.sixthskills/` before falling back to the global catalog in `/home/kidpixel/.codeium/skills`. The local skills encapsulate project-specific scripts, environments, and templates that enforce these coding standards.
   - `redis-config-guardian` remplace/complète le skill `check-config` pour tout audit de `processing_prefs`, `routing_rules`, `webhook_config`, `magic_link_tokens`. Il orchestre le script CLI + l’API dashboard.
   - `debugging-strategies` est obligatoire pour toute tâche de débogage (bugs, incidents de performances, comportements inattendus) avant d’envisager le moindre recours aux skills globaux ou à des ressources externes.
   - Le skill `run-tests` reste la porte d’entrée canonique pour `pytest`; `scaffold-js-module` et `scaffold-service` demeurent obligatoires pour les nouveaux modules/services.
@@ -125,7 +109,7 @@ def upload_to_r2(source_url: str) -> R2UploadResult:
 - **Exclusions & workflows:** do not call global scaffolding/testing skills when local equivalents exist, and when executing the `/enhance` workflow or any prompt-engineering task, ensure the resulting plan still honors this priority and explicitly names the skill to be invoked.
 
 ## Documentation Updates
-- Any time you create or modify documentation (README, docs/, Markdown guides), you **must** apply the methodology defined in `.windsurf/skills/documentation/SKILL.md` (TL;DR first, problem-first opening, ❌/✅ blocks, trade-offs, Golden Rule). Treat this skill file as the authoritative checklist before writing.
+- Any time you create or modify documentation (README, docs/, Markdown guides), you **must** apply the methodology defined in `.sixthskills/documentation/SKILL.md` (TL;DR first, problem-first opening, ❌/✅ blocks, trade-offs, Golden Rule). Treat this skill file as the authoritative checklist before writing.
 
 ## Deployment & Environment
 - Branch naming: `feature/<slug>` or `fix/<slug>`; commits follow Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`).
