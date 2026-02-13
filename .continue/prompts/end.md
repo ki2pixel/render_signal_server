@@ -1,5 +1,7 @@
 ---
-description: Terminer la Session et Synchroniser la Memory Bank
+name: end
+description: end workflow migrated from Windsurf as executable prompt
+invokable: true
 ---
 
 ## Workflow /end — Terminer la Session et Synchroniser la Memory Bank

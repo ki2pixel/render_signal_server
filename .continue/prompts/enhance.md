@@ -1,9 +1,7 @@
 ---
-description: Améliorer un Prompt avec le Contexte du Projet, Techniques Avancées et Skills Spécialisés
----
-
----
-description: Améliorer un Prompt avec le Contexte du Projet, Techniques Avancées et Skills Spécialisés
+name: enhance
+description: enhance workflow migrated from Windsurf as executable prompt
+invokable: true
 ---
 
 ### `/enhance` — Optimisation Avancée de Prompt
@@ -11,16 +9,16 @@ description: Améliorer un Prompt avec le Contexte du Projet, Techniques Avancé
    - Lire la requête brute de l'utilisateur.
    - Charger le contexte global via `read_text_file` sur les fichiers de la Memory Bank (`activeContext.md`, `progress.md`, `systemPatterns.md`, etc.).
    - **Détection de Skill** : Analyser la nature de la tâche :
-     - Si **Debugging** (bug, crash, erreur, performance) : Charger immédiatement `.windsurf/skills/debugging-strategies/SKILL.md`.
+     - Si **Debugging** (bug, crash, erreur, performance) : Charger immédiatement `.continue/rules/codingstandards.md`.
      - Si **Architecture** :
-       - Identifier le sous-domaine touché et ouvrir le/les `SKILL.md` correspondants (ex: `scaffold-service` pour un nouveau service backend, `routing-rules-orchestrator` pour le moteur de routage, `architecture-tools` si aucune spécialisation locale ne couvre le sujet).
+       - Identifier le sous-domaine touché et ouvrir le/les `.md` correspondants (ex: `scaffold-service` pour un nouveau service backend, `routing-rules-orchestrator` pour le moteur de routage, `architecture-tools` si aucune spécialisation locale ne couvre le sujet).
        - En parallèle, chercher les docs d'architecture pertinentes.
      - Si **Feature** :
        - Sélectionner les SKILLs workspace alignés avec la surface fonctionnelle (ex: `webhook-dashboard-ux-maintainer` pour le dashboard, `magic-link-auth-companion` pour l'auth, `redis-config-guardian` pour les configs Redis) en utilisant `read_text_file` pour charger leurs instructions.
        - Chercher les specs fonctionnelles associées.
 
 2. **Recherche Active de Documentation**
-   - Identifier les règles spécifiques au projet via `search` ou `advanced-search` dans `docs/` et `.windsurf/rules/codingstandards.md`.
+   - Identifier les règles spécifiques au projet via `search` ou `advanced-search` dans `docs/` et `.continue/rules/codingstandards.md`.
    - Utiliser `read_text_file` sur les documents pertinents trouvés.
    - Si mode **Debugging** activé : Vérifier via `search` ou `advanced-search` si les outils mentionnés dans le Skill (ex: configurations de log, profileurs) sont déjà présents dans le code source pour les inclure dans le contexte.
 

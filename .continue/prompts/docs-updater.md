@@ -1,9 +1,7 @@
 ---
-description: Analyse la Memory Bank, inspecte le code source impacté, et met à jour TOUTE la documentation associée.
----
-
----
-description: Docs Updater (Standard Tools: Cloc/Radon + Quality Context)
+name: docs-updater
+description: docs-updater workflow migrated from Windsurf as executable prompt
+invokable: true
 ---
 
 # Workflow: Docs Updater — Standardized & Metric-Driven
@@ -73,7 +71,6 @@ Générer un plan de modification avant d'appliquer :
   ```markdown
   [Ajout de la table de correspondance Regex -> Service]
   ```
-```
 
 ## Étape 5 — Application et Finalisation
 1.  **Exécution** : Après validation, utiliser `edit_file` ou `multi_edit`.
@@ -82,7 +79,7 @@ Générer un plan de modification avant d'appliquer :
 
 ### Sous-protocole Rédaction — Application de documentation/SKILL.md
 
-1. **Point d'entrée** : Après validation du plan (Étape 4), charger `.windsurf/skills/documentation/SKILL.md` via `read_text_file`.
+1. **Point d'entrée** : Après validation du plan (Étape 4), charger `.continue/rules/documentation.md` via `read_text_file`.
 2. **Modèle à appliquer** : Identifier le modèle (article deep-dive, README, note technique) préconisé par le skill et l'indiquer dans le plan.
 3. **Checkpoints obligatoires** :
    - TL;DR présent (section 1 du skill)
@@ -91,5 +88,5 @@ Générer un plan de modification avant d'appliquer :
    - Trade-offs table si comparaison (section 7)
    - Golden Rule / principe clé en conclusion (section 8)
    - Checklist « Avoiding AI-Generated Feel » appliquée
-4. **Traçabilité** : Ajouter dans la proposition de mise à jour la mention « Guidé par documentation/SKILL.md — [sections appliquées] ».
+4. **Traçabilité** : Ajouter dans la proposition de mise à jour la mention « Guidé par documentation.md — [sections appliquées] ».
 5. **Validation finale** : Vérifier la ponctuation (remplacer " - " par ;/:/—) avant de clôturer la tâche.
