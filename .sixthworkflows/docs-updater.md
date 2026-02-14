@@ -12,7 +12,7 @@ description: Docs Updater (Standard Tools: Cloc/Radon + Quality Context)
 
 ## 🚨 Protocoles Critiques
 1.  **Outils autorisés** : L'usage de `run_command` est **strictement limité** aux commandes d'audit : `tree`, `cloc`, `radon`, `ls`.
-2.  **Contexte** : Charger la Memory Bank (`productContext.md`, `systemPatterns.md`, `activeContext.md`, `progress.md`) via `read_file` avant toute action.
+2.  **Contexte** : Charger la Memory Bank (`productContext.md`, `systemPatterns.md`, `activeContext.md`, `progress.md`) via `read_text_file` ou `read_multiple_files` avant toute action.
 3.  **Source de Vérité** : Le Code (analysé par outils) > La Documentation existante > La Mémoire.
 
 ## Étape 1 — Audit Structurel et Métrique
@@ -34,9 +34,9 @@ Comparer les sources pour détecter les incohérences :
 
 | Source | Rôle | Outil |
 | :--- | :--- | :--- |
-| **Intention** | Le "Pourquoi" | `read_file` (Memory Bank) |
-| **Réalité** | Le "Quoi" & "Comment" | `radon` (complexité), `cloc` (volume), `code_search` |
-| **Existant** | L'état actuel | `find_by_name` (sur `docs/`), `read_file` |
+| **Intention** | Le "Pourquoi" | `read_text_file` ou `read_multiple_files` (Memory Bank) |
+| **Réalité** | Le "Quoi" & "Comment" | `radon` (complexité), `cloc` (volume), `search` ou `advanced-search` |
+| **Existant** | L'état actuel | `search_files` (sur `docs/`), `read_text_file` |
 
 **Action** : Identifier les divergences. Ex: "Le module `deduplication` contient une logique Redis complexe (Lock) non documentée dans `docs/processing`."
 
@@ -76,13 +76,13 @@ Générer un plan de modification avant d'appliquer :
 ```
 
 ## Étape 5 — Application et Finalisation
-1.  **Exécution** : Après validation, utiliser `apply_patch` ou `multi_edit`.
+1.  **Exécution** : Après validation, utiliser `edit_file` ou `multi_edit`.
 2.  **Mise à jour Memory Bank** :
     - Si une logique critique est découverte, l'ajouter dans `systemPatterns.md`.
 
 ### Sous-protocole Rédaction — Application de documentation/SKILL.md
 
-1. **Point d'entrée** : Après validation du plan (Étape 4), charger `.sixthskills/documentation/SKILL.md` via `read_file`.
+1. **Point d'entrée** : Après validation du plan (Étape 4), charger `.sixthskills/documentation/SKILL.md` via `read_text_file`.
 2. **Modèle à appliquer** : Identifier le modèle (article deep-dive, README, note technique) préconisé par le skill et l'indiquer dans le plan.
 3. **Checkpoints obligatoires** :
    - TL;DR présent (section 1 du skill)

@@ -46,7 +46,7 @@ These rules are the single source of truth for backend (Flask), frontend (modula
 
 ## Architecture Decisions to Enforce
 ### Configuration & Secrets
-- Secrets (passwords, tokens) **must come from ENV**. `_get_required_env()` in `config/settings.py` enforces the five mandatory variables—do not bypass it.
+- Secrets (passwords, tokens) **must come from ENV**. `_get_required_env()` in `config/settings.py` enforces the four mandatory variables—do not bypass it.
 - Redis is the **source of truth** for `routing_rules`, `webhook_config`, `processing_prefs`, and `magic_link_tokens`. Any API or background logic must read via `AppConfigStore` every time.
 
 ### Gmail Push Ingress
@@ -121,6 +121,14 @@ def upload_to_r2(source_url: str) -> R2UploadResult:
   - `redis-config-guardian` remplace/complète le skill `check-config` pour tout audit de `processing_prefs`, `routing_rules`, `webhook_config`, `magic_link_tokens`. Il orchestre le script CLI + l’API dashboard.
   - `debugging-strategies` est obligatoire pour toute tâche de débogage (bugs, incidents de performances, comportements inattendus) avant d’envisager le moindre recours aux skills globaux ou à des ressources externes.
   - Le skill `run-tests` reste la porte d’entrée canonique pour `pytest`; `scaffold-js-module` et `scaffold-service` demeurent obligatoires pour les nouveaux modules/services.
+  - `check-config` : Vérifie l'état du Config Store (Redis/Fichier) via les scripts utilitaires.
+  - `docs-sync-automaton` : Analyse la Memory Bank, inspecte le code source impacté, et met à jour TOUTE la documentation associée.
+  - `documentation` : Technical writing, README guidelines, and punctuation rules. Use when writing documentation, READMEs, technical articles, or any prose that should avoid AI-generated feel.
+  - `magic-link-auth-companion` : Manage MagicLinkService changes across backend, storage (Redis/external), and dashboard UI while enforcing security, TTL, and revocation requirements.
+  - `r2-transfer-service-playbook` : Manage changes to the R2 transfer pipeline (Python service, Cloudflare Workers, PHP logger) with mandatory validations, allowlists, and regression checks.
+  - `routing-rules-orchestrator` : Streamline any change touching the dynamic routing rules stack (service, API, orchestrator, frontend) with mandatory validation steps and test coverage.
+  - `testing-matrix-navigator` : Guide for selecting and executing the correct pytest suites (unit, redis, r2, resilience) with environment setup and coverage expectations.
+  - `webhook-dashboard-ux-maintainer` : Preserve and extend the modern dashboard (dashboard.html + static modules) with WCAG-compliant UX, autosave flows, and modular ES6 patterns.
 - **Global skills usage:** reach for `/home/kidpixel/.codeium/skills/*` only when a needed capability (e.g., PDF tooling, algorithmic art, Postgres expertise) is absent from the workspace set. Document why the global skill was preferred if the task overlaps existing local skills.
 - **Exclusions & workflows:** do not call global scaffolding/testing skills when local equivalents exist, and when executing the `/enhance` workflow or any prompt-engineering task, ensure the resulting plan still honors this priority and explicitly names the skill to be invoked.
 

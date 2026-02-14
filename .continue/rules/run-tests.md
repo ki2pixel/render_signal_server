@@ -1,8 +1,7 @@
 ---
+name: Run Tests
 description: Exécute la suite de tests (unitaires, résilience, couverture) en utilisant l'environnement virtuel spécifique du projet.
-globs: 
-  - "**/*.{py,js,md}"
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Run Tests

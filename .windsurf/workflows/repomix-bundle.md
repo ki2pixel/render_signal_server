@@ -23,3 +23,10 @@ Créer un bundle optimisé du codebase pour analyse par LLMs externes (Claude, C
    - Contrôler que `repomix-output.md` a été généré
    - Vérifier la taille et le compte de tokens
    - Valider que les fichiers critiques sont inclus
+
+## Tools Used
+
+- `read_text_file` - To read repomix configuration
+- `run_command` - To execute repomix generation
+- `list_directory` - To check output files
+- `search_files` - To verify critical files are included in bundle

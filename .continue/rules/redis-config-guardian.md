@@ -1,8 +1,10 @@
 ---
+name: Redis Config Guardian
 description: Inspect and reconcile Redis-stored configs (processing_prefs, routing_rules, webhook_config, magic_link_tokens) using the approved scripts, APIs, and dashboard flows. Trigger when validating config drift, migrations, or debugging persistence issues.
 globs: 
-  - "**/*.{py,js,md}"
-alwaysApply: true
+  - "**/app_config_store.py"
+  - "config/*.py"
+alwaysApply: false
 ---
 
 # Redis Config Guardian

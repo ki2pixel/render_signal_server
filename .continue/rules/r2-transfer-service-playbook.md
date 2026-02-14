@@ -1,8 +1,11 @@
 ---
+name: R2 Transfer Service Playbook
 description: Manage changes to the R2 transfer pipeline (Python service, Cloudflare Workers, PHP logger) with mandatory validations, allowlists, and regression checks.
 globs: 
-  - "**/*.{py,js,md}"
-alwaysApply: true
+  - "**/r2_transfer_service.py"
+  - "**/*offload*"
+  - "**/deployment/**"
+alwaysApply: false
 ---
 
 # R2 Transfer Service Playbook

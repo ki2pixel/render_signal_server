@@ -1,8 +1,7 @@
 ---
+name: Scaffold Service
 description: Génère un nouveau Service Python (Singleton) respectant l'architecture et les coding standards du projet.
-globs: 
-  - "**/*.{py,js,md}"
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Scaffold Backend Service

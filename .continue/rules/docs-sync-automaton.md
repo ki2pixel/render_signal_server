@@ -1,8 +1,7 @@
 ---
+name: Docs Sync Automaton
 description: Analyse la Memory Bank, inspecte le code source impacté, et met à jour TOUTE la documentation associée.
-globs: 
-  - "**/*.{py,js,md}"
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Docs Sync Automaton

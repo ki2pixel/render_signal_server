@@ -21,3 +21,10 @@ find .sixthworkflows -name "*.md" -exec grep -l "\.sixth" {} \;
 # Test memory bank
 ls -la memory-bank/
 ```
+
+## Tools Used
+
+- `run_command` - To execute validation commands
+- `search_files` - To find workflow files
+- `list_directory` - To check memory bank structure
+- `read_text_file` - To verify rule loading

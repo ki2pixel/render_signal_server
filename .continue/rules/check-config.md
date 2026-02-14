@@ -1,8 +1,7 @@
 ---
+name: Check Config
 description: check-config skill migrated from Windsurf as contextual rules
-globs: 
-  - "**/*.{py,js,md}"
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Check Config Store

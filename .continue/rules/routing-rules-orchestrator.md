@@ -1,8 +1,10 @@
 ---
+name: Routing Rules Orchestrator
 description: Streamline any change touching the dynamic routing rules stack (service, API, orchestrator, frontend) with mandatory validation steps and test coverage.
 globs: 
-  - "**/*.{py,js,md}"
-alwaysApply: true
+  - "**/routing_rules*.py"
+  - "**/orchestrator.py"
+alwaysApply: false
 ---
 
 # Routing Rules Orchestrator

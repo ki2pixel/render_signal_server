@@ -60,7 +60,13 @@ git commit -m "<Prefix>: <Summary (imperative/concise)>"
 git push -u origin "$BRANCH"
 ```
 
+## Tools Used
+
+- `run_command` - For git operations and quality checks
+- `read_text_file` - To read commit message format rules
+- `list_directory` - To check for changed files
+
 ## Notes
 
-- Follow the commit message format and message generation principles in `.sixthrules/07-commit-message-format.md`.
+- Follow commit message format and message generation principles in `.sixthrules/07-commit-message-format.md`.
 - Recommended to run `git status` or `git diff` to review diffs before execution.

@@ -1,8 +1,10 @@
 ---
+name: Magic Link Auth Companion
 description: Manage MagicLinkService changes across backend, storage (Redis/external), and dashboard UI while enforcing security, TTL, and revocation requirements.
 globs: 
-  - "**/*.{py,js,md}"
-alwaysApply: true
+  - "**/magic_link_service.py"
+  - "**/login.html"
+alwaysApply: false
 ---
 
 # Magic Link Auth Companion

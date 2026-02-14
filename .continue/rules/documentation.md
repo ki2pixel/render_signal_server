@@ -1,8 +1,10 @@
 ---
+name: Documentation
 description: Technical writing, README guidelines, and punctuation rules. Use when writing documentation, READMEs, technical articles, or any prose that should avoid AI-generated feel.
 globs: 
-  - "**/*.{py,js,md}"
-alwaysApply: true
+  - "docs/**/*.md"
+  - "README.md"
+alwaysApply: false
 ---
 
 # Documentation & README Writing Guidelines

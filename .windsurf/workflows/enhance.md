@@ -2,47 +2,68 @@
 description: Améliorer un Prompt avec le Contexte du Projet, Techniques Avancées et Skills Spécialisés
 ---
 
+# Rôle : Architecte de Prompt & Stratège Technique
+
+**OBJECTIF UNIQUE :** Tu ne dois **PAS RÉPONDRE** à la question de l'utilisateur. Tu dois **CONSTRUIRE UN PROMPT AMÉLIORÉ** (Mega-Prompt) qui contient tout le contexte technique nécessaire pour qu'une nouvelle instance d'IA puisse exécuter la tâche parfaitement.
+
+## Protocole d'Exécution
+
+### PHASE 1 : Analyse & Chargement du Contexte (CRITIQUE)
+
+1.  **Analyse l'intention** de la demande brute (ci-dessous).
+2.  **Charge la Mémoire** : Lis impérativement `memory-bank/activeContext.md` et `memory-bank/progress.md`.
+3.  **Active les "Skills" (Règles)** : Selon les mots-clés détectés, utilise tes outils (`read_file`) pour charger le contenu des règles spécifiques (qui sont désactivées par défaut) :
+
+    *   **Si DEBUGGING / ERREUR / CRASH :**
+        *   Lis `.windsurf/skills/debugging-strategies/SKILL.md`.
+        *   Cherche les logs récents.
+
+    *   **Si ARCHITECTURE / NOUVEAU SERVICE :**
+        *   Lis `.windsurf/skills/scaffold-service/SKILL.md`.
+        *   Lis `.windsurf/skills/routing-rules-orchestrator/SKILL.md`.
+        *   Cherche dans `docs/` ou `docs/architecture/`.
+
+    *   **Si FEATURES SPÉCIFIQUES (Ciblez le fichier précis) :**
+        *   *Frontend / Dashboard / UI* → Lis `.windsurf/skills/webhook-dashboard-ux-maintainer/SKILL.md`
+        *   *Auth / Magic Links* → Lis `.windsurf/skills/magic-link-auth-companion/SKILL.md`
+        *   *Redis / Config* → Lis `.windsurf/skills/redis-config-guardian/SKILL.md`
+        *   *R2 / Transfer* → Lis `.windsurf/skills/r2-transfer-service-playbook/SKILL.md`
+        *   *Tests* → Lis `.windsurf/skills/testing-matrix-navigator/SKILL.md`
+
+### PHASE 2 : Génération du Mega-Prompt
+
+Une fois les fichiers ci-dessus lus et analysés, génère un **bloc de code Markdown** contenant le prompt final. Ne mets rien d'autre.
+
+**Structure du Prompt à générer :**
+
+```markdown
+# Rôle
+[Définis le rôle expert (ex: Expert Python Backend & Flask, Expert Frontend ES6...)]
+
+# Contexte du Projet (Chargé via Skills)
+[Résumé des points clés trouvés dans les fichiers .windsurf/skills/ que tu as lus]
+[État actuel tiré du memory-bank]
+
+# Standards à Respecter
+[Rappel bref des codingstandards.md si pertinent pour la tâche]
+
+# Tâche à Exécuter
+[Reformulation précise et technique de la demande utilisateur]
+[Étapes logiques suggérées]
+
+# Contraintes
+- [Liste des contraintes techniques (ex: Redis vs JSON, Gmail Push API, etc.)]
+```
+
 ---
-description: Améliorer un Prompt avec le Contexte du Projet, Techniques Avancées et Skills Spécialisés
----
 
-### `/enhance` — Optimisation Avancée de Prompt
-1. **Analyse Contextuelle & Détection d'Intention**
-   - Lire la requête brute de l'utilisateur.
-   - Charger le contexte global via `read_text_file` sur les fichiers de la Memory Bank (`activeContext.md`, `progress.md`, `systemPatterns.md`, etc.).
-   - **Détection de Skill** : Analyser la nature de la tâche :
-     - Si **Debugging** (bug, crash, erreur, performance) : Charger immédiatement `.windsurf/skills/debugging-strategies/SKILL.md`.
-     - Si **Architecture** :
-       - Identifier le sous-domaine touché et ouvrir le/les `SKILL.md` correspondants (ex: `scaffold-service` pour un nouveau service backend, `routing-rules-orchestrator` pour le moteur de routage, `architecture-tools` si aucune spécialisation locale ne couvre le sujet).
-       - En parallèle, chercher les docs d'architecture pertinentes.
-     - Si **Feature** :
-       - Sélectionner les SKILLs workspace alignés avec la surface fonctionnelle (ex: `webhook-dashboard-ux-maintainer` pour le dashboard, `magic-link-auth-companion` pour l'auth, `redis-config-guardian` pour les configs Redis) en utilisant `read_text_file` pour charger leurs instructions.
-       - Chercher les specs fonctionnelles associées.
+## Tools Used
 
-2. **Recherche Active de Documentation**
-   - Identifier les règles spécifiques au projet via `search` ou `advanced-search` dans `docs/` et `.windsurf/rules/codingstandards.md`.
-   - Utiliser `read_text_file` sur les documents pertinents trouvés.
-   - Si mode **Debugging** activé : Vérifier via `search` ou `advanced-search` si les outils mentionnés dans le Skill (ex: configurations de log, profileurs) sont déjà présents dans le code source pour les inclure dans le contexte.
+- `read_text_file` - To read memory bank files and skill files
+- `read_multiple_files` - To batch read multiple memory bank files
+- `search` - To find recent logs and search in docs/
+- `advanced-search` - For complex searches in documentation
+- `search_files` - To locate specific skill files
 
-3. **Synthèse et Rédaction Structurée (Prompt Engineering)**
-   - Compiler les informations en un "Mega-Prompt".
-   - **Si mode Debugging détecté**, forcer la structure suivante basée sur le Skill :
-     - **Rôle** : "Expert Debugging & Root Cause Analysis".
-     - **Méthodologie** : Imposer les phases du Skill (1. Reproduire, 2. Collecter, 3. Hypothèse, 4. Test).
-     - **Checklist** : Inclure les points de vérification spécifiques au langage détecté (issus du fichier Skill).
-   - **Si mode Standard** :
-     - **Persona** : Définir le rôle exact (ex: "Expert Senior React" ou "Architecte Système").
-     - **Contexte Projet** : Injecter explicitement les règles trouvées en étape 2 (Standards, Tech Stack).
-     - **Chain-of-Thought (CoT)** : Si la tâche est complexe, instruire l'IA de "penser étape par étape" avant de coder.
-     - **Format de Sortie** : Imposer un format strict (ex: XML tags, JSON, ou Markdown structuré) comme suggéré dans les modèles "Claude/GPT Optimized".
-     - **Constitutional AI** : Ajouter une contrainte de vérification (sécurité, pas de régression, respect des types).
-   
-   - **Action** : Proposer *uniquement* le prompt amélioré sous forme de bloc de code.
-
-4. **Validation et Exécution**
-   - Demander confirmation à l'utilisateur ("Voulez-vous exécuter ce prompt ?").
-   - Une fois validé :
-     - Exécuter le prompt.
-     - Si Debugging : Appliquer rigoureusement la méthode scientifique (ne pas proposer de fix sans avoir isolé la cause).
-     - Utiliser systématiquement les outils (`read_text_file`, `edit_file`, `run_command`) pour réaliser la tâche.
-     - Vérifier la qualité du résultat final par rapport aux critères définis dans le prompt amélioré.
+## DEMANDE UTILISATEUR ORIGINALE :
+{{{ input }}}

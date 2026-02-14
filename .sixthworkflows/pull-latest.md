@@ -37,6 +37,12 @@ Processus standard pour mettre à jour la branche locale depuis `origin/main` lo
    - `git stash pop` pour réappliquer les travaux locaux
    - Résoudre les conflits éventuels puis `git status` pour valider
 
+## Tools Used
+
+- `run_command` - For git operations (status, fetch, pull, stash)
+- `list_directory` - To check working directory state
+- `read_text_file` - To read git configuration files if needed
+
 ## Notes
 - Préférer `--ff-only` pour éviter les merges indésirables; passer à `--rebase` uniquement si nécessaire.
 - Sous VS Code, l'extension GitLens affiche directement les flèches "Incoming/Outgoing" pour repérer les changements avant le fetch.

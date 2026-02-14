@@ -1,8 +1,7 @@
 ---
+name: Scaffold JS Module
 description: Crée un nouveau module ou service JavaScript (ES6) pour le frontend static.
-globs: 
-  - "**/*.{py,js,md}"
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Scaffold JS Module

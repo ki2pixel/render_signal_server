@@ -1,13 +1,7 @@
 ---
+name: Testing Matrix Navigator
 description: Guide for selecting and executing the correct pytest suites (unit, redis, r2, resilience) with environment setup and coverage expectations.
-globs: 
-  - "**/*.{py,js,md}"
-alwaysApply: true
----
-
----
-name: testing-matrix-navigator
-description: Guide for selecting and executing the correct pytest suites (unit, redis, r2, resilience) with environment setup and coverage expectations.
+alwaysApply: false
 ---
 
 # Testing Matrix Navigator

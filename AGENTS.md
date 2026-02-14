@@ -30,6 +30,11 @@ You **MUST** route requests to the specialized skills in `.sixthskills/` to ensu
 | **UI / Dashboard / UX** | `.sixthskills/webhook-dashboard-ux-maintainer/SKILL.md` | Autosave, WCAG, ES6 Modules. |
 | **Debug / Crash / Error** | `.sixthskills/debugging-strategies/SKILL.md` | Log analysis pattern, scientific method. |
 | **Docs / Audit** | `.sixthskills/docs-sync-automaton/SKILL.md` | Codebase metrics (radon/cloc) to docs sync. |
+| **Check Config** | `.sixthskills/check-config/SKILL.md` | Vérifie l'état du Config Store (Redis/Fichier) via les scripts utilitaires. |
+| **Run Tests** | `.sixthskills/run-tests/SKILL.md` | Exécute la suite de tests (unitaires, résilience, couverture) en utilisant l'environnement virtuel spécifique du projet. |
+| **Scaffold JS Module** | `.sixthskills/scaffold-js-module/SKILL.md` | Crée un nouveau module ou service JavaScript (ES6) pour le frontend static. |
+| **Scaffold Service** | `.sixthskills/scaffold-service/SKILL.md` | Génère un nouveau Service Python (Singleton) respectant l'architecture et les coding standards du projet. |
+| **Documentation** | `.sixthskills/documentation/SKILL.md` | Technical writing, README guidelines, and punctuation rules. Use when writing documentation, READMEs, technical articles, or any prose that should avoid AI-generated feel. |
 
 **Protocol:** If the user asks "Why is the config not saving?", consult `.sixthskills/redis-config-guardian/SKILL.md` immediately to run the audit script.
 
@@ -63,6 +68,88 @@ You **MUST** route requests to the specialized skills in `.sixthskills/` to ensu
 - **No Frameworks**: Pure ES6 Modules in `static/`.
 - **No innerHTML**: Use `document.createElement` or `textContent`.
 - **Autosave**: UI must handle `saving` -> `saved`/`error` states with debounce.
+
+## Patterns & Examples
+### API Routes (Flask)
+```python
+@api_config_bp.route("/api/processing_prefs", methods=["POST"])
+@login_required
+def update_processing_prefs() -> Response:
+    payload = ProcessingPrefsSchema().load(request.json or {})
+    app_config_store.set_config_json("processing_prefs", payload)
+    return jsonify({"status": "ok"})
+```
+- **Pattern:** Load schema, validate, persist via store, return JSON. Never write to `settings` globals.
+
+### Gmail Push Ingress Flow
+```python
+@bp.route("/gmail", methods=["POST"])
+def ingest_gmail():
+    if not auth_service.verify_api_key_from_request(request):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+
+    payload = request.get_json(silent=True)
+    # Validate required fields, check sender allowlist, apply time windows
+    # Trigger orchestrator.send_custom_webhook_flow() with enriched payload
+    return jsonify({"success": True, "status": "processed"}), 200
+```
+- **Pattern:** Authenticate → Validate → Enrich → Send webhook. Never bypass `AuthService` or log raw email content.
+
+### Frontend Panel Save Flow
+```javascript
+import { ApiService } from "./services/ApiService.js";
+import { updatePanelStatus } from "./dashboard.js";
+
+async function saveWebhookPanel(panelId, collectData) {
+  updatePanelStatus(panelId, "saving");
+  const payload = collectData();
+  await ApiService.post("/api/webhooks/config", payload);
+  updatePanelStatus(panelId, "saved");
+}
+```
+- Each collapsible panel owns a `collect*Data()` helper. Status chips mirror `saving`, `saved`, `error` states with timestamps.
+
+### R2 Transfer Service Guard
+```python
+def upload_to_r2(source_url: str) -> R2UploadResult:
+    if not is_allowed_domain(source_url):
+        raise ValueError("Domain not in allowlist")
+    return r2_client.transfer(source_url, headers={"X-R2-FETCH-TOKEN": token})
+```
+- Always run allowlist validation + token injection before offloading. Fallback gracefully to original URL when transfer fails.
+
+## Code Style & Structure
+### Backend (Python)
+- **Clean Code:** Delete commented-out dead code immediately (no confirmation needed). Comments must state the *why* (intent/business context), never re-describe implementation details.
+- Services are **singletons with typed public methods** (see `RoutingRulesService`, `WebhookConfigService`). Never mutate module-level globals at runtime; read via service getters each time.
+- Keep functions short (<40 logical lines) and typed. Use `TypedDict` / dataclasses for structured payloads (e.g., `email_processing/orchestrator.py`).
+- Input validation lives at route boundaries. Raise `ValueError`/`BadRequest` with explicit messages; let Flask error handlers serialize.
+- Logging goes through `app_logging/` helpers. Always scrub PII with `mask_sensitive_data`.
+
+### Frontend (JS/HTML)
+- Use **modules + named exports** only. `dashboard.js` orchestrates modules; do not reintroduce global script tags.
+- DOM updates must avoid `innerHTML`. Build elements, set `textContent`, and attach listeners declaratively.
+- Respect WCAG AA: keyboard focus states, ARIA roles (`tablist`, `tabpanel`, `aria-expanded`).
+- Auto-save flows use debounced `ApiService` calls (2–3s) with optimistic UI + rollback on failure.
+
+### Legacy / Infra
+- PHP utilities stay PSR-12, UTF-8 LF, no short tags. File writes must be atomic (temp file + rename) guarded by `flock` or Python-side `RLock`.
+- Cloudflare Workers: keep headers explicit (`X-R2-FETCH-TOKEN`), enforce allowlists.
+
+## Architecture Decisions to Enforce
+### Configuration & Secrets
+- Secrets (passwords, tokens) **must come from ENV**. `_get_required_env()` in `config/settings.py` enforces the four mandatory variables—do not bypass it.
+- Redis is the **source of truth** for `routing_rules`, `webhook_config`, `processing_prefs`, and `magic_link_tokens`. Any API or background logic must read via `AppConfigStore` every time.
+
+### Gmail Push Ingress
+- All email ingestion occurs via `POST /api/ingress/gmail` with Bearer token authentication (`AuthService.verify_api_key_from_request()`).
+- Validate required fields (sender, body) and enforce sender allowlist via `GMAIL_SENDER_ALLOWLIST`.
+- Apply pattern matching (Media Solution/DESABO) and time window rules before triggering webhook flow.
+- Enrich delivery links with R2 offload when enabled; fallback gracefully on R2 failures.
+
+### Frontend Experience
+- Maintain the dashboard’s **Status Banner + Timeline Canvas + collapsible Webhook panels**. These are non-negotiable UX baselines.
+- All destructive or long-running UI actions require visible feedback: ripple on buttons, toast via `MessageHelper`, and disabled states while waiting for the API.
 
 ## 🔧 Tooling & Testing Standards
 

@@ -1,8 +1,10 @@
 ---
+name: Webhook Dashboard UX
 description: Preserve and extend the modern dashboard (dashboard.html + static modules) with WCAG-compliant UX, autosave flows, and modular ES6 patterns.
 globs: 
-  - "**/*.{py,js,md}"
-alwaysApply: true
+  - "**/dashboard.html"
+  - "static/**/*.js"
+alwaysApply: false
 ---
 
 # Webhook Dashboard UX Maintainer
