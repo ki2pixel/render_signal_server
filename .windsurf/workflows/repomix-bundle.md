@@ -30,3 +30,7 @@ Créer un bundle optimisé du codebase pour analyse par LLMs externes (Claude, C
 - `run_command` - To execute repomix generation
 - `list_directory` - To check output files
 - `search_files` - To verify critical files are included in bundle
+
+## Technical Lockdown
+Utilisez les outils fast-filesystem (mcp0_fast_*) pour accéder aux fichiers memory-bank avec des chemins absolus.
+- Windsurf is now in 'Token-Saver' mode. Minimize context usage by using tools instead of pre-loading.

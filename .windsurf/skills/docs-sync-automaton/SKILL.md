@@ -8,13 +8,15 @@ description: Analyse la Memory Bank, inspecte le code source impacté, et met à
 Skill à invoquer pour exécuter une mise à jour documentaire complète selon le workflow `/docs-updater`.
 
 ## Pré-requis
-- Memory Bank à jour (`memory-bank/{activeContext,progress,decisionLog}.md`).
+- Memory Bank à jour (`mcp0_fast_read_file(path='/home/kidpixel/render_signal_server-main/memory-bank/activeContext.md')`, `mcp0_fast_read_file(path='/home/kidpixel/render_signal_server-main/memory-bank/progress.md')`, `mcp0_fast_read_file(path='/home/kidpixel/render_signal_server-main/memory-bank/decisionLog.md')`).
 - Accès au repo pour exécuter `tree`, `cloc`, `radon`.
 - Virtualenv `/mnt/venv_ext4/venv_render_signal_server` (pour les scripts d'audit).
 
 ## Workflow
 1. **Collecte Contexte**
-   - Lire `memory-bank/{activeContext,progress,decisionLog}.md`.
+   - `mcp0_fast_read_file(path='/home/kidpixel/render_signal_server-main/memory-bank/activeContext.md')`
+   - `mcp0_fast_read_file(path='/home/kidpixel/render_signal_server-main/memory-bank/progress.md')`
+   - `mcp0_fast_read_file(path='/home/kidpixel/render_signal_server-main/memory-bank/decisionLog.md')`
    - Identifier les fichiers impactés par la feature/bugfix.
 2. **Audit Code**
    - Lancer le helper `./.windsurf/skills/docs-sync-automaton/run_docs_audit.sh`.

@@ -10,8 +10,9 @@ invokable: true
 
 ## 🚨 Protocoles Critiques
 1.  **Outils autorisés** : L'usage de `run_command` est **strictement limité** aux commandes d'audit : `tree`, `cloc`, `radon`, `ls`.
-2.  **Contexte** : Charger la Memory Bank (`productContext.md`, `systemPatterns.md`, `activeContext.md`, `progress.md`) via `read_text_file` ou `read_multiple_files` avant toute action.
+2.  **Contexte** : Initialiser le contexte en appelant l'outil `mcp0_fast_read_file` du serveur fast-filesystem pour lire UNIQUEMENT `activeContext.md`. Ne lire les autres fichiers de la Memory Bank que si une divergence majeure est détectée lors du diagnostic.
 3.  **Source de Vérité** : Le Code (analysé par outils) > La Documentation existante > La Mémoire.
+4.  **Interdiction formelle** : Ne pas utiliser les outils `filesystem` (read_text_file) pour accéder au dossier `memory-bank/`. Passez toujours par le serveur MCP fast-filesystem pour garantir le tracking des tokens dans le Dashboard Kimi.
 
 ## Étape 1 — Audit Structurel et Métrique
 Lancer les commandes suivantes configurées pour ignorer les rapports de couverture (`htmlcov`) et les fichiers de déploiement/debug.
@@ -32,7 +33,7 @@ Comparer les sources pour détecter les incohérences :
 
 | Source | Rôle | Outil |
 | :--- | :--- | :--- |
-| **Intention** | Le "Pourquoi" | `read_text_file` ou `read_multiple_files` (Memory Bank) |
+| **Intention** | Le "Pourquoi" | `mcp0_fast_read_file` (via fast-filesystem) |
 | **Réalité** | Le "Quoi" & "Comment" | `radon` (complexité), `cloc` (volume), `search` ou `advanced-search` |
 | **Existant** | L'état actuel | `search_files` (sur `docs/`), `read_text_file` |
 
@@ -75,7 +76,7 @@ Générer un plan de modification avant d'appliquer :
 ## Étape 5 — Application et Finalisation
 1.  **Exécution** : Après validation, utiliser `edit_file` ou `multi_edit`.
 2.  **Mise à jour Memory Bank** :
-    - Si une logique critique est découverte, l'ajouter dans `systemPatterns.md`.
+    - Mettre à jour la Memory Bank en utilisant EXCLUSIVEMENT l'outil `mcp0_fast_edit_block` du serveur fast-filesystem.
 
 ### Sous-protocole Rédaction — Application de documentation/SKILL.md
 

@@ -2,25 +2,25 @@
 description: Terminer la Session et Synchroniser la Memory Bank
 ---
 
-## Workflow /end — Terminer la Session et Synchroniser la Memory Bank
+### `/end` — Terminer la session et synchroniser la Memory Bank
+1. **Charger le contexte**  
+   - Use the 'mcp0_fast_read_file' tool to read ONLY 'activeContext.md' and 'progress.md' for session summarization. Use absolute paths to the memory-bank files.
+   - Do NOT read productContext.md, systemPatterns.md or decisionLog.md unless a major architectural decision was made during the session.
+   - If older decisions need to be reviewed, use targeted search instead of loading entire files.
 
-1. **Initialisation obligatoire**  
-   - Suivre le protocole général des règles.  
-   - Utiliser `read_text_file` ou `read_multiple_files` pour charger successivement `memory-bank/productContext.md`, `memory-bank/activeContext.md`, `memory-bank/systemPatterns.md`, `memory-bank/decisionLog.md` et `memory-bank/progress.md`.
+Utilisez les outils fast-filesystem (mcp0_fast_*) pour accéder aux fichiers memory-bank avec des chemins absolus.
 
-2. **Commande UMB**  
-   - Exécuter la commande UMB comme décrit dans les règles.  
-   - Pour toute lecture supplémentaire liée à la session, continuer à utiliser `read_text_file`.  
-   - Pour localiser du contexte additionnel hors memory-bank, employer `search` ou `advanced-search` avant d'inspecter un fichier spécifique avec `read_text_file`.
+2. **Exécuter `UMB` conformément aux règles**  
+   - Suspendre la tâche en cours puis résumer la session.  
+   - Utiliser `search` pour identifier les fichiers additionnels à consulter (ex. docs liés à la session).
+3. **Mettre à jour la Memory Bank**  
+   - Use `mcp0_fast_edit_block` to commit the session summary.
+   - Before each modification, read the relevant section with 'mcp0_fast_read_file' to minimize changes.
+   - Document decisions, progress and active context according to the protocol.
+4. **Clôturer la session**  
+   - Résumer les tâches finalisées dans la réponse utilisateur.  
+   - Vérifier avec 'mcp0_fast_read_file' que `progress.md` indique "Aucune tâche active" et que `activeContext.md` est revenu à l'état neutre.
 
-3. **Synthèse des tâches de la session**  
-   - Relire `memory-bank/progress.md` via `read_text_file` pour identifier les tâches terminées pendant la session.
-
-4. **Mise à jour finale de progress.md**  
-   - Utiliser `edit_file` pour déplacer les tâches vers la section "Terminé" avec un nouveau timestamp et s'assurer que "En cours" est défini sur "Aucune tâche active".
-
-5. **Réinitialisation d'activeContext.md**  
-  - Employer `edit_file` pour remettre le contenu à l'état neutre décrit dans les règles.
-
-6. **Confirmation**  
-  - Après vérification finale des fichiers mis à jour avec `read_text_file`, confirmer que la Memory Bank est synchronisée et que vous êtes prêt pour la prochaine session.
+## Technical Lockdown
+Utilisez les outils fast-filesystem (mcp0_fast_*) pour accéder aux fichiers memory-bank avec des chemins absolus.
+- Windsurf is now in 'Token-Saver' mode. Minimize context usage by using tools instead of pre-loading.
