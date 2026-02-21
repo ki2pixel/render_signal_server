@@ -396,9 +396,14 @@ def test_r2_fallback_on_worker_failure():
 - **Référence API** : `docs/core/configuration-reference.md`
 - **Architecture** : `docs/core/architecture.md`
 - **Ingestion Gmail Push** : `docs/ingestion/gmail-push.md`
+- **Extraction de liens** : `docs/ingestion/link-extraction.md`
 - **Routing dynamique** : `docs/processing/routing-engine.md`
+- **Pattern matching** : `docs/processing/pattern-matching.md`
+- **Déduplication** : `docs/processing/deduplication-engine.md`
 - **Offload R2** : `docs/processing/file-offload.md`
 - **Authentification** : `docs/access/authentication.md`
+- **Magic Links** : `docs/core/magic-link-auth.md`
+- **Runtime Flags** : `docs/ops/runtime-flags.md`
 - **Dashboard UI** : `docs/access/dashboard-ui.md`
 
 ### Communauté

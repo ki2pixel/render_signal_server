@@ -377,9 +377,342 @@ R2_FETCH_TOKEN=${worker-token}
 
 ---
 
-## La Golden Rule : Tableau électrique sécurisé, services centralisés
+## AppConfigStore : le système de stockage unifié
 
-Les 4 disjoncteurs obligatoires sont validés au démarrage avec `ValueError`. Toute la configuration dynamique passe par des interrupteurs services avec Redis-first et fallback fichier. Les secrets ne sont jamais exposés. Le reste a des valeurs par défaut sûres. Chaque décision (❌/✅, trade-offs, misconceptions) maintient la sécurité du tableau électrique.
+### Architecture tri-niveaux : Redis → External → Fichier
+
+Le système `AppConfigStore` implémente une hiérarchie de stockage robuste avec failover automatique :
+
+```python
+# config/app_config_store.py
+class StorageHierarchy:
+    PRIMARY = "redis"        # Performance, partage multi-conteneurs
+    SECONDARY = "external"   # Héritage, compatibilité legacy
+    TERTIARY = "file"        # Fallback local, persistance garantie
+```
+
+**Priorité configurable** :
+```python
+CONFIG_STORE_MODE=redis_first  # Redis → External → File
+CONFIG_STORE_MODE=php_first    # External → Redis → File
+```
+
+### Clés de configuration gérées
+
+| Clé | Usage | Format | Mise à jour |
+|-----|-------|--------|-------------|
+| `runtime_flags` | Flags runtime (Gmail ingress, debug, etc.) | JSON dict | API `/api/runtime-flags` |
+| `webhook_config` | Configuration webhooks sortants | JSON dict | API `/api/webhooks/config` |
+| `processing_prefs` | Préférences traitement emails | JSON dict | API `/api/processing_prefs` |
+| `routing_rules` | Règles routage dynamique | JSON dict | API `/api/routing_rules` |
+| `magic_link_tokens` | Tokens authentification temporaire | JSON dict | Service MagicLink |
+
+### Pattern de lecture avec failover
+
+```python
+def get_config_json(key: str, file_fallback: Optional[Path] = None) -> Dict[str, Any]:
+    mode = _store_mode()
+    
+    if mode == "redis_first":
+        data = _redis_get_json(key)  # 1. Redis (performance)
+        if isinstance(data, dict):
+            return data
+    
+    # 2. External backend (PHP legacy)
+    data = _external_config_get(base_url, api_token, key)
+    if isinstance(data, dict):
+        return data
+    
+    if mode == "php_first":
+        data = _redis_get_json(key)  # 3. Redis (fallback)
+        if isinstance(data, dict):
+            return data
+    
+    # 4. File fallback (dernière ligne de défense)
+    return _load_from_file(file_fallback) if file_fallback else {}
+```
+
+### Pattern d'écriture avec synchronisation
+
+```python
+def set_config_json(key: str, value: Dict[str, Any], file_fallback: Optional[Path] = None) -> bool:
+    # 1. Tente Redis d'abord
+    if _redis_set_json(key, value):
+        return True
+    
+    # 2. Fallback external backend
+    if _external_config_set(base_url, api_token, key, value):
+        return True
+    
+    # 3. Dernière chance: fichier local
+    return _save_to_file(file_fallback, value)
+```
+
+---
+
+## Migration Redis : passage du fichier au stockage distribué
+
+### Le problème : fichiers locaux non partageables
+
+Avant Redis, chaque configuration vivait dans des fichiers JSON locaux :
+- `debug/runtime_flags.json` pour les flags
+- `debug/webhook_config.json` pour les webhooks  
+- `debug/processing_prefs.json` pour les préférences
+
+**Problèmes** :
+- Pas de partage entre conteneurs Render
+- Persistance uniquement locale
+- Difficile à gérer en production multi-instances
+
+### La solution : migration progressive vers Redis
+
+```python
+# Script de migration: migrate_configs_to_redis.py
+def migrate_config_to_redis(key: str, file_path: Path):
+    """Migre un fichier JSON vers Redis avec préservation."""
+    
+    # 1. Charge depuis fichier
+    if not file_path.exists():
+        return False
+    
+    with open(file_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    
+    # 2. Sauvegarde en Redis
+    config_store = AppConfigStore()
+    success = config_store.set_config_json(key, data, file_fallback=file_path)
+    
+    if success:
+        # 3. Backup du fichier original
+        backup_path = file_path.with_suffix(f"{file_path.suffix}.backup")
+        shutil.copy2(file_path, backup_path)
+        
+        logger.info(f"Migrated {key} to Redis, backup at {backup_path}")
+        return True
+    
+    return False
+```
+
+### Commandes de migration
+
+```bash
+# Migration complète
+python migrate_configs_to_redis.py --all
+
+# Migration sélective
+python migrate_configs_to_redis.py --key runtime_flags
+python migrate_configs_to_redis.py --key webhook_config
+
+# Vérification post-migration
+python scripts/check_config_store.py
+```
+
+### Rollback en cas de problème
+
+```python
+# En cas de problème Redis, rollback vers fichiers
+def rollback_to_files():
+    config_store = AppConfigStore()
+    
+    for key in ["runtime_flags", "webhook_config", "processing_prefs"]:
+        # Récupère depuis Redis
+        data = config_store.get_config_json(key)
+        if data:
+            # Restore fichier depuis Redis
+            file_path = Path(f"debug/{key}.json")
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"Rolled back {key} to file: {file_path}")
+```
+
+### Bénéfices post-migration
+
+| Aspect | Avant (Fichiers) | Après (Redis) |
+|--------|------------------|---------------|
+| **Partage** | Local uniquement | Multi-conteneurs |
+| **Performance** | I/O disque lent | Mémoire rapide |
+| **Persistance** | Disque local | Base de données Redis |
+| **Fiabilité** | Perte si crash conteneur | Sauvegarde automatique |
+| **Monitoring** | Difficile | Métriques Redis intégrées |
+
+### Variables de contrôle migration
+
+```bash
+# Contrôle du stockage
+CONFIG_STORE_DISABLE_REDIS=false     # Active Redis
+CONFIG_STORE_MODE=redis_first        # Priorité Redis
+CONFIG_STORE_REDIS_PREFIX=r:ss:config:  # Namespace Redis
+
+# Contrôle external backend (legacy)
+EXTERNAL_CONFIG_BASE_URL=https://external-api.com
+CONFIG_API_TOKEN=your-api-token
+```
+
+---
+
+## Services consommateurs : l'intégration transparente
+
+### Pattern d'usage dans les services
+
+Tous les services de configuration suivent le même pattern d'intégration :
+
+```python
+class ExampleService:
+    def __init__(self):
+        self._cache = {}
+        self._cache_ttl = 30  # secondes
+        self._app_config_store = AppConfigStore()
+    
+    def get_config(self):
+        now = time.time()
+        
+        # Cache hit rapide
+        if (self._cache and 
+            self._cache_timestamp and 
+            (now - self._cache_timestamp) < self._cache_ttl):
+            return self._cache
+        
+        # Cache miss: reload depuis AppConfigStore
+        self._cache = self._app_config_store.get_config_json("example_config")
+        self._cache_timestamp = now
+        
+        return self._cache
+    
+    def update_config(self, new_config):
+        # Validation locale
+        validated = self._validate_config(new_config)
+        
+        # Persistance via AppConfigStore
+        success = self._app_config_store.set_config_json(
+            "example_config", 
+            validated, 
+            file_fallback=self._file_path
+        )
+        
+        if success:
+            # Invalidation cache
+            self._cache = None
+            self._cache_timestamp = None
+        
+        return success
+```
+
+### Services migrés
+
+- `RuntimeFlagsService` : `runtime_flags`
+- `WebhookConfigService` : `webhook_config`  
+- `MagicLinkService` : `magic_link_tokens`
+- `RoutingRulesService` : `routing_rules`
+
+**Tous utilisent AppConfigStore avec cache TTL 30s et fallback fichier.**
+
+---
+
+## Sécurité et audit du stockage
+
+### Séparation des secrets
+
+**Dans Redis** : configurations métier (flags, règles, préférences)
+**Dans variables env** : secrets (clés API, tokens, mots de passe)
+
+```python
+# ✅ Correct : configs dans Redis
+runtime_flags = {"gmail_ingress_enabled": true}
+webhook_config = {"url": "https://webhook.com", "ssl_verify": true}
+
+# ❌ Incorrect : secrets dans configs
+webhook_config = {"url": "https://webhook.com", "api_key": "secret123"}
+```
+
+### Audit des accès
+
+```python
+# Logs d'audit (sans exposer valeurs sensibles)
+logger.info(f"CONFIG: {key} updated by {user_id}")
+logger.info(f"CONFIG: {key} read from {store_type}")  # redis/external/file
+
+# Métriques
+config_reads_total.labels(store=store_type, key=key).inc()
+config_writes_total.labels(store=store_type, key=key).inc()
+```
+
+### Validation d'intégrité
+
+```python
+def validate_config_integrity():
+    """Vérifie cohérence entre stores."""
+    redis_data = _redis_get_json(key)
+    file_data = _load_from_file(file_path)
+    
+    if redis_data != file_data:
+        logger.warning(f"CONFIG_DRIFT: {key} differs between Redis and file")
+        # Auto-sync si configuré
+        if _env_bool("CONFIG_AUTO_SYNC", False):
+            _redis_set_json(key, file_data)
+```
+
+---
+
+## Monitoring et observabilité
+
+### Métriques essentielles
+
+- **Store usage** : % lectures par store (Redis vs External vs File)
+- **Cache hit rate** : % cache hits par service (>90% attendu)
+- **Migration status** : configs migrées vs fichiers restants
+- **Error rates** : échecs lecture/écriture par store
+
+### Alertes critiques
+
+- **Redis unavailable** : bascule external/file (acceptable)
+- **External backend down** : impact sur legacy (monitorer)
+- **File writes failing** : problème persistance (critique)
+- **Config drift detected** : incohérence stores (investiguer)
+
+### Commandes de diagnostic
+
+```bash
+# État des stores
+python scripts/check_config_store.py --verbose
+
+# Statistiques Redis
+redis-cli keys "r:ss:config:*"
+redis-cli memory stats
+
+# Validation intégrité
+python scripts/check_config_store.py --integrity
+```
+
+---
+
+## Évolutions futures (Q3 2026)
+
+### Performance avancée
+
+- **Cache distribué** : Redis Cluster pour haute disponibilité
+- **Compression** : configs volumineuses compressées
+- **Sharding** : séparation par domaine fonctionnel
+
+### Fonctionnalités
+
+- **Historique versions** : rollback configs par timestamp
+- **AB testing** : variantes config par utilisateur/groupe
+- **Hot reload** : modification configs sans restart
+
+### Sécurité renforcée
+
+- **Encryption at rest** : configs sensibles chiffrées
+- **Audit trails** : historique complet modifications
+- **RBAC configs** : permissions par clé/config
+
+---
+
+## La Golden Rule : Hiérarchie de stockage, migration progressive, failover garanti
+
+AppConfigStore fournit une hiérarchie Redis-first avec fallbacks robustes. La migration des fichiers vers Redis se fait progressivement avec backup automatique. Chaque service utilise le même pattern cache TTL avec invalidation cohérente. Les secrets restent dans les variables d'environnement, les configs métier dans le store unifié.
+
+Configuration centralisée = cohérence garantie = évolution simplifiée.
 
 ---
 
@@ -390,5 +723,9 @@ Les 4 disjoncteurs obligatoires sont validés au démarrage avec `ValueError`. T
 - [ ] `WEBHOOK_URL` est en HTTPS
 - [ ] `PROCESS_API_TOKEN` est partagé avec Apps Script
 - [ ] Redis configuré si multi-conteneur
+- [ ] AppConfigStore migré vers Redis (`migrate_configs_to_redis.py`)
+- [ ] Variables de contrôle stockage définies (`CONFIG_STORE_MODE`, etc.)
 - [ ] R2 configuré si offload activé
 - [ ] Variables de développement désactivées en prod
+- [ ] Services consommateurs utilisent AppConfigStore (cache TTL 30s)
+- [ ] Monitoring stores configuré (`check_config_store.py`)

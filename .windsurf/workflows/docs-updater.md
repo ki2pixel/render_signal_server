@@ -12,7 +12,7 @@ description: Docs Updater (Standard Tools: Cloc/Radon + Quality Context)
 
 ## 🚨 Protocoles Critiques
 1.  **Outils autorisés** : L'usage de `run_command` est **strictement limité** aux commandes d'audit : `tree`, `cloc`, `radon`, `ls`.
-2.  **Contexte** : Initialiser le contexte en appelant l'outil `mcp0_fast_read_file` du serveur fast-filesystem pour lire UNIQUEMENT `activeContext.md`. Ne lire les autres fichiers de la Memory Bank que si une divergence majeure est détectée lors du diagnostic.
+2.  **Contexte** : Initialiser le contexte en appelant l'outil `fast_read_file` du serveur fast-filesystem pour lire UNIQUEMENT `activeContext.md`. Ne lire les autres fichiers de la Memory Bank que si une divergence majeure est détectée lors du diagnostic.
 3.  **Source de Vérité** : Le Code (analysé par outils) > La Documentation existante > La Mémoire.
 4.  **Interdiction formelle** : Ne pas utiliser les outils `filesystem` (read_text_file) pour accéder au dossier `memory-bank/`. Passez toujours par le serveur MCP fast-filesystem pour garantir le tracking des tokens dans le Dashboard Kimi.
 
@@ -29,13 +29,22 @@ Lancer les commandes suivantes configurées pour ignorer les rapports de couvert
     - `run_command "radon cc . -a -nc --exclude='tests/*,venv/*,htmlcov/*,docs/*,deployment/*,setup.py'"`
     - *But* : Repérer les points chauds.
     - **Cibles probables** : `email_processing/orchestrator.py` et `app_render.py` sont souvent des zones denses à surveiller (Score C/D).
+4.  **Exploration Scripts Approfondie** :
+    - `run_command "tree -L 4 scripts/ background/ routes/ services/ -I '__pycache__|venv|node_modules|.git|htmlcov|debug|deployment|memory-bank'"`
+    - *But* : Explorer en profondeur les répertoires de scripts utilitaires et services (scripts/, background/, routes/, services/ avec modules critiques comme orchestrator.py, api_ingress.py).
+5.  **Volumétrie Scripts Spécialisés** :
+    - `run_command "cloc scripts/ background/ routes/ services/ --exclude-dir=tests --exclude-ext=json,txt,log --md"`
+    - *But* : Quantifier le code dans les scripts spécialisés et services pour identifier les zones de documentation potentiellement manquées.
+6.  **Complexité Scripts Utilitaires** :
+    - `run_command "radon cc scripts/ background/ routes/ services/ -a -nc --exclude='tests/*'"`
+    - *But* : Évaluer la complexité des scripts et services critiques pour prioriser la documentation des utilitaires et fonctions complexes (comme check_new_emails_and_trigger_webhook, ingest_gmail).
 
 ## Étape 2 — Diagnostic Triangulé
 Comparer les sources pour détecter les incohérences :
 
 | Source | Rôle | Outil |
 | :--- | :--- | :--- |
-| **Intention** | Le "Pourquoi" | `mcp0_fast_read_file` (via fast-filesystem) |
+| **Intention** | Le "Pourquoi" | `fast_read_file` (via fast-filesystem) |
 | **Réalité** | Le "Quoi" & "Comment" | `radon` (complexité), `cloc` (volume), `search` ou `advanced-search` |
 | **Existant** | L'état actuel | `search_files` (sur `docs/`), `read_text_file` |
 
@@ -73,13 +82,12 @@ Générer un plan de modification avant d'appliquer :
 - **Correction** :
   ```markdown
   [Ajout de la table de correspondance Regex -> Service]
-  ```
 ```
 
 ## Étape 5 — Application et Finalisation
 1.  **Exécution** : Après validation, utiliser `edit_file` ou `multi_edit`.
 2.  **Mise à jour Memory Bank** :
-    - Mettre à jour la Memory Bank en utilisant EXCLUSIVEMENT l'outil `mcp0_fast_edit_block` du serveur fast-filesystem.
+    - Mettre à jour la Memory Bank en utilisant EXCLUSIVEMENT l'outil `fast_edit_block` du serveur fast-filesystem.
 
 ### Sous-protocole Rédaction — Application de documentation/SKILL.md
 
@@ -96,5 +104,5 @@ Générer un plan de modification avant d'appliquer :
 5. **Validation finale** : Vérifier la ponctuation (remplacer " - " par ;/:/—) avant de clôturer la tâche.
 
 ## Technical Lockdown
-Utilisez les outils fast-filesystem (mcp0_fast_*) pour accéder aux fichiers memory-bank avec des chemins absolus.
+Utilisez les outils fast-filesystem (fast_*) pour accéder aux fichiers memory-bank avec des chemins absolus.
 - Windsurf is now in 'Token-Saver' mode. Minimize context usage by using tools instead of pre-loading.

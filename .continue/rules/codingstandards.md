@@ -9,7 +9,7 @@ globs:
 alwaysApply: true
 ---
 
-# render_signal_server – Cursor Rules (v2026-01)
+# render_signal_server – Continue Rules (v2026-01)
 
 These rules are the single source of truth for backend (Flask), frontend (modular ES6), and legacy PHP/R2 tooling. Apply them to every change unless an explicit exception is documented here.
 
@@ -129,7 +129,7 @@ def upload_to_r2(source_url: str) -> R2UploadResult:
 - **Exclusions & workflows:** do not call global scaffolding/testing skills when local equivalents exist, and when executing the `/enhance` workflow or any prompt-engineering task, ensure the resulting plan still honors this priority and explicitly names the skill to be invoked.
 
 ## Documentation Updates
-- Any time you create or modify documentation (README, docs/, Markdown guides), you **must** apply the methodology defined in `.windsurf/skills/documentation/SKILL.md` (TL;DR first, problem-first opening, ❌/✅ blocks, trade-offs, Golden Rule). Treat this skill file as the authoritative checklist before writing.
+- Any time you create or modify documentation (README, docs/, Markdown guides), you **must** apply the methodology defined in `.continue/rules/documentation.md` (TL;DR first, problem-first opening, ❌/✅ blocks, trade-offs, Golden Rule). Treat this rule file as the authoritative checklist before writing.
 
 ## Deployment & Environment
 - Branch naming: `feature/<slug>` or `fix/<slug>`; commits follow Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`).
@@ -144,6 +144,17 @@ def upload_to_r2(source_url: str) -> R2UploadResult:
 - Disable authentication on `/api/ingress/gmail` or expose PROCESS_API_TOKEN in logs.
 - Log raw email bodies or personally identifiable information from Gmail payloads.
 - Attempt to restart IMAP polling services (retired).
+
+## Error Handling Patterns
+- **Custom Exceptions**: Define domain-specific exception classes that inherit from appropriate base exceptions.
+- **Consistent Error Responses**: Use standardized JSON error response format across all API endpoints.
+- **Exception Logging**: Always log exceptions with context but never expose sensitive information in responses.
+- **Graceful Degradation**: Handle service failures gracefully with appropriate fallback mechanisms.
+
+## Frontend Security Requirements
+- **No innerHTML**: Strictly prohibit `innerHTML` assignments in modern dashboard code - use `textContent` or DOM manipulation methods instead.
+- **Input Sanitization**: Validate and sanitize all user inputs before DOM insertion.
+- **Async Error Boundaries**: Implement proper error handling for all async operations and promise chains.
 
 ## Notes finales
 - Maintenir ce document <12 000 caractères. Réviser après toute évolution majeure.

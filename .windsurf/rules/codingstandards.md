@@ -1,20 +1,10 @@
 ---
 trigger: always_on
-description: 
+description: Core engineering standards and enforced conventions for render_signal_server
 globs: 
 ---
 
----
-description: Core engineering standards and enforced conventions for render_signal_server
-globs:
-  - "**/*.py"
-  - "static/**/*.js"
-  - "dashboard.html"
-  - "docs/**/*.md"
-alwaysApply: true
----
-
-# render_signal_server – Cursor Rules (v2026-01)
+# render_signal_server – Windsurf Rules (v2026-01)
 
 These rules are the single source of truth for backend (Flask), frontend (modular ES6), and legacy PHP/R2 tooling. Apply them to every change unless an explicit exception is documented here.
 
