@@ -1,7 +1,7 @@
 ---
 name: skills-integration
 description: Automatic skill detection and routing matrix for workflow_mediapipe based on pattern matching and priority hierarchy
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Patterns de Détection pour Skills Integration
@@ -24,7 +24,7 @@ Cette matrice définit les patterns de détection automatique pour l'invocation 
 | `js module`, `frontend module`, `es6 module`, `scaffold js` | **scaffold-js-module** | 3 |
 | `python service`, `singleton service`, `backend service`, `scaffold python` | **scaffold-service** | 3 |
 | `réflexion`, `think`, `logique`, `architecture`, `analyser` | **sequentialthinking** | 1 |
-| `tâche`, `task`, `backlog`, `planification`, `roadmap` | **task-master** | 1 |
+| `tâche`, `task`, `backlog`, `planification`, `roadmap` | **shrimp-task-manager.md** | 1 |
 | `test matrix`, `pytest suites`, `unit redis r2`, `resilience test` | **testing-matrix-navigator** | 2 |
 | `dashboard`, `ux`, `frontend`, `webhook panel`, `autosave` | **webhook-dashboard-ux-maintainer** | 3 |
 | `render`, `déploiement`, `render.com`, `service creation`, `monitoring`, `orchestration` | **render-deployment-manager** | 3 |
@@ -33,7 +33,7 @@ Cette matrice définit les patterns de détection automatique pour l'invocation 
 
 When patterns detected, automatically load:
 ```
-read_file(".continue/rules/[SKILL_NAME].md")
+fast_read_file(".continue/rules/[SKILL_NAME].md")
 ```
 
 ## Multi-Skill Support

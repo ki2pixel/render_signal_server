@@ -107,7 +107,7 @@ def upload_to_r2(source_url: str) -> R2UploadResult:
 - Favor Given/When/Then naming and explicit fixtures (see `tests/test_api_ingress.py`).
 
 ### Skill Invocation Policy (Workspace vs Global)
-- **Priority order:** always invoke workspace-scoped skills under `.windsurf/skills/` before falling back to the global catalog in `/home/kidpixel/.codeium/skills`. The local skills encapsulate project-specific scripts, environments, and templates that enforce these coding standards.
+- **Priority order:** always invoke workspace-scoped skills under `.continue/rules/` before falling back to the global catalog in `/home/kidpixel/.codeium/skills`. The local skills encapsulate project-specific scripts, environments, and templates that enforce these coding standards.
   - `redis-config-guardian` remplace/complète le skill `check-config` pour tout audit de `processing_prefs`, `routing_rules`, `webhook_config`, `magic_link_tokens`. Il orchestre le script CLI + l’API dashboard.
   - `debugging-strategies` est obligatoire pour toute tâche de débogage (bugs, incidents de performances, comportements inattendus) avant d’envisager le moindre recours aux skills globaux ou à des ressources externes.
   - Le skill `run-tests` reste la porte d’entrée canonique pour `pytest`; `scaffold-js-module` et `scaffold-service` demeurent obligatoires pour les nouveaux modules/services.
@@ -120,6 +120,10 @@ def upload_to_r2(source_url: str) -> R2UploadResult:
   - `testing-matrix-navigator` : Guide for selecting and executing the correct pytest suites (unit, redis, r2, resilience) with environment setup and coverage expectations.
   - `webhook-dashboard-ux-maintainer` : Preserve and extend the modern dashboard (dashboard.html + static modules) with WCAG-compliant UX, autosave flows, and modular ES6 patterns.
   - `render-deployment-manager` : Manage Render.com deployments and services using MCP tools for service creation, environment management, monitoring, and deployment orchestration.
+  - `shrimp-task-manager` : Manage tasks and backlogs using Shrimp Task Manager.
+  - `fast-filesystem-ops` : Manage file system operations using Fast Filesystem.
+  - `json-query-expert` : Manage JSON queries using JSON Query Expert.
+  - `sequentialthinking-logic` : Manage sequential thinking using Sequential Thinking Logic.
 - **Global skills usage:** reach for `/home/kidpixel/.codeium/skills/*` only when a needed capability (e.g., PDF tooling, algorithmic art, Postgres expertise) is absent from the workspace set. Document why the global skill was preferred if the task overlaps existing local skills.
 - **Exclusions & workflows:** do not call global scaffolding/testing skills when local equivalents exist, and when executing the `/enhance` workflow or any prompt-engineering task, ensure the resulting plan still honors this priority and explicitly names the skill to be invoked.
 

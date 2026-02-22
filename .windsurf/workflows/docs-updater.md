@@ -20,23 +20,23 @@ description: Docs Updater (Standard Tools: Cloc/Radon + Quality Context)
 Lancer les commandes suivantes configurées pour ignorer les rapports de couverture (`htmlcov`) et les fichiers de déploiement/debug.
 
 1.  **Cartographie (Filtre Bruit)** :
-    - `run_command "tree -L 2 -I '__pycache__|venv|node_modules|.git|htmlcov|debug|deployment|memory-bank'"`
+    - `run_command "tree -L 2 -I '__pycache__|venv|node_modules|.git|htmlcov|debug|deployment|memory-bank|.shrimp_task_manager'"`
     - *But* : Visualiser l'architecture modulaire (`email_processing`, `services`, `routes`, `background`).
 2.  **Volumétrie (Code Source)** :
-    - `run_command "cloc . --exclude-dir=tests,docs,venv,node_modules,htmlcov,debug,deployment,memory-bank --exclude-ext=json,txt,log --md"`
+    - `run_command "cloc . --exclude-dir=tests,docs,venv,node_modules,htmlcov,debug,deployment,memory-bank,.shrimp_task_manager --exclude-ext=json,txt,log --md"`
     - *But* : Quantifier le code Python réel (Core vs Tests) sans être pollué par les logs ou les assets HTML.
 3.  **Complexité Cyclomatique (Python Core)** :
-    - `run_command "radon cc . -a -nc --exclude='tests/*,venv/*,htmlcov/*,docs/*,deployment/*,setup.py'"`
+    - `run_command "radon cc . -a -nc --exclude='tests/*,venv/*,htmlcov/*,docs/*,deployment/*,setup.py,.shrimp_task_manager/*'"`
     - *But* : Repérer les points chauds.
     - **Cibles probables** : `email_processing/orchestrator.py` et `app_render.py` sont souvent des zones denses à surveiller (Score C/D).
 4.  **Exploration Scripts Approfondie** :
-    - `run_command "tree -L 4 scripts/ background/ routes/ services/ -I '__pycache__|venv|node_modules|.git|htmlcov|debug|deployment|memory-bank'"`
+    - `run_command "tree -L 4 scripts/ background/ routes/ services/ -I '__pycache__|venv|node_modules|.git|htmlcov|debug|deployment|memory-bank|.shrimp_task_manager'"`
     - *But* : Explorer en profondeur les répertoires de scripts utilitaires et services (scripts/, background/, routes/, services/ avec modules critiques comme orchestrator.py, api_ingress.py).
 5.  **Volumétrie Scripts Spécialisés** :
-    - `run_command "cloc scripts/ background/ routes/ services/ --exclude-dir=tests --exclude-ext=json,txt,log --md"`
+    - `run_command "cloc scripts/ background/ routes/ services/ --exclude-dir=tests,.shrimp_task_manager --exclude-ext=json,txt,log --md"`
     - *But* : Quantifier le code dans les scripts spécialisés et services pour identifier les zones de documentation potentiellement manquées.
 6.  **Complexité Scripts Utilitaires** :
-    - `run_command "radon cc scripts/ background/ routes/ services/ -a -nc --exclude='tests/*'"`
+    - `run_command "radon cc scripts/ background/ routes/ services/ -a -nc --exclude='tests/*,.shrimp_task_manager/*'"`
     - *But* : Évaluer la complexité des scripts et services critiques pour prioriser la documentation des utilitaires et fonctions complexes (comme check_new_emails_and_trigger_webhook, ingest_gmail).
 
 ## Étape 2 — Diagnostic Triangulé
