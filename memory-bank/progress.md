@@ -21,6 +21,12 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-02-25 13:10:00] - Idempotence Gmail Push: tests de non-régression + validation ciblée
+- **Objectif** : Garantir qu’un double POST identique sur `/api/ingress/gmail` ne déclenche qu’un seul envoi webhook.
+- **Implémentation** : Ajout de tests `test_gmail_ingress_idempotent_inflight_lock` + variante "webhook failure" (HTTP 500) dans `tests/routes/test_api_ingress.py`.
+- **Validation** : `pytest -q tests/routes/test_api_ingress.py tests/test_preferences_and_dedup.py tests/test_deduplication_redis_client.py tests/test_email_processing_orchestrator_more.py` (28 tests OK).
+- **Tracking** : Tâches Shrimp complétées `b9a42d6b-cc50-4148-8701-6e98eff20f0f` + `b363da8a-8df3-44ee-95b1-d5c44ecb03a8`.
+
 [2026-02-05 00:30:00] - Suppression complète de MAKECOM_API_KEY et logiques associées Terminée
 - **Objectif** : Supprimer MAKECOM_API_KEY et toutes les logiques Make.com obsolètes du codebase, car les scénarios recadrage sont gérés par WEBHOOK_URL + PHP handler.
 - **Actions réalisées** :

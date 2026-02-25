@@ -26,7 +26,7 @@ _auth_service = AuthService(_config_service)
 
 
 def _maybe_enrich_delivery_links_with_r2(
-    *, delivery_links: list, email_id: str, logger
+        *, delivery_links: list, email_id: str, logger
 ) -> None:
     if not delivery_links:
         return
@@ -172,7 +172,7 @@ def ingest_gmail():
                                     redis_debug["runtime_flags_redis"] = runtime_flags_raw.decode("utf-8")
                                 else:
                                     redis_debug["runtime_flags_redis"] = None
-                            
+
                             # Vérifier d'autres clés pertinentes
                             for key in ["config:webhook_config", "config:processing_prefs"]:
                                 try:
@@ -182,7 +182,7 @@ def ingest_gmail():
                                     redis_debug[key] = "ERROR"
                         except Exception as e:
                             redis_debug["redis_error"] = str(e)
-                    
+
                     current_app.logger.warning(
                         "INGRESS: Gmail ingress disabled - gmail_ingress_enabled=%s | Redis debug: %s",
                         gmail_ingress_enabled,
@@ -193,7 +193,7 @@ def ingest_gmail():
                         "INGRESS: Gmail ingress disabled - gmail_ingress_enabled=%s (Redis debug failed)",
                         gmail_ingress_enabled,
                     )
-                
+
                 return (
                     jsonify({"success": False, "message": "Gmail ingress disabled"}),
                     409,
@@ -230,236 +230,258 @@ def ingest_gmail():
     except Exception:
         pass
 
+    inflight_acquired = False
+    release_lock_fn = getattr(ar, "release_email_id_inflight_lock_redis", None)
     try:
-        gmail_sender_list = getattr(ar, "GMAIL_SENDER_ALLOWLIST", [])
-        allowed = [
-            str(s).strip().lower()
-            for s in (gmail_sender_list if isinstance(gmail_sender_list, list) else [])
-            if isinstance(s, str) and s.strip()
-        ]
-        if allowed and sender_email not in allowed:
-            try:
-                mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
-                if callable(mark_processed_fn):
-                    mark_processed_fn(email_id)
-            except Exception:
-                pass
-            return (
-                jsonify({"success": True, "status": "skipped_sender_not_allowed", "email_id": email_id}),
-                200,
-            )
-    except Exception:
-        pass
-
-    try:
-        if not email_orchestrator._is_webhook_sending_enabled():
-            return (
-                jsonify({"success": False, "message": "Webhook sending disabled"}),
-                409,
-            )
-    except Exception:
-        pass
-
-    tz_for_polling = getattr(ar, "TZ_FOR_POLLING", None)
-    try:
-        now_local = datetime.now(tz_for_polling) if tz_for_polling else datetime.now()
-    except Exception:
-        now_local = datetime.now()
-
-    detector_val = None
-    delivery_time_val = None
-    desabo_is_urgent = False
-    try:
-        ms_res = pattern_matching.check_media_solution_pattern(
-            subject or "", body, tz_for_polling, current_app.logger
-        )
-        if isinstance(ms_res, dict) and bool(ms_res.get("matches")):
-            detector_val = "recadrage"
-            delivery_time_val = ms_res.get("delivery_time")
-        else:
-            des_res = pattern_matching.check_desabo_conditions(
-                subject or "", body, current_app.logger
-            )
-            if isinstance(des_res, dict) and bool(des_res.get("matches")):
-                detector_val = "desabonnement_journee_tarifs"
-                desabo_is_urgent = bool(des_res.get("is_urgent"))
-    except Exception:
-        detector_val = None
-
-    s_str, e_str = "", ""
-    try:
-        s_str, e_str = email_orchestrator._load_webhook_global_time_window()
-    except Exception:
-        s_str, e_str = "", ""
-
-    start_t = parse_time_hhmm(s_str) if s_str else None
-    end_t = parse_time_hhmm(e_str) if e_str else None
-    within = True
-    if start_t and end_t:
-        within = is_within_time_window_local(now_local, start_t, end_t)
-
-    if not within:
-        if detector_val == "desabonnement_journee_tarifs":
-            if desabo_is_urgent:
+        acquire_lock_fn = getattr(ar, "acquire_email_id_inflight_lock_redis", None)
+        if callable(acquire_lock_fn):
+            inflight_acquired = bool(acquire_lock_fn(email_id))
+            if not inflight_acquired:
                 return (
-                    jsonify({"success": False, "message": "Outside time window (DESABO urgent)"}),
-                    409,
+                    jsonify({"success": True, "status": "already_processing", "email_id": email_id}),
+                    200,
                 )
-        elif detector_val == "recadrage":
-            try:
-                mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
-                if callable(mark_processed_fn):
-                    mark_processed_fn(email_id)
-            except Exception:
-                pass
-            return (
-                jsonify({"success": True, "status": "skipped_outside_time_window", "email_id": email_id}),
-                200,
-            )
-        else:
-            return (
-                jsonify({"success": False, "message": "Outside time window"}),
-                409,
-            )
-
-    start_payload_val = None
-    try:
-        if start_t and end_t:
-            if within:
-                start_payload_val = "maintenant"
-            else:
-                if (
-                    detector_val == "desabonnement_journee_tarifs"
-                    and not desabo_is_urgent
-                    and now_local.time() < start_t
-                ):
-                    start_payload_val = s_str
     except Exception:
-        start_payload_val = None
-
-    delivery_links = link_extraction.extract_provider_links_from_text(body)
-
-    try:
-        _maybe_enrich_delivery_links_with_r2(
-            delivery_links=delivery_links or [],
-            email_id=email_id,
-            logger=current_app.logger,
-        )
-    except Exception:
-        pass
-
-    payload_for_webhook = {
-        "microsoft_graph_email_id": email_id,
-        "subject": subject or "",
-        "receivedDateTime": email_date or "",
-        "sender_address": sender_raw,
-        "bodyPreview": (body or "")[:200],
-        "email_content": body or "",
-        "source": "gmail_push",
-    }
+        # Fail-open: do not block processing if lock system is unavailable
+        inflight_acquired = False
 
     try:
-        if detector_val:
-            payload_for_webhook["detector"] = detector_val
-        if detector_val == "recadrage" and delivery_time_val:
-            payload_for_webhook["delivery_time"] = delivery_time_val
-        payload_for_webhook["sender_email"] = sender_email
-    except Exception:
-        pass
-
-    try:
-        if start_payload_val is not None:
-            payload_for_webhook["webhooks_time_start"] = start_payload_val
-        if e_str:
-            payload_for_webhook["webhooks_time_end"] = e_str
-    except Exception:
-        pass
-
-    webhook_cfg = {}
-    try:
-        webhook_cfg = email_orchestrator._get_webhook_config_dict() or {}
-    except Exception:
-        webhook_cfg = {}
-
-    webhook_url = ""
-    try:
-        webhook_url = str(webhook_cfg.get("webhook_url") or "").strip()
-    except Exception:
-        webhook_url = ""
-    if not webhook_url:
-        webhook_url = str(getattr(ar, "WEBHOOK_URL", "") or "").strip()
-    if not webhook_url:
-        return jsonify({"success": False, "message": "WEBHOOK_URL not configured"}), 500
-
-    webhook_ssl_verify = True
-    try:
-        webhook_ssl_verify = bool(webhook_cfg.get("webhook_ssl_verify", True))
-    except Exception:
-        webhook_ssl_verify = True
-
-    allow_without_links = bool(getattr(ar, "ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS", False))
-    try:
-        rfs = getattr(ar, "_runtime_flags_service", None)
-        if rfs is not None and hasattr(rfs, "get_flag"):
-            allow_without_links = bool(
-                rfs.get_flag("allow_custom_webhook_without_links", allow_without_links)
-            )
-    except Exception:
-        pass
-
-    processing_prefs = getattr(ar, "PROCESSING_PREFS", {})
-
-    rate_limit_allow_send = getattr(ar, "_rate_limit_allow_send", None)
-    record_send_event = getattr(ar, "_record_send_event", None)
-    append_webhook_log = getattr(ar, "_append_webhook_log", None)
-    mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
-
-    if not callable(rate_limit_allow_send) or not callable(record_send_event):
-        return jsonify({"success": False, "message": "Server misconfigured"}), 500
-    if not callable(append_webhook_log) or not callable(mark_processed_fn):
-        return jsonify({"success": False, "message": "Server misconfigured"}), 500
-
-    import requests
-    import time
-
-    try:
-        flow_result = email_orchestrator.send_custom_webhook_flow(
-            email_id=email_id,
-            subject=subject,
-            payload_for_webhook=payload_for_webhook,
-            delivery_links=delivery_links or [],
-            webhook_url=webhook_url,
-            webhook_ssl_verify=webhook_ssl_verify,
-            allow_without_links=allow_without_links,
-            processing_prefs=processing_prefs,
-            rate_limit_allow_send=rate_limit_allow_send,
-            record_send_event=record_send_event,
-            append_webhook_log=append_webhook_log,
-            mark_email_id_as_processed_redis=mark_processed_fn,
-            mark_email_as_read_imap=lambda *_a, **_kw: True,
-            mail=None,
-            email_num=None,
-            urlparse=None,
-            requests=requests,
-            time=time,
-            logger=current_app.logger,
-        )
-
-        return (
-            jsonify(
-                {
-                    "success": True,
-                    "status": "processed",
-                    "email_id": email_id,
-                    "flow_result": flow_result,
-                    "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-                }
-            ),
-            200,
-        )
-    except Exception as e:
         try:
-            current_app.logger.error("INGRESS: processing error for %s: %s", email_id, e)
+            gmail_sender_list = getattr(ar, "GMAIL_SENDER_ALLOWLIST", [])
+            allowed = [
+                str(s).strip().lower()
+                for s in (gmail_sender_list if isinstance(gmail_sender_list, list) else [])
+                if isinstance(s, str) and s.strip()
+            ]
+            if allowed and sender_email not in allowed:
+                try:
+                    mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
+                    if callable(mark_processed_fn):
+                        mark_processed_fn(email_id)
+                except Exception:
+                    pass
+                return (
+                    jsonify({"success": True, "status": "skipped_sender_not_allowed", "email_id": email_id}),
+                    200,
+                )
         except Exception:
             pass
-        return jsonify({"success": False, "message": "Internal error"}), 500
+
+        try:
+            if not email_orchestrator._is_webhook_sending_enabled():
+                return (
+                    jsonify({"success": False, "message": "Webhook sending disabled"}),
+                    409,
+                )
+        except Exception:
+            pass
+
+        tz_for_polling = getattr(ar, "TZ_FOR_POLLING", None)
+        try:
+            now_local = datetime.now(tz_for_polling) if tz_for_polling else datetime.now()
+        except Exception:
+            now_local = datetime.now()
+
+        detector_val = None
+        delivery_time_val = None
+        desabo_is_urgent = False
+        try:
+            ms_res = pattern_matching.check_media_solution_pattern(
+                subject or "", body, tz_for_polling, current_app.logger
+            )
+            if isinstance(ms_res, dict) and bool(ms_res.get("matches")):
+                detector_val = "recadrage"
+                delivery_time_val = ms_res.get("delivery_time")
+            else:
+                des_res = pattern_matching.check_desabo_conditions(
+                    subject or "", body, current_app.logger
+                )
+                if isinstance(des_res, dict) and bool(des_res.get("matches")):
+                    detector_val = "desabonnement_journee_tarifs"
+                    desabo_is_urgent = bool(des_res.get("is_urgent"))
+        except Exception:
+            detector_val = None
+
+        s_str, e_str = "", ""
+        try:
+            s_str, e_str = email_orchestrator._load_webhook_global_time_window()
+        except Exception:
+            s_str, e_str = "", ""
+
+        start_t = parse_time_hhmm(s_str) if s_str else None
+        end_t = parse_time_hhmm(e_str) if e_str else None
+        within = True
+        if start_t and end_t:
+            within = is_within_time_window_local(now_local, start_t, end_t)
+
+        if not within:
+            if detector_val == "desabonnement_journee_tarifs":
+                if desabo_is_urgent:
+                    return (
+                        jsonify({"success": False, "message": "Outside time window (DESABO urgent)"}),
+                        409,
+                    )
+            elif detector_val == "recadrage":
+                try:
+                    mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
+                    if callable(mark_processed_fn):
+                        mark_processed_fn(email_id)
+                except Exception:
+                    pass
+                return (
+                    jsonify({"success": True, "status": "skipped_outside_time_window", "email_id": email_id}),
+                    200,
+                )
+            else:
+                return (
+                    jsonify({"success": False, "message": "Outside time window"}),
+                    409,
+                )
+
+        start_payload_val = None
+        try:
+            if start_t and end_t:
+                if within:
+                    start_payload_val = "maintenant"
+                else:
+                    if (
+                            detector_val == "desabonnement_journee_tarifs"
+                            and not desabo_is_urgent
+                            and now_local.time() < start_t
+                    ):
+                        start_payload_val = s_str
+        except Exception:
+            start_payload_val = None
+
+        delivery_links = link_extraction.extract_provider_links_from_text(body)
+
+        try:
+            _maybe_enrich_delivery_links_with_r2(
+                delivery_links=delivery_links or [],
+                email_id=email_id,
+                logger=current_app.logger,
+            )
+        except Exception:
+            pass
+
+        payload_for_webhook = {
+            "microsoft_graph_email_id": email_id,
+            "subject": subject or "",
+            "receivedDateTime": email_date or "",
+            "sender_address": sender_raw,
+            "bodyPreview": (body or "")[:200],
+            "email_content": body or "",
+            "source": "gmail_push",
+        }
+
+        try:
+            if detector_val:
+                payload_for_webhook["detector"] = detector_val
+            if detector_val == "recadrage" and delivery_time_val:
+                payload_for_webhook["delivery_time"] = delivery_time_val
+            payload_for_webhook["sender_email"] = sender_email
+        except Exception:
+            pass
+
+        try:
+            if start_payload_val is not None:
+                payload_for_webhook["webhooks_time_start"] = start_payload_val
+            if e_str:
+                payload_for_webhook["webhooks_time_end"] = e_str
+        except Exception:
+            pass
+
+        webhook_cfg = {}
+        try:
+            webhook_cfg = email_orchestrator._get_webhook_config_dict() or {}
+        except Exception:
+            webhook_cfg = {}
+
+        webhook_url = ""
+        try:
+            webhook_url = str(webhook_cfg.get("webhook_url") or "").strip()
+        except Exception:
+            webhook_url = ""
+        if not webhook_url:
+            webhook_url = str(getattr(ar, "WEBHOOK_URL", "") or "").strip()
+        if not webhook_url:
+            return jsonify({"success": False, "message": "WEBHOOK_URL not configured"}), 500
+
+        webhook_ssl_verify = True
+        try:
+            webhook_ssl_verify = bool(webhook_cfg.get("webhook_ssl_verify", True))
+        except Exception:
+            webhook_ssl_verify = True
+
+        allow_without_links = bool(getattr(ar, "ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS", False))
+        try:
+            rfs = getattr(ar, "_runtime_flags_service", None)
+            if rfs is not None and hasattr(rfs, "get_flag"):
+                allow_without_links = bool(
+                    rfs.get_flag("allow_custom_webhook_without_links", allow_without_links)
+                )
+        except Exception:
+            pass
+
+        processing_prefs = getattr(ar, "PROCESSING_PREFS", {})
+
+        rate_limit_allow_send = getattr(ar, "_rate_limit_allow_send", None)
+        record_send_event = getattr(ar, "_record_send_event", None)
+        append_webhook_log = getattr(ar, "_append_webhook_log", None)
+        mark_processed_fn = getattr(ar, "mark_email_id_as_processed_redis", None)
+
+        if not callable(rate_limit_allow_send) or not callable(record_send_event):
+            return jsonify({"success": False, "message": "Server misconfigured"}), 500
+        if not callable(append_webhook_log) or not callable(mark_processed_fn):
+            return jsonify({"success": False, "message": "Server misconfigured"}), 500
+
+        import requests
+        import time
+
+        try:
+            flow_result = email_orchestrator.send_custom_webhook_flow(
+                email_id=email_id,
+                subject=subject,
+                payload_for_webhook=payload_for_webhook,
+                delivery_links=delivery_links or [],
+                webhook_url=webhook_url,
+                webhook_ssl_verify=webhook_ssl_verify,
+                allow_without_links=allow_without_links,
+                processing_prefs=processing_prefs,
+                rate_limit_allow_send=rate_limit_allow_send,
+                record_send_event=record_send_event,
+                append_webhook_log=append_webhook_log,
+                mark_email_id_as_processed_redis=mark_processed_fn,
+                mark_email_as_read_imap=lambda *_a, **_kw: True,
+                mail=None,
+                email_num=None,
+                urlparse=None,
+                requests=requests,
+                time=time,
+                logger=current_app.logger,
+            )
+
+            return (
+                jsonify(
+                    {
+                        "success": True,
+                        "status": "processed",
+                        "email_id": email_id,
+                        "flow_result": flow_result,
+                        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                    }
+                ),
+                200,
+            )
+        except Exception as e:
+            try:
+                current_app.logger.error("INGRESS: processing error for %s: %s", email_id, e)
+            except Exception:
+                pass
+            return jsonify({"success": False, "message": "Internal error"}), 500
+    finally:
+        try:
+            if inflight_acquired and callable(release_lock_fn):
+                release_lock_fn(email_id)
+        except Exception:
+            pass

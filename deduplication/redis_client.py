@@ -32,10 +32,6 @@ def is_email_id_processed(
             logger.error(f"REDIS_DEDUP: Error checking email ID '{email_id}': {e}. Assuming NOT processed.")
         return False
 
-
-essential_types = (str, bytes)
-
-
 def mark_email_id_processed(
     redis_client,
     email_id: str,
@@ -50,6 +46,87 @@ def mark_email_id_processed(
     except Exception as e:
         if logger:
             logger.error(f"REDIS_DEDUP: Error adding email ID '{email_id}': {e}")
+        return False
+
+
+def acquire_email_inflight_lock(
+    redis_client,
+    email_id: str,
+    logger,
+    lock_key_prefix: str,
+    ttl_seconds: int,
+) -> bool:
+    """Acquire an in-flight lock for a given email_id.
+
+    Returns:
+        bool:
+            - True  => lock acquired OR lock system unavailable (fail-open)
+            - False => lock already held by another in-flight processing
+
+    Design:
+    - Redis SET key value NX EX for atomic acquisition.
+    - Fail-open if Redis isn't configured or errors occur (avoid dropping emails).
+    """
+    if not email_id:
+        return True
+    if redis_client is None:
+        return True
+
+    prefix = lock_key_prefix or ""
+    key = f"{prefix}{email_id}"
+    try:
+        ttl = int(ttl_seconds) if ttl_seconds is not None else 0
+    except Exception:
+        ttl = 0
+    if ttl <= 0:
+        ttl = 900
+
+    try:
+        acquired = bool(redis_client.set(key, "1", nx=True, ex=ttl))
+        if not acquired:
+            try:
+                logger.info("DEDUP_INFLIGHT: Skipping already in-flight email_id=%s", email_id)
+            except Exception:
+                pass
+        return acquired
+    except Exception as e:
+        try:
+            logger.warning(
+                "REDIS_DEDUP: Failed to acquire in-flight lock for email_id=%s: %s (fail-open)",
+                email_id,
+                e,
+            )
+        except Exception:
+            pass
+        return True
+
+
+def release_email_inflight_lock(
+    redis_client,
+    email_id: str,
+    logger,
+    lock_key_prefix: str,
+) -> bool:
+    """Release an in-flight lock for email_id (best-effort)."""
+    if not email_id:
+        return True
+    if redis_client is None:
+        return True
+
+    prefix = lock_key_prefix or ""
+    key = f"{prefix}{email_id}"
+    try:
+        redis_client.delete(key)
+        return True
+    except Exception as e:
+        try:
+            logger.warning(
+                "REDIS_DEDUP: Failed to release in-flight lock for email_id=%s: %s",
+                email_id,
+                e,
+            )
+        except Exception:
+            pass
         return False
 
 

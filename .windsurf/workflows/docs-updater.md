@@ -69,7 +69,6 @@ Choisir le modèle approprié selon le dossier ciblé :
 ## Étape 4 — Proposition de Mise à Jour
 Générer un plan de modification avant d'appliquer :
 
-```markdown
 ## 📝 Plan de Mise à Jour Documentation
 ### Audit Métrique
 - **Cible** : `email_processing/link_extraction.py`
@@ -80,7 +79,7 @@ Générer un plan de modification avant d'appliquer :
 - **Type** : [Logic/Algo]
 - **Manque** : Les patterns Regex exacts ne sont pas listés.
 - **Correction** :
-  ```markdown
+```
   [Ajout de la table de correspondance Regex -> Service]
 ```
 

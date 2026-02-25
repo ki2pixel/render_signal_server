@@ -114,7 +114,36 @@ if dedup_service.is_email_id_processed(email_id):
 dedup_service.mark_email_id_as_processed(email_id)
 ```
 
-### 3. Allowlist expéditeurs
+### 3. Idempotence : Verrou "In-flight" pour double POST
+
+```python
+# api_ingress.py - verrou anti-double POST
+inflight_acquired = False
+try:
+    acquire_lock_fn = getattr(ar, "acquire_email_id_inflight_lock_redis", None)
+    if callable(acquire_lock_fn):
+        inflight_acquired = bool(acquire_lock_fn(email_id))
+        if not inflight_acquired:
+            return jsonify({
+                "success": True, 
+                "status": "already_processing", 
+                "email_id": email_id
+            }), 200
+except Exception:
+    # Fail-open: do not block processing if lock system is unavailable
+    inflight_acquired = False
+```
+
+**Le problème** : Gmail Apps Script peut retry (double POST identique pour le même email) et provoquer un double déclenchement webhook.
+
+**La solution** : Verrou Redis "in-flight" avec TTL court (quelques secondes) :
+- **Premier POST** : Acquiert le verrou, traite l'email
+- **Second POST** : Verrou déjà pris → retour `already_processing`
+- **Fail-open** : Si Redis indisponible, on traite quand même (pas de blocage)
+
+**Comportement** : Si Gmail Apps Script retry (double POST identique), seul le premier traitement est autorisé.
+
+### 4. Allowlist expéditeurs
 
 ```python
 # GMAIL_SENDER_ALLOWLIST depuis app_render globals
@@ -130,7 +159,7 @@ if allowed and sender_email not in allowed:
     }), 200
 ```
 
-### 4. Pattern matching temps réel
+### 5. Pattern matching temps réel
 
 ```python
 # Détection Media Solution / DESABO
@@ -142,7 +171,7 @@ is_urgent = pattern_matching.is_urgent_desabo(payload['subject'], payload['body'
 delivery_links = link_extraction.extract_provider_links_from_text(payload['body'])
 ```
 
-### 5. Routing dynamique avant envoi
+### 6. Routing dynamique avant envoi
 
 ```python
 # Évaluation des règles personnalisées
@@ -289,9 +318,11 @@ Authorization: Bearer <PROCESS_API_TOKEN>
 | Code | Status | Quand |
 |------|--------|-------|
 | 200 | processed | Email traité avec succès |
-| 200 | already_processed | Doublon détecté |
+| 200 | already_processed | Doublon détecté (déduplication) |
+| 200 | already_processing | Double POST en cours (verrou in-flight) |
 | 200 | skipped_sender_not_allowed | Expéditeur non autorisé |
 | 200 | skipped_outside_time_window | Hors fenêtre (RECADRAGE) |
+| 200 | stopped_by_routing_rule | Règle routing avec stop_processing |
 | 400 | Invalid JSON payload | JSON invalide |
 | 400 | Missing field | Champs obligatoires manquants |
 | 401 | Unauthorized | Token invalide |
@@ -422,7 +453,7 @@ logger.error(f"GMAIL_PUSH: Pattern matching error: {error}")
 
 ## Tests : couverture complète
 
-### Tests unitaires (7 tests)
+### Tests unitaires (9 tests)
 
 ```python
 def test_ingress_gmail_unauthorized():
@@ -448,13 +479,62 @@ def test_ingress_gmail_happy_path():
                           headers={"Authorization": "Bearer valid_token"})
     assert response.status_code == 200
     assert response.json["status"] == "processed"
+
+def test_gmail_ingress_idempotent_inflight_lock():
+    """Double POST identique → seul le premier traite"""
+    payload = {
+        "sender": "test@example.com",
+        "body": "Test email",
+        "date": "2026-02-25T10:00:00Z"
+    }
+    
+    # Mock : premier appel acquiert le lock
+    with patch('app_render.acquire_email_id_inflight_lock_redis', return_value=True):
+        response1 = client.post("/api/ingress/gmail", 
+                               json=payload,
+                               headers={"Authorization": "Bearer valid_token"})
+        assert response1.status_code == 200
+        assert response1.json["status"] == "processed"
+    
+    # Mock : second appel ne peut pas acquérir le lock
+    with patch('app_render.acquire_email_id_inflight_lock_redis', return_value=False):
+        response2 = client.post("/api/ingress/gmail", 
+                               json=payload,
+                               headers={"Authorization": "Bearer valid_token"})
+        assert response2.status_code == 200
+        assert response2.json["status"] == "already_processing"
+        assert response2.json["email_id"] == md5("test@example.com:2026-02-25T10:00:00Z").hexdigest()
+
+def test_gmail_ingress_idempotent_inflight_lock_webhook_failure():
+    """Double POST avec webhook HTTP 500 → toujours 1 seule tentative sortante"""
+    payload = {
+        "sender": "test@example.com",
+        "body": "Test email",
+        "date": "2026-02-25T10:00:00Z"
+    }
+    
+    # Mock : premier appel acquiert le lock mais webhook échoue
+    with patch('app_render.acquire_email_id_inflight_lock_redis', return_value=True):
+        with patch('requests.post', side_effect=requests.exceptions.ConnectionError("HTTP 500")):
+            response1 = client.post("/api/ingress/gmail", 
+                                   json=payload,
+                                   headers={"Authorization": "Bearer valid_token"})
+            # Le traitement peut échouer mais le lock était acquis
+    
+    # Mock : second appel ne peut toujours pas acquérir le lock
+    with patch('app_render.acquire_email_id_inflight_lock_redis', return_value=False):
+        response2 = client.post("/api/ingress/gmail", 
+                               json=payload,
+                               headers={"Authorization": "Bearer valid_token"})
+        assert response2.status_code == 200
+        assert response2.json["status"] == "already_processing"
 ```
 
 ### Commande d'exécution
 
 ```bash
 pytest tests/routes/test_api_ingress.py -v
-# 7 passed, 1 warning
+# 9 passed, 1 warning
 ```
 
 ---
@@ -465,6 +545,7 @@ pytest tests/routes/test_api_ingress.py -v
 |----------|-------|----------|
 | 401 Unauthorized | `PROCESS_API_TOKEN` manquant | Ajouter la variable d'environnement Render |
 | 400 Missing field | Apps Script n'envoie pas sender/body | Corriger le payload Apps Script |
+| 200 already_processing | Double POST Gmail Apps Script | Comportement normal d'idempotence |
 | 409 Gmail ingress disabled | Flag `gmail_ingress_enabled`=false | Activer via dashboard (onglet Outils) |
 | 409 Webhook sending disabled | Flag `webhook_sending_enabled`=false | Activer via dashboard |
 | 200 skipped_sender_not_allowed | Expéditeur non dans allowlist | Ajouter via dashboard polling config |

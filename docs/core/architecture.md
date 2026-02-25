@@ -252,16 +252,16 @@ def upload_to_r2(self, source_url):
 
 ## Complexité surveillée : les solos à garder sous contrôle
 
-| Musicien | Complexité radon | Plan d'action |
-|-----------|------------------|---------------|
-| `orchestrator.py::check_new_emails_and_trigger_webhook` | F (239) | Extraire les solos Media Solution/DESABO |
-| `api_ingress.py::ingest_gmail` | F (85) | Découper par helpers (validation, fenêtre, R2) |
-| `email_processing/orchestrator.py::send_custom_webhook_flow` | E (22) | Isoler la logique de routing et enrichissement |
-| `preferences/processing_prefs.py::validate_processing_prefs` | E (22) | Simplifier la validation par schéma |
-| `services/routing_rules_service.py::_normalize_rules` | D (17) | Extraire la normalisation des URLs |
-| `services/r2_transfer_service.py::normalize_source_url` | E (31) | Stratégie par fournisseur |
-| `services/webhook_config_service.py::update_config` | C (18) | Nettoyage de la logique de cache |
-| `services/magic_link_service.py::consume_token` | C (18) | Simplifier la validation HMAC |
+| Musicien | Complexité radon | Statut | Plan d'action | Documentation |
+|-----------|------------------|--------|---------------|---------------|
+| `orchestrator.py::check_new_emails_and_trigger_webhook` | F (239) | ❌ Legacy | Extraire les solos Media Solution/DESABO | [docs/ingestion/legacy-imap.md](../ingestion/legacy-imap.md) |
+| `api_ingress.py::ingest_gmail` | F (85) | ✅ Actif | Découper par helpers (validation, fenêtre, R2) | [docs/ingestion/gmail-push.md](../ingestion/gmail-push.md) |
+| `email_processing/orchestrator.py::send_custom_webhook_flow` | E (22) | ✅ Actif | Isoler la logique de routing et enrichissement | [docs/processing/webhooks-outbound.md](../processing/webhooks-outbound.md) |
+| `preferences/processing_prefs.py::validate_processing_prefs` | E (22) | ✅ Actif | Simplifier la validation par schéma | [docs/processing/routing-engine.md](../processing/routing-engine.md) |
+| `services/routing_rules_service.py::_normalize_rules` | D (17) | ✅ Actif | Extraire la normalisation des URLs | [docs/processing/routing-engine.md](../processing/routing-engine.md) |
+| `services/r2_transfer_service.py::normalize_source_url` | E (31) | ✅ Actif | Stratégie par fournisseur | [docs/processing/file-offload.md](../processing/file-offload.md) |
+| `services/webhook_config_service.py::update_config` | C (18) | ✅ Actif | Nettoyage de la logique de cache | [docs/processing/webhooks-outbound.md](../processing/webhooks-outbound.md) |
+| `services/magic_link_service.py::consume_token` | C (18) | ✅ Actif | Simplifier la validation HMAC | [docs/access/magic-links.md](../access/magic-links.md) |
 
 **Moyenne actuelle** : D (25.44) sur 43 blocs analysés
 

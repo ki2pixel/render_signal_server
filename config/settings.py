@@ -141,6 +141,16 @@ SUBJECT_GROUP_REDIS_PREFIX = os.environ.get("SUBJECT_GROUP_REDIS_PREFIX", "r:ss:
 
 SUBJECT_GROUP_TTL_SECONDS = int(os.environ.get("SUBJECT_GROUP_TTL_SECONDS", 0))
 
+# Gmail Push idempotence: in-flight processing lock
+# Used to prevent duplicate processing when Gmail retries webhook delivery.
+EMAIL_ID_INFLIGHT_LOCK_PREFIX = os.environ.get(
+    "EMAIL_ID_INFLIGHT_LOCK_PREFIX",
+    "r:ss:email_inflight:",
+)
+EMAIL_ID_INFLIGHT_LOCK_TTL_SECONDS = int(
+    os.environ.get("EMAIL_ID_INFLIGHT_LOCK_TTL_SECONDS", 900)
+)
+
 
 def log_configuration(logger):
     logger.info(f"CFG WEBHOOK: Custom webhook URL configured to: {WEBHOOK_URL}")

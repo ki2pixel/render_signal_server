@@ -242,7 +242,7 @@ def safe_pattern_check(subject, body, logger):
 ### Flux de décision : pattern → routing
 
 ```python
-# email_processing/orchestrator.py
+# email_processing/orchestrator.py (MÉTHODE LEGACY IMAP)
 def check_new_emails_and_trigger_webhook(email_data):
     # 1. Pattern matching
     ms_result = pattern_matching.check_media_solution_pattern(
@@ -266,6 +266,22 @@ def check_new_emails_and_trigger_webhook(email_data):
     # 3. Fallback routing normal
     return route_by_default(email_data)
 ```
+
+### ✅ Méthode actuelle : Gmail Push Integration
+
+```python
+# routes/api_ingress.py (MÉTHODE ACTUELLE GMAIL PUSH)
+@bp.route("/gmail", methods=["POST"])
+def ingest_gmail():
+    # Pattern matching dans le flux Gmail Push
+    pattern_result = pattern_matching.check_media_solution_pattern(payload['subject'], payload['body'])
+    is_desabo = pattern_matching.check_desabo_pattern(payload['subject'], payload['body'])
+    
+    # Routing et webhook dans le même appel
+    return send_custom_webhook_flow(payload)
+```
+
+**Note** : `check_new_emails_and_trigger_webhook` est la méthode legacy IMAP. Pour la méthode actuelle Gmail Push, voir [docs/ingestion/gmail-push.md](../ingestion/gmail-push.md).
 
 ### Enrichissement payload webhook
 

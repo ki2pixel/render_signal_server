@@ -280,6 +280,9 @@ PROCESSED_SUBJECT_GROUPS_REDIS_KEY = settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY
 SUBJECT_GROUP_REDIS_PREFIX = settings.SUBJECT_GROUP_REDIS_PREFIX
 SUBJECT_GROUP_TTL_SECONDS = settings.SUBJECT_GROUP_TTL_SECONDS
 
+EMAIL_ID_INFLIGHT_LOCK_PREFIX = settings.EMAIL_ID_INFLIGHT_LOCK_PREFIX
+EMAIL_ID_INFLIGHT_LOCK_TTL_SECONDS = settings.EMAIL_ID_INFLIGHT_LOCK_TTL_SECONDS
+
 # Memory fallback set for subject groups when Redis is not available
 SUBJECT_GROUPS_MEMORY = set()
 
@@ -336,6 +339,33 @@ def mark_email_id_as_processed_redis(email_id):
         email_id=email_id,
         logger=app.logger,
         processed_ids_key=PROCESSED_EMAIL_IDS_REDIS_KEY,
+    )
+
+
+def acquire_email_id_inflight_lock_redis(email_id: str) -> bool:
+    """Acquire Gmail Push in-flight lock (Redis SET NX EX).
+
+    Returns True when the caller can proceed with processing.
+    Returns False when a duplicate request should be skipped (already in-flight).
+    """
+    rc = globals().get("redis_client")
+    return _dedup.acquire_email_inflight_lock(
+        rc,
+        email_id=email_id,
+        logger=app.logger,
+        lock_key_prefix=EMAIL_ID_INFLIGHT_LOCK_PREFIX,
+        ttl_seconds=EMAIL_ID_INFLIGHT_LOCK_TTL_SECONDS,
+    )
+
+
+def release_email_id_inflight_lock_redis(email_id: str) -> bool:
+    """Release Gmail Push in-flight lock (best-effort)."""
+    rc = globals().get("redis_client")
+    return _dedup.release_email_inflight_lock(
+        rc,
+        email_id=email_id,
+        logger=app.logger,
+        lock_key_prefix=EMAIL_ID_INFLIGHT_LOCK_PREFIX,
     )
 
 

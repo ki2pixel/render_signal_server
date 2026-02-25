@@ -1,12 +1,20 @@
-# Legacy IMAP Polling (Retired)
+# Legacy IMAP Ingestion
 
-**TL;DR**: On a tué le polling IMAP qui causait 90% de nos problèmes. Gmail Push est la seule méthode d'ingestion depuis 2026-02-04.
+**TL;DR**: On utilisait du polling IMAP toutes les minutes qui timeoutait et consommait toute la bande passante. Cette méthode est maintenant deprecated au profit de Gmail Push, mais maintenue pour compatibilité et debug.
 
 ---
 
-## La solution : fermeture de l'usine de tournées
+## Le problème : le polling IMAP qui nous tuait
 
-Pensez au polling IMAP comme une usine de tournées qui a été fermée pour cause de pollution excessive. Apps Script est le service postal moderne qui livre directement les lettres, sans tournée inutile. L'usine a été démantelée en 7 phases pour passer à un système de livraison instantanée.
+J'ai hérité d'un système qui polling IMAP toutes les minutes. 24/7. Même quand il n'y avait aucun email.
+
+Le résultat sur Render ?
+- Bande passante consommée en permanence  
+- Connexions qui timeout toutes les 5 minutes
+- Locks Redis complexes pour éviter les doublons en multi-conteneur
+- Logs de retry partout
+
+Pire encore : dès qu'on avait 2 conteneurs, ils se battaient pour les mêmes emails.
 
 J'ai passé des mois à debugguer un système de polling IMAP qui ne fonctionnait pas :
 
@@ -236,6 +244,118 @@ git checkout backup-before-imap-retirement-phase7
 ```
 
 Mais honnêtement ? Ne le faites pas. C'est du code mort pour de bonnes raisons.
+
+---
+
+---
+
+## Fonction critique : check_new_emails_and_trigger_webhook
+
+### Signature et responsabilité
+
+```python
+def check_new_emails_and_trigger_webhook() -> int:
+    """Execute one IMAP polling cycle and trigger webhooks when appropriate.
+    
+    This is the main orchestration function for email-based webhook triggering.
+    It connects to IMAP, fetches unseen emails, applies pattern detection,
+    and triggers appropriate webhooks based on routing rules.
+    
+    Workflow:
+    1. Connect to IMAP server
+    2. Fetch unseen emails from INBOX
+    3. For each email:
+       a. Parse headers and body
+       b. Check sender allowlist and deduplication
+       c. Infer detector type (RECADRAGE, DESABO, or none)
+       d. Route to appropriate handler (Presence, DESABO, Media Solution, Custom)
+       e. Apply time window rules
+       f. Send webhook if conditions are met
+       g. Mark email as processed
+    
+    Returns:
+        int: Number of triggered actions (best-effort count)
+    """
+```
+
+### Architecture du flux IMAP Legacy
+
+```
+IMAP Server → check_new_emails_and_trigger_webhook → Pattern Matching → Routing Rules → Webhooks
+```
+
+### Workflow complet
+
+1. **Connexion IMAP** : `imaplib.IMAP4_SSL` avec timeout
+2. **Scan INBOX** : Recherche emails `UNSEEN`
+3. **Parse headers** : Extraction sujet, expéditeur, date
+4. **Déduplication** : Redis locks pour éviter doublons
+5. **Pattern matching** : Media Solution, DESABO, RECADRAGE
+6. **Routing rules** : Évaluation règles personnalisées
+7. **Time windows** : Vérification fenêtres horaires
+8. **Webhook sending** : Envoi avec retry et logging
+9. **Mark processed** : Marquage email comme lu
+
+### Routes supportées
+
+| Route | Détecteur | Webhook | Fenêtre horaire |
+|-------|-----------|---------|-----------------|
+| PRESENCE | Thursday/Friday pattern | Autorepondeur | Oui |
+| DESABO | Désabonnement pattern | Make.com | Bypass si urgent |
+| MEDIA_SOLUTION | Média Solution pattern | Custom | Oui |
+| CUSTOM | Fallback | WEBHOOK_URL | Oui |
+
+### Complexité radon : F (239)
+
+Cette fonction a la complexité cyclomatique la plus élevée du codebase :
+- **239 points** : Trop de responsabilités dans une seule fonction
+- **1576 lignes** : Monolithique, difficile à maintenir
+- **Plan d'action** : Extraire les solos Media Solution/DESABO
+
+### ❌ L'ancien monde : fonction monolithique
+
+```python
+# ANTI-PATTERN - orchestrator.py::check_new_emails_and_trigger_webhook
+def check_new_emails_and_trigger_webhook() -> int:
+    try:
+        import imaplib
+        from email import message_from_bytes
+        
+        # Connexion IMAP qui timeout
+        imap = imaplib.IMAP4_SSL(IMAP_SERVER)
+        imap.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+        imap.select('INBOX')
+        
+        # Scan toutes les minutes, même si vide
+        status, email_ids = imap.search(None, 'UNSEEN')
+        
+        for email_id in email_ids[0].split():
+            # 1576 lignes de logique complexe...
+            process_email(email_id)
+            
+    except Exception as e:
+        logger.error(f"IMAP error: {e}")
+        return 0
+```
+
+### ✅ Le nouveau monde : fonction Gmail Push
+
+```python
+# MODERNE - api_ingress.py::ingest_gmail
+@bp.route("/gmail", methods=["POST"])
+def ingest_gmail():
+    # Authentification Bearer stricte
+    if not auth_service.verify_api_key_from_request(request):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+    
+    # Validation payload stricte
+    payload = request.get_json()
+    if not payload or not payload.get('sender') or not payload.get('body'):
+        return jsonify({"success": False, "message": "Missing required field"}), 400
+    
+    # Traitement direct, pas de polling
+    return process_gmail_payload(payload)
+```
 
 ---
 

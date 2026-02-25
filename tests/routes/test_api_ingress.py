@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -306,3 +307,150 @@ def test_ingress_gmail_r2_errors_do_not_block_send(monkeypatch, flask_client):
     assert len(captured["delivery_links"]) >= 1
     assert captured["delivery_links"][0].get("provider") == "dropbox"
     assert "r2_url" not in captured["delivery_links"][0]
+
+
+class _FakeRequestsResponse:
+    def __init__(self, *, status_code: int, json_data: dict | None = None, text: str = ""):
+        self.status_code = int(status_code)
+        self._json_data = json_data
+        self.text = text
+        if json_data is None:
+            self.content = b""
+        else:
+            self.content = json.dumps(json_data).encode("utf-8")
+
+    def json(self) -> dict:
+        if self._json_data is None:
+            raise ValueError("No JSON")
+        return self._json_data
+
+
+@pytest.mark.unit
+def test_gmail_ingress_idempotent_inflight_lock(monkeypatch, flask_client):
+    # Given: two identical POSTs where the 2nd one cannot acquire the inflight lock
+    import app_render
+
+    monkeypatch.setattr(app_render, "GMAIL_SENDER_ALLOWLIST", [])
+    monkeypatch.setattr(app_render, "is_email_id_processed_redis", lambda *_a, **_k: False)
+
+    lock_calls = {"n": 0}
+
+    def _acquire_lock(_email_id: str) -> bool:
+        lock_calls["n"] += 1
+        return lock_calls["n"] == 1
+
+    release_mock = MagicMock(return_value=True)
+    monkeypatch.setattr(app_render, "acquire_email_id_inflight_lock_redis", _acquire_lock)
+    monkeypatch.setattr(app_render, "release_email_id_inflight_lock_redis", release_mock)
+
+    monkeypatch.setattr(app_render, "_rate_limit_allow_send", lambda: True)
+    monkeypatch.setattr(app_render, "_record_send_event", lambda: None)
+    monkeypatch.setattr(app_render, "_append_webhook_log", lambda *_a, **_k: None)
+    monkeypatch.setattr(app_render, "mark_email_id_as_processed_redis", lambda *_a, **_k: True)
+
+    monkeypatch.setattr(
+        "routes.api_ingress.email_orchestrator._load_webhook_global_time_window",
+        lambda: ("", ""),
+    )
+    monkeypatch.setattr(
+        "routes.api_ingress.email_orchestrator._get_webhook_config_dict",
+        lambda: {"webhook_url": "https://example.com/webhook", "webhook_ssl_verify": True},
+    )
+
+    post_mock = MagicMock(
+        return_value=_FakeRequestsResponse(
+            status_code=200, json_data={"success": True}, text="OK"
+        )
+    )
+    monkeypatch.setattr("requests.post", post_mock)
+
+    payload = {
+        "subject": "Hello",
+        "sender": "sender@example.com",
+        "body": "hello https://www.dropbox.com/scl/fo/abc123",
+        "date": "2026-01-01T00:00:00Z",
+    }
+
+    # When: posting twice to ingress
+    resp1 = flask_client.post("/api/ingress/gmail", json=payload, headers=_auth_headers())
+    resp2 = flask_client.post("/api/ingress/gmail", json=payload, headers=_auth_headers())
+
+    # Then: first request is processed, second request is deduped by inflight lock
+    assert resp1.status_code == 200
+    data1 = resp1.get_json()
+    assert data1["success"] is True
+    assert data1["status"] == "processed"
+
+    assert resp2.status_code == 200
+    data2 = resp2.get_json()
+    assert data2["success"] is True
+    assert data2["status"] == "already_processing"
+
+    assert post_mock.call_count == 1
+    assert release_mock.call_count == 1
+
+
+@pytest.mark.unit
+def test_gmail_ingress_idempotent_inflight_lock_webhook_failure(monkeypatch, flask_client):
+    # Given: first POST proceeds but the webhook returns 500; second POST is deduped by inflight lock
+    import app_render
+
+    monkeypatch.setattr(app_render, "GMAIL_SENDER_ALLOWLIST", [])
+    monkeypatch.setattr(app_render, "is_email_id_processed_redis", lambda *_a, **_k: False)
+
+    lock_calls = {"n": 0}
+
+    def _acquire_lock(_email_id: str) -> bool:
+        lock_calls["n"] += 1
+        return lock_calls["n"] == 1
+
+    monkeypatch.setattr(app_render, "acquire_email_id_inflight_lock_redis", _acquire_lock)
+    monkeypatch.setattr(app_render, "release_email_id_inflight_lock_redis", lambda *_a, **_k: True)
+
+    monkeypatch.setattr(app_render, "_rate_limit_allow_send", lambda: True)
+    monkeypatch.setattr(app_render, "_record_send_event", lambda: None)
+    monkeypatch.setattr(app_render, "_append_webhook_log", lambda *_a, **_k: None)
+    monkeypatch.setattr(app_render, "mark_email_id_as_processed_redis", lambda *_a, **_k: True)
+
+    monkeypatch.setattr(
+        "routes.api_ingress.email_orchestrator._load_webhook_global_time_window",
+        lambda: ("", ""),
+    )
+    monkeypatch.setattr(
+        "routes.api_ingress.email_orchestrator._get_webhook_config_dict",
+        lambda: {"webhook_url": "https://example.com/webhook", "webhook_ssl_verify": True},
+    )
+
+    post_mock = MagicMock(
+        return_value=_FakeRequestsResponse(
+            status_code=500,
+            json_data=None,
+            text="Upstream error",
+        )
+    )
+    monkeypatch.setattr("requests.post", post_mock)
+
+    payload = {
+        "subject": "Hello",
+        "sender": "sender@example.com",
+        "body": "hello https://www.dropbox.com/scl/fo/abc123",
+        "date": "2026-01-01T00:00:00Z",
+    }
+
+    # When: posting twice to ingress
+    resp1 = flask_client.post("/api/ingress/gmail", json=payload, headers=_auth_headers())
+    resp2 = flask_client.post("/api/ingress/gmail", json=payload, headers=_auth_headers())
+
+    # Then: only one outgoing webhook call is attempted
+    assert resp1.status_code == 200
+    data1 = resp1.get_json()
+    assert data1["success"] is True
+    assert data1["status"] == "processed"
+    assert data1["flow_result"] is False
+
+    assert resp2.status_code == 200
+    data2 = resp2.get_json()
+    assert data2["success"] is True
+    assert data2["status"] == "already_processing"
+
+    assert post_mock.call_count == 1

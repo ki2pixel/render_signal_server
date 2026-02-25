@@ -7,6 +7,16 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 
 ## Décisions 2026
 
+[2026-02-25 13:10:00] - **Idempotence Gmail Push (double POST) : verrou in-flight + tests de non-régression**
+- **Problème** : Gmail Push peut retry (double POST identique pour le même email) et provoquer un double déclenchement webhook.
+- **Décision** : Traiter l’idempotence au niveau de `/api/ingress/gmail` via un verrou "in-flight" (Redis `SET NX EX`) + tests de non-régression.
+- **Implémentation (tests)** :
+  - Ajout de `test_gmail_ingress_idempotent_inflight_lock` (2 POST identiques → 1 seul `requests.post`, 2e réponse `status=already_processing`).
+  - Ajout de `test_gmail_ingress_idempotent_inflight_lock_webhook_failure` (webhook HTTP 500, mais toujours 1 seule tentative sortante).
+  - Mocks clés : `app_render.acquire_email_id_inflight_lock_redis` (True puis False) + `requests.post`.
+- **Validation** : `pytest -q tests/routes/test_api_ingress.py tests/test_preferences_and_dedup.py tests/test_deduplication_redis_client.py tests/test_email_processing_orchestrator_more.py` (28 tests OK).
+- **Fichiers** : `routes/api_ingress.py` (référence comportement), `tests/routes/test_api_ingress.py` (tests).
+
 [2026-02-04 23:59:00] - **Implémentation Gmail Push Toggle avec Debug Logging**
 - **Décision** : Implémenter un toggle dans le dashboard pour activer/désactiver l'ingestion Gmail Push, avec persistance Redis-first et logging complet pour faciliter le debug.
 - **Raisonnement** : Le Google Apps Script s'exécute toutes les minutes et ne peut pas être arrêté manuellement. Un toggle côté serveur permet de contrôler l'ingestion sans perdre d'emails, avec persistance Redis pour survivre aux redéploiements et logging complet pour faciliter le diagnostic en production.

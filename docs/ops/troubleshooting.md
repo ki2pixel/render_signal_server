@@ -209,27 +209,36 @@ grep "IMAP.*timeout" render.log
 ### Symptôme : Double traitement des emails
 
 **Causes probables** :
-- Verrou distribué Redis non configuré
-- Plusieurs conteneurs avec `ENABLE_BACKGROUND_TASKS=true`
-- Fallback file lock utilisé en multi-conteneurs
+- Verrou distribué Redis non configuré (IMAP legacy)
+- Plusieurs conteneurs avec `ENABLE_BACKGROUND_TASKS=true` (IMAP legacy)
+- Fallback file lock utilisé en multi-conteneurs (IMAP legacy)
+- Gmail Apps Script retry (double POST identique)
 
 **Diagnostics** :
 ```bash
-# Vérifier le verrou Redis
+# Vérifier le verrou Redis (IMAP legacy)
 redis-cli GET render_signal:poller_lock
 
-# Vérifier les logs de polling
+# Vérifier les logs de polling (IMAP legacy)
 grep "BG_POLLER.*lock" render.log
 
 # Vérifier la configuration Redis
 echo $REDIS_URL
+
+# Vérifier les logs Gmail Push idempotence
+grep "already_processing" render.log
 ```
 
 **Solutions** :
-1. Configurer `REDIS_URL` pour le verrou distribué
-2. Activer `ENABLE_BACKGROUND_TASKS=true` sur un seul conteneur
-3. Utiliser `BG_POLLER_LOCK_FILE` pour contrôler l'emplacement du verrou
-4. Surveiller les logs "unsafe for multi-container"
+1. **Solution moderne (Gmail Push)** : Le verrou "in-flight" est automatique
+   - Aucune configuration requise
+   - Status `already_processing` normal pour double POST
+   - Documentation : [docs/ingestion/gmail-push.md](../ingestion/gmail-push.md#3-idempotence-verrou-in-flight-pour-double-post)
+
+2. **Solution legacy (IMAP)** : Configurer `REDIS_URL` pour le verrou distribué
+   - `REDIS_URL=redis://user:pass@host:port/db`
+   - Redémarrer les conteneurs
+   - Vérifier les logs de lock acquisition
 
 ---
 
