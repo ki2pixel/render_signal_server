@@ -84,7 +84,7 @@ Générer un plan de modification avant d'appliquer :
 ## Étape 5 — Application et Finalisation
 1.  **Exécution** : Après validation, utiliser `edit_file` ou `multi_edit`.
 2.  **Mise à jour Memory Bank** :
-    - Mettre à jour la Memory Bank en utilisant EXCLUSIVEMENT l'outil `fast_edit_block` du serveur fast-filesystem.
+    - Mettre à jour la Memory Bank en utilisant EXCLUSIVEMENT l'outil `edit_file` du serveur fast-filesystem.
 
 ### Sous-protocole Rédaction — Application de documentation/SKILL.md
 

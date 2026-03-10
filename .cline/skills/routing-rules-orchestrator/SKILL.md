@@ -10,7 +10,7 @@ Utilise ce skill pour modifier ou étendre le moteur de routage dynamique introd
 ## Pré-requis
 - Virtualenv `/mnt/venv_ext4/venv_render_signal_server` pour les tests.
 - Accès au dashboard pour les tests manuels UI.
-- Connaissance des constantes/types existants (`ConditionDict`, `ActionDict`).
+- Connaissance des types existants (`RoutingRuleCondition`, `RoutingRuleAction`, `RoutingRule`).
 
 ## Workflow
 1. **Cartographier l'impact**
@@ -19,7 +19,7 @@ Utilise ce skill pour modifier ou étendre le moteur de routage dynamique introd
    - Réutiliser les constantes/types existants.
    - Respecter la validation stricte (opérateurs autorisés, normalisation strings, booléens explicites).
 3. **Propager côté API**
-   - Ajouter les champs dans le schema Marshmallow ou validation custom.
+   - Ajouter les champs dans la validation custom portée par `RoutingRulesService.update_rules()`.
    - Couvrir les erreurs 400 détaillées.
 4. **Adapter l'orchestrateur**
    - Étendre `_match_routing_condition` ou `_find_matching_routing_rule` sans casser les early returns.
@@ -28,7 +28,7 @@ Utilise ce skill pour modifier ou étendre le moteur de routage dynamique introd
    - Builder ES6 : manipuler `routingRules` via fonctions pures, pas de `innerHTML`.
    - Ajouter les collectors et états UI (saving/saved/error) avec `MessageHelper`.
 6. **Tests & validation**
-   - Lancer le helper `./.cline/skills/routing-rules-orchestrator/test_routing_rules.sh`.
+   - Lancer le helper `bash ./.cline/skills/routing-rules-orchestrator/test_routing_rules.sh`.
    - Compléter si besoin avec des tests ciblés sur les nouvelles fonctionnalités.
 7. **Documentation**
    - Documenter toute nouvelle action/condition dans `docs/processing/routing-engine.md`.

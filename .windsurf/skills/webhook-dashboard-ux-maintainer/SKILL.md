@@ -5,16 +5,16 @@ description: Preserve and extend the modern dashboard (dashboard.html + static m
 
 # Webhook Dashboard UX Maintainer
 
-Utilise ce skill pour toute évolution de l'interface dashboard (bandeau statut, timeline, panneaux webhooks, routing rules builder).
+Utilise ce skill pour toute évolution de l'interface dashboard (bandeau statut, panneaux webhooks, routing rules builder, magic link, autosave).
 
 ## Pré-requis
-- Connaissance des règles dans `.windsurf/rules/codingstandards.md` (pas d'`innerHTML`, accessibilité, autosave debounce).
+- Connaissance des règles dans `.clinerules/codingstandards.md` (pas d'`innerHTML`, accessibilité, autosave debounce).
 - Accès au dashboard pour les tests manuels.
 - Virtualenv `/mnt/venv_ext4/venv_render_signal_server` pour les tests backend.
 
 ## Workflow
 1. **Définir la zone impactée**
-   - Panneaux Webhooks, Routing Rules, Timeline, Magic Link, etc.
+   - Panneaux Webhooks, Routing Rules, Magic Link, indicateurs de statut, etc.
 2. **Mettre à jour le HTML**
    - Respecter les `section-panel`, attributs ARIA (`role="tablist"`, `aria-expanded`).
    - Ajouter les hooks `data-*` nécessaires aux modules.
@@ -25,13 +25,13 @@ Utilise ce skill pour toute évolution de l'interface dashboard (bandeau statut,
    - Maintenir `updatePanelStatus`, badges `saving/saved/error`, debounces 2-3s.
    - Ajouter focus states visibles et respect `prefers-reduced-motion`.
 5. **Tests manuels**
-   - Lancer le helper `./.windsurf/skills/webhook-dashboard-ux-maintainer/test_dashboard_ux.sh`.
+   - Lancer le helper `bash ./.agents/skills/webhook-dashboard-ux-maintainer/test_dashboard_ux.sh`.
    - Suivre la checklist fournie par le script.
 6. **Tests backend**
    - Le script exécute automatiquement les tests API pertinents.
 7. **Documentation**
    - Mettre à jour `docs/access/dashboard-ui.md` si l'UX évolue.
-   - Documenter les patterns récents (verrouillage routing rules, timeline canvas, bandeau statut) dans la Memory Bank.
+   - Documenter les patterns récents (verrouillage routing rules, bandeau statut, flux Magic Link avec `showCopiedFeedback`) dans la Memory Bank.
 
 ## Ressources
 - `test_dashboard_ux.sh` : checklist manuelle + exécution des tests backend associés.

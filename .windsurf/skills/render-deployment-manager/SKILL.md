@@ -1,98 +1,68 @@
 ---
 name: render-deployment-manager
-description: Manage Render.com deployments and services using MCP tools for service creation, environment management, monitoring, and deployment orchestration.
+description: Manage Render.com deployments for this repository using the built-in admin endpoints, ConfigService, and the active Render environment variables.
 ---
 
 # Render Deployment Manager
 
 ## Objectif
-Orchestrer les déploiements et la gestion des services Render.com pour l'application render_signal_server, en utilisant les outils MCP Render pour des opérations directes et automatisées.
+Orchestrer les déploiements Render de `render_signal_server` en s'appuyant d'abord sur les primitives réellement présentes dans ce dépôt : `routes/api_admin.py`, `ConfigService` et les variables `RENDER_*`.
 
 ## Quand utiliser ce skill
-- Création de nouveaux services Render (web services, cron jobs, Postgres, key-value stores)
-- Gestion des déploiements et monitoring des métriques
-- Mise à jour des variables d'environnement
-- Gestion des statiques sites
-- Diagnostic des problèmes de déploiement
+- Vérification de la configuration Render exposée par `ConfigService.get_render_config()`
+- Déclenchement d'un déploiement via `POST /api/deploy_application`
+- Redémarrage applicatif via `POST /api/restart_server`
+- Diagnostic des problèmes de déploiement ou de hook Render
+- Vérification des variables d'environnement `RENDER_*`
 
 ## Pré-requis
-- MCP `render-signal-mcp` configuré avec clé API valide
-- Workspace Render sélectionné (`select_workspace`)
-- Droits d'accès aux services Render appropriés
-- Connaissance des spécifications de service (runtime, build commands, etc.)
+- Variables `RENDER_API_KEY` + `RENDER_SERVICE_ID` si vous passez par l'API Render
+- ou `RENDER_DEPLOY_HOOK_URL` si vous passez par le Deploy Hook
+- Connaissance des fallbacks locaux `DEPLOY_CMD` et `RESTART_CMD`
+- Accès authentifié au dashboard admin si vous utilisez les endpoints Flask
 
 ## Workflow de déploiement
-1. **Préparation du workspace**
-   - `select_workspace` pour choisir le workspace approprié
-   - `list_services` pour inventorier les services existants
-2. **Création/Mise à jour de services**
-   - `create_web_service` pour déployer l'application principale
-   - `create_postgres` pour bases de données si nécessaire
-   - `create_static_site` pour assets statiques
-   - `update_web_service` pour modifications de configuration
-3. **Configuration environnement**
-   - `update_environment_variables` pour configurer les variables d'environnement
-   - Validation des secrets et clés API
-4. **Monitoring et diagnostic**
-   - `get_metrics` pour surveiller CPU, mémoire, requêtes HTTP
-   - `list_deploys` pour historique des déploiements
-   - `get_service` pour statut détaillé des services
-5. **Maintenance**
-   - `get_deploy` pour détails spécifiques de déploiement
-   - `list_logs` pour diagnostic des erreurs
+1. **Valider la configuration active**
+   - Inspecter `ConfigService.get_render_config()` ou les variables `RENDER_API_KEY`, `RENDER_SERVICE_ID`, `RENDER_DEPLOY_HOOK_URL`, `RENDER_DEPLOY_CLEAR_CACHE`.
+   - Vérifier si le déploiement doit passer par hook, API Render ou fallback local.
+2. **Déclencher le déploiement applicatif**
+   - Utiliser `POST /api/deploy_application` pour laisser `routes/api_admin.py` choisir automatiquement la meilleure stratégie (Deploy Hook, API Render, puis fallback local).
+3. **Redémarrer si nécessaire**
+   - Utiliser `POST /api/restart_server` pour forcer un redémarrage applicatif lorsque le besoin n'est pas un déploiement complet.
+4. **Suivre l'état**
+   - Contrôler le retour JSON des endpoints admin (`success`, `message`, `deploy_id`, `status`).
+   - Vérifier ensuite `/health` et les logs Render / applicatifs.
+5. **Diagnostiquer les erreurs**
+   - Vérifier les valeurs `RENDER_*`, les hooks invalident, puis les commandes `DEPLOY_CMD` / `RESTART_CMD` si le fallback local est utilisé.
 
-## Outils MCP Render utilisés
-- `select_workspace <id>` : Sélection du workspace de travail
-- `create_web_service <config>` : Création service web (Python/Flask)
-- `create_postgres <config>` : Création instance Postgres
-- `create_static_site <config>` : Création site statique
-- `update_environment_variables <service_id> <vars>` : Mise à jour ENV vars
-- `get_metrics <service_id> <time_range>` : Métriques performance
-- `list_deploys <service_id>` : Historique déploiements
-- `get_service <service_id>` : Détails service
-- `list_logs <filters>` : Logs filtrés par service/région
+## Points d'entrée réels du dépôt
+- `routes/api_admin.py` : endpoints `/api/deploy_application` et `/api/restart_server`
+- `services/config_service.py` : `get_render_config()` et `has_render_config()`
+- `config/settings.py` : variables `RENDER_API_KEY`, `RENDER_SERVICE_ID`, `RENDER_DEPLOY_HOOK_URL`, `RENDER_DEPLOY_CLEAR_CACHE`
 
 ## Exemples d'usage courants
-### Déploiement initial
+### Déclencher un déploiement via l'API admin
 ```bash
-# Sélection workspace
-select_workspace "workspace_id"
-
-# Création service web
-create_web_service {
-  "name": "render-signal-server",
-  "repo": "https://github.com/user/render_signal_server",
-  "branch": "main",
-  "runtime": "python3",
-  "buildCommand": "pip install -r requirements.txt",
-  "startCommand": "python app_render.py"
-}
-
-# Configuration environnement
-update_environment_variables "service_id" {
-  "FLASK_SECRET_KEY": "secret",
-  "REDIS_URL": "redis://...",
-  "PROCESS_API_TOKEN": "token"
-}
+curl -X POST http://localhost:5000/api/deploy_application \
+  -H 'Content-Type: application/json' \
+  -b '<session-authentifiée>'
 ```
 
-### Monitoring post-déploiement
+### Vérifier la configuration Render côté Python
 ```bash
-# Vérification métriques
-get_metrics "service_id" "1h"
-
-# Vérification logs erreurs
-list_logs {"service": "service_id", "status": "error"}
+python - <<'PY'
+from services.config_service import ConfigService
+print(ConfigService().get_render_config())
+PY
 ```
 
 ## Ressources
-- Documentation Render.com pour spécifications détaillées
-- Scripts de déploiement existants maintenus pour compatibilité
+- Documentation Render.com pour les hooks et l'API REST
+- `routes/api_admin.py` pour la logique de déploiement effective de ce projet
 
 ## Bonnes pratiques
-- Toujours vérifier le workspace avant opérations
-- Utiliser des noms de service descriptifs et cohérents
-- Valider les variables d'environnement avant déploiement
-- Monitorer les métriques après déploiement
+- Toujours vérifier les variables `RENDER_*` avant un déploiement
+- Préférer `/api/deploy_application` pour rester aligné avec la logique métier du dépôt
+- Monitorer `/health` et les logs après déclenchement
 - Garder l'historique des déploiements pour rollback si nécessaire
 - Ne pas exposer les clés API ou secrets dans les logs

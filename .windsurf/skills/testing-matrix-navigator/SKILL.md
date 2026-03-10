@@ -1,6 +1,6 @@
 ---
 name: testing-matrix-navigator
-description: Guide for selecting and executing the correct pytest suites (unit, redis, r2, resilience) with environment setup and coverage expectations.
+description: Guide for selecting and executing the correct pytest suites (unit, integration, redis, R2, routing rules, magic link) with environment setup and coverage expectations.
 ---
 
 # Testing Matrix Navigator
@@ -10,16 +10,16 @@ Utilise cette compétence pour planifier et exécuter les tests pertinents aprè
 ## Pré-requis
 - Virtualenv `/mnt/venv_ext4/venv_render_signal_server` activé.
 - Variables ENV exportées (`FLASK_SECRET_KEY`, etc.) via `.env`.
-- Accès aux marqueurs Pytest (`redis`, `r2`, `resilience`, `unit`, `slow`).
+- Accès aux marqueurs Pytest réellement déclarés (`unit`, `integration`, `e2e`, `slow`, `redis`, `imap`).
 
 ## Matrice de décision
 | Contexte | Commande helper | Description |
 | --- | --- | --- |
 | Modifications backend générales | `./run_tests.sh -u` | Tests unitaires sans dépendances externes |
-| Config/Redis | `./run_tests.sh -i -c` | Tests d'intégration + couverture store |
-| R2 / Webhooks | `./run_tests.sh -i -c` | Tests d'intégration + couverture service |
-| Poller / Résilience | `./run_tests.sh -i -c` | Tests d'intégration + couverture |
-| Tests ciblés routing rules | `./run_tests.sh -n -c` | Nouveaux tests avec couverture |
+| Config/Redis | `pytest -m redis` | Tests marqués Redis |
+| R2 / Offload | `pytest tests/test_r2_transfer_service.py` | Couverture ciblée du service R2 |
+| Routing rules | `pytest tests/routes/test_api_routing_rules.py tests/email_processing/test_routing_rules_orchestrator.py` | API + orchestrateur |
+| Magic link | `pytest tests/test_services.py -k magic_link` | Couverture ciblée du service Magic Link |
 | Full suite | `./run_tests.sh -a -c` | Tous les tests avec couverture |
 
 ## Workflow
@@ -32,6 +32,8 @@ Utilise cette compétence pour planifier et exécuter les tests pertinents aprè
 3. **Commandes avancées**
    - Tests ciblés : `pytest tests/routes/test_api_routing_rules.py`
    - Scénarios spécifiques : `pytest tests/email_processing/test_routing_rules_orchestrator.py -k stop_processing`
+   - Magic link : `pytest tests/test_services.py -k magic_link`
+   - R2 : `pytest tests/test_r2_transfer_service.py`
    - Durées : `pytest --durations=20`
 4. **Analyse des résultats**
    - Corriger immédiatement les échecs introduits.

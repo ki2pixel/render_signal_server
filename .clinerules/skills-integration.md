@@ -22,12 +22,13 @@ Cette matrice définit les patterns de détection automatique pour l'invocation 
 | `test matrix`, `pytest suites`, `unit redis r2`, `resilience test` | **testing-matrix-navigator** | 2 |
 | `dashboard`, `ux`, `frontend`, `webhook panel`, `autosave` | **webhook-dashboard-ux-maintainer** | 3 |
 | `render`, `déploiement`, `render.com`, `service creation`, `monitoring`, `orchestration` | **render-deployment-manager** | 3 |
+| `git commit`, `push`, `commit push`, `git automation`, `stage changes` | **commit-push** | 2 |
 
 ## Auto-Loading Logic
 
 When patterns detected, automatically load:
 ```
-fast_read_file(".sixthskills/[SKILL_NAME]/SKILL.md")
+fast_read_file(".cline/skills/[SKILL_NAME]/SKILL.md")
 ```
 
 ## Multi-Skill Support

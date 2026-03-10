@@ -13,16 +13,16 @@ Utilise ce skill lorsqu'une tâche touche :
 - `deployment/public_html/config_api.php`, `deployment/public_html/test-direct.php`, pages de test R2
 
 ## Pré-requis
-- ENV obligatoires : `R2_BASE_URL`, `R2_FETCH_TOKEN`, `ALLOWED_R2_DOMAINS`.
+- ENV obligatoires : `R2_FETCH_ENABLED`, `R2_FETCH_ENDPOINT`, `R2_PUBLIC_BASE_URL`, `R2_BUCKET_NAME`, `R2_FETCH_TOKEN`.
 - Virtualenv `/mnt/venv_ext4/venv_render_signal_server` pour les scripts/tests.
 - Accès au déploiement Cloudflare Workers (wrangler).
 
 ## Workflow
 1. **Analyse des dépendances**
    - Confirmer la présence des ENV ci-dessus.
-   - Vérifier les allowlists (Dropbox/FromSmash/SwissTransfer) avant toute nouvelle source.
+   - Vérifier les allowlists avant toute nouvelle source, côté backend (`ALLOWED_REMOTE_FETCH_DOMAINS` dans `services/r2_transfer_service.py`) et côté Worker.
 2. **Mises à jour Python**
-   - Toujours valider les domaines via `is_allowed_domain`.
+   - Préserver la validation des domaines autorisés actuellement implémentée dans `R2TransferService`.
    - Injecter le header `X-R2-FETCH-TOKEN` pour chaque requête Worker.
    - Conserver les logs sans PII et retour fallback `raw_url` en cas d'échec.
 3. **Workers Cloudflare**
@@ -30,10 +30,10 @@ Utilise ce skill lorsqu'une tâche touche :
    - Mettre à jour `httpMetadata.contentDisposition` pour préserver le nom de fichier.
    - Exécuter `wrangler deploy --dry-run` (documenter la sortie).
 4. **PHP Logger / Diagnostics**
-   - Assurer que `config_api.php` continue d'écrire les paires `source_url`/`r2_url`.
+   - Garder les pages PHP de diagnostic compatibles avec `deployment/data/webhook_links.json` et les snapshots R2 exposés par le backend PHP.
    - Tester `deployment/public_html/test-direct.php` pour valider le flux complet.
 5. **Tests & validation**
-   - Lancer le helper `./.cline/skills/r2-transfer-service-playbook/test_r2_worker.sh`.
+   - Lancer le helper `bash ./.cline/skills/r2-transfer-service-playbook/test_r2_worker.sh`.
    - Compléter si besoin avec des tests ciblés sur les nouvelles sources.
 6. **Documentation & Memory Bank**
    - Mettre à jour `docs/processing/file-offload.md` ou section dédiée R2.

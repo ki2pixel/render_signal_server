@@ -12,11 +12,14 @@ else
   echo "[warn] Virtualenv /mnt/venv_ext4/venv_render_signal_server introuvable; utilisation de l'environnement courant." >&2
 fi
 
-echo "[info] Structure (tree -L 2)"
-tree -L 2
+echo "[info] Running routing rules service tests"
+pytest tests/test_routing_rules_service.py
 
-echo "\n[info] cloc docs/"
-cloc docs
+echo "\n[info] Running routing rules API tests"
+pytest tests/routes/test_api_routing_rules.py
 
-echo "\n[info] radon cc app_render.py services routes"
-radon cc app_render.py services routes
+echo "\n[info] Running routing rules orchestrator tests"
+pytest tests/email_processing/test_routing_rules_orchestrator.py
+
+echo "\n[info] Testing stop_processing scenarios"
+pytest tests/email_processing/test_routing_rules_orchestrator.py -k stop_processing
