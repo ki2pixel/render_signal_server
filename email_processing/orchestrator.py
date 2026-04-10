@@ -423,6 +423,9 @@ def _truncate_webhook_response_snippet(value: Any, *, limit: int = 200) -> str:
 
 
 def _normalize_webhook_failure_reason(*, status_code: int | None, response_text: str = "") -> str:
+    response_text_norm = str(response_text or "").strip().lower()
+    if "imunify360" in response_text_norm or "bot-protection" in response_text_norm:
+        return "bot_protection_denied"
     if status_code == 415:
         return "unsupported_media_type"
     if status_code == 429:
@@ -431,7 +434,7 @@ def _normalize_webhook_failure_reason(*, status_code: int | None, response_text:
         return "upstream_server_error"
     if status_code is not None and status_code >= 400:
         return "upstream_client_error"
-    if response_text:
+    if response_text_norm:
         return "remote_application_error"
     return "request_failed"
 

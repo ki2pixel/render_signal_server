@@ -299,6 +299,62 @@ def test_send_custom_webhook_flow_retries_persistent_415_and_logs_failure():
 
 
 @pytest.mark.unit
+def test_send_custom_webhook_flow_classifies_imunify360_denial():
+    # Given: the upstream returns HTTP 200 but the application payload reports Imunify360 bot protection denial
+    class Resp200Denied:
+        status_code = 200
+        text = '{"success": false, "message": "Access denied by Imunify360 bot-protection. IPs used for automation should be whitelisted"}'
+        content = text.encode("utf-8")
+
+        def json(self):
+            return {
+                "success": False,
+                "message": "Access denied by Imunify360 bot-protection. IPs used for automation should be whitelisted",
+            }
+
+    calls = {}
+
+    def append_webhook_log(entry):
+        calls.setdefault("logs", []).append(entry)
+
+    # When: executing the flow against an upstream that blocks automation
+    cont = orch.send_custom_webhook_flow(
+        email_id="e-imunify",
+        subject="s",
+        payload_for_webhook={"hello": "world"},
+        delivery_links=["x"],
+        webhook_url="https://example.com/hook",
+        webhook_ssl_verify=True,
+        allow_without_links=True,
+        processing_prefs={"retry_count": 0, "retry_delay_sec": 0, "webhook_timeout_sec": 1},
+        rate_limit_allow_send=lambda: True,
+        record_send_event=lambda: calls.__setitem__("recorded", True),
+        append_webhook_log=append_webhook_log,
+        mark_email_id_as_processed_redis=lambda eid: False,
+        mark_email_as_read_imap=lambda *a, **k: None,
+        mail=SimpleNamespace(),
+        email_num=1,
+        urlparse=None,
+        requests=SimpleNamespace(post=lambda *a, **k: Resp200Denied()),
+        time=SimpleNamespace(sleep=lambda s: None),
+        logger=SimpleNamespace(
+            info=lambda *a, **k: None,
+            warning=lambda *a, **k: None,
+            error=lambda *a, **k: None,
+            debug=lambda *a, **k: None,
+        ),
+        webhook_delivery_mode="json",
+        webhook_fallback_on_415=True,
+    )
+
+    # Then: the dashboard log exposes a dedicated bot-protection failure reason
+    assert cont is False
+    assert calls.get("logs")
+    assert calls["logs"][-1]["failure_reason"] == "bot_protection_denied"
+    assert "Imunify360" in calls["logs"][-1]["error_message"]
+
+
+@pytest.mark.unit
 def test_outside_window_recadrage_is_marked_and_not_sent(monkeypatch):
     """Outside webhook window, detector=recadrage → skip send, mark read+processed."""
     # Arrange: force time to 10:00 (before 10h30 window)

@@ -447,10 +447,18 @@ Les logs `custom` exposent désormais :
 - `delivery_mode` : mode effectivement accepté (`json` ou `form`) ;
 - `attempted_delivery_modes` : séquence réellement tentée ;
 - `fallback_used` : vrai si un basculement 415 a eu lieu ;
-- `failure_reason` : cause normalisée (`unsupported_media_type`, `upstream_server_error`, etc.) ;
+- `failure_reason` : cause normalisée (`unsupported_media_type`, `bot_protection_denied`, `upstream_server_error`, etc.) ;
 - `response_snippet` : extrait court et non-PII de la réponse amont.
 
 Objectif : garder un dashboard actionnable sans journaliser le `email_content` brut.
+
+### Cas Imunify360 : ce que cela signifie
+
+Quand le webhook répond avec un message du type `Access denied by Imunify360 bot-protection`, le problème ne vient pas du parsing Gmail ni du media type HTTP de l'application. Cela signifie que l'infrastructure cible bloque l'IP source de Render comme trafic automatisé.
+
+✅ Action recommandée : faire **whitelister l'IP de sortie Render** côté hébergeur / Imunify360.
+
+❌ Ce qu'il ne faut pas faire : essayer de contourner cela dans le code applicatif (headers trompeurs, navigation automatisée, changement de flux métier). Le bon correctif est **infra**, pas applicatif.
 
 ---
 
