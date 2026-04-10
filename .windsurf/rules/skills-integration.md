@@ -34,7 +34,7 @@ Cette matrice définit les patterns de détection automatique pour l'invocation 
 
 When patterns detected, automatically load:
 ```
-fast_read_file(".sixthskills/[SKILL_NAME]/SKILL.md")
+fast_read_file(".windsurf/skills/[SKILL_NAME]/SKILL.md")
 ```
 
 ## Multi-Skill Support

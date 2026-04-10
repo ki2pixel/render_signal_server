@@ -31,6 +31,16 @@ export class WebhookService {
                 if (sendingToggle) {
                     sendingToggle.checked = config.webhook_sending_enabled ?? true;
                 }
+
+                const deliveryModeSelect = document.getElementById('webhookDeliveryMode');
+                if (deliveryModeSelect) {
+                    deliveryModeSelect.value = config.webhook_delivery_mode || 'json';
+                }
+
+                const fallbackOn415Toggle = document.getElementById('webhookFallbackOn415Toggle');
+                if (fallbackOn415Toggle) {
+                    fallbackOn415Toggle.checked = config.webhook_fallback_on_415 ?? true;
+                }
                 
                 const absenceToggle = document.getElementById('absencePauseToggle');
                 if (absenceToggle) {
@@ -56,6 +66,8 @@ export class WebhookService {
         const webhookUrlEl = document.getElementById('webhookUrl');
         const sslToggle = document.getElementById('sslVerifyToggle');
         const sendingToggle = document.getElementById('webhookSendingToggle');
+        const deliveryModeSelect = document.getElementById('webhookDeliveryMode');
+        const fallbackOn415Toggle = document.getElementById('webhookFallbackOn415Toggle');
         const absenceToggle = document.getElementById('absencePauseToggle');
         
         const webhookUrl = (webhookUrlEl?.value || '').trim();
@@ -84,6 +96,8 @@ export class WebhookService {
         const payload = {
             webhook_ssl_verify: sslToggle?.checked ?? false,
             webhook_sending_enabled: sendingToggle?.checked ?? true,
+            webhook_delivery_mode: deliveryModeSelect?.value || 'json',
+            webhook_fallback_on_415: fallbackOn415Toggle?.checked ?? true,
             absence_pause_enabled: absenceToggle?.checked ?? false,
             absence_pause_days: selectedDays
         };
@@ -133,49 +147,76 @@ export class WebhookService {
     static renderLogs(logs) {
         const container = document.getElementById('webhookLogs');
         if (!container) return;
-        
-        container.innerHTML = '';
-        
+
+        container.replaceChildren();
+
         if (!logs || logs.length === 0) {
-            container.innerHTML = '<div class="log-entry">Aucun log trouvé pour cette période.</div>';
+            container.appendChild(this.createLogTextRow('log-entry', 'Aucun log trouvé pour cette période.'));
             return;
         }
-        
+
         logs.forEach(log => {
             const logEntry = document.createElement('div');
             logEntry.className = `log-entry ${log.status}`;
-            
+
             const timeDiv = document.createElement('div');
             timeDiv.className = 'log-entry-time';
             timeDiv.textContent = this.formatTimestamp(log.timestamp);
             logEntry.appendChild(timeDiv);
-            
+
             const statusDiv = document.createElement('div');
             statusDiv.className = 'log-entry-status';
             statusDiv.textContent = log.status.toUpperCase();
             logEntry.appendChild(statusDiv);
-            
+
             if (log.subject) {
-                const subjectDiv = document.createElement('div');
-                subjectDiv.className = 'log-entry-subject';
-                subjectDiv.textContent = `Sujet: ${this.escapeHtml(log.subject)}`;
-                logEntry.appendChild(subjectDiv);
+                logEntry.appendChild(this.createLogTextRow('log-entry-subject', `Sujet: ${log.subject}`));
             }
-            
+
             if (log.webhook_url) {
-                const urlDiv = document.createElement('div');
-                urlDiv.className = 'log-entry-url';
-                urlDiv.textContent = `URL: ${this.escapeHtml(log.webhook_url)}`;
-                logEntry.appendChild(urlDiv);
+                logEntry.appendChild(this.createLogTextRow('log-entry-url', `URL: ${log.webhook_url}`));
             }
-            
+
+            if (log.delivery_mode) {
+                logEntry.appendChild(
+                    this.createLogTextRow(
+                        'log-entry-meta',
+                        `Mode: ${String(log.delivery_mode).toUpperCase()}`
+                    )
+                );
+            }
+
+            if (Array.isArray(log.attempted_delivery_modes) && log.attempted_delivery_modes.length > 0) {
+                logEntry.appendChild(
+                    this.createLogTextRow(
+                        'log-entry-meta',
+                        `Modes tentés: ${log.attempted_delivery_modes.join(' → ')}`
+                    )
+                );
+            }
+
+            if (log.failure_reason) {
+                logEntry.appendChild(
+                    this.createLogTextRow(
+                        'log-entry-meta',
+                        `Cause: ${this.formatFailureReason(log.failure_reason)}`
+                    )
+                );
+            }
+
             if (log.error_message) {
-                const errorDiv = document.createElement('div');
-                errorDiv.className = 'log-entry-error';
-                errorDiv.textContent = `Erreur: ${this.escapeHtml(log.error_message)}`;
-                logEntry.appendChild(errorDiv);
+                logEntry.appendChild(this.createLogTextRow('log-entry-error', `Erreur: ${log.error_message}`));
             }
-            
+
+            if (log.response_snippet && log.response_snippet !== log.error_message) {
+                logEntry.appendChild(
+                    this.createLogTextRow(
+                        'log-entry-error',
+                        `Réponse: ${log.response_snippet}`
+                    )
+                );
+            }
+
             container.appendChild(logEntry);
         });
     }
@@ -186,8 +227,22 @@ export class WebhookService {
     static clearLogs() {
         const container = document.getElementById('webhookLogs');
         if (container) {
-            container.innerHTML = '<div class="log-entry">Logs vidés.</div>';
+            container.replaceChildren(this.createLogTextRow('log-entry', 'Logs vidés.'));
         }
+    }
+
+    static createLogTextRow(className, text) {
+        const row = document.createElement('div');
+        row.className = className;
+        row.textContent = text;
+        return row;
+    }
+
+    static formatFailureReason(value) {
+        return String(value || '')
+            .split('_')
+            .filter(Boolean)
+            .join(' ');
     }
 
     /**

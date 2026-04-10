@@ -258,6 +258,12 @@ ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS=false
 WEBHOOK_RETRY_COUNT=3
 WEBHOOK_RETRY_DELAY=5
 
+# Media type principal pour l'envoi du webhook personnalisé
+WEBHOOK_DELIVERY_MODE=json
+
+# Basculer automatiquement vers l'autre media type après un HTTP 415
+WEBHOOK_FALLBACK_ON_415=true
+
 # Miroir médias vers webhook personnalisé
 MIRROR_MEDIA_TO_CUSTOM=true
 
@@ -339,6 +345,42 @@ def is_within_webhook_time_window():
 - **DESABO urgent** : respect strict de la fenêtre
 - **RECADRAGE** : skip + marqué traité hors fenêtre
 
+### Fallback 415 : compatibilité proxy sans casser le flux existant
+
+```python
+# orchestrator.py
+primary_mode, fallback_on_415 = resolve_webhook_delivery_settings()
+
+for mode in build_mode_sequence(primary_mode, fallback_on_415=fallback_on_415):
+    response = requests.post(
+        webhook_url,
+        data=serialized_payload,
+        headers={
+            "Content-Type": (
+                "application/json"
+                if mode == "json"
+                else "application/x-www-form-urlencoded"
+            ),
+            "Accept": "application/json, text/plain, */*",
+        },
+        timeout=timeout_sec,
+        verify=webhook_ssl_verify,
+    )
+    if response.status_code != 415:
+        break
+```
+
+**Pourquoi** : l'incident du 10/04/2026 a montré des réponses `415 Unsupported Media Type` rendues par `openresty/1.27.1.1` avant le PHP applicatif. Le problème était intermittent et n'était plus reproductible au moment du diagnostic. Le fallback a donc été conçu comme une **mesure de compatibilité défensive**, pas comme une réécriture du protocole métier.
+
+**Trade-offs** :
+- ✅ protège le flux Gmail Push quand un proxy amont devient plus strict qu'attendu ;
+- ✅ conserve le retry/backoff, la déduplication, les logs dashboard et le marquage read/processed ;
+- ✅ rend le mode primaire configurable via `webhook_config` (Redis-first) ;
+- ❌ ajoute une branche réseau supplémentaire à diagnostiquer ;
+- ❌ peut masquer un problème infra si on ne regarde pas les logs enrichis.
+
+**Règle de prod recommandée** : laissez `webhook_delivery_mode=json` et `webhook_fallback_on_415=true` tant qu'aucune contrainte infra stable n'impose explicitement `form`.
+
 ---
 
 ## Payload webhook enrichi
@@ -398,6 +440,17 @@ def process_webhook(payload):
         # Traitement du fichier...
         process_file(download_url, filename)
 ```
+
+### Logs dashboard attendus après durcissement
+
+Les logs `custom` exposent désormais :
+- `delivery_mode` : mode effectivement accepté (`json` ou `form`) ;
+- `attempted_delivery_modes` : séquence réellement tentée ;
+- `fallback_used` : vrai si un basculement 415 a eu lieu ;
+- `failure_reason` : cause normalisée (`unsupported_media_type`, `upstream_server_error`, etc.) ;
+- `response_snippet` : extrait court et non-PII de la réponse amont.
+
+Objectif : garder un dashboard actionnable sans journaliser le `email_content` brut.
 
 ---
 

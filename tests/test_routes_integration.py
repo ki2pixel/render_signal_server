@@ -69,6 +69,8 @@ class TestWebhooksConfigEndpoints:
             data = response.get_json()
             assert 'success' in data
             assert 'config' in data
+            assert 'webhook_delivery_mode' in data['config']
+            assert 'webhook_fallback_on_415' in data['config']
     
     def test_update_webhooks_config_validation(self, authenticated_flask_client, temp_file):
         """Test validation lors de la mise à jour de la config webhooks"""
@@ -85,6 +87,13 @@ class TestWebhooksConfigEndpoints:
             response = authenticated_flask_client.post(
                 '/api/webhooks/config',
                 json={'webhook_url': 'https://example.com/hook'},
+                content_type='application/json'
+            )
+            assert response.status_code == 200
+
+            response = authenticated_flask_client.post(
+                '/api/webhooks/config',
+                json={'webhook_delivery_mode': 'form', 'webhook_fallback_on_415': False},
                 content_type='application/json'
             )
             assert response.status_code == 200

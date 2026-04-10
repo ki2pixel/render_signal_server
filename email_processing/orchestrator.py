@@ -45,6 +45,12 @@ WEEKDAY_NAMES = [
 ]
 
 MAX_HTML_BYTES = 1024 * 1024
+WEBHOOK_DELIVERY_MODE_JSON = "json"
+WEBHOOK_DELIVERY_MODE_FORM = "form"
+WEBHOOK_DELIVERY_MODES = {
+    WEBHOOK_DELIVERY_MODE_JSON,
+    WEBHOOK_DELIVERY_MODE_FORM,
+}
 
 
 # =============================================================================
@@ -334,6 +340,100 @@ def _load_webhook_global_time_window() -> tuple[str, str]:
         return s, e
     except Exception:
         return "", ""
+
+
+def _normalize_webhook_delivery_mode(value: Any) -> str:
+    candidate = str(value or "").strip().lower()
+    if candidate in WEBHOOK_DELIVERY_MODES:
+        return candidate
+    return WEBHOOK_DELIVERY_MODE_JSON
+
+
+def _resolve_webhook_delivery_settings(
+    *,
+    webhook_delivery_mode: str | None,
+    webhook_fallback_on_415: bool | None,
+) -> tuple[str, bool]:
+    cfg = _get_webhook_config_dict() or {}
+
+    resolved_mode = _normalize_webhook_delivery_mode(
+        webhook_delivery_mode
+        if webhook_delivery_mode is not None
+        else cfg.get("webhook_delivery_mode")
+        or os.environ.get("WEBHOOK_DELIVERY_MODE")
+    )
+
+    if webhook_fallback_on_415 is None:
+        fallback_raw = cfg.get("webhook_fallback_on_415")
+        if fallback_raw is None:
+            fallback_raw = os.environ.get("WEBHOOK_FALLBACK_ON_415", "true")
+        resolved_fallback = bool(fallback_raw) if isinstance(fallback_raw, bool) else str(
+            fallback_raw
+        ).strip().lower() in ("1", "true", "yes", "on")
+    else:
+        resolved_fallback = bool(webhook_fallback_on_415)
+
+    return resolved_mode, resolved_fallback
+
+
+def _build_webhook_mode_sequence(
+    primary_mode: str,
+    *,
+    fallback_on_415: bool,
+) -> list[str]:
+    sequence = [primary_mode]
+    if not fallback_on_415:
+        return sequence
+
+    alternate = (
+        WEBHOOK_DELIVERY_MODE_FORM
+        if primary_mode == WEBHOOK_DELIVERY_MODE_JSON
+        else WEBHOOK_DELIVERY_MODE_JSON
+    )
+    if alternate not in sequence:
+        sequence.append(alternate)
+    return sequence
+
+
+def _build_webhook_request_kwargs(
+    *,
+    serialized_payload: str,
+    delivery_mode: str,
+) -> dict[str, Any]:
+    content_type = (
+        "application/json"
+        if delivery_mode == WEBHOOK_DELIVERY_MODE_JSON
+        else "application/x-www-form-urlencoded"
+    )
+    return {
+        "data": serialized_payload,
+        "headers": {
+            "Content-Type": content_type,
+            "Accept": "application/json, text/plain, */*",
+        },
+    }
+
+
+def _truncate_webhook_response_snippet(value: Any, *, limit: int = 200) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip().replace("\r", " ").replace("\n", " ")
+    text = re.sub(r"\s+", " ", text)
+    return text[:limit]
+
+
+def _normalize_webhook_failure_reason(*, status_code: int | None, response_text: str = "") -> str:
+    if status_code == 415:
+        return "unsupported_media_type"
+    if status_code == 429:
+        return "rate_limited"
+    if status_code is not None and status_code >= 500:
+        return "upstream_server_error"
+    if status_code is not None and status_code >= 400:
+        return "upstream_client_error"
+    if response_text:
+        return "remote_application_error"
+    return "request_failed"
 
 
 def _fetch_and_parse_email(mail, num: bytes, logger, decode_fn, extract_sender_fn) -> Optional[ParsedEmail]:
@@ -1421,6 +1521,8 @@ def send_custom_webhook_flow(
     requests,
     time,
     logger,
+    webhook_delivery_mode: str | None = None,
+    webhook_fallback_on_415: bool | None = None,
 ) -> bool:
     """Execute the custom webhook send flow. Returns True if caller should continue to next email.
 
@@ -1477,41 +1579,110 @@ def send_custom_webhook_flow(
     retries = int(processing_prefs.get('retry_count') or 0)
     delay = int(processing_prefs.get('retry_delay_sec') or 0)
     timeout_sec = int(processing_prefs.get('webhook_timeout_sec') or 30)
+    resolved_delivery_mode, resolved_fallback_on_415 = _resolve_webhook_delivery_settings(
+        webhook_delivery_mode=webhook_delivery_mode,
+        webhook_fallback_on_415=webhook_fallback_on_415,
+    )
 
     last_exc = None
     webhook_response = None
+    last_delivery_mode = resolved_delivery_mode
+    attempted_delivery_modes: list[str] = []
+    payload_to_send = dict(payload_for_webhook) if isinstance(payload_for_webhook, dict) else {
+        "microsoft_graph_email_id": email_id,
+        "subject": subject or "",
+    }
+    if delivery_links:
+        try:
+            payload_to_send["delivery_links"] = delivery_links
+        except Exception:
+            pass
+    serialized_payload = json.dumps(payload_to_send, ensure_ascii=False)
+    payload_size_bytes = len(serialized_payload.encode("utf-8"))
     try:
         logger.debug(
-            "CUSTOM_WEBHOOK_DEBUG: Preparing to send custom webhook for email %s to %s (timeout=%ss, retries=%d, delay=%ds)",
-            email_id, webhook_url, timeout_sec, retries, delay,
+            "CUSTOM_WEBHOOK_DEBUG: Preparing to send custom webhook for email %s to %s "
+            "(timeout=%ss, retries=%d, delay=%ds, primary_mode=%s, fallback_on_415=%s, payload_bytes=%d)",
+            email_id,
+            webhook_url,
+            timeout_sec,
+            retries,
+            delay,
+            resolved_delivery_mode,
+            resolved_fallback_on_415,
+            payload_size_bytes,
         )
     except Exception:
         pass
 
     for attempt in range(retries + 1):
+        should_retry_after_response = False
         try:
-            payload_to_send = dict(payload_for_webhook) if isinstance(payload_for_webhook, dict) else {
-                "microsoft_graph_email_id": email_id,
-                "subject": subject or "",
-            }
-            if delivery_links:
+            for mode_index, delivery_mode in enumerate(
+                _build_webhook_mode_sequence(
+                    resolved_delivery_mode,
+                    fallback_on_415=resolved_fallback_on_415,
+                )
+            ):
+                last_delivery_mode = delivery_mode
+                attempted_delivery_modes.append(delivery_mode)
+                request_kwargs = _build_webhook_request_kwargs(
+                    serialized_payload=serialized_payload,
+                    delivery_mode=delivery_mode,
+                )
                 try:
-                    payload_to_send["delivery_links"] = delivery_links
+                    logger.debug(
+                        "CUSTOM_WEBHOOK_DEBUG: attempt=%d/%d email=%s mode=%s content_type=%s payload_bytes=%d",
+                        attempt + 1,
+                        retries + 1,
+                        email_id,
+                        delivery_mode,
+                        request_kwargs["headers"].get("Content-Type"),
+                        payload_size_bytes,
+                    )
                 except Exception:
-                    # Defensive: do not fail send due to payload mutation
                     pass
-            webhook_response = requests.post(
-                webhook_url,
-                json=payload_to_send,
-                headers={'Content-Type': 'application/json'},
-                timeout=timeout_sec,
-                verify=webhook_ssl_verify,
-            )
-            break
+                webhook_response = requests.post(
+                    webhook_url,
+                    timeout=timeout_sec,
+                    verify=webhook_ssl_verify,
+                    **request_kwargs,
+                )
+                if webhook_response.status_code != 415:
+                    break
+
+                response_snippet = _truncate_webhook_response_snippet(
+                    getattr(webhook_response, "text", "")
+                )
+                try:
+                    logger.warning(
+                        "CUSTOM_WEBHOOK: 415 Unsupported Media Type for email %s using mode=%s "
+                        "(attempt=%d/%d, response=%s)",
+                        email_id,
+                        delivery_mode,
+                        attempt + 1,
+                        retries + 1,
+                        response_snippet,
+                    )
+                except Exception:
+                    pass
+                if mode_index == 0 and resolved_fallback_on_415:
+                    continue
+                should_retry_after_response = attempt < retries
+                break
+
+            if webhook_response is not None and not should_retry_after_response:
+                break
         except Exception as e_req:
             last_exc = e_req
+            webhook_response = None
             if attempt < retries and delay > 0:
                 time.sleep(delay)
+            continue
+        if should_retry_after_response:
+            if delay > 0:
+                time.sleep(delay)
+            continue
     # record attempt for rate-limit window
     record_send_event()
     if webhook_response is None:
@@ -1531,6 +1702,10 @@ def send_custom_webhook_flow(
                 "email_id": email_id,
                 "status": "success",
                 "status_code": webhook_response.status_code,
+                "delivery_mode": last_delivery_mode,
+                "attempted_delivery_modes": attempted_delivery_modes,
+                "fallback_used": len(set(attempted_delivery_modes)) > 1,
+                "payload_size_bytes": payload_size_bytes,
                 "webhook_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
                 "subject": (subject[:100] if subject else None),
             })
@@ -1550,17 +1725,30 @@ def send_custom_webhook_flow(
                 "email_id": email_id,
                 "status": "error",
                 "status_code": webhook_response.status_code,
+                "failure_reason": _normalize_webhook_failure_reason(
+                    status_code=webhook_response.status_code,
+                    response_text=str(response_data.get('message', '')),
+                ),
+                "delivery_mode": last_delivery_mode,
+                "attempted_delivery_modes": attempted_delivery_modes,
+                "fallback_used": len(set(attempted_delivery_modes)) > 1,
+                "payload_size_bytes": payload_size_bytes,
                 "error_message": (response_data.get('message', 'Unknown error'))[:200],
+                "response_snippet": _truncate_webhook_response_snippet(
+                    response_data.get('message', 'Unknown error')
+                ),
                 "webhook_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
                 "subject": (subject[:100] if subject else None),
             })
             return False
     else:
+        response_snippet = _truncate_webhook_response_snippet(webhook_response.text)
         logger.error(
-            "POLLER: Webhook call FAILED for email %s. Status: %s, Response: %s",
+            "POLLER: Webhook call FAILED for email %s. Status: %s, mode=%s, Response: %s",
             email_id,
             webhook_response.status_code,
-            webhook_response.text[:200],
+            last_delivery_mode,
+            response_snippet,
         )
         append_webhook_log({
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1568,7 +1756,16 @@ def send_custom_webhook_flow(
             "email_id": email_id,
             "status": "error",
             "status_code": webhook_response.status_code,
-            "error_message": webhook_response.text[:200] if webhook_response.text else "Unknown error",
+            "failure_reason": _normalize_webhook_failure_reason(
+                status_code=webhook_response.status_code,
+                response_text=webhook_response.text or "",
+            ),
+            "delivery_mode": last_delivery_mode,
+            "attempted_delivery_modes": attempted_delivery_modes,
+            "fallback_used": len(set(attempted_delivery_modes)) > 1,
+            "payload_size_bytes": payload_size_bytes,
+            "response_snippet": response_snippet or "Unknown error",
+            "error_message": response_snippet or "Unknown error",
             "webhook_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
             "subject": (subject[:100] if subject else None),
         })

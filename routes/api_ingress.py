@@ -413,6 +413,22 @@ def ingest_gmail():
         except Exception:
             webhook_ssl_verify = True
 
+        webhook_delivery_mode = "json"
+        try:
+            webhook_delivery_mode = str(
+                webhook_cfg.get("webhook_delivery_mode") or "json"
+            ).strip().lower() or "json"
+        except Exception:
+            webhook_delivery_mode = "json"
+
+        webhook_fallback_on_415 = True
+        try:
+            webhook_fallback_on_415 = bool(
+                webhook_cfg.get("webhook_fallback_on_415", True)
+            )
+        except Exception:
+            webhook_fallback_on_415 = True
+
         allow_without_links = bool(getattr(ar, "ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS", False))
         try:
             rfs = getattr(ar, "_runtime_flags_service", None)
@@ -459,6 +475,8 @@ def ingest_gmail():
                 requests=requests,
                 time=time,
                 logger=current_app.logger,
+                webhook_delivery_mode=webhook_delivery_mode,
+                webhook_fallback_on_415=webhook_fallback_on_415,
             )
 
             return (

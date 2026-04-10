@@ -242,6 +242,31 @@ def test_webhook_config_service_ssl_verify(temp_json_file):
     assert service.get_ssl_verify() is False
 
 
+def test_webhook_config_service_update_config_accepts_delivery_mode(temp_json_file):
+    service = WebhookConfigService.get_instance(temp_json_file)
+
+    ok, msg = service.update_config(
+        {
+            "webhook_delivery_mode": "form",
+            "webhook_fallback_on_415": False,
+        }
+    )
+
+    assert ok is True
+    config = service.get_all_config()
+    assert config["webhook_delivery_mode"] == "form"
+    assert config["webhook_fallback_on_415"] is False
+
+
+def test_webhook_config_service_update_config_rejects_invalid_delivery_mode(temp_json_file):
+    service = WebhookConfigService.get_instance(temp_json_file)
+
+    ok, msg = service.update_config({"webhook_delivery_mode": "xml"})
+
+    assert ok is False
+    assert "webhook_delivery_mode" in msg
+
+
 # =============================================================================
 # Tests AuthService
 # =============================================================================

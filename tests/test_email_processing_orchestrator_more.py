@@ -168,6 +168,137 @@ def test_send_custom_webhook_flow_success_marks_and_returns_false():
 
 
 @pytest.mark.unit
+def test_send_custom_webhook_flow_415_fallback_to_form_success():
+    # Given: the primary JSON delivery mode is rejected with 415 and the alternate form mode succeeds
+    class Resp415:
+        status_code = 415
+        text = "<html>415 Unsupported Media Type</html>"
+        content = b"<html>415 Unsupported Media Type</html>"
+
+        def json(self):
+            raise ValueError("No JSON")
+
+    class Resp200:
+        status_code = 200
+        text = '{"success": true}'
+        content = b'{"success": true}'
+
+        def json(self):
+            return {"success": True}
+
+    calls = {"post_headers": []}
+
+    responses = [Resp415(), Resp200()]
+
+    def _post(*args, **kwargs):
+        calls["post_headers"].append(kwargs.get("headers", {}))
+        return responses.pop(0)
+
+    def append_webhook_log(entry):
+        calls.setdefault("logs", []).append(entry)
+
+    # When: executing the custom webhook flow with 415 fallback enabled
+    cont = orch.send_custom_webhook_flow(
+        email_id="e415",
+        subject="s",
+        payload_for_webhook={"hello": "world"},
+        delivery_links=["x"],
+        webhook_url="https://example.com/hook",
+        webhook_ssl_verify=True,
+        allow_without_links=True,
+        processing_prefs={"retry_count": 0, "retry_delay_sec": 0, "webhook_timeout_sec": 1},
+        rate_limit_allow_send=lambda: True,
+        record_send_event=lambda: calls.__setitem__("recorded", True),
+        append_webhook_log=append_webhook_log,
+        mark_email_id_as_processed_redis=lambda eid: True,
+        mark_email_as_read_imap=lambda *a, **k: calls.__setitem__("read", True),
+        mail=SimpleNamespace(),
+        email_num=1,
+        urlparse=None,
+        requests=SimpleNamespace(post=_post),
+        time=SimpleNamespace(sleep=lambda s: None),
+        logger=SimpleNamespace(
+            info=lambda *a, **k: None,
+            warning=lambda *a, **k: None,
+            error=lambda *a, **k: None,
+            debug=lambda *a, **k: None,
+        ),
+        webhook_delivery_mode="json",
+        webhook_fallback_on_415=True,
+    )
+
+    # Then: the flow retries with the alternate media type and logs the fallback details
+    assert cont is False
+    assert [h.get("Content-Type") for h in calls["post_headers"]] == [
+        "application/json",
+        "application/x-www-form-urlencoded",
+    ]
+    assert calls.get("logs")
+    assert calls["logs"][-1]["delivery_mode"] == "form"
+    assert calls["logs"][-1]["fallback_used"] is True
+    assert calls["logs"][-1]["attempted_delivery_modes"] == ["json", "form"]
+
+
+@pytest.mark.unit
+def test_send_custom_webhook_flow_retries_persistent_415_and_logs_failure():
+    # Given: the remote webhook keeps returning 415 across retries
+    class Resp415:
+        status_code = 415
+        text = "<html>415 Unsupported Media Type</html>"
+        content = b"<html>415 Unsupported Media Type</html>"
+
+        def json(self):
+            raise ValueError("No JSON")
+
+    calls = {"post_count": 0, "sleep": 0}
+
+    def _post(*args, **kwargs):
+        calls["post_count"] += 1
+        return Resp415()
+
+    def append_webhook_log(entry):
+        calls.setdefault("logs", []).append(entry)
+
+    # When: executing the flow with retries and no alternate fallback mode
+    cont = orch.send_custom_webhook_flow(
+        email_id="e415-persist",
+        subject="s",
+        payload_for_webhook={"hello": "world"},
+        delivery_links=["x"],
+        webhook_url="https://example.com/hook",
+        webhook_ssl_verify=True,
+        allow_without_links=True,
+        processing_prefs={"retry_count": 1, "retry_delay_sec": 1, "webhook_timeout_sec": 1},
+        rate_limit_allow_send=lambda: True,
+        record_send_event=lambda: calls.__setitem__("recorded", True),
+        append_webhook_log=append_webhook_log,
+        mark_email_id_as_processed_redis=lambda eid: False,
+        mark_email_as_read_imap=lambda *a, **k: None,
+        mail=SimpleNamespace(),
+        email_num=1,
+        urlparse=None,
+        requests=SimpleNamespace(post=_post),
+        time=SimpleNamespace(sleep=lambda s: calls.__setitem__("sleep", calls["sleep"] + 1)),
+        logger=SimpleNamespace(
+            info=lambda *a, **k: None,
+            warning=lambda *a, **k: None,
+            error=lambda *a, **k: None,
+            debug=lambda *a, **k: None,
+        ),
+        webhook_delivery_mode="json",
+        webhook_fallback_on_415=False,
+    )
+
+    # Then: the flow exhausts retries and records a normalized unsupported media type failure
+    assert cont is False
+    assert calls["post_count"] == 2
+    assert calls["sleep"] == 1
+    assert calls.get("logs")
+    assert calls["logs"][-1]["failure_reason"] == "unsupported_media_type"
+    assert calls["logs"][-1]["delivery_mode"] == "json"
+
+
+@pytest.mark.unit
 def test_outside_window_recadrage_is_marked_and_not_sent(monkeypatch):
     """Outside webhook window, detector=recadrage → skip send, mark read+processed."""
     # Arrange: force time to 10:00 (before 10h30 window)

@@ -19,9 +19,44 @@ class TestAbsencePauseAPI:
         assert response.status_code == 200
         data = response.get_json()
         assert data['success'] is True
+        assert 'webhook_delivery_mode' in data['config']
+        assert 'webhook_fallback_on_415' in data['config']
         assert 'absence_pause_enabled' in data['config']
         assert 'absence_pause_days' in data['config']
         assert isinstance(data['config']['absence_pause_days'], list)
+
+    def test_update_webhook_delivery_settings(self, authenticated_flask_client, temp_webhook_config):
+        payload = {
+            'webhook_delivery_mode': 'form',
+            'webhook_fallback_on_415': False,
+        }
+
+        response = authenticated_flask_client.post(
+            '/api/webhooks/config',
+            json=payload,
+            content_type='application/json'
+        )
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data['success'] is True
+
+        response = authenticated_flask_client.get('/api/webhooks/config')
+        data = response.get_json()
+        assert data['config']['webhook_delivery_mode'] == 'form'
+        assert data['config']['webhook_fallback_on_415'] is False
+
+    def test_validate_webhook_delivery_mode_invalid(self, authenticated_flask_client):
+        response = authenticated_flask_client.post(
+            '/api/webhooks/config',
+            json={'webhook_delivery_mode': 'xml'},
+            content_type='application/json'
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data['success'] is False
+        assert 'webhook_delivery_mode' in data['message']
     
     def test_update_absence_pause_enabled(self, authenticated_flask_client, temp_webhook_config):
         """Test updating absence_pause_enabled via API."""

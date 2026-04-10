@@ -12,6 +12,9 @@ from config import app_config_store as _store
 
 from services import WebhookConfigService
 
+
+WEBHOOK_DELIVERY_MODES = {"json", "form"}
+
 bp = Blueprint("api_webhooks", __name__, url_prefix="/api/webhooks")
 
 # Storage path kept compatible with legacy location used in app_render.py
@@ -88,11 +91,26 @@ def get_webhook_config():
     if not isinstance(absence_pause_days, list):
         absence_pause_days = []
 
+    webhook_delivery_mode = str(
+        persisted.get("webhook_delivery_mode")
+        or os.environ.get("WEBHOOK_DELIVERY_MODE", "json")
+    ).strip().lower()
+    if webhook_delivery_mode not in WEBHOOK_DELIVERY_MODES:
+        webhook_delivery_mode = "json"
+
+    webhook_fallback_on_415 = persisted.get("webhook_fallback_on_415")
+    if webhook_fallback_on_415 is None:
+        webhook_fallback_on_415 = os.environ.get(
+            "WEBHOOK_FALLBACK_ON_415", "true"
+        ).strip().lower() in ("1", "true", "yes", "on")
+
     config = {
         # Always mask webhook_url in API response for safety
         "webhook_url": _mask_url(webhook_url),
         "webhook_ssl_verify": webhook_ssl_verify,
         "webhook_sending_enabled": bool(webhook_sending_enabled),
+        "webhook_delivery_mode": webhook_delivery_mode,
+        "webhook_fallback_on_415": bool(webhook_fallback_on_415),
         # Expose as None when empty to be explicit in API response
         "webhook_time_start": webhook_time_start or None,
         "webhook_time_end": webhook_time_end or None,
@@ -122,6 +140,23 @@ def update_webhook_config():
 
     if "webhook_ssl_verify" in payload:
         updates["webhook_ssl_verify"] = bool(payload["webhook_ssl_verify"])
+
+    if "webhook_delivery_mode" in payload:
+        mode = str(payload.get("webhook_delivery_mode") or "").strip().lower()
+        if mode not in WEBHOOK_DELIVERY_MODES:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "webhook_delivery_mode doit être 'json' ou 'form'.",
+                    }
+                ),
+                400,
+            )
+        updates["webhook_delivery_mode"] = mode
+
+    if "webhook_fallback_on_415" in payload:
+        updates["webhook_fallback_on_415"] = bool(payload["webhook_fallback_on_415"])
 
     # New flag: webhook_sending_enabled
     if "webhook_sending_enabled" in payload:

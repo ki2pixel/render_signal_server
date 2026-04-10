@@ -1419,12 +1419,17 @@ function collectUrlsData() {
     const webhookUrlPlaceholder = document.getElementById('webhookUrl')?.placeholder || '';
     const sslToggle = document.getElementById('sslVerifyToggle');
     const sendingToggle = document.getElementById('webhookSendingToggle');
+    const deliveryModeSelect = document.getElementById('webhookDeliveryMode');
+    const fallbackOn415Toggle = document.getElementById('webhookFallbackOn415Toggle');
     const sslVerify = sslToggle?.checked ?? true;
     const sendingEnabled = sendingToggle?.checked ?? true;
+    const deliveryMode = deliveryModeSelect?.value || 'json';
 
     const payload = {
         webhook_ssl_verify: sslVerify,
         webhook_sending_enabled: sendingEnabled,
+        webhook_delivery_mode: deliveryMode,
+        webhook_fallback_on_415: fallbackOn415Toggle?.checked ?? true,
     };
 
     const trimmedWebhookUrl = webhookUrl.trim();

@@ -38,6 +38,9 @@ from typing import Dict, Optional, Any, Tuple
 from utils.validators import normalize_make_webhook_url
 
 
+WEBHOOK_DELIVERY_MODES = {"json", "form"}
+
+
 class WebhookConfigService:
     """Service pour gérer la configuration des webhooks.
     
@@ -348,6 +351,15 @@ class WebhookConfigService:
                 if invalid_days:
                     return False, f"absence_pause_days invalide: {', '.join(invalid_days)}"
                 updates["absence_pause_days"] = normalized_days
+
+            if "webhook_delivery_mode" in updates:
+                mode_value = str(updates.get("webhook_delivery_mode") or "").strip().lower()
+                if mode_value not in WEBHOOK_DELIVERY_MODES:
+                    return False, "webhook_delivery_mode invalide: utiliser 'json' ou 'form'"
+                updates["webhook_delivery_mode"] = mode_value
+
+            if "webhook_fallback_on_415" in updates:
+                updates["webhook_fallback_on_415"] = bool(updates.get("webhook_fallback_on_415"))
 
             enabled_effective = bool(
                 updates.get("absence_pause_enabled", config.get("absence_pause_enabled", False))

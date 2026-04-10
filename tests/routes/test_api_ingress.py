@@ -189,6 +189,79 @@ def test_ingress_gmail_happy_path(monkeypatch, flask_client):
 
 
 @pytest.mark.unit
+def test_ingress_gmail_passes_delivery_mode_settings_and_detector_payload(monkeypatch, flask_client):
+    # Given: ingress matches a recadrage email and webhook config overrides the outbound delivery mode
+    import app_render
+
+    monkeypatch.setattr(app_render, "SENDER_LIST_FOR_POLLING", [])
+    monkeypatch.setattr(app_render, "is_email_id_processed_redis", lambda *_a, **_k: False)
+    monkeypatch.setattr(app_render, "_rate_limit_allow_send", lambda: True)
+    monkeypatch.setattr(app_render, "_record_send_event", lambda: None)
+    monkeypatch.setattr(app_render, "_append_webhook_log", lambda *_a, **_k: None)
+    monkeypatch.setattr(app_render, "mark_email_id_as_processed_redis", lambda *_a, **_k: True)
+
+    monkeypatch.setattr(
+        "routes.api_ingress.email_orchestrator._is_webhook_sending_enabled",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "routes.api_ingress.email_orchestrator._load_webhook_global_time_window",
+        lambda: ("10:30", "19:00"),
+    )
+    monkeypatch.setattr(
+        "routes.api_ingress.is_within_time_window_local",
+        lambda *_a, **_k: True,
+    )
+    monkeypatch.setattr(
+        "routes.api_ingress.email_orchestrator._get_webhook_config_dict",
+        lambda: {
+            "webhook_url": "https://example.com/webhook",
+            "webhook_ssl_verify": True,
+            "webhook_delivery_mode": "form",
+            "webhook_fallback_on_415": False,
+        },
+    )
+
+    monkeypatch.setattr(
+        "routes.api_ingress.pattern_matching.check_media_solution_pattern",
+        lambda *_a, **_k: {"matches": True, "delivery_time": "13h47"},
+    )
+    monkeypatch.setattr(
+        "routes.api_ingress.pattern_matching.check_desabo_conditions",
+        lambda *_a, **_k: {"matches": False},
+    )
+
+    captured = {}
+
+    def _capture_send(**kwargs):
+        captured.update(kwargs)
+        return False
+
+    monkeypatch.setattr("routes.api_ingress.email_orchestrator.send_custom_webhook_flow", _capture_send)
+
+    payload = {
+        "subject": "Média Solution - Missions Recadrage - Lot 107",
+        "sender": "Technique <technique@media-solution.fr>",
+        "body": "Voici les missions https://www.dropbox.com/scl/fo/abc123",
+        "date": "2026-04-10T09:54:38Z",
+    }
+
+    # When: posting the Gmail payload to ingress
+    resp = flask_client.post("/api/ingress/gmail", json=payload, headers=_auth_headers())
+
+    # Then: ingress forwards detector fields, delivery links, and delivery-mode settings to the webhook flow
+    assert resp.status_code == 200
+    assert captured["webhook_delivery_mode"] == "form"
+    assert captured["webhook_fallback_on_415"] is False
+    assert captured["payload_for_webhook"]["detector"] == "recadrage"
+    assert captured["payload_for_webhook"]["delivery_time"] == "13h47"
+    assert captured["payload_for_webhook"]["sender_email"] == "technique@media-solution.fr"
+    assert captured["payload_for_webhook"]["webhooks_time_end"] == "19:00"
+    assert isinstance(captured["delivery_links"], list)
+    assert captured["delivery_links"][0]["provider"] == "dropbox"
+
+
+@pytest.mark.unit
 def test_ingress_gmail_enriches_delivery_links_with_r2_when_enabled(monkeypatch, flask_client):
     # Given: R2 transfer is enabled and returns an r2_url
     import app_render
