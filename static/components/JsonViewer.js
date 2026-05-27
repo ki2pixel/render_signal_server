@@ -57,10 +57,35 @@ function createLeafNode(key, value) {
     return row;
 }
 
+function renderItemsChunk(container, entries, startIndex, count, depth, options) {
+    const endIndex = Math.min(startIndex + count, entries.length);
+    for (let i = startIndex; i < endIndex; i++) {
+        const { key, val } = entries[i];
+        if (isComplexValue(val)) {
+            container.appendChild(createBranchNode(key, val, depth + 1, options));
+        } else {
+            container.appendChild(createLeafNode(key, val));
+        }
+    }
+
+    if (endIndex < entries.length) {
+        const remaining = entries.length - endIndex;
+        const btn = document.createElement('button');
+        btn.className = 'json-show-more-btn';
+        btn.textContent = `Afficher plus (${remaining} restants)...`;
+        btn.addEventListener('click', () => {
+            btn.remove();
+            renderItemsChunk(container, entries, endIndex, count, depth, options);
+        });
+        container.appendChild(btn);
+    }
+}
+
 function createBranchNode(key, value, depth, options) {
     const node = document.createElement('details');
     node.className = 'json-node';
-    if (depth < (options.collapseDepth ?? OPEN_DEPTH_DEFAULT)) {
+    const isOpenInitially = depth < (options.collapseDepth ?? OPEN_DEPTH_DEFAULT);
+    if (isOpenInitially) {
         node.open = true;
     }
 
@@ -80,31 +105,27 @@ function createBranchNode(key, value, depth, options) {
 
     const childrenContainer = document.createElement('div');
     childrenContainer.className = 'json-children';
+    node.appendChild(childrenContainer);
 
+    let entries = [];
     if (Array.isArray(value)) {
-        value.forEach((childValue, index) => {
-            if (isComplexValue(childValue)) {
-                childrenContainer.appendChild(
-                    createBranchNode(`[${index}]`, childValue, depth + 1, options)
-                );
-            } else {
-                childrenContainer.appendChild(createLeafNode(`[${index}]`, childValue));
-            }
-        });
+        entries = value.map((val, index) => ({ key: `[${index}]`, val }));
     } else {
-        Object.keys(value).forEach((childKey) => {
-            const childValue = value[childKey];
-            if (isComplexValue(childValue)) {
-                childrenContainer.appendChild(
-                    createBranchNode(childKey, childValue, depth + 1, options)
-                );
-            } else {
-                childrenContainer.appendChild(createLeafNode(childKey, childValue));
-            }
-        });
+        entries = Object.keys(value).map(childKey => ({ key: childKey, val: value[childKey] }));
     }
 
-    node.appendChild(childrenContainer);
+    const maxItems = options.maxItemsPerNode ?? 100;
+
+    if (isOpenInitially) {
+        renderItemsChunk(childrenContainer, entries, 0, maxItems, depth, options);
+    } else {
+        node.addEventListener('toggle', function onToggle() {
+            if (node.open && childrenContainer.children.length === 0) {
+                renderItemsChunk(childrenContainer, entries, 0, maxItems, depth, options);
+            }
+        }, { once: true });
+    }
+
     return node;
 }
 
@@ -120,23 +141,15 @@ export class JsonViewer {
         const root = document.createElement('div');
         root.className = 'json-viewer';
 
-        if (Array.isArray(data)) {
-            data.forEach((value, index) => {
-                if (isComplexValue(value)) {
-                    root.appendChild(createBranchNode(`[${index}]`, value, 0, options));
-                } else {
-                    root.appendChild(createLeafNode(`[${index}]`, value));
-                }
-            });
-        } else if (isComplexValue(data)) {
-            Object.keys(data).forEach((key) => {
-                const value = data[key];
-                if (isComplexValue(value)) {
-                    root.appendChild(createBranchNode(key, value, 0, options));
-                } else {
-                    root.appendChild(createLeafNode(key, value));
-                }
-            });
+        if (isComplexValue(data)) {
+            let entries = [];
+            if (Array.isArray(data)) {
+                entries = data.map((val, index) => ({ key: `[${index}]`, val }));
+            } else {
+                entries = Object.keys(data).map(key => ({ key, val: data[key] }));
+            }
+            const maxItems = options.maxItemsPerNode ?? 100;
+            renderItemsChunk(root, entries, 0, maxItems, -1, options);
         } else {
             root.appendChild(createLeafNode(options.rootLabel ?? 'valeur', data));
         }

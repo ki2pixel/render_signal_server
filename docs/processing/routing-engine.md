@@ -577,4 +577,4 @@ Pour modifier : déverrouiller → éditer → sauvegarder → auto-verrouillage
 
 ---
 
-*Pour les détails d'API : voir `docs/v2/core/configuration-reference.md`. Pour l'architecture générale : voir `docs/v2/core/architecture.md`.*
+*Pour les détails d'API : voir [configuration-reference.md](file:///home/kidpixel/render_signal_server-main/docs/core/configuration-reference.md) ; pour l'architecture générale : voir [architecture.md](file:///home/kidpixel/render_signal_server-main/docs/core/architecture.md).*

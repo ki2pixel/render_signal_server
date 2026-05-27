@@ -707,4 +707,4 @@ Le système utilise des radars (`/health`) pour la surveillance externe, des rap
 
 ---
 
-*Pour la configuration complète : voir `docs/v2/core/configuration-reference.md`. Pour le déploiement : voir `docs/v2/ops/deployment.md`.*
+*Pour la configuration complète : voir [configuration-reference.md](file:///home/kidpixel/render_signal_server-main/docs/core/configuration-reference.md) ; pour le déploiement : voir [deployment.md](file:///home/kidpixel/render_signal_server-main/docs/ops/deployment.md).*

@@ -589,4 +589,4 @@ La chaîne de montage GitHub Actions construit l'image Docker et la stocke sur G
 
 ---
 
-*Pour la configuration complète : voir `docs/v2/core/configuration-reference.md`. Pour le monitoring : voir `docs/v2/ops/monitoring.md`.*
+*Pour la configuration complète : voir [configuration-reference.md](file:///home/kidpixel/render_signal_server-main/docs/core/configuration-reference.md) ; pour le monitoring : voir [monitoring.md](file:///home/kidpixel/render_signal_server-main/docs/ops/monitoring.md).*

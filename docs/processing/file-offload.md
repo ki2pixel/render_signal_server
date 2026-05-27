@@ -236,24 +236,36 @@ export default {
 
 ```python
 # email_processing/orchestrator.py
-def send_custom_webhook_flow(email_data, matched_rule=None):
-    # Extraction des liens fournisseurs
-    delivery_links = link_extraction.extract_provider_links_from_text(email_data['body'])
-    
-    # Enrichissement R2 (best-effort)
-    delivery_links = _maybe_enrich_delivery_links_with_r2(delivery_links)
-    
-    # Construction payload webhook
-    payload = {
-        'subject': email_data['subject'],
-        'sender': email_data['sender'],
-        'delivery_links': delivery_links,  # Contient maintenant r2_url si succès
-        'source': 'gmail_push'
-    }
-    
-    # Envoi webhook
-    webhook_url = matched_rule['actions']['webhook_url'] if matched_rule else WEBHOOK_URL
-    return webhook_sender.send_webhook(webhook_url, payload)
+# Extraction, enrichissement R2 et déclenchement de l'envoi personnalisé
+delivery_links = link_extraction.extract_provider_links_from_text(combined_text_for_detection)
+
+# L'enrichissement R2 est effectué sur les liens détectés
+try:
+    delivery_links = _maybe_enrich_delivery_links_with_r2(delivery_links, email_id, logger)
+except Exception:
+    pass
+
+# Déclenchement de l'envoi résilient
+send_custom_webhook_flow(
+    email_id=email_id,
+    subject=subject or '',
+    payload_for_webhook=payload_for_webhook,
+    delivery_links=delivery_links or [],
+    webhook_url=routing_webhook_url or ar.WEBHOOK_URL,
+    webhook_ssl_verify=True,
+    allow_without_links=bool(getattr(ar, 'ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS', False)),
+    processing_prefs=getattr(ar, 'PROCESSING_PREFS', {}),
+    rate_limit_allow_send=getattr(ar, '_rate_limit_allow_send'),
+    record_send_event=getattr(ar, '_record_send_event'),
+    append_webhook_log=getattr(ar, '_append_webhook_log'),
+    mark_email_id_as_processed_redis=ar.mark_email_id_as_processed_redis,
+    mark_email_as_read_imap=ar.mark_email_as_read_imap,
+    mail=mail,
+    email_num=num,
+    requests=requests,
+    time=time,
+    logger=logger,
+)
 ```
 
 ---
@@ -676,4 +688,4 @@ Le livreur Cloudflare récupère les colis depuis les expéditeurs et les stocke
 
 ---
 
-*Pour les détails du livreur : voir `deployment/cloudflare-worker/worker.js`. Pour la configuration : voir `docs/v2/core/configuration-reference.md`.*
+*Pour les détails du livreur : voir [worker.js](file:///home/kidpixel/render_signal_server-main/deployment/cloudflare-worker/worker.js) ; pour la configuration : voir [configuration-reference.md](file:///home/kidpixel/render_signal_server-main/docs/core/configuration-reference.md).*

@@ -796,7 +796,65 @@ function safeLog(message, data = null) {
 // Utilisation
 safeLog('Webhook config loaded:', config);  // Log en dev seulement
 console.log('Generic message');              // Log toujours
+
+---
+
+## Optimisation des performances et robustesse UI
+
+### 1. Rendu intelligent avec JsonViewer
+
+**TL;DR** : Le composant `JsonViewer` évite de geler le thread principal du navigateur en appliquant du **Lazy Rendering** sur les branches repliées et du **Chunking** de rendu (tranches de 100 éléments) pour les payloads volumineux.
+
+#### Le problème : le gel de l'UI sur les gros logs
+Lorsqu'un webhook transportait des données volumineuses (fichiers R2 encodés ou métadonnées massives), le rendu direct de l'arbre JSON dans le navigateur bloquait complètement l'interface utilisateur pendant plusieurs secondes.
+
+#### La solution : Lazy Rendering + Chunking
+* **Lazy Rendering** : Les nœuds imbriqués du JSON ne sont pas créés dans le DOM tant que l'utilisateur ne clique pas explicitement pour déplier la branche.
+* **Rendu par Chunks** : Si un tableau ou un objet contient plus de 100 éléments, le composant segmente le rendu en tranches de 100 nœuds via des temporisateurs asynchrones (`setTimeout`), évitant ainsi de saturer la pile d'exécution du navigateur.
+
+---
+
+### 2. Découplage DOM et CSS avec DOMHelper
+
+**TL;DR** : La manipulation du DOM est centralisée dans `DOMHelper.js` et s'appuie sur des attributs HTML `data-target` au lieu d'ID ou de classes CSS, garantissant que les refactoring de style ne cassent pas le comportement JavaScript.
+
+#### Le problème : les sélecteurs CSS fragiles
+Auparavant, le JavaScript sélectionnait ses éléments avec des classes comme `.panel-content` ou des ID. Si un designer modifiait le style ou renommait une classe pour le responsive design, le script JavaScript associé cessait de fonctionner sans lever d'alerte immédiate.
+
+#### La solution : data-target systématiques
+Le script recherche les éléments interactifs uniquement par leurs cibles logiques :
+
+```html
+<!-- HTML découplé -->
+<button data-target="save-button" class="btn btn-primary btn-large">Sauvegarder</button>
 ```
+
+Le script utilise `DOMHelper` pour lier les écouteurs d'événements, rendant les classes CSS purement cosmétiques et modifiables sans risque de régression fonctionnelle.
+
+---
+
+### 3. Prévention des pertes de données (Unsaved Changes)
+
+**TL;DR** : Un écouteur d'état dynamique intercepte l'événement `beforeunload` et avertit l'utilisateur si des modifications sont en cours d'enregistrement (Auto-save) ou non sauvegardées sur les panneaux.
+
+#### Le problème : la fermeture accidentelle d'onglet
+Les modifications sur les panneaux de configuration (comme les fenêtres horaires ou les exclusions) sont enregistrées automatiquement. Cependant, si l'utilisateur fermait son onglet ou cliquait sur un lien externe pendant qu'une requête d'enregistrement asynchrone était active, les changements étaient perdus silencieusement.
+
+#### La solution : interception active
+Les formulaires et services d'auto-sauvegarde déclarent un état `dirty` ou `saving` dans le contrôleur global. Si cet état est actif, une boîte de dialogue standard `beforeunload` invite l'utilisateur à confirmer sa sortie.
+
+---
+
+### 4. Bundling & Compilations avec Vite
+
+**TL;DR** : Vite regroupe et minifie le JavaScript modulaire en production vers `/static/dist/`, tout en assurant un fallback automatique et transparent vers les fichiers originaux non minifiés en mode développement.
+
+#### Le problème : les requêtes HTTP multiples en cascade
+Le chargement de dizaines de modules ES6 individuels augmentait le temps de chargement en production en raison de la latence réseau cumulative sur chaque requête d'import.
+
+#### La solution : build optimisé
+* **Mode Production** : `app_render.py` injecte automatiquement le bundle minifié généré par Vite dans `/static/dist/`.
+* **Mode Développement** : En cas d'absence du dossier `dist/` (dev local), le serveur Flask bascule gracieusement sur l'injection de `/static/dashboard.js` natif non compilé, offrant un cycle de feedback instantané.
 
 ---
 
@@ -976,4 +1034,4 @@ Le dashboard est un cockpit moderne avec instruments spécialisés (services ES6
 
 ---
 
-*Pour les détails d'API : voir `docs/v2/core/configuration-reference.md`. Pour l'authentification : voir `docs/v2/access/authentication.md`.*
+*Pour les détails d'API : voir [configuration-reference.md](file:///home/kidpixel/render_signal_server-main/docs/core/configuration-reference.md) ; pour l'authentification : voir [authentication.md](file:///home/kidpixel/render_signal_server-main/docs/access/authentication.md).*

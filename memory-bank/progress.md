@@ -21,6 +21,46 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-05-27 20:35:00] - Documentation Globale & Synchro Métriques (/docs-updater)
+- **Objectif** : Analyser la base de code, aligner les spécifications, et mettre à jour la documentation suite aux récentes évolutions majeures (Vite, DOMHelper, JsonViewer, beforeunload, et suppression de `webhook_sender.py`).
+- **Actions réalisées** :
+  1. Nettoyage et refactoring de `docs/README.md`, `docs/processing/webhooks-outbound.md` et `docs/processing/file-offload.md` pour enlever toute référence obsolète à `webhook_sender.py` et refléter le flux `send_custom_webhook_flow` unifié.
+  2. Spécification détaillée du mécanisme défensif de **Fallback 415** (séquence de delivery modes) et de la journalisation Redis associée dans `docs/processing/webhooks-outbound.md`.
+  3. Rédaction complète de la section d'optimisations et de robustesse frontend (JsonViewer lazy-rendering/chunking, centralisation de `DOMHelper.js` avec sélecteurs `data-target`, interceptions `beforeunload`, et bundling/minification via Vite) dans `docs/access/dashboard-ui.md`.
+  4. Réconciliation et correction de l'intégralité des 10 liens internes obsolètes (`docs/v2/`) à travers 10 fichiers markdown distincts vers leurs chemins cibles réels.
+- **Validation** : Remplacement validé par audit global (0 lien rompu).
+- **Statut** : Terminé avec succès.
+
+[2026-05-27 20:30:00] - Correction des Tests Backend (Webhook Sender)
+- **Objectif** : Investiguer et corriger les tests échouant suite à la suppression du module `webhook_sender.py`.
+- **Actions réalisées** :
+  1. Suppression du test obsolète `test_webhook_logging_integration` dans `test_app_render.py` qui ciblait l'ancienne fonction `app_render.send_makecom_webhook`.
+  2. Correction du mock `fake_post` dans `tests/test_r2_resilience.py` pour parser la chaîne JSON via le kwarg `data` (adapté à l'implémentation de `send_custom_webhook_flow`).
+- **Validation** : Les tests (56/56) passent avec succès.
+- **Statut** : Terminé avec succès.
+
+[2026-05-27 18:27:00] - Prévention des pertes de données (beforeunload)
+- **Objectif** : Implémenter une interception `beforeunload` et un suivi d'état "dirty" pour éviter la fermeture accidentelle de page pendant une sauvegarde (Audit frontend reco #4).
+- **Implémentation** : Ajout de la classe `modified` aux panneaux configurables (auto-save et manuels) sur changement. Modification de `RoutingRulesService.js` (`hasUnsavedChanges`) et `dashboard.js` (écouteurs globaux `beforeunload`).
+- **Validation** : Re-build avec `npm run build` réussi, vérification de la logique de protection.
+
+[2026-05-27 18:20:00] - Optimisation des performances du JsonViewer (Lazy Loading & Chunking)
+- **Objectif** : Améliorer les performances de rendu du composant JsonViewer pour éviter le gel du Main Thread lors du chargement de gros payloads.
+- **Implémentation** : Modification de `JsonViewer.js` pour intégrer un rendu asynchrone des nœuds repliés via l'événement `toggle` et une pagination/chunking (100 éléments par défaut) des très larges tableaux/objets avec ajout d'un bouton de chargement progressif. Stylisation ajoutée dans `components.css`.
+- **Validation** : Rendu fluide vérifié et suite de tests (`pytest`) validée sans régression induite.
+- **Tracking** : Task list complétée, Walkthrough généré.
+[2026-05-27 18:09:00] - Intégration d'un outil de Build/Bundling (Vite)
+- **Objectif** : Minifier et regrouper les assets frontend (JS, CSS) pour améliorer les performances, tout en préservant le workflow de dev sans build.
+- **Implémentation** : Création de `package.json`, `vite.config.js`, `dashboard-bundle.css`. Ajout d'un *context processor* `inject_bundler_helpers` dans `app_render.py` qui parse `manifest.json`. Conditionnement des balises `<script>` et `<link>` dans `dashboard.html` selon `use_bundle`.
+- **Validation** : Les tests unitaires (routes) passent. `npm run build` génère correctement le bundle, et le rendu Flask injecte dynamiquement les bons URLs hachés. Workflow UMB.
+- **Tracking** : Walkthrough généré.
+
+[2026-05-27 18:03:00] - Découplage du DOM et des CSS (Attributs de données)
+- **Objectif** : Eliminer le couplage fort avec le DOM (ID) dans l'orchestrateur frontend.
+- **Implémentation** : Création de `DOMHelper.js`, injection des attributs `data-target` dans `dashboard.html`, et refactoring des services ES6 (`MessageHelper`, `WebhookService`, `RoutingRulesService`, `LogService`, `dashboard.js`) pour utiliser le fallback `DOMHelper.getElement`.
+- **Validation** : Rétrocompatibilité préservée (fallback via `getElementById`), architecture de sélection unifiée.
+- **Tracking** : Walkthrough généré.
+
 [2026-02-25 13:10:00] - Idempotence Gmail Push: tests de non-régression + validation ciblée
 - **Objectif** : Garantir qu’un double POST identique sur `/api/ingress/gmail` ne déclenche qu’un seul envoi webhook.
 - **Implémentation** : Ajout de tests `test_gmail_ingress_idempotent_inflight_lock` + variante "webhook failure" (HTTP 500) dans `tests/routes/test_api_ingress.py`.

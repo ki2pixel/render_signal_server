@@ -1,5 +1,6 @@
 import { ApiService } from './ApiService.js';
 import { MessageHelper } from '../utils/MessageHelper.js';
+import { DOMHelper } from '../utils/DOMHelper.js';
 
 export class WebhookService {
     static ALLOWED_WEBHOOK_HOSTS = [
@@ -17,32 +18,32 @@ export class WebhookService {
             if (data.success) {
                 const config = data.config;
                 
-                const webhookUrlEl = document.getElementById('webhookUrl');
+                const webhookUrlEl = DOMHelper.getElement('webhookUrl');
                 if (webhookUrlEl) {
                     webhookUrlEl.placeholder = config.webhook_url || 'Non configuré';
                 }
                 
-                const sslToggle = document.getElementById('sslVerifyToggle');
+                const sslToggle = DOMHelper.getElement('sslVerifyToggle');
                 if (sslToggle) {
                     sslToggle.checked = !!config.webhook_ssl_verify;
                 }
                 
-                const sendingToggle = document.getElementById('webhookSendingToggle');
+                const sendingToggle = DOMHelper.getElement('webhookSendingToggle');
                 if (sendingToggle) {
                     sendingToggle.checked = config.webhook_sending_enabled ?? true;
                 }
 
-                const deliveryModeSelect = document.getElementById('webhookDeliveryMode');
+                const deliveryModeSelect = DOMHelper.getElement('webhookDeliveryMode');
                 if (deliveryModeSelect) {
                     deliveryModeSelect.value = config.webhook_delivery_mode || 'json';
                 }
 
-                const fallbackOn415Toggle = document.getElementById('webhookFallbackOn415Toggle');
+                const fallbackOn415Toggle = DOMHelper.getElement('webhookFallbackOn415Toggle');
                 if (fallbackOn415Toggle) {
                     fallbackOn415Toggle.checked = config.webhook_fallback_on_415 ?? true;
                 }
                 
-                const absenceToggle = document.getElementById('absencePauseToggle');
+                const absenceToggle = DOMHelper.getElement('absencePauseToggle');
                 if (absenceToggle) {
                     absenceToggle.checked = !!config.absence_pause_enabled;
                 }
@@ -63,12 +64,12 @@ export class WebhookService {
      * @returns {Promise<boolean>} Succès de l'opération
      */
     static async saveConfig() {
-        const webhookUrlEl = document.getElementById('webhookUrl');
-        const sslToggle = document.getElementById('sslVerifyToggle');
-        const sendingToggle = document.getElementById('webhookSendingToggle');
-        const deliveryModeSelect = document.getElementById('webhookDeliveryMode');
-        const fallbackOn415Toggle = document.getElementById('webhookFallbackOn415Toggle');
-        const absenceToggle = document.getElementById('absencePauseToggle');
+        const webhookUrlEl = DOMHelper.getElement('webhookUrl');
+        const sslToggle = DOMHelper.getElement('sslVerifyToggle');
+        const sendingToggle = DOMHelper.getElement('webhookSendingToggle');
+        const deliveryModeSelect = DOMHelper.getElement('webhookDeliveryMode');
+        const fallbackOn415Toggle = DOMHelper.getElement('webhookFallbackOn415Toggle');
+        const absenceToggle = DOMHelper.getElement('absencePauseToggle');
         
         const webhookUrl = (webhookUrlEl?.value || '').trim();
         const placeholder = webhookUrlEl?.placeholder || 'Non configuré';
@@ -145,7 +146,7 @@ export class WebhookService {
      * @param {Array} logs - Liste des logs à afficher
      */
     static renderLogs(logs) {
-        const container = document.getElementById('webhookLogs');
+        const container = DOMHelper.getElement('webhookLogs');
         if (!container) return;
 
         container.replaceChildren();
@@ -225,7 +226,7 @@ export class WebhookService {
      * Vide l'affichage des logs
      */
     static clearLogs() {
-        const container = document.getElementById('webhookLogs');
+        const container = DOMHelper.getElement('webhookLogs');
         if (container) {
             container.replaceChildren(this.createLogTextRow('log-entry', 'Logs vidés.'));
         }
@@ -313,7 +314,7 @@ export class WebhookService {
      * @param {Array} days - Jours à cocher (monday, tuesday, ...)
      */
     static setAbsenceDayCheckboxes(days) {
-        const group = document.getElementById('absencePauseDaysGroup');
+        const group = DOMHelper.getElement('absencePauseDaysGroup');
         if (!group) return;
         
         const normalizedDays = new Set(
@@ -332,7 +333,7 @@ export class WebhookService {
      * @returns {Array} Jours cochés (monday, tuesday, ...)
      */
     static collectAbsenceDayCheckboxes() {
-        const group = document.getElementById('absencePauseDaysGroup');
+        const group = DOMHelper.getElement('absencePauseDaysGroup');
         if (!group) return [];
         
         const checkboxes = group.querySelectorAll('input[name="absencePauseDay"][type="checkbox"]');

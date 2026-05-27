@@ -129,6 +129,58 @@ app.register_blueprint(api_auth_bp)
 app.register_blueprint(api_routing_rules_bp)
 app.register_blueprint(api_ingress_bp)
 
+@app.context_processor
+def inject_bundler_helpers():
+    import json
+    from flask import url_for
+    
+    dist_path = os.path.join(app.root_path, "static", "dist")
+    use_bundle = os.path.exists(dist_path)
+    
+    bundled_js = ""
+    bundled_css = []
+    
+    if use_bundle:
+        manifest_paths = [
+            os.path.join(dist_path, ".vite", "manifest.json"),
+            os.path.join(dist_path, "manifest.json")
+        ]
+        
+        manifest = None
+        for path in manifest_paths:
+            if os.path.exists(path):
+                try:
+                    with open(path, "r") as f:
+                        manifest = json.load(f)
+                    break
+                except Exception as e:
+                    app.logger.warning(f"Impossible de charger le manifest Vite à {path}: {e}")
+        
+        if manifest:
+            try:
+                js_entry = "static/dashboard.js"
+                if js_entry in manifest:
+                    bundled_js = url_for("static", filename=f"dist/{manifest[js_entry]['file']}")
+                
+                css_entry = "static/css/dashboard-bundle.css"
+                if css_entry in manifest:
+                    bundled_css.append(url_for("static", filename=f"dist/{manifest[css_entry]['file']}"))
+            except Exception as e:
+                app.logger.warning(f"Erreur lors de l'extraction des assets du manifest: {e}")
+        
+        if not bundled_js:
+            if os.path.exists(os.path.join(dist_path, "js", "dashboard.js")):
+                bundled_js = url_for("static", filename="dist/js/dashboard.js")
+            if os.path.exists(os.path.join(dist_path, "css", "dashboard-bundle.css")):
+                bundled_css.append(url_for("static", filename="dist/css/dashboard-bundle.css"))
+                
+    return {
+        "use_bundle": use_bundle,
+        "bundled_js": bundled_js,
+        "bundled_css": bundled_css
+    }
+
+
 _cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
 if _cors_origins:
     CORS(

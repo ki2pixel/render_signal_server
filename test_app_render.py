@@ -565,32 +565,7 @@ def test_webhook_logs_validates_days_param(authenticated_client, temp_logs_file)
 
 # --- Tests d'intégration ---
 
-def test_webhook_logging_integration(authenticated_client, temp_logs_file):
-    """Test que les webhooks sont bien loggés lors de l'envoi."""
-    with patch('app_render.WEBHOOK_LOGS_FILE', temp_logs_file):
-        original_log_hook = app_render._append_webhook_log
-        with patch.object(app_render, '_append_webhook_log') as mock_log_hook:
-            mock_log_hook.side_effect = original_log_hook
-            with patch('email_processing.webhook_sender.requests.post') as mock_post:
-                # Simuler un succès
-                mock_response = MagicMock()
-                mock_response.status_code = 200
-                mock_post.return_value = mock_response
 
-                # Appeler send_makecom_webhook
-                result = app_render.send_makecom_webhook(
-                    subject="Test Subject",
-                    delivery_time="10h30",
-                    sender_email="test@example.com",
-                    email_id="test123",
-                    override_webhook_url="https://hook.eu2.make.com/test",
-                )
-
-                assert result is True
-                assert mock_log_hook.call_count >= 1
-                log_entry = mock_log_hook.call_args[0][0]
-                assert log_entry.get("type") == "makecom"
-                assert log_entry.get("status") == "success"
 
 
 

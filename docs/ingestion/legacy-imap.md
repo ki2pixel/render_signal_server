@@ -379,7 +379,7 @@ Gmail Apps Script est stateless. Il pousse les événements quand ils arrivent. 
 
 L'usine de polling IMAP est fermée, démantelée, et morte. Gmail Push est le seul service postal actif. Si vous voyez du code IMAP, c'est soit historique, soit à supprimer. Chaque décision (❌/✅, trade-offs, misconceptions) maintient la propreté du service postal.
 
-Pour l'ingestion actuelle : voir `docs/v2/ingestion/gmail-push.md`.
+Pour l'ingestion actuelle : voir [gmail-push.md](file:///home/kidpixel/render_signal_server-main/docs/ingestion/gmail-push.md).
 
 ---
 

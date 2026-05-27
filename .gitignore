@@ -53,3 +53,7 @@ htmlcov/
 
 # Deployment
 deployment/
+
+# Frontend / Vite
+node_modules/
+static/dist/

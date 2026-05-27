@@ -1,3 +1,5 @@
+import { DOMHelper } from './DOMHelper.js';
+
 export class MessageHelper {
     /**
      * Affiche un message temporaire dans un élément
@@ -7,7 +9,7 @@ export class MessageHelper {
      * @param {number} timeout - Durée d'affichage en ms (défaut: 5000)
      */
     static showMessage(elementId, message, type, timeout = 5000) {
-        const el = document.getElementById(elementId);
+        const el = DOMHelper.getElement(elementId);
         if (!el) return; // Safe-guard: element may be absent in some contexts
         
         el.textContent = message;

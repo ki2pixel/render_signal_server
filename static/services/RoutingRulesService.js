@@ -1,5 +1,6 @@
 import { ApiService } from './ApiService.js';
 import { MessageHelper } from '../utils/MessageHelper.js';
+import { DOMHelper } from '../utils/DOMHelper.js';
 
 const FIELD_OPTIONS = [
     { value: 'sender', label: 'Expéditeur' },
@@ -51,6 +52,8 @@ export class RoutingRulesService {
         this.lockButton = null;
         /** @type {HTMLElement | null} */
         this.lockIcon = null;
+        /** @type {boolean} */
+        this._isSaving = false;
     }
 
     /**
@@ -59,12 +62,12 @@ export class RoutingRulesService {
      */
     async init() {
         if (this.initialized) return;
-        this.container = document.getElementById('routingRulesList');
+        this.container = DOMHelper.getElement('routingRulesList');
         this.panel = document.querySelector('.collapsible-panel[data-panel="routing-rules"]');
-        this.addButton = document.getElementById('addRoutingRuleBtn');
-        this.reloadButton = document.getElementById('reloadRoutingRulesBtn');
-        this.lockButton = document.getElementById('routing-rules-lock-btn');
-        this.lockIcon = document.getElementById('routing-rules-lock-icon');
+        this.addButton = DOMHelper.getElement('addRoutingRuleBtn');
+        this.reloadButton = DOMHelper.getElement('reloadRoutingRulesBtn');
+        this.lockButton = DOMHelper.getElement('routing-rules-lock-btn');
+        this.lockIcon = DOMHelper.getElement('routing-rules-lock-icon');
 
         if (!this.container) {
             return;
@@ -624,6 +627,7 @@ export class RoutingRulesService {
         }
         this._setPanelStatus('saving');
         this._saveTimer = window.setTimeout(() => {
+            this._saveTimer = null;
             this.saveRules();
         }, this._saveDelayMs);
     }
@@ -657,10 +661,12 @@ export class RoutingRulesService {
     }
 
     async saveRules() {
+        this._isSaving = true;
         const { rules, errors } = this._collectRulesFromDom();
         if (errors.length) {
             MessageHelper.showError(this.messageId, errors[0]);
             this._setPanelStatus('error');
+            this._isSaving = false;
             return;
         }
 
@@ -686,6 +692,8 @@ export class RoutingRulesService {
             console.error('RoutingRules save error:', error);
             MessageHelper.showError(this.messageId, 'Erreur réseau lors de la sauvegarde.');
             this._setPanelStatus('error');
+        } finally {
+            this._isSaving = false;
         }
     }
 
@@ -782,7 +790,7 @@ export class RoutingRulesService {
     }
 
     _setPanelStatus(state, autoReset = true) {
-        const statusEl = document.getElementById(`${this.panelId}-status`);
+        const statusEl = DOMHelper.getElement(`${this.panelId}-status`);
         if (!statusEl) return;
         const states = {
             dirty: 'Sauvegarde requise',
@@ -819,7 +827,7 @@ export class RoutingRulesService {
     }
 
     _updatePanelIndicator() {
-        const indicator = document.getElementById(`${this.panelId}-indicator`);
+        const indicator = DOMHelper.getElement(`${this.panelId}-indicator`);
         if (!indicator) return;
         const now = new Date();
         indicator.textContent = `Dernière sauvegarde: ${now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
@@ -897,5 +905,15 @@ export class RoutingRulesService {
         this.container.querySelectorAll('.routing-invalid').forEach((el) => {
             el.classList.remove('routing-invalid');
         });
+    }
+
+    /**
+     * Vérifie s'il y a des modifications non sauvegardées ou une sauvegarde en cours.
+     * @returns {boolean}
+     */
+    hasUnsavedChanges() {
+        const hasModifiedClass = this.panel && this.panel.classList.contains('modified');
+        const hasPendingTimer = this._saveTimer !== null;
+        return this._isSaving || hasModifiedClass || hasPendingTimer;
     }
 }

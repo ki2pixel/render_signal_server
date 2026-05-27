@@ -78,7 +78,7 @@ Chaque service est un spécialiste dans la tour de contrôle :
 ### ❌ L'ancien monde : polling IMAP chaotique
 
 ```python
-# ANTI-PATTERN - polling toutes les 5 minutes
+# ANTI-PATTERN — polling toutes les 5 minutes
 while True:
     emails = imap_client.poll()  # Bloquant, timeout fréquent
     for email in emails:
@@ -91,29 +91,30 @@ while True:
 ### ✅ Le nouveau monde : tour de contrôle orchestrée
 
 ```python
-# services/orchestrator.py
-class EmailOrchestrator:
-    def __init__(self):
-        self.routing_service = RoutingRulesService.get_instance()
-        self.webhook_sender = WebhookSender()
-        self.r2_service = R2TransferService.get_instance()
+# email_processing/orchestrator.py — traitement et envoi unifié
+def process_incoming_email(email_data):
+    # 1. Ingestion temps réel (Apps Script Ingress)
+    # 2. Pattern matching (Media Solution, DESABO)
+    detector = _detect_email_type(email_data)
     
-    def process_email(self, email_data):
-        # 1. Pattern matching (Media Solution, DESABO)
-        detector = self._detect_email_type(email_data)
-        
-        # 2. Routing dynamique
-        matched_rule = self.routing_service.evaluate(email_data, detector)
-        
-        # 3. Enrichissement R2
-        delivery_links = self._extract_delivery_links(email_data)
-        delivery_links = self._maybe_enrich_with_r2(delivery_links)
-        
-        # 4. Envoi webhook
-        return self.webhook_sender.send_webhook(
-            webhook_url=matched_rule.get('webhook_url', WEBHOOK_URL),
-            payload=self._build_payload(email_data, delivery_links)
-        )
+    # 3. Routing dynamique (Redis-first)
+    matched_rule = _find_matching_routing_rule(routing_rules, **email_data)
+    
+    # 4. Enrichissement Cloudflare R2 (best-effort)
+    delivery_links = _maybe_enrich_delivery_links_with_r2(delivery_links, email_id)
+    
+    # 5. Envoi résilient avec retry, fallback 415 et logs de diagnostic
+    send_custom_webhook_flow(
+        email_id=email_id,
+        payload_for_webhook=payload_for_webhook,
+        delivery_links=delivery_links,
+        webhook_url=matched_rule.get("webhook_url", ar.WEBHOOK_URL),
+        webhook_ssl_verify=True,
+        # Callbacks d'intégration passés à la fonction
+        rate_limit_allow_send=ar._rate_limit_allow_send,
+        record_send_event=ar._record_send_event,
+        append_webhook_log=ar._append_webhook_log
+    )
 ```
 
 **Le gain** : latence quasi nulle, zéro email perdu, et monitoring complet comme une tour de contrôle moderne.
@@ -421,4 +422,4 @@ Le système est une tour de contrôle où Gmail Push est le radar, les services 
 
 ---
 
-*Pour commencer : voir `docs/v2/core/architecture.md`. Pour le déploiement : voir `docs/v2/ops/deployment.md`. Pour le dépannage : voir `docs/v2/ops/troubleshooting.md`.*
+*Pour commencer : voir [architecture.md](file:///home/kidpixel/render_signal_server-main/docs/core/architecture.md) ; pour le déploiement : voir [deployment.md](file:///home/kidpixel/render_signal_server-main/docs/ops/deployment.md) ; pour le dépannage : voir [troubleshooting.md](file:///home/kidpixel/render_signal_server-main/docs/ops/troubleshooting.md).*

@@ -364,6 +364,34 @@ input:checked + .toggle-slider:before {
   color: #bd93f9;
 }
 
+.json-show-more-btn {
+  background: rgba(67, 97, 238, 0.15);
+  border: 1px dashed rgba(67, 97, 238, 0.4);
+  color: var(--cork-secondary-accent);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 0.85em;
+  cursor: pointer;
+  margin-top: 4px;
+  margin-left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all var(--transition-fast) ease;
+}
+
+.json-show-more-btn:hover {
+  background: rgba(67, 97, 238, 0.25);
+  border-color: var(--cork-primary-accent);
+  color: var(--cork-text-primary);
+  transform: translateY(-1px);
+}
+
+.json-show-more-btn:active {
+  transform: translateY(0);
+}
+
 /* Pills/Badges */
 .pill {
   font-size: 0.7rem;

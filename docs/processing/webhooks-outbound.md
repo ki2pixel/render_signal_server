@@ -23,14 +23,14 @@ Pensez aux webhooks outbound comme un service postal avec centre de distribution
 ### ❌ L'ancien monde : service postal sans suivi
 
 ```python
-# ANTI-PATTERN - webhook_sender.py
+# ANTI-PATTERN — webhook_sender.py
 def send_webhook(url, payload):
     try:
         response = requests.post(url, json=payload, timeout=30)
         logger.info(f"Webhook sent to {url}")
     except Exception as e:
         logger.error(f"Webhook failed: {e}")
-        # Perdu silencieux - pas de retry !
+        # Perdu silencieux — pas de retry !
         return False
     
     # Log dans fichier éphémère
@@ -40,82 +40,88 @@ def send_webhook(url, payload):
     return True
 ```
 
-### ✅ Le nouveau monde : service postal avec suivi intelligent
+### ✅ Le nouveau monde : envoi unifié et résilient
 
 ```python
-# webhook_sender.py - service résilient
-class WebhookSender:
-    def __init__(self):
-        self.redis_client = getattr(_ar, "redis_client", None)
-        self.max_retries = 3
-        self.retry_delay = 5
-    
-    def send_webhook_with_retry(self, url, payload, email_id=None):
-        """Envoi webhook avec retry et logging persistant"""
-        
-        for attempt in range(self.max_retries + 1):
-            try:
-                start_time = time.time()
-                response = requests.post(
-                    url, 
-                    json=payload, 
-                    timeout=30,
-                    headers={
-                        'Content-Type': 'application/json',
-                        'X-Source': 'render-signal-server',
-                        'User-Agent': 'RenderSignalServer/1.0'
-                    }
+# email_processing/orchestrator.py — envoi avec retry et logging de diagnostic
+def send_custom_webhook_flow(
+    *,
+    email_id: str,
+    subject: str | None,
+    payload_for_webhook: dict,
+    delivery_links: list,
+    webhook_url: str,
+    webhook_ssl_verify: bool,
+    allow_without_links: bool,
+    processing_prefs: dict,
+    rate_limit_allow_send,
+    record_send_event,
+    append_webhook_log,
+    mark_email_id_as_processed_redis,
+    mark_email_as_read_imap,
+    mail,
+    email_num,
+    urlparse,
+    requests,
+    time,
+    logger,
+    webhook_delivery_mode: str | None = None,
+    webhook_fallback_on_415: bool | None = None,
+) -> bool:
+    # 1. Validation de la présence de liens de livraison
+    if (not delivery_links) and (not allow_without_links):
+        logger.info("CUSTOM_WEBHOOK: Skipping send because no delivery links detected")
+        append_webhook_log({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "status": "skipped",
+            "error_message": "No delivery links detected"
+        })
+        if mark_email_id_as_processed_redis(email_id):
+            mark_email_as_read_imap(mail, email_num)
+        return True
+
+    # 2. Vérification du Rate Limiting
+    if not rate_limit_allow_send():
+        logger.warning("RATE_LIMIT: Skipping webhook send due to rate limit")
+        append_webhook_log({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "status": "error",
+            "error_message": "Rate limit exceeded"
+        })
+        return True
+
+    # 3. Boucle de Retry et Fallback 415 adaptatif
+    retries = int(processing_prefs.get('retry_count') or 0)
+    delay = int(processing_prefs.get('retry_delay_sec') or 0)
+    timeout_sec = int(processing_prefs.get('webhook_timeout_sec') or 30)
+
+    for attempt in range(retries + 1):
+        try:
+            # Envoi avec format dynamique (JSON, puis Form si erreur HTTP 415)
+            for mode in _build_webhook_mode_sequence(resolved_delivery_mode, fallback_on_415):
+                webhook_response = requests.post(
+                    webhook_url,
+                    timeout=timeout_sec,
+                    verify=webhook_ssl_verify,
+                    **_build_request_kwargs(serialized_payload, mode)
                 )
-                
-                duration_ms = int((time.time() - start_time) * 1000)
-                
-                # Succès : logging et retour
-                log_entry = {
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "status": "success",
-                    "webhook_url": self._mask_url(url),
-                    "target_url": response.url if response.url else url,
-                    "email_id": email_id,
-                    "duration_ms": duration_ms,
-                    "delivery_links_count": len(payload.get('delivery_links', []))
-                }
-                
-                self._persist_log(log_entry)
-                return True
-                
-            except requests.exceptions.RequestException as e:
-                if attempt < self.max_retries:
-                    logger.warning(f"Webhook attempt {attempt + 1} failed for {url}: {e}")
-                    time.sleep(self.retry_delay)
-                    continue
-                else:
-                    # Échec final : logging d'erreur
-                    log_entry = {
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "status": "error",
-                        "webhook_url": self._mask_url(url),
-                        "error": str(e),
-                        "email_id": email_id,
-                        "delivery_links_count": len(payload.get('delivery_links', []))
-                    }
-                    
-                    self._persist_log(log_entry)
-                    return False
+                if webhook_response.status_code != 415:
+                    break  # Succès ou autre erreur gérée
+
+            # Succès final : journalisation et marquage IMAP
+            if webhook_response.status_code == 200 and webhook_response.json().get('success', False):
+                append_webhook_log({"status": "success", "email_id": email_id})
+                if mark_email_id_as_processed_redis(email_id):
+                    mark_email_as_read_imap(mail, email_num)
+                return False
+        except Exception as e_req:
+            if attempt < retries:
+                time.sleep(delay)
+                continue
     
-    def _persist_log(self, log_entry):
-        """Persistance Redis avec fallback fichier"""
-        if self.redis_client:
-            # Redis-first : LPUSH pour plus récent en tête
-            try:
-                self.redis_client.lpush("r:ss:webhook_logs:v1", json.dumps(log_entry))
-                self.redis_client.ltrim("r:ss:webhook_logs:v1", 0, 1000)  # Limitation
-                self.redis_client.expire("r:ss:webhook_logs:v1", 86400 * 7)  # TTL 7j
-            except RedisError:
-                logger.warning("Redis unavailable for webhook logging, using file fallback")
-                self._persist_log_file(log_entry)
-        else:
-            # Fallback fichier
-            self._persist_log_file(log_entry)
+    # Échec final : journalisation d'erreur structurée dans Redis (fallback fichier)
+    append_webhook_log({"status": "error", "email_id": email_id, "error": str(last_exc)})
+    return False
 ```
 
 **Le gain** : suivi des livraisons, retry intelligent, et zéro perte de colis.
@@ -151,87 +157,68 @@ Les logs sont structurés et accessibles via API REST. Le centre de distribution
 ### Flux unifié
 
 ```
-Email Gmail Push → Orchestrator → Pattern Matching → Routing Rules → WebhookSender → Webhook Cible
+Email Gmail Ingress → Orchestrator → Pattern Matching → Routing Rules → send_custom_webhook_flow → Webhook Cible
 ```
 
-### 1. Construction du payload
+### 1. Construction du payload dans l'Ingress
 
 ```python
-# orchestrator.py - payload enrichi
-def build_webhook_payload(email_data, matched_rule=None):
-    payload = {
-        'microsoft_graph_email_id': email_data.get('id'),
-        'subject': email_data.get('subject'),
-        'sender_address': email_data.get('sender'),
-        'receivedDateTime': email_data.get('date'),
-        'bodyPreview': email_data.get('body', '')[:200] + '...',
-        'delivery_links': email_data.get('delivery_links', []),
-        'source': 'gmail_push'
-    }
-    
-    # Enrichissement R2 si disponible
-    if r2_transfer_service and r2_transfer_service.is_enabled():
-        payload['delivery_links'] = _maybe_enrich_delivery_links_with_r2(payload['delivery_links'])
-    
-    return payload
+# routes/api_ingress.py — construction du payload
+payload_for_webhook = {
+    "microsoft_graph_email_id": email_id,
+    "subject": subject or "",
+    "receivedDateTime": date_raw or "",
+    "sender_address": from_raw or sender_addr,
+    "bodyPreview": preview,
+    "email_content": combined_text_for_detection or "",
+}
 ```
 
-### 2. Envoi avec retry
+### 2. Déclenchement de l'envoi
 
 ```python
-# webhook_sender.py
-def send_webhook_flow(webhook_url, payload, email_id=None):
-    """Flux complet d'envoi webhook avec retry"""
-    
-    # Validation préalable
-    if not webhook_url or not webhook_url.startswith('https://'):
-        logger.error(f"Invalid webhook URL: {webhook_url}")
-        return False
-    
-    # Envoi avec retry
-    success = webhook_sender.send_webhook_with_retry(
-        url=webhook_url,
-        payload=payload,
-        email_id=email_id
+# email_processing/orchestrator.py — routage et envoi
+# L'orchestrateur évalue les règles de routage dynamique et lance le flux
+if routing_webhook_url:
+    send_custom_webhook_flow(
+        email_id=email_id,
+        subject=subject or '',
+        payload_for_webhook=payload_for_webhook,
+        delivery_links=delivery_links or [],
+        webhook_url=routing_webhook_url,
+        webhook_ssl_verify=True,
+        allow_without_links=bool(getattr(ar, 'ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS', False)),
+        processing_prefs=getattr(ar, 'PROCESSING_PREFS', {}),
+        rate_limit_allow_send=getattr(ar, '_rate_limit_allow_send'),
+        record_send_event=getattr(ar, '_record_send_event'),
+        append_webhook_log=getattr(ar, '_append_webhook_log'),
+        mark_email_id_as_processed_redis=ar.mark_email_id_as_processed_redis,
+        mark_email_as_read_imap=ar.mark_email_as_read_imap,
+        mail=mail,
+        email_num=num,
+        requests=requests,
+        time=time,
+        logger=logger,
     )
-    
-    if success:
-        logger.info(f"WEBHOOK: Successfully sent webhook for email {email_id}")
-    else:
-        logger.error(f"WEBHOOK: Failed to send webhook after {webhook_sender.max_retries} attempts")
-    
-    return success
 ```
 
 ### 3. Logging persistant
 
 ```python
-# webhook_sender.py - logging structuré
-def _persist_log(self, log_entry):
-    """Persistance Redis avec fallback fichier"""
-    
-    log_entry.update({
-        'timestamp': datetime.utcnow().isoformat(),
-        'status': log_entry.get('status', 'unknown'),
-        'webhook_url': self._mask_url(log_entry.get('webhook_url', '')),
-        'target_url': log_entry.get('target_url', ''),
-        'error': log_entry.get('error', ''),
-        'email_id': log_entry.get('email_id', ''),
-        'detector': log_entry.get('detector', ''),
-        'delivery_links_count': log_entry.get('delivery_links_count', 0),
-        'duration_ms': log_entry.get('duration_ms', 0)
-    })
-    
-    # Persistance Redis-first
-    if self.redis_client:
-        try:
-            self.redis_client.lpush("r:ss:webhook_logs:v1", json.dumps(log_entry))
-            self.redis_client.ltrim("r:ss:webhook_logs:v1", 0, 1000)
-            self.redis_client.expire("r:ss:webhook_logs:v1", 86400 * 7)  # 7 jours TTL
-        except RedisError:
-            self._persist_log_file(log_entry)
-    else:
-        self._persist_log_file(log_entry)
+# app_render.py — persistance Redis avec fallback
+def _append_webhook_log(log_entry: dict) -> None:
+    """Ajoute un log dans le ConfigStore (Redis-first avec fallback local)"""
+    try:
+        # Sérialise et pousse dans la liste Redis
+        redis_client = getattr(_ar, "redis_client", None)
+        if redis_client:
+            redis_client.lpush("r:ss:webhook_logs:v1", json.dumps(log_entry))
+            redis_client.ltrim("r:ss:webhook_logs:v1", 0, 1000)
+            redis_client.expire("r:ss:webhook_logs:v1", 86400 * 7)
+        else:
+            _append_webhook_log_file(log_entry)
+    except Exception:
+        _append_webhook_log_file(log_entry)
 ```
 
 ---
@@ -613,7 +600,7 @@ def test_fallback_file():
 
 ```bash
 # Tests webhooks complets
-pytest tests/test_webhook_logs_redis_persistence.py tests/test_webhook_sender.py -v
+pytest tests/test_webhook_logs_redis_persistence.py -v
 
 # Tests avec marqueur webhook
 pytest -m "webhook" -v
@@ -664,4 +651,4 @@ Les livraisons sont envoyées avec retry (3 tentatives), suivi persistant dans R
 
 ---
 
-*Pour les détails de configuration : voir `docs/v2/core/configuration-reference.md`. Pour l'offload R2 : voir `docs/v2/processing/file-offload.md`.*
+*Pour les détails de configuration : voir [configuration-reference.md](file:///home/kidpixel/render_signal_server-main/docs/core/configuration-reference.md) ; pour l'offload R2 : voir [file-offload.md](file:///home/kidpixel/render_signal_server-main/docs/processing/file-offload.md).*

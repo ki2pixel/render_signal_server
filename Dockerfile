@@ -1,4 +1,15 @@
 # syntax=docker/dockerfile:1
+
+# --- Étape 1 : Build du Frontend (Node.js) ---
+FROM node:22-slim AS frontend-builder
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm install
+COPY vite.config.js ./
+COPY static ./static
+RUN npm run build
+
+# --- Étape 2 : Image Finale (Python) ---
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -18,6 +29,9 @@ RUN pip install --upgrade pip \
     && pip install -r requirements.txt
 
 COPY . .
+
+# Récupérer les assets minifiés compilés par Vite depuis l'étape 1
+COPY --from=frontend-builder /app/static/dist ./static/dist
 
 # Utilisateur non root pour l'exécution.
 RUN useradd --create-home --shell /bin/bash appuser \

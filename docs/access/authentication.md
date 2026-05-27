@@ -629,4 +629,4 @@ Les magic links sont des badges d'accès cryptographiques signés HMAC avec `FLA
 
 ---
 
-*Pour les détails d'API : voir `docs/v2/core/configuration-reference.md`. Pour l'intégration UI : voir `docs/v2/access/dashboard-ui.md`.*
+*Pour les détails d'API : voir [configuration-reference.md](file:///home/kidpixel/render_signal_server-main/docs/core/configuration-reference.md) ; pour l'intégration UI : voir [dashboard-ui.md](file:///home/kidpixel/render_signal_server-main/docs/access/dashboard-ui.md).*

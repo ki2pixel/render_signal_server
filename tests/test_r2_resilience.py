@@ -37,6 +37,12 @@ def test_r2_worker_failure_does_not_break_webhook_send_exception(monkeypatch):
             return {"success": True}
 
     def fake_post(url, json=None, **kwargs):
+        if json is None and "data" in kwargs:
+            import json as json_lib
+            try:
+                json = json_lib.loads(kwargs["data"])
+            except Exception:
+                pass
         captured["posts"].append({"url": url, "json": json, "kwargs": kwargs})
         return Resp()
 
@@ -146,6 +152,12 @@ def test_r2_worker_failure_does_not_break_webhook_send_none(monkeypatch):
             return {"success": True}
 
     def fake_post(url, json=None, **kwargs):
+        if json is None and "data" in kwargs:
+            import json as json_lib
+            try:
+                json = json_lib.loads(kwargs["data"])
+            except Exception:
+                pass
         captured["posts"].append({"url": url, "json": json, "kwargs": kwargs})
         return Resp()
 
@@ -255,6 +267,12 @@ def test_html_body_over_1mb_is_truncated_and_warning_logged(monkeypatch):
             return {"success": True}
 
     def fake_post(url, json=None, **kwargs):
+        if json is None and "data" in kwargs:
+            import json as json_lib
+            try:
+                json = json_lib.loads(kwargs["data"])
+            except Exception:
+                pass
         captured["posts"].append({"url": url, "json": json, "kwargs": kwargs})
         return Resp()
 

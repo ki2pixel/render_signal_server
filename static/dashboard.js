@@ -5,6 +5,7 @@ import { MessageHelper } from './utils/MessageHelper.js';
 import { TabManager } from './components/TabManager.js';
 import { RoutingRulesService } from './services/RoutingRulesService.js?v=20260125-routing-fallback';
 import { JsonViewer } from './components/JsonViewer.js?v=20260202-json-viewer';
+import { DOMHelper } from './utils/DOMHelper.js';
 
 window.DASHBOARD_BUILD = 'modular-2026-02-02-json-viewer';
 
@@ -25,6 +26,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         initializeAutoSave();
         
+        initializeManualFieldsTracking();
+        initializeDataLossPrevention();
+        
         await loadInitialData();
         
         if (routingRulesService) {
@@ -40,9 +44,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function handleConfigMigration() {
-    const button = document.getElementById('migrateConfigsBtn');
+    const button = DOMHelper.getElement('migrateConfigsBtn');
     const messageId = 'migrateConfigsMsg';
-    const logEl = document.getElementById('migrateConfigsLog');
+    const logEl = DOMHelper.getElement('migrateConfigsLog');
 
     if (!button) {
         MessageHelper.showError(messageId, 'Bouton de migration introuvable.');
@@ -84,14 +88,14 @@ async function handleConfigMigration() {
 }
 
 async function handleConfigVerification() {
-    const button = document.getElementById('verifyConfigStoreBtn');
+    const button = DOMHelper.getElement('verifyConfigStoreBtn');
     const messageId = 'verifyConfigStoreMsg';
-    const logEl = document.getElementById('verifyConfigStoreLog');
-    const logViewer = document.getElementById('verifyConfigStoreViewer');
-    const routingRulesMsgEl = document.getElementById('routingRulesRedisInspectMsg');
-    const routingRulesLogEl = document.getElementById('routingRulesRedisInspectLog');
-    const routingRulesViewer = document.getElementById('routingRulesRedisInspectViewer');
-    const rawToggle = document.getElementById('verifyConfigStoreRawToggle');
+    const logEl = DOMHelper.getElement('verifyConfigStoreLog');
+    const logViewer = DOMHelper.getElement('verifyConfigStoreViewer');
+    const routingRulesMsgEl = DOMHelper.getElement('routingRulesRedisInspectMsg');
+    const routingRulesLogEl = DOMHelper.getElement('routingRulesRedisInspectLog');
+    const routingRulesViewer = DOMHelper.getElement('routingRulesRedisInspectViewer');
+    const rawToggle = DOMHelper.getElement('verifyConfigStoreRawToggle');
     const includeRaw = Boolean(rawToggle?.checked);
 
     if (!button) {
@@ -207,82 +211,82 @@ async function initializeServices() {
 }
 
 function bindEvents() {
-    const magicLinkBtn = document.getElementById('generateMagicLinkBtn');
+    const magicLinkBtn = DOMHelper.getElement('generateMagicLinkBtn');
     if (magicLinkBtn) {
         magicLinkBtn.addEventListener('click', generateMagicLink);
     }
     
-    const saveWebhookBtn = document.getElementById('saveConfigBtn');
+    const saveWebhookBtn = DOMHelper.getElement('saveConfigBtn');
     if (saveWebhookBtn) {
         saveWebhookBtn.addEventListener('click', () => WebhookService.saveConfig());
     }
     
     
-    const clearLogsBtn = document.getElementById('clearLogsBtn');
+    const clearLogsBtn = DOMHelper.getElement('clearLogsBtn');
     if (clearLogsBtn) {
         clearLogsBtn.addEventListener('click', () => LogService.clearLogs());
     }
     
-    const exportLogsBtn = document.getElementById('exportLogsBtn');
+    const exportLogsBtn = DOMHelper.getElement('exportLogsBtn');
     if (exportLogsBtn) {
         exportLogsBtn.addEventListener('click', () => LogService.exportLogs());
     }
     
-    const logPeriodSelect = document.getElementById('logPeriodSelect');
+    const logPeriodSelect = DOMHelper.getElement('logPeriodSelect');
     if (logPeriodSelect) {
         logPeriodSelect.addEventListener('change', (e) => {
             LogService.changeLogPeriod(parseInt(e.target.value));
         });
     }
     
-    const saveTimeWindowBtn = document.getElementById('saveTimeWindowBtn');
+    const saveTimeWindowBtn = DOMHelper.getElement('saveTimeWindowBtn');
     if (saveTimeWindowBtn) {
         saveTimeWindowBtn.addEventListener('click', saveTimeWindow);
     }
     
-    const saveGlobalWebhookTimeBtn = document.getElementById('saveGlobalWebhookTimeBtn');
+    const saveGlobalWebhookTimeBtn = DOMHelper.getElement('saveGlobalWebhookTimeBtn');
     if (saveGlobalWebhookTimeBtn) {
         saveGlobalWebhookTimeBtn.addEventListener('click', saveGlobalWebhookTimeWindow);
     }
     
     
-    const saveRuntimeFlagsBtn = document.getElementById('runtimeFlagsSaveBtn');
+    const saveRuntimeFlagsBtn = DOMHelper.getElement('runtimeFlagsSaveBtn');
     if (saveRuntimeFlagsBtn) {
         saveRuntimeFlagsBtn.addEventListener('click', saveRuntimeFlags);
     }
     
-    const saveProcessingPrefsBtn = document.getElementById('processingPrefsSaveBtn');
+    const saveProcessingPrefsBtn = DOMHelper.getElement('processingPrefsSaveBtn');
     if (saveProcessingPrefsBtn) {
         saveProcessingPrefsBtn.addEventListener('click', saveProcessingPrefsToServer);
     }
     
-    const exportConfigBtn = document.getElementById('exportConfigBtn');
+    const exportConfigBtn = DOMHelper.getElement('exportConfigBtn');
     if (exportConfigBtn) {
         exportConfigBtn.addEventListener('click', exportAllConfig);
     }
     
-    const importConfigBtn = document.getElementById('importConfigBtn');
-    const importConfigInput = document.getElementById('importConfigFile');
+    const importConfigBtn = DOMHelper.getElement('importConfigBtn');
+    const importConfigInput = DOMHelper.getElement('importConfigFile');
     if (importConfigBtn && importConfigInput) {
         importConfigBtn.addEventListener('click', () => importConfigInput.click());
         importConfigInput.addEventListener('change', handleImportConfigFile);
     }
     
-    const testWebhookUrl = document.getElementById('testWebhookUrl');
+    const testWebhookUrl = DOMHelper.getElement('testWebhookUrl');
     if (testWebhookUrl) {
         testWebhookUrl.addEventListener('input', validateWebhookUrlFromInput);
     }
     
     const previewInputs = ['previewSubject', 'previewSender', 'previewBody'];
     previewInputs.forEach(id => {
-        const el = document.getElementById(id);
+        const el = DOMHelper.getElement(id);
         if (el) {
             el.addEventListener('input', buildPayloadPreview);
         }
     });
     
     
-    const refreshStatusBtn = document.getElementById('refreshStatusBtn');
+    const refreshStatusBtn = DOMHelper.getElement('refreshStatusBtn');
     if (refreshStatusBtn) {
         refreshStatusBtn.addEventListener('click', updateGlobalStatus);
     }
@@ -299,30 +303,30 @@ function bindEvents() {
     // Populate dropdowns with options
     const timeDropdowns = ['webhooksTimeStart', 'webhooksTimeEnd', 'globalWebhookTimeStart', 'globalWebhookTimeEnd'];
     timeDropdowns.forEach(id => {
-        const select = document.getElementById(id);
+        const select = DOMHelper.getElement(id);
         if (select) {
             select.innerHTML = generateTimeOptions(30);
         }
     });
     
     
-    const restartBtn = document.getElementById('restartServerBtn');
+    const restartBtn = DOMHelper.getElement('restartServerBtn');
     if (restartBtn) {
         restartBtn.addEventListener('click', handleDeployApplication);
     }
     
-    const migrateBtn = document.getElementById('migrateConfigsBtn');
+    const migrateBtn = DOMHelper.getElement('migrateConfigsBtn');
     if (migrateBtn) {
         migrateBtn.addEventListener('click', handleConfigMigration);
     }
 
-    const verifyBtn = document.getElementById('verifyConfigStoreBtn');
+    const verifyBtn = DOMHelper.getElement('verifyConfigStoreBtn');
     if (verifyBtn) {
         verifyBtn.addEventListener('click', handleConfigVerification);
     }
     
     // Metrics toggle event - REMOVED: Monitoring section deleted from dashboard
-    // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+    // const enableMetricsToggle = DOMHelper.getElement('enableMetricsToggle');
     // if (enableMetricsToggle) {
     //     enableMetricsToggle.addEventListener('change', async () => {
     //         saveLocalPreferences();
@@ -353,7 +357,7 @@ async function loadInitialData() {
         await updateGlobalStatus();
         
         // Trigger metrics computation if toggle is enabled - REMOVED: Monitoring section deleted
-        // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+        // const enableMetricsToggle = DOMHelper.getElement('enableMetricsToggle');
         // if (enableMetricsToggle && enableMetricsToggle.checked) {
         //     await computeAndRenderMetrics();
         // }
@@ -397,17 +401,17 @@ async function loadInitialData() {
 //     setMetric('metricWebhooksSent', '—');
 //     setMetric('metricErrors', '—');
 //     setMetric('metricSuccessRate', '—');
-//     const chart = document.getElementById('metricsMiniChart');
+//     const chart = DOMHelper.getElement('metricsMiniChart');
 //     if (chart) chart.innerHTML = '';
 // }
 
 // function setMetric(id, text) {
-//     const el = document.getElementById(id);
+//     const el = DOMHelper.getElement(id);
 //     if (el) el.textContent = text;
 // }
 
 // function renderMiniChart(logs) {
-//     const chart = document.getElementById('metricsMiniChart');
+//     const chart = DOMHelper.getElement('metricsMiniChart');
 //     if (!chart) return;
 //     chart.innerHTML = '';
 //     const width = chart.clientWidth || 300;
@@ -466,9 +470,9 @@ function showCopiedFeedback() {
 }
 
 async function generateMagicLink() {
-    const btn = document.getElementById('generateMagicLinkBtn');
-    const output = document.getElementById('magicLinkOutput');
-    const unlimitedToggle = document.getElementById('magicLinkUnlimitedToggle');
+    const btn = DOMHelper.getElement('generateMagicLinkBtn');
+    const output = DOMHelper.getElement('magicLinkOutput');
+    const unlimitedToggle = DOMHelper.getElement('magicLinkUnlimitedToggle');
     
     if (!btn || !output) return;
     
@@ -545,8 +549,8 @@ function setSelectedOption(selectElement, value) {
 // Time window
 async function loadTimeWindow() {
     const applyWindowValues = (startValue = '', endValue = '') => {
-        const startInput = document.getElementById('webhooksTimeStart');
-        const endInput = document.getElementById('webhooksTimeEnd');
+        const startInput = DOMHelper.getElement('webhooksTimeStart');
+        const endInput = DOMHelper.getElement('webhooksTimeEnd');
         if (startInput) setSelectedOption(startInput, startValue || '');
         if (endInput) setSelectedOption(endInput, endValue || '');
         renderTimeWindowDisplay(startValue || '', endValue || '');
@@ -578,8 +582,8 @@ async function loadTimeWindow() {
 }
 
 async function saveTimeWindow() {
-    const startInput = document.getElementById('webhooksTimeStart');
-    const endInput = document.getElementById('webhooksTimeEnd');
+    const startInput = DOMHelper.getElement('webhooksTimeStart');
+    const endInput = DOMHelper.getElement('webhooksTimeEnd');
     const start = startInput.value.trim();
     const end = endInput.value.trim();
     
@@ -633,7 +637,7 @@ async function saveTimeWindow() {
 }
 
 function renderTimeWindowDisplay(start, end) {
-    const displayEl = document.getElementById('timeWindowDisplay');
+    const displayEl = DOMHelper.getElement('timeWindowDisplay');
     if (!displayEl) return;
     
     const hasStart = Boolean(start && String(start).trim());
@@ -658,12 +662,12 @@ async function loadRuntimeFlags() {
         if (data.success) {
             const flags = data.flags || {};
 
-            const disableDedup = document.getElementById('disableEmailIdDedupToggle');
+            const disableDedup = DOMHelper.getElement('disableEmailIdDedupToggle');
             if (disableDedup && Object.prototype.hasOwnProperty.call(flags, 'disable_email_id_dedup')) {
                 disableDedup.checked = !!flags.disable_email_id_dedup;
             }
 
-            const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
+            const allowCustom = DOMHelper.getElement('allowCustomWithoutLinksToggle');
             if (
                 allowCustom
                 && Object.prototype.hasOwnProperty.call(flags, 'allow_custom_webhook_without_links')
@@ -671,7 +675,7 @@ async function loadRuntimeFlags() {
                 allowCustom.checked = !!flags.allow_custom_webhook_without_links;
             }
 
-            const gmailIngressEnabled = document.getElementById('gmailIngressEnabledToggle');
+            const gmailIngressEnabled = DOMHelper.getElement('gmailIngressEnabledToggle');
             if (
                 gmailIngressEnabled
                 && Object.prototype.hasOwnProperty.call(flags, 'gmail_ingress_enabled')
@@ -686,14 +690,14 @@ async function loadRuntimeFlags() {
 
 async function saveRuntimeFlags() {
     const msgId = 'runtimeFlagsMsg';
-    const btn = document.getElementById('runtimeFlagsSaveBtn');
+    const btn = DOMHelper.getElement('runtimeFlagsSaveBtn');
     
     MessageHelper.setButtonLoading(btn, true);
     
     try {
-        const disableDedup = document.getElementById('disableEmailIdDedupToggle');
-        const allowCustom = document.getElementById('allowCustomWithoutLinksToggle');
-        const gmailIngressEnabled = document.getElementById('gmailIngressEnabledToggle');
+        const disableDedup = DOMHelper.getElement('disableEmailIdDedupToggle');
+        const allowCustom = DOMHelper.getElement('allowCustomWithoutLinksToggle');
+        const gmailIngressEnabled = DOMHelper.getElement('gmailIngressEnabledToggle');
 
         const payload = {
             disable_email_id_dedup: disableDedup?.checked ?? false,
@@ -744,7 +748,7 @@ async function loadProcessingPrefsFromServer() {
             };
             
             Object.entries(mappings).forEach(([prefKey, elementId]) => {
-                const el = document.getElementById(elementId);
+                const el = DOMHelper.getElement(elementId);
                 if (el && prefs[prefKey] !== undefined) {
                     if (el.type === 'checkbox') {
                         el.checked = Boolean(prefs[prefKey]);
@@ -768,7 +772,7 @@ async function loadProcessingPrefsFromServer() {
 }
 
 async function saveProcessingPrefsToServer() {
-    const btn = document.getElementById('processingPrefsSaveBtn');
+    const btn = DOMHelper.getElement('processingPrefsSaveBtn');
     const msgId = 'processingPrefsMsg';
     
     MessageHelper.setButtonLoading(btn, true);
@@ -798,7 +802,7 @@ async function saveProcessingPrefsToServer() {
         const prefs = {};
         
         Object.entries(mappings).forEach(([elementId, prefKey]) => {
-            const el = document.getElementById(elementId);
+            const el = DOMHelper.getElement(elementId);
             if (el) {
                 if (el.type === 'checkbox') {
                     prefs[prefKey] = el.checked;
@@ -870,7 +874,7 @@ function loadLocalPreferences() {
         const raw = localStorage.getItem('dashboard_prefs_v1');
         if (!raw) {
             // Default preferences - REMOVED: enableMetricsToggle default
-            // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+            // const enableMetricsToggle = DOMHelper.getElement('enableMetricsToggle');
             // if (enableMetricsToggle) {
             //     enableMetricsToggle.checked = true;
             // }
@@ -881,7 +885,7 @@ function loadLocalPreferences() {
         
         // Apply metrics preference if exists - REMOVED: Monitoring section deleted
         // if (prefs.hasOwnProperty('enableMetricsToggle')) {
-        //     const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+        //     const enableMetricsToggle = DOMHelper.getElement('enableMetricsToggle');
         //     if (enableMetricsToggle) {
         //         enableMetricsToggle.checked = prefs.enableMetricsToggle;
         //     }
@@ -889,7 +893,7 @@ function loadLocalPreferences() {
         
         // Appliquer les préférences locales
         Object.keys(prefs).forEach(key => {
-            const el = document.getElementById(key);
+            const el = DOMHelper.getElement(key);
             if (el) {
                 if (el.type === 'checkbox') {
                     el.checked = prefs[key];
@@ -919,7 +923,7 @@ function saveLocalPreferences() {
         });
         
         // Always save enableMetricsToggle preference - REMOVED: Monitoring section deleted
-        // const enableMetricsToggle = document.getElementById('enableMetricsToggle');
+        // const enableMetricsToggle = DOMHelper.getElement('enableMetricsToggle');
         // if (enableMetricsToggle) {
         //     prefs.enableMetricsToggle = enableMetricsToggle.checked;
         // }
@@ -1038,7 +1042,7 @@ async function applyImportedServerConfig(obj) {
 
 // Validation
 function validateWebhookUrlFromInput() {
-    const inp = document.getElementById('testWebhookUrl');
+    const inp = DOMHelper.getElement('testWebhookUrl');
     const msgId = 'webhookUrlValidationMsg';
     const val = (inp?.value || '').trim();
     
@@ -1056,9 +1060,9 @@ function validateWebhookUrlFromInput() {
 }
 
 function buildPayloadPreview() {
-    const subject = (document.getElementById('previewSubject')?.value || '').trim();
-    const sender = (document.getElementById('previewSender')?.value || '').trim();
-    const body = (document.getElementById('previewBody')?.value || '').trim();
+    const subject = (DOMHelper.getElement('previewSubject')?.value || '').trim();
+    const sender = (DOMHelper.getElement('previewSender')?.value || '').trim();
+    const body = (DOMHelper.getElement('previewBody')?.value || '').trim();
     
     const payload = {
         subject,
@@ -1072,7 +1076,7 @@ function buildPayloadPreview() {
         }
     };
     
-    const pre = document.getElementById('payloadPreview');
+    const pre = DOMHelper.getElement('payloadPreview');
     if (pre) pre.textContent = JSON.stringify(payload, null, 2);
 }
 
@@ -1080,8 +1084,8 @@ function buildPayloadPreview() {
 // Fenêtre horaire global webhook
 async function loadGlobalWebhookTimeWindow() {
     const applyGlobalWindowValues = (startValue = '', endValue = '') => {
-        const startInput = document.getElementById('globalWebhookTimeStart');
-        const endInput = document.getElementById('globalWebhookTimeEnd');
+        const startInput = DOMHelper.getElement('globalWebhookTimeStart');
+        const endInput = DOMHelper.getElement('globalWebhookTimeEnd');
         if (startInput) setSelectedOption(startInput, startValue || '');
         if (endInput) setSelectedOption(endInput, endValue || '');
     };
@@ -1101,8 +1105,8 @@ async function loadGlobalWebhookTimeWindow() {
 }
 
 async function saveGlobalWebhookTimeWindow() {
-    const startInput = document.getElementById('globalWebhookTimeStart');
-    const endInput = document.getElementById('globalWebhookTimeEnd');
+    const startInput = DOMHelper.getElement('globalWebhookTimeStart');
+    const endInput = DOMHelper.getElement('globalWebhookTimeEnd');
     const start = startInput.value.trim();
     const end = endInput.value.trim();
     
@@ -1266,13 +1270,13 @@ function analyzeLogsForStatus(logs) {
  */
 function updateStatusBanner(statusData, config) {
     // Mettre à jour les valeurs
-    document.getElementById('lastExecutionTime').textContent = statusData.lastExecution;
-    document.getElementById('recentIncidents').textContent = statusData.recentIncidents;
-    document.getElementById('criticalErrors').textContent = statusData.criticalErrors;
-    document.getElementById('activeWebhooks').textContent = statusData.activeWebhooks;
+    DOMHelper.getElement('lastExecutionTime').textContent = statusData.lastExecution;
+    DOMHelper.getElement('recentIncidents').textContent = statusData.recentIncidents;
+    DOMHelper.getElement('criticalErrors').textContent = statusData.criticalErrors;
+    DOMHelper.getElement('activeWebhooks').textContent = statusData.activeWebhooks;
     
     // Mettre à jour l'icône de statut
-    const statusIcon = document.getElementById('globalStatusIcon');
+    const statusIcon = DOMHelper.getElement('globalStatusIcon');
     statusIcon.className = 'status-icon ' + statusData.status;
     
     switch (statusData.status) {
@@ -1324,11 +1328,16 @@ function initializeCollapsiblePanels() {
  * @param {boolean} success - Si la sauvegarde a réussi
  */
 function updatePanelStatus(panelType, success) {
-    const statusElement = document.getElementById(`${panelType}-status`);
+    const statusElement = DOMHelper.getElement(`${panelType}-status`);
+    const panelElement = document.querySelector(`.collapsible-panel[data-panel="${panelType}"]`);
+    
     if (statusElement) {
         if (success) {
             statusElement.textContent = 'Sauvegardé';
             statusElement.classList.add('saved');
+            if (panelElement) {
+                panelElement.classList.remove('modified');
+            }
         } else {
             statusElement.textContent = 'Erreur';
             statusElement.classList.remove('saved');
@@ -1347,7 +1356,7 @@ function updatePanelStatus(panelType, success) {
  * @param {string} panelType - Type de panneau
  */
 function updatePanelIndicator(panelType) {
-    const indicator = document.getElementById(`${panelType}-indicator`);
+    const indicator = DOMHelper.getElement(`${panelType}-indicator`);
     if (indicator) {
         const now = new Date();
         const timeString = now.toLocaleTimeString('fr-FR', { 
@@ -1415,12 +1424,12 @@ async function saveWebhookPanel(panelType) {
  * Collecte les données du panneau URLs & SSL
  */
 function collectUrlsData() {
-    const webhookUrl = document.getElementById('webhookUrl')?.value || '';
-    const webhookUrlPlaceholder = document.getElementById('webhookUrl')?.placeholder || '';
-    const sslToggle = document.getElementById('sslVerifyToggle');
-    const sendingToggle = document.getElementById('webhookSendingToggle');
-    const deliveryModeSelect = document.getElementById('webhookDeliveryMode');
-    const fallbackOn415Toggle = document.getElementById('webhookFallbackOn415Toggle');
+    const webhookUrl = DOMHelper.getElement('webhookUrl')?.value || '';
+    const webhookUrlPlaceholder = DOMHelper.getElement('webhookUrl')?.placeholder || '';
+    const sslToggle = DOMHelper.getElement('sslVerifyToggle');
+    const sendingToggle = DOMHelper.getElement('webhookSendingToggle');
+    const deliveryModeSelect = DOMHelper.getElement('webhookDeliveryMode');
+    const fallbackOn415Toggle = DOMHelper.getElement('webhookFallbackOn415Toggle');
     const sslVerify = sslToggle?.checked ?? true;
     const sendingEnabled = sendingToggle?.checked ?? true;
     const deliveryMode = deliveryModeSelect?.value || 'json';
@@ -1444,8 +1453,8 @@ function collectUrlsData() {
  * Collecte les données du panneau fenêtre horaire
  */
 function collectTimeWindowData() {
-    const startInput = document.getElementById('globalWebhookTimeStart');
-    const endInput = document.getElementById('globalWebhookTimeEnd');
+    const startInput = DOMHelper.getElement('globalWebhookTimeStart');
+    const endInput = DOMHelper.getElement('globalWebhookTimeEnd');
     const start = startInput?.value?.trim() || '';
     const end = endInput?.value?.trim() || '';
     
@@ -1463,7 +1472,7 @@ function collectTimeWindowData() {
  * Collecte les données du panneau d'absence
  */
 function collectAbsenceData() {
-    const toggle = document.getElementById('absencePauseToggle');
+    const toggle = DOMHelper.getElement('absencePauseToggle');
     const dayCheckboxes = document.querySelectorAll('input[name="absencePauseDay"]:checked');
     
     return {
@@ -1474,7 +1483,7 @@ function collectAbsenceData() {
 
 // -------------------- Déploiement Application --------------------
 async function handleDeployApplication() {
-    const button = document.getElementById('restartServerBtn');
+    const button = DOMHelper.getElement('restartServerBtn');
     const messageId = 'restartMsg';
     
     if (!button) {
@@ -1541,6 +1550,61 @@ async function pollHealthCheck({ attempts = 10, intervalMs = 1200, timeoutMs = 2
 /**
  * Initialise l'auto-sauvegarde intelligente
  */
+/**
+ * Initialise le suivi des modifications pour les panneaux manuels
+ */
+function initializeManualFieldsTracking() {
+    const panels = document.querySelectorAll('.collapsible-panel');
+    panels.forEach(panel => {
+        // Ignorer le panneau de règles de routage car il gère son propre état
+        if (panel.dataset.panel === 'routing-rules') return;
+        
+        const saveBtn = panel.querySelector('.panel-save-btn');
+        if (saveBtn) {
+            const inputs = panel.querySelectorAll('input, select, textarea');
+            inputs.forEach(input => {
+                input.addEventListener('input', () => {
+                    panel.classList.add('modified');
+                });
+                input.addEventListener('change', () => {
+                    panel.classList.add('modified');
+                });
+            });
+        }
+    });
+}
+
+/**
+ * Initialise la prévention de perte de données (alerte avant de quitter la page)
+ */
+function initializeDataLossPrevention() {
+    window.addEventListener('beforeunload', (e) => {
+        if (hasUnsavedChanges()) {
+            e.preventDefault();
+            e.returnValue = ''; // Standard requis par la plupart des navigateurs
+        }
+    });
+}
+
+/**
+ * Vérifie globalement s'il y a des changements non sauvegardés
+ * @returns {boolean}
+ */
+function hasUnsavedChanges() {
+    // 1. Vérifier les panneaux modifiés (auto-save en cours ou manuels non sauvegardés)
+    const modifiedPanels = document.querySelectorAll('.modified');
+    if (modifiedPanels.length > 0) {
+        return true;
+    }
+    
+    // 2. Vérifier spécifiquement RoutingRulesService qui a sa propre logique
+    if (routingRulesService && routingRulesService.hasUnsavedChanges()) {
+        return true;
+    }
+    
+    return false;
+}
+
 function initializeAutoSave() {
     // Préférences qui peuvent être sauvegardées automatiquement
     const autoSaveFields = [
@@ -1554,9 +1618,13 @@ function initializeAutoSave() {
     
     // Écouter les changements sur les champs d'auto-sauvegarde
     autoSaveFields.forEach(fieldId => {
-        const field = document.getElementById(fieldId);
+        const field = DOMHelper.getElement(fieldId);
         if (field) {
-            field.addEventListener('change', () => handleAutoSaveChange(fieldId));
+            field.addEventListener('change', () => {
+                markSectionAsModified(fieldId);
+                handleAutoSaveChange(fieldId);
+            });
+            field.addEventListener('input', () => markSectionAsModified(fieldId));
             field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 2000));
         }
     });
@@ -1570,8 +1638,9 @@ function initializeAutoSave() {
     ];
     
     preferenceTextareas.forEach(fieldId => {
-        const field = document.getElementById(fieldId);
+        const field = DOMHelper.getElement(fieldId);
         if (field) {
+            field.addEventListener('input', () => markSectionAsModified(fieldId));
             field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 3000));
         }
     });
@@ -1613,9 +1682,9 @@ function collectPreferencesData() {
     const data = {};
     
     // Préférences de filtres (tableaux)
-    const excludeKeywordsRecadrage = document.getElementById('excludeKeywordsRecadrage')?.value || '';
-    const excludeKeywordsAutorepondeur = document.getElementById('excludeKeywordsAutorepondeur')?.value || '';
-    const excludeKeywords = document.getElementById('excludeKeywords')?.value || '';
+    const excludeKeywordsRecadrage = DOMHelper.getElement('excludeKeywordsRecadrage')?.value || '';
+    const excludeKeywordsAutorepondeur = DOMHelper.getElement('excludeKeywordsAutorepondeur')?.value || '';
+    const excludeKeywords = DOMHelper.getElement('excludeKeywords')?.value || '';
     
     data.exclude_keywords_recadrage = excludeKeywordsRecadrage ? 
         excludeKeywordsRecadrage.split('\n').map(line => line.trim()).filter(line => line) : [];
@@ -1625,32 +1694,32 @@ function collectPreferencesData() {
         excludeKeywords.split('\n').map(line => line.trim()).filter(line => line) : [];
     
     // Préférences de fiabilité
-    data.require_attachments = document.getElementById('attachmentDetectionToggle')?.checked || false;
+    data.require_attachments = DOMHelper.getElement('attachmentDetectionToggle')?.checked || false;
 
-    const retryCountRaw = document.getElementById('retryCount')?.value;
+    const retryCountRaw = DOMHelper.getElement('retryCount')?.value;
     if (retryCountRaw !== undefined && String(retryCountRaw).trim() !== '') {
         data.retry_count = parseInt(String(retryCountRaw).trim(), 10);
     }
 
-    const retryDelayRaw = document.getElementById('retryDelaySec')?.value;
+    const retryDelayRaw = DOMHelper.getElement('retryDelaySec')?.value;
     if (retryDelayRaw !== undefined && String(retryDelayRaw).trim() !== '') {
         data.retry_delay_sec = parseInt(String(retryDelayRaw).trim(), 10);
     }
 
-    const webhookTimeoutRaw = document.getElementById('webhookTimeoutSec')?.value;
+    const webhookTimeoutRaw = DOMHelper.getElement('webhookTimeoutSec')?.value;
     if (webhookTimeoutRaw !== undefined && String(webhookTimeoutRaw).trim() !== '') {
         data.webhook_timeout_sec = parseInt(String(webhookTimeoutRaw).trim(), 10);
     }
 
-    const rateLimitRaw = document.getElementById('rateLimitPerHour')?.value;
+    const rateLimitRaw = DOMHelper.getElement('rateLimitPerHour')?.value;
     if (rateLimitRaw !== undefined && String(rateLimitRaw).trim() !== '') {
         data.rate_limit_per_hour = parseInt(String(rateLimitRaw).trim(), 10);
     }
 
-    data.notify_on_failure = document.getElementById('notifyOnFailureToggle')?.checked || false;
+    data.notify_on_failure = DOMHelper.getElement('notifyOnFailureToggle')?.checked || false;
     
     // Préférences de priorité (JSON)
-    const senderPriorityText = document.getElementById('senderPriority')?.value || '{}';
+    const senderPriorityText = DOMHelper.getElement('senderPriority')?.value || '{}';
     try {
         data.sender_priority = JSON.parse(senderPriorityText);
     } catch (e) {
@@ -1697,7 +1766,7 @@ function markSectionAsSaved(fieldId) {
  * @returns {HTMLElement|null} Section parente
  */
 function getFieldSection(fieldId) {
-    const field = document.getElementById(fieldId);
+    const field = DOMHelper.getElement(fieldId);
     if (!field) return null;
     
     // Remonter jusqu'à trouver une carte ou un panneau
@@ -1748,7 +1817,7 @@ function updateSectionIndicator(section, status) {
  * @param {string} message - Message optionnel
  */
 function showAutoSaveFeedback(fieldId, success, message = '') {
-    const field = document.getElementById(fieldId);
+    const field = DOMHelper.getElement(fieldId);
     if (!field) return;
     
     // Créer ou récupérer le conteneur de feedback

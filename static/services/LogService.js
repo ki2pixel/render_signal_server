@@ -1,5 +1,6 @@
 import { ApiService } from './ApiService.js';
 import { MessageHelper } from '../utils/MessageHelper.js';
+import { DOMHelper } from '../utils/DOMHelper.js';
 
 export class LogService {
     static logPollingInterval = null;
@@ -65,7 +66,7 @@ export class LogService {
      * @param {Array} logs - Liste des logs à afficher
      */
     static renderLogs(logs) {
-        const container = document.getElementById('webhookLogs');
+        const container = DOMHelper.getElement('webhookLogs');
         if (!container) return;
         
         container.innerHTML = '';
@@ -159,7 +160,7 @@ export class LogService {
      * Vide l'affichage des logs
      */
     static clearLogs() {
-        const container = document.getElementById('webhookLogs');
+        const container = DOMHelper.getElement('webhookLogs');
         if (container) {
             container.innerHTML = '<div class="log-entry">Logs vidés.</div>';
         }
