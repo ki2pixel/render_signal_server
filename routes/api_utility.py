@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import json
 import sys
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response
 from flask_login import login_required
 
 from config.settings import TRIGGER_SIGNAL_FILE
@@ -13,7 +13,7 @@ bp = Blueprint("api_utility", __name__, url_prefix="/api")
 
 
 @bp.route("/ping", methods=["GET", "HEAD"])
-def ping():
+def ping() -> Response | tuple[Response, int]:
     return (
         jsonify({"status": "pong", "timestamp_utc": datetime.now(timezone.utc).isoformat()}),
         200,
@@ -21,7 +21,7 @@ def ping():
 
 
 @bp.route("/diag/runtime", methods=["GET"])
-def diag_runtime():
+def diag_runtime() -> Response | tuple[Response, int]:
     """Expose basic runtime state without requiring auth.
 
     Reads values from the main module (app_render) if available. All fields are best-effort.
@@ -84,7 +84,7 @@ def diag_runtime():
 
 
 @bp.route("/check_trigger", methods=["GET"])
-def check_local_workflow_trigger():
+def check_local_workflow_trigger() -> Response | tuple[Response, int]:
     if TRIGGER_SIGNAL_FILE.exists():
         try:
             with open(TRIGGER_SIGNAL_FILE, "r", encoding="utf-8") as f:
@@ -101,7 +101,7 @@ def check_local_workflow_trigger():
 
 @bp.route("/get_local_status", methods=["GET"])
 @login_required
-def api_get_local_status():
+def api_get_local_status() -> Response | tuple[Response, int]:
     """Retourne un snapshot minimal de statut pour l'UI distante."""
     payload = {
         "overall_status_text": "En attente...",

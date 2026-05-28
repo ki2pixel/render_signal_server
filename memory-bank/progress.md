@@ -21,6 +21,34 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-05-28 18:15:00] - Refactoring de la taille des fonctions (Dette technique)
+- **Objectif** : Corriger le premier problème standard de l'audit backend (`docs/audits/audit_backend.md`) en s'assurant que toutes les fonctions des services respectent la limite stricte de 40 lignes logiques.
+- **Actions réalisées** :
+  1. **Refactoring de `routing_rules_service.py`** : Scindé `_normalize_rules` en extrayant `_normalize_single_rule`, `_validate_conditions`, et `_validate_actions`.
+  2. **Refactoring de `magic_link_service.py`** : Extrait la validation dans `_verify_token_validity` et la consommation dans `_process_token_consumption` à partir de `consume_token`.
+  3. **Refactoring de `r2_transfer_service.py`** : Isolé la validation du domaine (`_validate_remote_fetch_domain`) et l'appel externe (`_execute_remote_fetch_request`) hors de `request_remote_fetch`.
+  4. **Refactoring de `routes/api_admin.py`** : Découpé la route `deploy_application` en trois helpers spécialisés (`_deploy_via_hook`, `_deploy_via_api`, `_deploy_via_fallback`).
+- **Validation** : Exécution de la suite de tests complète (`pytest -q tests/`) réussie avec 100% de succès (334 tests passed, 0 failures).
+- **Statut** : Terminé avec succès.
+
+[2026-05-28 18:00:00] - Résolution du déficit de typage des services et des routes
+- **Objectif** : Traiter le deuxième point critique identifié dans `docs/audits/audit_backend.md` en ajoutant des annotations de type de retour (`-> Response` et `-> tuple[Response, int]`) pour tous les endpoints Flask et les méthodes clés dans les services.
+- **Actions réalisées** :
+  1. **Typage de AuthService** : Ajout des annotations `Callable[..., Any]` pour les décorateurs et typage de `__init__` avec `ConfigService`.
+  2. **Typage de ConfigService** : Ajout du typage de retour `str` et `Any` sur les méthodes utilitaires de configuration.
+  3. **Typage des Routes Flask** : Passage complet sur 12 fichiers de routes (`api_ingress.py`, `api_processing.py`, `api_admin.py`, `api_test.py`, `api_auth.py`, `api_config.py`, `api_routing_rules.py`, `api_webhooks.py`, `api_logs.py`, `api_utility.py`, `dashboard.py`, `health.py`) pour déclarer explicitement `-> Response`, `-> str`, `-> Response | str`, ou `-> Response | tuple[Response, int]`.
+  4. **Validation** : Exécution de la suite de tests complète (`./run_tests.sh -u`), validée à 100% (213 passed).
+- **Statut** : Terminé avec succès.
+
+[2026-05-28 17:50:00] - Refactoring global de l'ingress Gmail (api_ingress.py)
+- **Objectif** : Traiter la violation de périmètre identifiée lors de l'audit dans `routes/api_ingress.py` en isolant la logique métier dans un service singleton.
+- **Actions réalisées** :
+  1. **Singleton DeduplicationService** : Refactorisé pour respecter pleinement le pattern Singleton avec des méthodes d'acquisition et libération de verrous temporaires.
+  2. **Singleton IngressService** : Créé `services/ingress_service.py` pour encapsuler toute la logique métier de l'ingress (auth, allowlist, deduplication, time windows, R2 offload et webhook trigger).
+  3. **Simplification Ingress Route** : Réduit le fichier `routes/api_ingress.py` à une couche de routage ultra-fine (< 30 lignes).
+  4. **Cycle de vie & Tests** : Enregistrement des singletons dans `app_render.py` et validation de la suite de tests complète (`tests/routes/test_api_ingress.py` - 12/12 passés).
+- **Statut** : Terminé avec succès.
+
 [2026-05-27 20:35:00] - Documentation Globale & Synchro Métriques (/docs-updater)
 - **Objectif** : Analyser la base de code, aligner les spécifications, et mettre à jour la documentation suite aux récentes évolutions majeures (Vite, DOMHelper, JsonViewer, beforeunload, et suppression de `webhook_sender.py`).
 - **Actions réalisées** :

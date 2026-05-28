@@ -1,6 +1,10 @@
 # Contexte Actif
 
 ## Tâches Terminées
+- [2026-05-28] Résolution complète de la dette technique concernant la pollution du point d'entrée `app_render.py`. Les tests de l'orchestrateur utilisent désormais les instances Singleton et les dépendances correctement moquées sans s'appuyer sur des imports circulaires.
+- [2026-05-28] Refactoring complet de la taille des fonctions des services pour résoudre le premier problème standard identifié dans l'audit backend. Les fonctions critiques (`_normalize_rules`, `consume_token`, `request_remote_fetch`, et `deploy_application`) ont été découpées en sous-méthodes privées et typées de moins de 40 lignes logiques.
+- [2026-05-28] Résolution complète du déficit de typage des services et des routes. Ajout de annotations de type retour (`-> Response` et `-> tuple[Response, int]`) pour tous les endpoints Flask et les méthodes de AuthService et ConfigService.
+- [2026-05-28] Refactoring global de l'ingress Gmail (`routes/api_ingress.py`) pour respecter l'architecture Singleton orientée services (création d'`IngressService`, Singleton `DeduplicationService`, et simplification de la couche de routage).
 - [2026-05-27] Synchronisation et mise à jour globale de la documentation (`docs/`) via `/docs-updater` : suppression des références obsolètes à `webhook_sender.py`, intégration des spécifications du fallback 415, documentation des optimisations de performance frontend (`JsonViewer` lazy rendering/chunking, `DOMHelper` data-target, `beforeunload`, et Vite), et correction de tous les liens internes `docs/v2/`.
 - [2026-05-27] Investigation et correction des tests backend (`test_app_render.py`, `tests/test_r2_resilience.py`) échouant suite à la suppression du module `webhook_sender.py`.
 - [2026-05-27] Implémentation de la prévention des pertes de données (interception beforeunload) pour les panneaux auto-save et manuels.

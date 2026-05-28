@@ -30,6 +30,7 @@ from services.deduplication_service import DeduplicationService
 from services.magic_link_service import MagicLinkService
 from services.r2_transfer_service import R2TransferService
 from services.routing_rules_service import RoutingRulesService
+from services.ingress_service import IngressService
 
 __all__ = [
     "ConfigService",
@@ -40,4 +41,5 @@ __all__ = [
     "MagicLinkService",
     "R2TransferService",
     "RoutingRulesService",
+    "IngressService",
 ]

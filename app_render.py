@@ -30,6 +30,7 @@ from services import (
     WebhookConfigService,
     AuthService,
     DeduplicationService,
+    IngressService,
 )
 
 from auth import user as auth_user
@@ -70,9 +71,7 @@ from routes.api_processing import DEFAULT_PROCESSING_PREFS as _DEFAULT_PROCESSIN
 DEFAULT_PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS
 
 
-def append_webhook_log(webhook_id: str, webhook_url: str, webhook_status_code: int, webhook_response: str):
-    """Append a webhook log entry to the webhook log file."""
-    return _append_webhook_log_helper(webhook_id, webhook_url, webhook_status_code, webhook_response)
+
 
 try:
     from zoneinfo import ZoneInfo
@@ -253,14 +252,9 @@ if not WEBHOOK_SSL_VERIFY:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     app.logger.warning("CFG WEBHOOK: SSL verification DISABLED for webhook calls (development/legacy). Use valid certificates in production.")
 
-TZ_FOR_POLLING = timezone.utc
-try:
-    tz_name = getattr(settings, "POLLING_TIMEZONE_STR", "UTC")
-    if isinstance(tz_name, str) and tz_name.strip() and tz_name.strip().upper() != "UTC":
-        if ZoneInfo is not None:
-            TZ_FOR_POLLING = ZoneInfo(tz_name.strip())
-except Exception:
-    TZ_FOR_POLLING = timezone.utc
+from utils.time_helpers import get_polling_timezone
+TZ_FOR_POLLING = get_polling_timezone()
+
 
 # =============================================================================
 # SERVICES INITIALIZATION
@@ -340,7 +334,7 @@ SUBJECT_GROUPS_MEMORY = set()
 
 # 7. Deduplication Service (avec Redis ou fallback mémoire)
 try:
-    _dedup_service = DeduplicationService(
+    _dedup_service = DeduplicationService.get_instance(
         redis_client=redis_client,  # None = fallback mémoire automatique
         logger=app.logger,
         config_service=_config_service,
@@ -350,113 +344,18 @@ except Exception as e:
     app.logger.error(f"SVC: Failed to initialize DeduplicationService: {e}")
     _dedup_service = None
 
-
-def check_media_solution_pattern(subject, email_content):
-    """Compatibility wrapper delegating to email_processing.pattern_matching.
-
-    Maintains backward compatibility while centralizing pattern detection.
-    """
-    try:
-        return email_pattern_matching.check_media_solution_pattern(
-            subject=subject,
-            email_content=email_content,
-            tz_for_polling=TZ_FOR_POLLING,
-            logger=app.logger,
-        )
-    except Exception as e:
-        try:
-            app.logger.error(f"MEDIA_PATTERN_WRAPPER: Exception: {e}")
-        except Exception:
-            pass
-        return {"matches": False, "delivery_time": None}
-
-
-# --- Fonctions de Déduplication avec Redis ---
-def is_email_id_processed_redis(email_id):
-    """Back-compat wrapper: delegate to dedup module; returns False on errors or no Redis."""
-    rc = globals().get("redis_client")
-    return _dedup.is_email_id_processed(
-        rc,
-        email_id=email_id,
-        logger=app.logger,
-        processed_ids_key=PROCESSED_EMAIL_IDS_REDIS_KEY,
+# 8. Ingress Service
+try:
+    from config import app_config_store
+    _ingress_service = IngressService.get_instance(
+        config_service=_config_service,
+        app_config_store=app_config_store,
     )
+    app.logger.info("SVC: IngressService initialized")
+except Exception as e:
+    app.logger.error(f"SVC: Failed to initialize IngressService: {e}")
+    _ingress_service = None
 
-
-def mark_email_id_as_processed_redis(email_id):
-    """Back-compat wrapper: delegate to dedup module; returns False without Redis."""
-    rc = globals().get("redis_client")
-    return _dedup.mark_email_id_processed(
-        rc,
-        email_id=email_id,
-        logger=app.logger,
-        processed_ids_key=PROCESSED_EMAIL_IDS_REDIS_KEY,
-    )
-
-
-def acquire_email_id_inflight_lock_redis(email_id: str) -> bool:
-    """Acquire Gmail Push in-flight lock (Redis SET NX EX).
-
-    Returns True when the caller can proceed with processing.
-    Returns False when a duplicate request should be skipped (already in-flight).
-    """
-    rc = globals().get("redis_client")
-    return _dedup.acquire_email_inflight_lock(
-        rc,
-        email_id=email_id,
-        logger=app.logger,
-        lock_key_prefix=EMAIL_ID_INFLIGHT_LOCK_PREFIX,
-        ttl_seconds=EMAIL_ID_INFLIGHT_LOCK_TTL_SECONDS,
-    )
-
-
-def release_email_id_inflight_lock_redis(email_id: str) -> bool:
-    """Release Gmail Push in-flight lock (best-effort)."""
-    rc = globals().get("redis_client")
-    return _dedup.release_email_inflight_lock(
-        rc,
-        email_id=email_id,
-        logger=app.logger,
-        lock_key_prefix=EMAIL_ID_INFLIGHT_LOCK_PREFIX,
-    )
-
-
-
-def generate_subject_group_id(subject: str) -> str:
-    """Wrapper vers deduplication.subject_group.generate_subject_group_id."""
-    return _gen_subject_group_id(subject)
-
-
-def is_subject_group_processed(group_id: str) -> bool:
-    """Check subject-group dedup via Redis or memory using the centralized helper."""
-    rc = globals().get("redis_client")
-    return _dedup.is_subject_group_processed(
-        rc,
-        group_id=group_id,
-        logger=app.logger,
-        ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
-        ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
-        groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
-        enable_monthly_scope=bool(ENABLE_SUBJECT_GROUP_DEDUP),
-        tz=TZ_FOR_POLLING,
-        memory_set=SUBJECT_GROUPS_MEMORY,
-    )
-
-
-def mark_subject_group_processed(group_id: str) -> bool:
-    """Mark subject-group as processed using centralized helper (Redis or memory)."""
-    rc = globals().get("redis_client")
-    return _dedup.mark_subject_group_processed(
-        rc,
-        group_id=group_id,
-        logger=app.logger,
-        ttl_seconds=SUBJECT_GROUP_TTL_SECONDS,
-        ttl_prefix=SUBJECT_GROUP_REDIS_PREFIX,
-        groups_key=PROCESSED_SUBJECT_GROUPS_REDIS_KEY,
-        enable_monthly_scope=bool(ENABLE_SUBJECT_GROUP_DEDUP),
-        tz=TZ_FOR_POLLING,
-        memory_set=SUBJECT_GROUPS_MEMORY,
-    )
 
 
 
@@ -468,32 +367,7 @@ PROCESSING_PREFS_FILE = Path(__file__).resolve().parent / "debug" / "processing_
 PROCESSING_PREFS_REDIS_KEY = "r:ss:processing_prefs:v1"
 
 
-try:
-    PROCESSING_PREFS  # noqa: F401
-except NameError:
-    PROCESSING_PREFS = _DEFAULT_PROCESSING_PREFS.copy()
 
-
-def _load_processing_prefs() -> dict:
-    """Charge les préférences via app_config_store (Redis-first, fallback fichier)."""
-    try:
-        data = _config_get("processing_prefs", file_fallback=PROCESSING_PREFS_FILE) or {}
-    except Exception:
-        data = {}
-
-    if isinstance(data, dict):
-        return {**_DEFAULT_PROCESSING_PREFS, **data}
-    return _DEFAULT_PROCESSING_PREFS.copy()
-
-
-def _save_processing_prefs(prefs: dict) -> bool:
-    """Sauvegarde via app_config_store (Redis-first, fallback fichier)."""
-    try:
-        return bool(_config_set("processing_prefs", prefs, file_fallback=PROCESSING_PREFS_FILE))
-    except Exception:
-        return False
-
-PROCESSING_PREFS = _load_processing_prefs()
 
 def _log_webhook_config_startup():
     try:
@@ -539,48 +413,5 @@ try:
         bool(WEBHOOK_URL),
         (WEBHOOK_URL[:80] if WEBHOOK_URL else ""),
     )
-    app.logger.info(
-        "CFG PROCESSING_PREFS: mirror_media_to_custom=%s webhook_timeout_sec=%s",
-        bool(PROCESSING_PREFS.get("mirror_media_to_custom")),
-        PROCESSING_PREFS.get("webhook_timeout_sec"),
-    )
 except Exception:
     pass
-
-WEBHOOK_SEND_EVENTS = deque()
-
-def _rate_limit_allow_send() -> bool:
-    try:
-        limit = int(PROCESSING_PREFS.get("rate_limit_per_hour") or 0)
-    except Exception:
-        limit = 0
-    return _rate_prune_and_allow(WEBHOOK_SEND_EVENTS, limit)
-
-
-def _record_send_event():
-    _rate_record_event(WEBHOOK_SEND_EVENTS)
-
-
-def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
-    """Valide via module preferences en partant des valeurs courantes comme base."""
-    base = dict(PROCESSING_PREFS)
-    ok, msg, out = _processing_prefs.validate_processing_prefs(payload, base)
-    return ok, msg, out
-
-
-def _append_webhook_log(log_entry: dict):
-    """Ajoute une entrée de log webhook (Redis si dispo, sinon fichier JSON).
-    Délègue à app_logging.webhook_logger pour centraliser la logique. Conserve au plus 500 entrées."""
-    try:
-        rc = globals().get("redis_client")
-    except Exception:
-        rc = None
-    _append_webhook_log_helper(
-        log_entry,
-        redis_client=rc,
-        logger=app.logger,
-        file_path=WEBHOOK_LOGS_FILE,
-        redis_list_key=WEBHOOK_LOGS_REDIS_KEY,
-        max_entries=500,
-    )
-

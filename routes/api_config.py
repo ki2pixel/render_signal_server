@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response
 from flask_login import login_required
 
 from config import webhook_time_window
@@ -39,7 +39,7 @@ except ValueError:
 
 @bp.route("/get_webhook_time_window", methods=["GET"])
 @login_required
-def get_webhook_time_window():
+def get_webhook_time_window() -> Response | tuple[Response, int]:
     try:
         # Best-effort: pull latest values from external store to reflect remote edits
         try:
@@ -69,7 +69,7 @@ def get_webhook_time_window():
 
 @bp.route("/set_webhook_time_window", methods=["POST"])
 @login_required
-def set_webhook_time_window():
+def set_webhook_time_window() -> Response | tuple[Response, int]:
     try:
         payload = request.get_json(silent=True) or {}
         start = payload.get("start", "")
@@ -107,7 +107,7 @@ def set_webhook_time_window():
 
 @bp.route("/get_runtime_flags", methods=["GET"])
 @login_required
-def get_runtime_flags():
+def get_runtime_flags() -> Response | tuple[Response, int]:
     """Récupère les flags runtime.
     
     Appel direct à RuntimeFlagsService (cache intelligent 60s).
@@ -122,7 +122,7 @@ def get_runtime_flags():
 
 @bp.route("/update_runtime_flags", methods=["POST"])
 @login_required
-def update_runtime_flags():
+def update_runtime_flags() -> Response | tuple[Response, int]:
     """Met à jour les flags runtime.
     
     Appel direct à RuntimeFlagsService.update_flags() - Atomic update + invalidation cache.

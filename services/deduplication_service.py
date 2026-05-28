@@ -56,6 +56,20 @@ class DeduplicationService:
         _processed_subject_groups: Set en mémoire (fallback)
     """
     
+    _instance: Optional[DeduplicationService] = None
+
+    @classmethod
+    def get_instance(cls, redis_client=None, logger=None, config_service=None) -> DeduplicationService:
+        """Retourne l'instance singleton du service."""
+        if cls._instance is None:
+            cls._instance = cls(redis_client, logger, config_service)
+        return cls._instance
+
+    @classmethod
+    def reset_instance(cls) -> None:
+        """Réinitialise l'instance singleton (utile pour les tests)."""
+        cls._instance = None
+    
     def __init__(
         self,
         redis_client=None,
@@ -144,6 +158,44 @@ class DeduplicationService:
         # Fallback mémoire
         self._processed_email_ids.add(email_id)
         return True
+    
+    def acquire_email_inflight_lock(self, email_id: str, ttl_seconds: int = 10) -> bool:
+        """Acquiert un verrou pour éviter le traitement concurrent d'un même email.
+        
+        Args:
+            email_id: Identifiant unique de l'email
+            ttl_seconds: Durée de vie du verrou en secondes
+            
+        Returns:
+            True si le verrou a été acquis, False sinon
+        """
+        if not email_id or not self._use_redis():
+            return True
+            
+        try:
+            lock_key = f"r:ss:inflight_email:{email_id}"
+            acquired = self._redis.set(lock_key, "1", nx=True, ex=ttl_seconds)
+            return bool(acquired)
+        except Exception as e:
+            if self._logger:
+                self._logger.error(f"DEDUP: Error acquiring inflight lock for '{email_id}': {e}")
+            return True # Fallback on allow
+            
+    def release_email_inflight_lock(self, email_id: str) -> None:
+        """Libère le verrou de traitement pour un email.
+        
+        Args:
+            email_id: Identifiant unique de l'email
+        """
+        if not email_id or not self._use_redis():
+            return
+            
+        try:
+            lock_key = f"r:ss:inflight_email:{email_id}"
+            self._redis.delete(lock_key)
+        except Exception as e:
+            if self._logger:
+                self._logger.error(f"DEDUP: Error releasing inflight lock for '{email_id}': {e}")
     
     # =========================================================================
     # Déduplication Subject Group

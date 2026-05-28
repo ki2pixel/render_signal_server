@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, render_template, request, redirect, url_for
+from flask import Blueprint, render_template, request, redirect, url_for, Response
 from flask_login import login_required, login_user, logout_user, current_user
 
 from services import AuthService, ConfigService, MagicLinkService
@@ -13,7 +13,7 @@ _auth_service = AuthService(_config_service)
 _magic_link_service = MagicLinkService.get_instance()
 
 
-def _complete_login(username: str, next_page: str | None):
+def _complete_login(username: str, next_page: str | None) -> Response:
     user_obj = _auth_service.create_user(username)
     login_user(user_obj)
     return redirect(next_page or url_for("dashboard.serve_dashboard_main"))
@@ -21,13 +21,13 @@ def _complete_login(username: str, next_page: str | None):
 
 @bp.route("/")
 @login_required
-def serve_dashboard_main():
+def serve_dashboard_main() -> str:
     # Keep same template rendering as legacy
     return render_template("dashboard.html")
 
 
 @bp.route("/login", methods=["GET", "POST"])
-def login():
+def login() -> Response | str:
     # If already authenticated, go to dashboard
     if current_user and getattr(current_user, "is_authenticated", False):
         return redirect(url_for("dashboard.serve_dashboard_main"))
@@ -55,7 +55,7 @@ def login():
 
 
 @bp.route("/login/magic/<token>", methods=["GET"])
-def consume_magic_link_token(token: str):
+def consume_magic_link_token(token: str) -> Response:
     success, message = _magic_link_service.consume_token(token)
     if not success:
         return redirect(url_for("dashboard.login", error=message))
@@ -65,6 +65,6 @@ def consume_magic_link_token(token: str):
 
 @bp.route("/logout")
 @login_required
-def logout():
+def logout() -> Response:
     logout_user()
     return redirect(url_for("dashboard.login"))

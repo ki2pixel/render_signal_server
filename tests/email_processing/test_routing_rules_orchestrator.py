@@ -97,17 +97,15 @@ def _install_app_render_stub(monkeypatch, mail_instance, *, default_webhook="htt
     module._rate_limit_allow_send = lambda: True
     module._record_send_event = lambda: None
     module._append_webhook_log = lambda entry: None
-    module.create_imap_connection = lambda: mail_instance
-    module.close_imap_connection = lambda _mail: None
-    module.decode_email_header = lambda value: value
-    module.extract_sender_email = lambda raw: raw.split('<')[-1].split('>')[0] if '<' in raw else raw
-    module.mark_email_id_as_processed_redis = lambda _email_id: True
-    module.is_email_id_processed_redis = lambda _email_id: False
-    module.mark_email_as_read_imap = lambda _mail, _num: None
-    module.generate_subject_group_id = lambda subj: f"grp-{subj}"
-    module.is_subject_group_processed = lambda _grp: False
     module._legacy_check_new_emails_and_trigger_webhook = None
     monkeypatch.setitem(sys.modules, "app_render", module)
+    
+    from services.deduplication_service import DeduplicationService
+    monkeypatch.setattr(DeduplicationService.get_instance(), 'mark_email_processed', lambda _email_id: True)
+    monkeypatch.setattr(DeduplicationService.get_instance(), 'is_email_processed', lambda _email_id: False)
+    monkeypatch.setattr(DeduplicationService.get_instance(), 'generate_subject_group_id', lambda subj: f"grp-{subj}")
+    monkeypatch.setattr(DeduplicationService.get_instance(), 'is_subject_group_processed', lambda _grp: False)
+    
     return logger
 
 
@@ -124,10 +122,16 @@ def _install_link_extraction_stub(monkeypatch):
     monkeypatch.setitem(sys.modules, "email_processing.link_extraction", module)
 
 
-def _install_imap_client_stub(monkeypatch):
+def _install_imap_client_stub(monkeypatch, mail_instance=None):
     module = types.ModuleType("email_processing.imap_client")
     module.generate_email_id = lambda *_: "email-1"
+    module.create_imap_connection = lambda l: mail_instance
+    module.close_imap_connection = lambda _mail: None
+    module.decode_email_header_value = lambda value: value
+    module.extract_sender_email = lambda raw: raw.split('<')[-1].split('>')[0] if '<' in raw else raw
+    module.mark_email_as_read_imap = lambda l, _mail, _num: None
     monkeypatch.setitem(sys.modules, "email_processing.imap_client", module)
+    monkeypatch.setattr(orch, "imap_client", module)
 
 
 def test_orchestrator_routes_to_custom_webhook_when_rule_matches(monkeypatch):
@@ -138,7 +142,6 @@ def test_orchestrator_routes_to_custom_webhook_when_rule_matches(monkeypatch):
     monkeypatch.setattr(orch, "_is_webhook_sending_enabled", lambda: True)
     _install_pattern_matching_stub(monkeypatch)
     _install_link_extraction_stub(monkeypatch)
-    _install_imap_client_stub(monkeypatch)
 
     sent_calls = []
 
@@ -164,7 +167,9 @@ def test_orchestrator_routes_to_custom_webhook_when_rule_matches(monkeypatch):
             msg.set_content("Bonjour")
             return ("OK", [(None, msg.as_bytes())])
 
+    _install_imap_client_stub(monkeypatch, _DummyMail())
     _install_app_render_stub(monkeypatch, _DummyMail())
+
 
     result = orch.check_new_emails_and_trigger_webhook()
 
@@ -183,7 +188,6 @@ def test_orchestrator_stop_processing_skips_default(monkeypatch):
     monkeypatch.setattr(orch, "_is_webhook_sending_enabled", lambda: True)
     _install_pattern_matching_stub(monkeypatch)
     _install_link_extraction_stub(monkeypatch)
-    _install_imap_client_stub(monkeypatch)
 
     default_calls = []
 
@@ -210,7 +214,9 @@ def test_orchestrator_stop_processing_skips_default(monkeypatch):
             msg.set_content("Corps")
             return ("OK", [(None, msg.as_bytes())])
 
+    _install_imap_client_stub(monkeypatch, _DummyMail())
     _install_app_render_stub(monkeypatch, _DummyMail())
+
 
     orch.check_new_emails_and_trigger_webhook()
 

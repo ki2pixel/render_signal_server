@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response
 
 from auth.helpers import testapi_authorized as _testapi_authorized
 from config.webhook_time_window import (
@@ -40,7 +40,7 @@ def _mask_url(url: str | None) -> str | None:
 # --- Endpoints ---
 
 @bp.route("/get_webhook_time_window", methods=["GET"])
-def get_webhook_time_window():
+def get_webhook_time_window() -> Response | tuple[Response, int]:
     if not _testapi_authorized(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
     try:
@@ -64,7 +64,7 @@ def get_webhook_time_window():
 
 
 @bp.route("/set_webhook_time_window", methods=["POST"])
-def set_webhook_time_window():
+def set_webhook_time_window() -> Response | tuple[Response, int]:
     if not _testapi_authorized(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
     try:
@@ -93,7 +93,7 @@ def set_webhook_time_window():
 
 
 @bp.route("/get_webhook_config", methods=["GET"])
-def get_webhook_config():
+def get_webhook_config() -> Response | tuple[Response, int]:
     if not _testapi_authorized(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
     try:
@@ -112,7 +112,7 @@ def get_webhook_config():
 
 
 @bp.route("/update_webhook_config", methods=["POST"])
-def update_webhook_config():
+def update_webhook_config() -> Response | tuple[Response, int]:
     if not _testapi_authorized(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
     try:
@@ -162,7 +162,7 @@ def update_webhook_config():
 
 
 @bp.route("/webhook_logs", methods=["GET"])
-def webhook_logs():
+def webhook_logs() -> Response | tuple[Response, int]:
     if not _testapi_authorized(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
     try:
@@ -201,7 +201,7 @@ def webhook_logs():
 
 
 @bp.route("/clear_email_dedup", methods=["POST"])
-def clear_email_dedup():
+def clear_email_dedup() -> Response | tuple[Response, int]:
     if not _testapi_authorized(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
     try:

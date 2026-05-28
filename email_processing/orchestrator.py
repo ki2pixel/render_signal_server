@@ -14,10 +14,16 @@ from datetime import datetime, timezone
 import os
 import json
 from pathlib import Path
-from utils.time_helpers import parse_time_hhmm, is_within_time_window_local
+from utils.time_helpers import parse_time_hhmm, is_within_time_window_local, get_polling_timezone
 from utils.text_helpers import mask_sensitive_data, strip_leading_reply_prefixes
 from config import settings
+from services.deduplication_service import DeduplicationService
+from services.rate_limit_service import RateLimitService
+from services.webhook_logger_service import WebhookLoggerService
+from email_processing import imap_client
 
+
+from email import message_from_bytes
 
 # =============================================================================
 # CONSTANTS
@@ -516,6 +522,7 @@ def _fetch_and_parse_email(mail, num: bytes, logger, decode_fn, extract_sender_f
 # =============================================================================
 
 def check_new_emails_and_trigger_webhook() -> int:
+    import app_render as ar
     """Execute one IMAP polling cycle and trigger webhooks when appropriate.
     
     This is the main orchestration function for email-based webhook triggering.
@@ -554,18 +561,8 @@ def check_new_emails_and_trigger_webhook() -> int:
     - Uses deduplication (Redis) to avoid processing same email multiple times
     - Subject-group deduplication prevents spam from repetitive emails
     """
-    # Legacy delegation removed: tests validate detector-specific behavior here
     try:
-        import imaplib
-        from email import message_from_bytes
-    except Exception:
-        # If stdlib imports fail, nothing we can do
-        return 0
-
-    try:
-        import app_render as ar
-        _app = ar.app
-        from email_processing import imap_client
+        from app_render import app as _app
         from email_processing import payloads
         from email_processing import link_extraction
         from config import webhook_time_window as _w_tw
@@ -579,30 +576,6 @@ def check_new_emails_and_trigger_webhook() -> int:
         except Exception:
             pass
         return 0
-
-    try:
-        allow_legacy = os.environ.get("ORCHESTRATOR_ALLOW_LEGACY_DELEGATION", "").strip().lower() in (
-            "1",
-            "true",
-            "yes",
-            "on",
-        )
-        if allow_legacy:
-            legacy_fn = getattr(ar, "_legacy_check_new_emails_and_trigger_webhook", None)
-            if callable(legacy_fn):
-                try:
-                    _app.logger.info(
-                        "ORCHESTRATOR: legacy delegation enabled; calling app_render._legacy_check_new_emails_and_trigger_webhook"
-                    )
-                except Exception:
-                    pass
-                res = legacy_fn()
-                try:
-                    return int(res) if res is not None else 0
-                except Exception:
-                    return 0
-    except Exception:
-        pass
 
     logger = getattr(_app, 'logger', None)
     if not logger:
@@ -622,7 +595,7 @@ def check_new_emails_and_trigger_webhook() -> int:
     except Exception:
         pass
 
-    mail = ar.create_imap_connection()
+    mail = imap_client.create_imap_connection(logger)
     if not mail:
         logger.error("POLLER: Email polling cycle aborted: IMAP connection failed.")
         return 0
@@ -698,8 +671,8 @@ def check_new_emails_and_trigger_webhook() -> int:
                 subj_raw = msg.get('Subject', '')
                 from_raw = msg.get('From', '')
                 date_raw = msg.get('Date', '')
-                subject = ar.decode_email_header(subj_raw)
-                sender_addr = ar.extract_sender_email(from_raw).lower()
+                subject = imap_client.decode_email_header_value(subj_raw)
+                sender_addr = imap_client.extract_sender_email(from_raw).lower()
                 if os.environ.get('ORCH_TEST_RERAISE') == '1':
                     try:
                         print(
@@ -722,14 +695,9 @@ def check_new_emails_and_trigger_webhook() -> int:
                     pass
 
                 try:
-                    sender_list = getattr(ar, 'SENDER_LIST_FOR_POLLING', None)
+                    sender_list = getattr(settings, 'SENDER_LIST_FOR_POLLING', [])
                 except Exception:
-                    sender_list = None
-                if not sender_list:
-                    try:
-                        sender_list = getattr(settings, 'SENDER_LIST_FOR_POLLING', [])
-                    except Exception:
-                        sender_list = []
+                    sender_list = []
                 allowed = [str(s).lower() for s in (sender_list or [])]
                 if os.environ.get('ORCH_TEST_RERAISE') == '1':
                     try:
@@ -771,7 +739,7 @@ def check_new_emails_and_trigger_webhook() -> int:
                         print(f"DEBUG_TEST email_id={email_id}")
                     except Exception:
                         pass
-                if ar.is_email_id_processed_redis(email_id):
+                if DeduplicationService.get_instance().is_email_processed(email_id):
                     logger.info("DEDUP_EMAIL: Skipping already processed email_id=%s", email_id)
                     try:
                         logger.info("IGNORED: Email %s ignored due to email-id dedup", email_id)
@@ -788,8 +756,8 @@ def check_new_emails_and_trigger_webhook() -> int:
                             email_id,
                             mask_sensitive_data(original_subject or "", "subject"),
                         )
-                        ar.mark_email_id_as_processed_redis(email_id)
-                        ar.mark_email_as_read_imap(mail, num)
+                        DeduplicationService.get_instance().mark_email_processed(email_id)
+                        imap_client.mark_email_as_read_imap(logger, mail, num)
                         if os.environ.get('ORCH_TEST_RERAISE') == '1':
                             try:
                                 print("DEBUG_TEST reply/forward skip -> continue")
@@ -798,6 +766,7 @@ def check_new_emails_and_trigger_webhook() -> int:
                         continue
                 except Exception:
                     pass
+
 
                 combined_text_for_detection = ""
                 full_text = ""
@@ -860,7 +829,6 @@ def check_new_emails_and_trigger_webhook() -> int:
 
                 # Presence route removed (feature deprecated)
 
-                # 2) DESABO route — disabled (legacy Make.com path). Unified flow via WEBHOOK_URL only.
                 try:
                     logger.info("ROUTES: DESABO route disabled — using unified custom webhook flow (WEBHOOK_URL)")
                 except Exception:
@@ -872,11 +840,12 @@ def check_new_emails_and_trigger_webhook() -> int:
                 except Exception:
                     pass
 
+
                 # 4) Custom webhook flow (outside-window handling occurs after detector inference)
 
                 # Enforce dedicated webhook-global time window only when sending is enabled
                 try:
-                    now_local = datetime.now(ar.TZ_FOR_POLLING)
+                    now_local = datetime.now(get_polling_timezone())
                 except Exception:
                     now_local = datetime.now(timezone.utc)
 
@@ -932,7 +901,7 @@ def check_new_emails_and_trigger_webhook() -> int:
                                         and "/scl/fo/" in normalized_source_url.lower()
                                     ):
                                         remote_fetch_timeout = 120
-
+ 
                                     r2_result = None
                                     try:
                                         r2_result = r2_service.request_remote_fetch(
@@ -943,14 +912,14 @@ def check_new_emails_and_trigger_webhook() -> int:
                                         )
                                     except Exception:
                                         r2_result = None
-
+ 
                                     r2_url = None
                                     original_filename = None
                                     if isinstance(r2_result, tuple) and len(r2_result) == 2:
                                         r2_url, original_filename = r2_result
                                     elif r2_result is None:
                                         r2_url = None
-
+ 
                                     if r2_url:
                                         link_item['r2_url'] = r2_url
                                         if isinstance(original_filename, str) and original_filename.strip():
@@ -983,14 +952,14 @@ def check_new_emails_and_trigger_webhook() -> int:
                                         link_item['direct_url'] = fallback_direct_url
                                     # Continue avec le lien source original
                 except Exception as r2_service_ex:
-                    logger.debug("R2_TRANSFER: Service unavailable or disabled: %s", str(r2_service_ex))
+                     logger.debug("R2_TRANSFER: Service unavailable or disabled: %s", str(r2_service_ex))
                 
                 # Group dedup check for custom webhook
-                group_id = ar.generate_subject_group_id(subject or '')
-                if ar.is_subject_group_processed(group_id):
+                group_id = DeduplicationService.get_instance().generate_subject_group_id(subject or '')
+                if DeduplicationService.get_instance().is_subject_group_processed(group_id):
                     logger.info("DEDUP_GROUP: Skipping email %s (group %s processed)", email_id, group_id)
-                    ar.mark_email_id_as_processed_redis(email_id)
-                    ar.mark_email_as_read_imap(mail, num)
+                    DeduplicationService.get_instance().mark_email_processed(email_id)
+                    imap_client.mark_email_as_read_imap(logger, mail, num)
                     try:
                         logger.info(
                             "IGNORED: Email %s ignored due to subject-group dedup (group=%s)",
@@ -1000,6 +969,7 @@ def check_new_emails_and_trigger_webhook() -> int:
                     except Exception:
                         pass
                     continue
+
 
                 # Infer a detector for PHP receiver (Gmail sending path)
                 if os.environ.get('ORCH_TEST_RERAISE') == '1':
@@ -1023,7 +993,7 @@ def check_new_emails_and_trigger_webhook() -> int:
                             pass
                     # Prefer Media Solution if matched
                     ms_res = pm_mod.check_media_solution_pattern(
-                        subject or '', combined_text_for_detection or '', ar.TZ_FOR_POLLING, logger
+                        subject or '', combined_text_for_detection or '', get_polling_timezone(), logger
                     )
                     if isinstance(ms_res, dict) and bool(ms_res.get('matches')):
                         detector_val = 'recadrage'
@@ -1120,8 +1090,8 @@ def check_new_emails_and_trigger_webhook() -> int:
                             tw_end_str,
                         )
                         try:
-                            ar.mark_email_id_as_processed_redis(email_id)
-                            ar.mark_email_as_read_imap(mail, num)
+                            DeduplicationService.get_instance().mark_email_processed(email_id)
+                            imap_client.mark_email_as_read_imap(logger, mail, num)
                             logger.info("IGNORED: RECADRAGE skipped outside window and marked processed (email %s)", email_id)
                         except Exception:
                             pass
@@ -1210,7 +1180,7 @@ def check_new_emails_and_trigger_webhook() -> int:
                     if detector_val == 'recadrage' and delivery_time_val:
                         payload_for_webhook["delivery_time"] = delivery_time_val
                     # Provide a clean sender email explicitly
-                    payload_for_webhook["sender_email"] = sender_addr or ar.extract_sender_email(from_raw)
+                    payload_for_webhook["sender_email"] = sender_addr or imap_client.extract_sender_email(from_raw)
                 except Exception:
                     pass
 
@@ -1258,6 +1228,21 @@ def check_new_emails_and_trigger_webhook() -> int:
                     except Exception:
                         pass
 
+                # Load processing prefs dynamically/freshly
+                processing_prefs = {}
+                try:
+                    from routes.api_processing import DEFAULT_PROCESSING_PREFS
+                    from config.app_config_store import get_config_json as _config_get
+                    from pathlib import Path
+                    processing_prefs_file = Path(__file__).resolve().parents[1] / "debug" / "processing_prefs.json"
+                    data = _config_get("processing_prefs", file_fallback=processing_prefs_file) or {}
+                    if isinstance(data, dict):
+                        processing_prefs = {**DEFAULT_PROCESSING_PREFS, **data}
+                    else:
+                        processing_prefs = DEFAULT_PROCESSING_PREFS.copy()
+                except Exception:
+                    pass
+
                 # Execute custom webhook flow (handles retries, logging, read marking on success)
                 if routing_webhook_url:
                     cont = send_custom_webhook_flow(
@@ -1267,14 +1252,14 @@ def check_new_emails_and_trigger_webhook() -> int:
                         delivery_links=delivery_links or [],
                         webhook_url=routing_webhook_url,
                         webhook_ssl_verify=True,
-                        allow_without_links=bool(getattr(ar, 'ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS', False)),
-                        processing_prefs=getattr(ar, 'PROCESSING_PREFS', {}),
-                        # Use runtime helpers from app_render so tests can monkeypatch them
-                        rate_limit_allow_send=getattr(ar, '_rate_limit_allow_send'),
-                        record_send_event=getattr(ar, '_record_send_event'),
-                        append_webhook_log=getattr(ar, '_append_webhook_log'),
-                        mark_email_id_as_processed_redis=ar.mark_email_id_as_processed_redis,
-                        mark_email_as_read_imap=ar.mark_email_as_read_imap,
+                        allow_without_links=bool(getattr(settings, 'ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS', False)),
+                        processing_prefs=processing_prefs,
+                        # Use singletons instead of runtime helpers
+                        rate_limit_allow_send=RateLimitService.get_instance().allow_send,
+                        record_send_event=RateLimitService.get_instance().record_event,
+                        append_webhook_log=WebhookLoggerService.get_instance().append_log,
+                        mark_email_id_as_processed_redis=DeduplicationService.get_instance().mark_email_processed,
+                        mark_email_as_read_imap=lambda *a, **k: imap_client.mark_email_as_read_imap(logger, *a, **k),
                         mail=mail,
                         email_num=num,
                         urlparse=None,
@@ -1289,7 +1274,7 @@ def check_new_emails_and_trigger_webhook() -> int:
                         continue
 
                 should_send_default = True
-                if routing_webhook_url and routing_webhook_url == ar.WEBHOOK_URL:
+                if routing_webhook_url and routing_webhook_url == getattr(settings, 'WEBHOOK_URL', ''):
                     should_send_default = False
                 if should_send_default:
                     cont = send_custom_webhook_flow(
@@ -1297,16 +1282,16 @@ def check_new_emails_and_trigger_webhook() -> int:
                         subject=subject or '',
                         payload_for_webhook=payload_for_webhook,
                         delivery_links=delivery_links or [],
-                        webhook_url=ar.WEBHOOK_URL,
+                        webhook_url=getattr(settings, 'WEBHOOK_URL', ''),
                         webhook_ssl_verify=True,
-                        allow_without_links=bool(getattr(ar, 'ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS', False)),
-                        processing_prefs=getattr(ar, 'PROCESSING_PREFS', {}),
-                        # Use runtime helpers from app_render so tests can monkeypatch them
-                        rate_limit_allow_send=getattr(ar, '_rate_limit_allow_send'),
-                        record_send_event=getattr(ar, '_record_send_event'),
-                        append_webhook_log=getattr(ar, '_append_webhook_log'),
-                        mark_email_id_as_processed_redis=ar.mark_email_id_as_processed_redis,
-                        mark_email_as_read_imap=ar.mark_email_as_read_imap,
+                        allow_without_links=bool(getattr(settings, 'ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS', False)),
+                        processing_prefs=processing_prefs,
+                        # Use singletons instead of runtime helpers
+                        rate_limit_allow_send=RateLimitService.get_instance().allow_send,
+                        record_send_event=RateLimitService.get_instance().record_event,
+                        append_webhook_log=WebhookLoggerService.get_instance().append_log,
+                        mark_email_id_as_processed_redis=DeduplicationService.get_instance().mark_email_processed,
+                        mark_email_as_read_imap=lambda *a, **k: imap_client.mark_email_as_read_imap(logger, *a, **k),
                         mail=mail,
                         email_num=num,
                         urlparse=None,
@@ -1317,6 +1302,7 @@ def check_new_emails_and_trigger_webhook() -> int:
                     # Best-effort: if the flow returned False, an attempt was made (success or handled error)
                     if cont is False:
                         triggered_count += 1
+
 
             except Exception as e_one:
                 # In tests, allow re-raising to surface the exact failure location
@@ -1330,7 +1316,8 @@ def check_new_emails_and_trigger_webhook() -> int:
     finally:
         # Ensure IMAP is closed
         try:
-            ar.close_imap_connection(mail)
+            imap_client.close_imap_connection(logger, mail)
+
         except Exception:
             pass
 

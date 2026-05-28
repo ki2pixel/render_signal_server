@@ -20,7 +20,17 @@ app_render = importlib.import_module("app_render")
 # Import blueprints modules to patch their constants for file locations
 routes_api_webhooks = importlib.import_module("routes.api_webhooks")
 
-check_fn = app_render.check_media_solution_pattern
+from email_processing.pattern_matching import check_media_solution_pattern
+from datetime import timezone
+class DummyLogger:
+    def info(self, *args, **kwargs): pass
+    def warning(self, *args, **kwargs): pass
+    def error(self, *args, **kwargs): pass
+    def debug(self, *args, **kwargs): pass
+dummy_logger = DummyLogger()
+check_fn = lambda subj, body: check_media_solution_pattern(subj, body, timezone.utc, dummy_logger)
+
+
 
 
 @pytest.mark.parametrize(
@@ -250,82 +260,6 @@ def test_load_webhook_config_invalid_json(temp_config_file):
         assert isinstance(result, dict)  # Phase 5: Accepter dict depuis service
 
 
-# --- Tests pour _append_webhook_log ---
-
-def test_append_webhook_log_creates_file(temp_logs_file):
-    """Test création du fichier de logs s'il n'existe pas."""
-    temp_logs_file.unlink()  # S'assurer qu'il n'existe pas
-    
-    log_entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "type": "custom",
-        "email_id": "test123",
-        "status": "success",
-        "subject": "Test email"
-    }
-    
-    with patch.object(app_render, 'WEBHOOK_LOGS_FILE', temp_logs_file):
-        app_render._append_webhook_log(log_entry)
-        
-        # Vérifier que le fichier a été créé
-        assert temp_logs_file.exists()
-        
-        # Vérifier le contenu
-        with open(temp_logs_file) as f:
-            logs = json.load(f)
-        assert len(logs) == 1
-        assert logs[0] == log_entry
-
-
-def test_append_webhook_log_appends_to_existing(temp_logs_file):
-    """Test ajout à un fichier de logs existant."""
-    initial_log = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "type": "makecom",
-        "status": "error"
-    }
-    temp_logs_file.write_text(json.dumps([initial_log]))
-    
-    new_log = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "type": "custom",
-        "status": "success"
-    }
-    
-    with patch.object(app_render, 'WEBHOOK_LOGS_FILE', temp_logs_file):
-        app_render._append_webhook_log(new_log)
-        
-        with open(temp_logs_file) as f:
-            logs = json.load(f)
-        assert len(logs) == 2
-        assert logs[0] == initial_log
-        assert logs[1] == new_log
-
-
-def test_append_webhook_log_limits_to_500(temp_logs_file):
-    """Test limite de 500 entrées dans les logs."""
-    # Créer 500 logs existants
-    existing_logs = [
-        {"id": i, "timestamp": datetime.now(timezone.utc).isoformat()}
-        for i in range(500)
-    ]
-    temp_logs_file.write_text(json.dumps(existing_logs))
-    
-    new_log = {
-        "id": 500,
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
-    
-    with patch.object(app_render, 'WEBHOOK_LOGS_FILE', temp_logs_file):
-        app_render._append_webhook_log(new_log)
-        
-        with open(temp_logs_file) as f:
-            logs = json.load(f)
-        
-        # Devrait avoir exactement 500 entrées (la plus ancienne supprimée)
-        assert len(logs) == 500
-        assert logs[0]["id"] == 1  # Le premier (id=0) a été supprimé
-        assert logs[-1]["id"] == 500
 
 
 # --- Tests pour l'endpoint GET /api/get_webhook_config ---
@@ -576,81 +510,6 @@ def test_webhook_logs_validates_days_param(authenticated_client, temp_logs_file)
 from collections import deque as _deque
 
 
-def test_processing_prefs_load_defaults(tmp_path):
-    """Chargement retourne les défauts si le fichier n'existe pas."""
-    fake_file = tmp_path / "processing_prefs.json"
-    with patch.object(app_render, 'PROCESSING_PREFS_FILE', fake_file):
-        prefs = app_render._load_processing_prefs()
-    assert isinstance(prefs, dict)
-    assert set(app_render.DEFAULT_PROCESSING_PREFS.keys()) <= set(prefs.keys())
-
-
-def test_processing_prefs_save_and_load(tmp_path):
-    """Cycle sauvegarde puis rechargement des préférences."""
-    fake_file = tmp_path / "processing_prefs.json"
-    test_prefs = {
-        "exclude_keywords": ["spam", "demo"],
-        "require_attachments": True,
-        "max_email_size_mb": 5,
-        "sender_priority": {"vip@example.com": "high"},
-        "retry_count": 2,
-        "retry_delay_sec": 1,
-        "webhook_timeout_sec": 20,
-        "rate_limit_per_hour": 60,
-        "notify_on_failure": False,
-    }
-    with patch.object(app_render, 'PROCESSING_PREFS_FILE', fake_file):
-        ok = app_render._save_processing_prefs(test_prefs)
-        assert ok is True
-        loaded = app_render._load_processing_prefs()
-        for k, v in test_prefs.items():
-            assert loaded[k] == v
-
-
-def test_validate_processing_prefs_ok():
-    payload = {
-        "exclude_keywords": ["a", "b"],
-        "require_attachments": True,
-        "max_email_size_mb": 10,
-        "sender_priority": {"x@y.z": "low"},
-        "retry_count": 1,
-        "retry_delay_sec": 2,
-        "webhook_timeout_sec": 30,
-        "rate_limit_per_hour": 100,
-        "notify_on_failure": False,
-    }
-    ok, msg, out = app_render._validate_processing_prefs(payload)
-    assert ok is True
-    assert out["sender_priority"]["x@y.z"] == "low"
-
-
-@pytest.mark.parametrize("field, value, err_part", [
-    ("exclude_keywords", "not-a-list", "liste"),
-    ("max_email_size_mb", 0, "> 0"),
-    ("sender_priority", {"x@y.z": "invalid"}, "niveau"),
-    ("retry_count", 999, "0..10"),
-    ("retry_delay_sec", 9999, "0..600"),
-    ("webhook_timeout_sec", 0, "1..300"),
-    ("rate_limit_per_hour", -1, "0..100000"),
-])
-def test_validate_processing_prefs_errors(field, value, err_part):
-    ok, msg, _ = app_render._validate_processing_prefs({field: value})
-    assert ok is False
-    assert err_part in msg
-
-
-def test_rate_limit_helpers_basic(monkeypatch):
-    """Vérifie la fenêtre glissante et le respect de la limite."""
-    # Rate limit = 2/h
-    monkeypatch.setitem(app_render.PROCESSING_PREFS, 'rate_limit_per_hour', 2)
-    # Reset queue
-    app_render.WEBHOOK_SEND_EVENTS = _deque()
-    assert app_render._rate_limit_allow_send() is True
-    app_render._record_send_event()
-    assert app_render._rate_limit_allow_send() is True
-    app_render._record_send_event()
-    # 3e tentative dans la même heure doit refuser
-    assert app_render._rate_limit_allow_send() is False
 
 
 def test_api_processing_prefs_requires_auth(client):

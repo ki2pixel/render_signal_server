@@ -21,7 +21,7 @@ Usage:
 """
 
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, Any
 
 
 class ConfigService:
@@ -31,7 +31,7 @@ class ConfigService:
         _settings: Module de configuration (config.settings par défaut)
     """
     
-    def __init__(self, settings_module=None):
+    def __init__(self, settings_module: Any = None) -> None:
         """Initialise le service avec un module de configuration.
         
         Args:
@@ -209,15 +209,15 @@ class ConfigService:
     
     # Chemins de Fichiers
     
-    def get_runtime_flags_file(self):
+    def get_runtime_flags_file(self) -> str:
         return self._settings.RUNTIME_FLAGS_FILE
     
-    def get_trigger_signal_file(self):
+    def get_trigger_signal_file(self) -> str:
         return self._settings.TRIGGER_SIGNAL_FILE
     
     # Méthodes Utilitaires
     
-    def get_raw_settings(self):
+    def get_raw_settings(self) -> Any:
         return self._settings
     
     def __repr__(self) -> str:

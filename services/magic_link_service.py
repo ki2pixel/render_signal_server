@@ -178,31 +178,52 @@ class MagicLinkService:
         Returns:
             Tuple[bool, str]: (success, message_or_username)
         """
+        ok, msg, token_id, expires_epoch = self._verify_token_validity(token)
+        if not ok or not token_id:
+            return False, msg
+
+        ok, msg = self._process_token_consumption(token_id, expires_epoch)
+        if not ok:
+            return False, msg
+
+        username = self._config_service.get_dashboard_user()
+        try:
+            self._logger.info("MAGIC_LINK: token %s consommé par %s", token_id, username)
+        except Exception:
+            pass
+
+        return True, username
+
+    def _verify_token_validity(self, token: str) -> Tuple[bool, str, Optional[str], Optional[int]]:
         if not token:
-            return False, "Token manquant."
+            return False, "Token manquant.", None, None
 
         parts = token.strip().split(".")
         if len(parts) != 3:
-            return False, "Format de token invalide."
+            return False, "Format de token invalide.", None, None
         token_id, expires_str, provided_sig = parts
 
         if not token_id:
-            return False, "Token invalide."
+            return False, "Token invalide.", None, None
 
         unlimited = expires_str == "permanent"
         if not unlimited and not expires_str.isdigit():
-            return False, "Token invalide."
+            return False, "Token invalide.", None, None
 
         expires_epoch = None if unlimited else int(expires_str)
         expected_sig = self._sign_components(token_id, expires_str)
         if not compare_digest(provided_sig, expected_sig):
-            return False, "Signature de token invalide."
+            return False, "Signature de token invalide.", None, None
 
         now_epoch = time.time()
         if expires_epoch is not None and expires_epoch < now_epoch:
             self._invalidate_token(token_id, reason="expired")
-            return False, "Token expiré."
+            return False, "Token expiré.", None, None
 
+        return True, "ok", token_id, expires_epoch
+
+    def _process_token_consumption(self, token_id: str, expires_epoch: Optional[int]) -> Tuple[bool, str]:
+        now_epoch = time.time()
         with self._file_lock:
             state = self._load_state()
             record = state.get(token_id)
@@ -227,13 +248,7 @@ class MagicLinkService:
                 state[token_id] = record_obj
                 self._save_state(state)
 
-        username = self._config_service.get_dashboard_user()
-        try:
-            self._logger.info("MAGIC_LINK: token %s consommé par %s", token_id, username)
-        except Exception:
-            pass
-
-        return True, username
+        return True, "ok"
 
     def revoke_all_tokens(self) -> None:
         """Supprime l'intégralité des tokens stockés (fichier + store externe)."""

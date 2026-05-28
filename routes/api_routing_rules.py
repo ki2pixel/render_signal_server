@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response
 from flask_login import login_required
 
 from config import app_config_store as _store
@@ -234,7 +234,7 @@ def _is_legacy_backend_default_rule(rule: dict) -> bool:
 
 @bp.route("", methods=["GET"])
 @login_required
-def get_routing_rules():
+def get_routing_rules() -> Response | tuple[Response, int]:
     try:
         payload = _load_routing_rules()
         rules = payload.get("rules") if isinstance(payload, dict) else None
@@ -257,7 +257,7 @@ def get_routing_rules():
 
 @bp.route("", methods=["POST"])
 @login_required
-def update_routing_rules():
+def update_routing_rules() -> Response | tuple[Response, int]:
     try:
         payload = request.get_json(silent=True) or {}
         rules_raw = payload.get("rules")

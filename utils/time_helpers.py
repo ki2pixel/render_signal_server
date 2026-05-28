@@ -95,3 +95,27 @@ def is_within_time_window_local(
     else:
         # Fenêtre traversant minuit (ex: 22h00 - 02h00)
         return (now_t >= start) or (now_t < end)
+
+
+def get_polling_timezone():
+    """Récupère le fuseau horaire de polling à partir de la configuration.
+    
+    Returns:
+        timezone ou ZoneInfo
+    """
+    from datetime import timezone
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        ZoneInfo = None
+
+    from config import settings
+    try:
+        tz_name = getattr(settings, "POLLING_TIMEZONE_STR", "UTC")
+        if isinstance(tz_name, str) and tz_name.strip() and tz_name.strip().upper() != "UTC":
+            if ZoneInfo is not None:
+                return ZoneInfo(tz_name.strip())
+    except Exception:
+        pass
+    return timezone.utc
+

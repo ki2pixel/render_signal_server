@@ -31,7 +31,7 @@ Usage:
 from __future__ import annotations
 
 from functools import wraps
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Callable, Any
 
 if TYPE_CHECKING:
     from flask import Flask, Request
@@ -68,7 +68,7 @@ class AuthService:
         _login_manager: Instance de Flask-Login LoginManager
     """
     
-    def __init__(self, config_service):
+    def __init__(self, config_service: ConfigService) -> None:
         """Initialise le service d'authentification.
         
         Args:
@@ -175,7 +175,7 @@ class AuthService:
     
     # Décorateurs
     
-    def api_key_required(self, func):
+    def api_key_required(self, func: Callable[..., Any]) -> Callable[..., Any]:
         """Décorateur pour protéger un endpoint avec authentification API token.
         
         Usage:
@@ -191,7 +191,7 @@ class AuthService:
             Wrapper qui vérifie l'authentification
         """
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             from flask import request, jsonify
             
             if not self.verify_api_key_from_request(request):
@@ -201,7 +201,7 @@ class AuthService:
         
         return wrapper
     
-    def test_api_key_required(self, func):
+    def test_api_key_required(self, func: Callable[..., Any]) -> Callable[..., Any]:
         """Décorateur pour protéger un endpoint de test avec X-API-Key.
         
         Usage:
@@ -217,7 +217,7 @@ class AuthService:
             Wrapper qui vérifie l'authentification
         """
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             from flask import request, jsonify
             
             if not self.verify_test_api_key_from_request(request):

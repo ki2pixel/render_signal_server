@@ -143,57 +143,89 @@ class R2TransferService:
         Returns:
             Tuple (r2_url, original_filename) si succès, (None, None) si échec
         """
-        if not self.is_enabled():
-            return None, None
-
-        if not self._fetch_token or not self._fetch_token.strip():
+        if not self.is_enabled() or not self._fetch_token or not self._fetch_token.strip():
             return None, None
         
-        if not source_url or not provider:
-            return None, None
-        
-        if requests is None:
+        if not source_url or not provider or requests is None:
             return None, None
         
         try:
             normalized_url = self.normalize_source_url(source_url, provider)
-
-            try:
-                parsed = urllib.parse.urlsplit(normalized_url)
-                domain = (parsed.hostname or "").lower().strip(".")
-            except Exception:
-                domain = ""
-
-            if not domain:
-                logger.warning(
-                    "SECURITY: Blocked attempt to fetch from unauthorized domain (domain missing)"
-                )
-                return None, None
-
-            if not any(
-                domain == allowed or domain.endswith("." + allowed)
-                for allowed in ALLOWED_REMOTE_FETCH_DOMAINS
-            ):
-                logger.warning(
-                    "SECURITY: Blocked attempt to fetch from unauthorized domain (domain=%s, provider=%s, email_id=%s)",
-                    domain,
-                    provider,
-                    email_id or "n/a",
-                )
+            is_valid, domain = self._validate_remote_fetch_domain(normalized_url, provider, email_id)
+            if not is_valid:
                 return None, None
 
             object_key = self._generate_object_key(normalized_url, provider)
-            
-            payload = {
-                "source_url": normalized_url,
-                "object_key": object_key,
-                "bucket": self._bucket_name,
-                "provider": provider,
-            }
-            
-            if email_id:
-                payload["email_id"] = email_id
-            
+            response = self._execute_remote_fetch_request(
+                normalized_url=normalized_url,
+                provider=provider,
+                object_key=object_key,
+                email_id=email_id,
+                timeout=timeout,
+            )
+
+            if response is not None and response.status_code == 200:
+                data = response.json()
+                if data.get("success") and data.get("r2_url"):
+                    r2_url = data["r2_url"]
+                    original_filename = data.get("original_filename")
+                    if original_filename is not None and not isinstance(original_filename, str):
+                        original_filename = None
+                    return r2_url, original_filename
+
+            return None, None
+
+        except Exception:
+            return None, None
+
+    def _validate_remote_fetch_domain(
+        self, normalized_url: str, provider: str, email_id: Optional[str] = None
+    ) -> Tuple[bool, Optional[str]]:
+        try:
+            parsed = urllib.parse.urlsplit(normalized_url)
+            domain = (parsed.hostname or "").lower().strip(".")
+        except Exception:
+            domain = ""
+
+        if not domain:
+            logger.warning(
+                "SECURITY: Blocked attempt to fetch from unauthorized domain (domain missing)"
+            )
+            return False, None
+
+        if not any(
+            domain == allowed or domain.endswith("." + allowed)
+            for allowed in ALLOWED_REMOTE_FETCH_DOMAINS
+        ):
+            logger.warning(
+                "SECURITY: Blocked attempt to fetch from unauthorized domain (domain=%s, provider=%s, email_id=%s)",
+                domain,
+                provider,
+                email_id or "n/a",
+            )
+            return False, domain
+
+        return True, domain
+
+    def _execute_remote_fetch_request(
+        self,
+        normalized_url: str,
+        provider: str,
+        object_key: str,
+        email_id: Optional[str] = None,
+        timeout: int = 30,
+    ) -> Any:
+        payload = {
+            "source_url": normalized_url,
+            "object_key": object_key,
+            "bucket": self._bucket_name,
+            "provider": provider,
+        }
+        
+        if email_id:
+            payload["email_id"] = email_id
+        
+        try:
             start_time = time.time()
             response = requests.post(
                 self._fetch_endpoint,
@@ -206,26 +238,9 @@ class R2TransferService:
                 }
             )
             elapsed = time.time() - start_time
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and data.get("r2_url"):
-                    r2_url = data["r2_url"]
-                    original_filename = data.get("original_filename")
-                    if original_filename is not None and not isinstance(original_filename, str):
-                        original_filename = None
-                    return r2_url, original_filename
-                else:
-                    return None, None
-            else:
-                return None, None
-                
-        except requests.exceptions.Timeout:
-            return None, None
-        except requests.exceptions.RequestException:
-            return None, None
-        except Exception:
-            return None, None
+            return response
+        except (requests.exceptions.Timeout, requests.exceptions.RequestException):
+            return None
     
     def persist_link_pair(
         self,

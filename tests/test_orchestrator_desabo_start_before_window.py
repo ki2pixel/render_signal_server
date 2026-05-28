@@ -71,10 +71,10 @@ def test_desabo_before_window_sets_payload_start_to_configured_start(monkeypatch
         'app',
         SimpleNamespace(
             logger=SimpleNamespace(
-                info=lambda *a, **k: None,
-                warning=lambda *a, **k: None,
-                error=lambda *a, **k: None,
-                debug=lambda *a, **k: None,
+                info=lambda *a, **k: print("INFO:", a),
+                warning=lambda *a, **k: print("WARN:", a),
+                error=lambda *a, **k: print("ERR:", a),
+                debug=lambda *a, **k: print("DEBUG:", a),
             )
         ),
         raising=False,
@@ -107,15 +107,17 @@ def test_desabo_before_window_sets_payload_start_to_configured_start(monkeypatch
 
     # Patch orchestrator send and IMAP plumbing
     monkeypatch.setattr(orch, 'send_custom_webhook_flow', fake_send_custom_webhook_flow, raising=False)
-    monkeypatch.setattr(ar, 'create_imap_connection', lambda: FakeMail(), raising=False)
-    monkeypatch.setattr(ar, 'close_imap_connection', lambda m: None, raising=False)
-    monkeypatch.setattr(ar, 'decode_email_header', lambda s: s, raising=False)
-    monkeypatch.setattr(ar, 'extract_sender_email', lambda s: 'allowed@example.com', raising=False)
-    monkeypatch.setattr(ar, 'mark_email_as_read_imap', lambda *a, **k: None, raising=False)
-    monkeypatch.setattr(ar, 'mark_email_id_as_processed_redis', lambda eid: None, raising=False)
-    monkeypatch.setattr(ar, 'is_email_id_processed_redis', lambda eid: False, raising=False)
-    monkeypatch.setattr(ar, 'generate_subject_group_id', lambda s: 'g2', raising=False)
-    monkeypatch.setattr(ar, 'is_subject_group_processed', lambda gid: False, raising=False)
+    monkeypatch.setattr('email_processing.imap_client.create_imap_connection', lambda l: FakeMail(), raising=False)
+    monkeypatch.setattr('email_processing.imap_client.close_imap_connection', lambda m: None, raising=False)
+    monkeypatch.setattr('email_processing.imap_client.decode_email_header_value', lambda s: s, raising=False)
+    monkeypatch.setattr('email_processing.imap_client.extract_sender_email', lambda s: 'allowed@example.com', raising=False)
+    monkeypatch.setattr('email_processing.imap_client.mark_email_as_read_imap', lambda *a, **k: None, raising=False)
+    from services.deduplication_service import DeduplicationService
+    DeduplicationService.reset_instance()
+    monkeypatch.setattr(DeduplicationService.get_instance(), 'mark_email_processed', lambda eid: None)
+    monkeypatch.setattr(DeduplicationService.get_instance(), 'is_email_processed', lambda eid: False)
+    monkeypatch.setattr(DeduplicationService.get_instance(), 'generate_subject_group_id', lambda s: 'g2', raising=False)
+    monkeypatch.setattr(DeduplicationService.get_instance(), 'is_subject_group_processed', lambda gid: False, raising=False)
     monkeypatch.setattr(orch, '_is_webhook_sending_enabled', lambda: True, raising=False)
 
     # Act

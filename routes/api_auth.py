@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, current_app, url_for, request
+from flask import Blueprint, jsonify, current_app, url_for, request, Response
 from flask_login import login_required, current_user
 
 from services import MagicLinkService
@@ -12,7 +12,7 @@ _magic_link_service = MagicLinkService.get_instance()
 
 @bp.route("/magic-link", methods=["POST"])
 @login_required
-def create_magic_link():
+def create_magic_link() -> Response | tuple[Response, int]:
     """Génère un magic link à usage unique pour accéder au dashboard."""
     payload = request.get_json(silent=True) or {}
     unlimited = bool(payload.get("unlimited"))

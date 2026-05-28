@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response
 from flask_login import login_required
 from config import app_config_store as _store
 from preferences import processing_prefs as _prefs_module
@@ -89,7 +89,7 @@ def _validate_processing_prefs(payload: dict) -> tuple[bool, str, dict]:
 
 @bp.route("", methods=["GET"])
 @login_required
-def get_processing_prefs():
+def get_processing_prefs() -> Response:
     try:
         return jsonify({"success": True, "prefs": _load_processing_prefs()})
     except Exception as e:
@@ -98,7 +98,7 @@ def get_processing_prefs():
 
 @bp.route("", methods=["POST"])
 @login_required
-def update_processing_prefs():
+def update_processing_prefs() -> Response:
     try:
         payload = request.get_json(force=True, silent=True) or {}
         ok, msg, new_prefs = _validate_processing_prefs(payload)
@@ -114,11 +114,11 @@ def update_processing_prefs():
 # --- Legacy alias routes to maintain backward-compat URLs used by tests/UI ---
 @legacy_bp.route("/api/get_processing_prefs", methods=["GET"])
 @login_required
-def legacy_get_processing_prefs():
+def legacy_get_processing_prefs() -> Response:
     return get_processing_prefs()
 
 
 @legacy_bp.route("/api/update_processing_prefs", methods=["POST"])
 @login_required
-def legacy_update_processing_prefs():
+def legacy_update_processing_prefs() -> Response:
     return update_processing_prefs()

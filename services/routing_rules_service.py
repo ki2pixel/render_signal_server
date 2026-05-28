@@ -242,78 +242,96 @@ class RoutingRulesService:
             if not isinstance(raw_rule, dict):
                 return False, "Chaque règle doit être un objet.", []
 
-            rule_id = str(raw_rule.get("id") or f"rule-{index + 1}").strip()
-            if not rule_id:
-                rule_id = f"rule-{index + 1}"
-            if rule_id in used_ids:
-                rule_id = f"{rule_id}-{index + 1}"
-            used_ids.add(rule_id)
+            ok, msg, rule = self._normalize_single_rule(raw_rule, index, used_ids)
+            if not ok or rule is None:
+                return False, msg, []
+            normalized.append(rule)
 
-            name = str(raw_rule.get("name") or f"Rule {index + 1}").strip()
-            if not name:
-                return False, "Chaque règle doit avoir un nom.", []
+        return True, "ok", normalized
 
-            conditions_raw = raw_rule.get("conditions")
-            if not isinstance(conditions_raw, list) or not conditions_raw:
-                return False, "Chaque règle doit contenir au moins une condition.", []
+    def _normalize_single_rule(
+        self, raw_rule: Dict[str, Any], index: int, used_ids: set[str]
+    ) -> Tuple[bool, str, Optional[RoutingRule]]:
+        rule_id = str(raw_rule.get("id") or f"rule-{index + 1}").strip()
+        if not rule_id:
+            rule_id = f"rule-{index + 1}"
+        if rule_id in used_ids:
+            rule_id = f"{rule_id}-{index + 1}"
+        used_ids.add(rule_id)
 
-            conditions: List[RoutingRuleCondition] = []
-            for cond in conditions_raw:
-                if not isinstance(cond, dict):
-                    return False, "Condition invalide (objet attendu).", []
+        name = str(raw_rule.get("name") or f"Rule {index + 1}").strip()
+        if not name:
+            return False, "Chaque règle doit avoir un nom.", None
 
-                field = str(cond.get("field") or "").strip().lower()
-                if field not in VALID_FIELDS:
-                    return False, "Champ de condition invalide.", []
+        ok_cond, msg_cond, conditions = self._validate_conditions(raw_rule.get("conditions"))
+        if not ok_cond:
+            return False, msg_cond, None
 
-                operator = str(cond.get("operator") or "").strip().lower()
-                if operator not in VALID_OPERATORS:
-                    return False, "Opérateur de condition invalide.", []
+        ok_act, msg_act, actions = self._validate_actions(raw_rule.get("actions"))
+        if not ok_act or actions is None:
+            return False, msg_act, None
 
-                value = str(cond.get("value") or "").strip()
-                if not value:
-                    return False, "Valeur de condition requise.", []
+        return True, "ok", {
+            "id": rule_id,
+            "name": name,
+            "conditions": conditions,
+            "actions": actions,
+        }
 
-                case_sensitive = bool(cond.get("case_sensitive", False))
+    def _validate_conditions(self, conditions_raw: Any) -> Tuple[bool, str, List[RoutingRuleCondition]]:
+        if not isinstance(conditions_raw, list) or not conditions_raw:
+            return False, "Chaque règle doit contenir au moins une condition.", []
 
-                conditions.append(
-                    {
-                        "field": field,
-                        "operator": operator,
-                        "value": value,
-                        "case_sensitive": case_sensitive,
-                    }
-                )
+        conditions: List[RoutingRuleCondition] = []
+        for cond in conditions_raw:
+            if not isinstance(cond, dict):
+                return False, "Condition invalide (objet attendu).", []
 
-            actions_raw = raw_rule.get("actions")
-            if not isinstance(actions_raw, dict):
-                return False, "Actions invalides (objet attendu).", []
+            field = str(cond.get("field") or "").strip().lower()
+            if field not in VALID_FIELDS:
+                return False, "Champ de condition invalide.", []
 
-            webhook_url_raw = actions_raw.get("webhook_url")
-            if not isinstance(webhook_url_raw, str) or not webhook_url_raw.strip():
-                return False, "webhook_url est requis pour chaque règle.", []
+            operator = str(cond.get("operator") or "").strip().lower()
+            if operator not in VALID_OPERATORS:
+                return False, "Opérateur de condition invalide.", []
 
-            normalized_url = normalize_make_webhook_url(webhook_url_raw.strip()) or webhook_url_raw.strip()
-            if not normalized_url.startswith("https://"):
-                return False, "webhook_url doit être une URL HTTPS valide.", []
+            value = str(cond.get("value") or "").strip()
+            if not value:
+                return False, "Valeur de condition requise.", []
 
-            priority = str(actions_raw.get("priority") or "normal").strip().lower()
-            if priority not in VALID_PRIORITIES:
-                return False, "priority invalide (normal|high).", []
+            case_sensitive = bool(cond.get("case_sensitive", False))
 
-            stop_processing = bool(actions_raw.get("stop_processing", False))
-
-            normalized.append(
+            conditions.append(
                 {
-                    "id": rule_id,
-                    "name": name,
-                    "conditions": conditions,
-                    "actions": {
-                        "webhook_url": normalized_url,
-                        "priority": priority,
-                        "stop_processing": stop_processing,
-                    },
+                    "field": field,
+                    "operator": operator,
+                    "value": value,
+                    "case_sensitive": case_sensitive,
                 }
             )
 
-        return True, "ok", normalized
+        return True, "ok", conditions
+
+    def _validate_actions(self, actions_raw: Any) -> Tuple[bool, str, Optional[RoutingRuleAction]]:
+        if not isinstance(actions_raw, dict):
+            return False, "Actions invalides (objet attendu).", None
+
+        webhook_url_raw = actions_raw.get("webhook_url")
+        if not isinstance(webhook_url_raw, str) or not webhook_url_raw.strip():
+            return False, "webhook_url est requis pour chaque règle.", None
+
+        normalized_url = normalize_make_webhook_url(webhook_url_raw.strip()) or webhook_url_raw.strip()
+        if not normalized_url.startswith("https://"):
+            return False, "webhook_url doit être une URL HTTPS valide.", None
+
+        priority = str(actions_raw.get("priority") or "normal").strip().lower()
+        if priority not in VALID_PRIORITIES:
+            return False, "priority invalide (normal|high).", None
+
+        stop_processing = bool(actions_raw.get("stop_processing", False))
+
+        return True, "ok", {
+            "webhook_url": normalized_url,
+            "priority": priority,
+            "stop_processing": stop_processing,
+        }

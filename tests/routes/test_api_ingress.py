@@ -4,6 +4,8 @@ import json
 from unittest.mock import MagicMock
 
 import pytest
+from services.rate_limit_service import RateLimitService
+from services.webhook_logger_service import WebhookLoggerService
 
 
 def _auth_headers() -> dict:
@@ -27,7 +29,8 @@ def test_ingress_gmail_unauthorized(flask_client):
 @pytest.mark.unit
 def test_ingress_gmail_runtime_flag_disabled(monkeypatch, flask_client):
     # Given: runtime flag gmail_ingress_enabled is disabled
-    import app_render
+    from services.runtime_flags_service import RuntimeFlagsService
+    RuntimeFlagsService.reset_instance()
 
     class _FakeFlags:
         def get_flag(self, key, default=None):
@@ -35,10 +38,10 @@ def test_ingress_gmail_runtime_flag_disabled(monkeypatch, flask_client):
                 return False
             return default
 
-    monkeypatch.setattr(app_render, "_runtime_flags_service", _FakeFlags())
+    monkeypatch.setattr(RuntimeFlagsService, "get_instance", lambda: _FakeFlags())
 
     send_mock = MagicMock(return_value=False)
-    monkeypatch.setattr("routes.api_ingress.email_orchestrator.send_custom_webhook_flow", send_mock)
+    monkeypatch.setattr("services.ingress_service.email_orchestrator.send_custom_webhook_flow", send_mock)
 
     payload = {
         "subject": "Hello",
@@ -94,10 +97,15 @@ def test_ingress_gmail_skips_sender_not_allowed(monkeypatch, flask_client):
     # Given: Gmail Push has a sender allowlist that does not include the sender
     import app_render
 
-    monkeypatch.setattr(app_render, "GMAIL_SENDER_ALLOWLIST", ["allowed@example.com"])
+    from services.deduplication_service import DeduplicationService
+    import config.settings as settings
+    DeduplicationService.reset_instance()
+    monkeypatch.setattr(settings, "GMAIL_SENDER_ALLOWLIST", ["allowed@example.com"])
 
     mark_mock = MagicMock(return_value=True)
-    monkeypatch.setattr(app_render, "mark_email_id_as_processed_redis", mark_mock)
+    from services.deduplication_service import DeduplicationService
+    DeduplicationService.reset_instance()
+    monkeypatch.setattr(DeduplicationService.get_instance(), "mark_email_processed", mark_mock)
 
     payload = {
         "subject": "Hello",
@@ -125,7 +133,7 @@ def test_ingress_gmail_webhook_sending_disabled(monkeypatch, flask_client):
     monkeypatch.setattr(app_render, "SENDER_LIST_FOR_POLLING", [])
 
     monkeypatch.setattr(
-        "routes.api_ingress.email_orchestrator._is_webhook_sending_enabled",
+        "services.ingress_service.email_orchestrator._is_webhook_sending_enabled",
         lambda: False,
     )
 
@@ -150,25 +158,29 @@ def test_ingress_gmail_happy_path(monkeypatch, flask_client):
     # Given: system is configured and send_custom_webhook_flow succeeds
     import app_render
 
+    from services.deduplication_service import DeduplicationService
+    DeduplicationService.reset_instance()
     monkeypatch.setattr(app_render, "SENDER_LIST_FOR_POLLING", [])
 
-    monkeypatch.setattr(app_render, "is_email_id_processed_redis", lambda *_a, **_k: False)
-    monkeypatch.setattr(app_render, "_rate_limit_allow_send", lambda: True)
-    monkeypatch.setattr(app_render, "_record_send_event", lambda: None)
-    monkeypatch.setattr(app_render, "_append_webhook_log", lambda *_a, **_k: None)
-    monkeypatch.setattr(app_render, "mark_email_id_as_processed_redis", lambda *_a, **_k: True)
+    from services.deduplication_service import DeduplicationService
+    DeduplicationService.reset_instance()
+    monkeypatch.setattr(DeduplicationService.get_instance(), "is_email_processed", lambda *_a, **_k: False)
+    monkeypatch.setattr(RateLimitService.get_instance(), "allow_send", lambda *_: True)
+    monkeypatch.setattr(RateLimitService.get_instance(), "record_event", lambda *_: None)
+    monkeypatch.setattr(WebhookLoggerService.get_instance(), "append_log", lambda *_: None)
+    monkeypatch.setattr(DeduplicationService.get_instance(), "mark_email_processed", lambda *_a, **_k: True)
 
     monkeypatch.setattr(
-        "routes.api_ingress.email_orchestrator._is_webhook_sending_enabled",
+        "services.ingress_service.email_orchestrator._is_webhook_sending_enabled",
         lambda: True,
     )
     monkeypatch.setattr(
-        "routes.api_ingress.email_orchestrator._get_webhook_config_dict",
+        "services.ingress_service.email_orchestrator._get_webhook_config_dict",
         lambda: {"webhook_url": "https://example.com/webhook", "webhook_ssl_verify": True},
     )
 
     send_mock = MagicMock(return_value=False)
-    monkeypatch.setattr("routes.api_ingress.email_orchestrator.send_custom_webhook_flow", send_mock)
+    monkeypatch.setattr("services.ingress_service.email_orchestrator.send_custom_webhook_flow", send_mock)
 
     payload = {
         "subject": "Hello",
@@ -193,27 +205,31 @@ def test_ingress_gmail_passes_delivery_mode_settings_and_detector_payload(monkey
     # Given: ingress matches a recadrage email and webhook config overrides the outbound delivery mode
     import app_render
 
+    from services.deduplication_service import DeduplicationService
+    DeduplicationService.reset_instance()
     monkeypatch.setattr(app_render, "SENDER_LIST_FOR_POLLING", [])
-    monkeypatch.setattr(app_render, "is_email_id_processed_redis", lambda *_a, **_k: False)
-    monkeypatch.setattr(app_render, "_rate_limit_allow_send", lambda: True)
-    monkeypatch.setattr(app_render, "_record_send_event", lambda: None)
-    monkeypatch.setattr(app_render, "_append_webhook_log", lambda *_a, **_k: None)
-    monkeypatch.setattr(app_render, "mark_email_id_as_processed_redis", lambda *_a, **_k: True)
+    from services.deduplication_service import DeduplicationService
+    DeduplicationService.reset_instance()
+    monkeypatch.setattr(DeduplicationService.get_instance(), "is_email_processed", lambda *_a, **_k: False)
+    monkeypatch.setattr(RateLimitService.get_instance(), "allow_send", lambda *_: True)
+    monkeypatch.setattr(RateLimitService.get_instance(), "record_event", lambda *_: None)
+    monkeypatch.setattr(WebhookLoggerService.get_instance(), "append_log", lambda *_: None)
+    monkeypatch.setattr(DeduplicationService.get_instance(), "mark_email_processed", lambda *_a, **_k: True)
 
     monkeypatch.setattr(
-        "routes.api_ingress.email_orchestrator._is_webhook_sending_enabled",
+        "services.ingress_service.email_orchestrator._is_webhook_sending_enabled",
         lambda: True,
     )
     monkeypatch.setattr(
-        "routes.api_ingress.email_orchestrator._load_webhook_global_time_window",
+        "services.ingress_service.email_orchestrator._load_webhook_global_time_window",
         lambda: ("10:30", "19:00"),
     )
     monkeypatch.setattr(
-        "routes.api_ingress.is_within_time_window_local",
+        "services.ingress_service.is_within_time_window_local",
         lambda *_a, **_k: True,
     )
     monkeypatch.setattr(
-        "routes.api_ingress.email_orchestrator._get_webhook_config_dict",
+        "services.ingress_service.email_orchestrator._get_webhook_config_dict",
         lambda: {
             "webhook_url": "https://example.com/webhook",
             "webhook_ssl_verify": True,
@@ -223,11 +239,11 @@ def test_ingress_gmail_passes_delivery_mode_settings_and_detector_payload(monkey
     )
 
     monkeypatch.setattr(
-        "routes.api_ingress.pattern_matching.check_media_solution_pattern",
+        "services.ingress_service.pattern_matching.check_media_solution_pattern",
         lambda *_a, **_k: {"matches": True, "delivery_time": "13h47"},
     )
     monkeypatch.setattr(
-        "routes.api_ingress.pattern_matching.check_desabo_conditions",
+        "services.ingress_service.pattern_matching.check_desabo_conditions",
         lambda *_a, **_k: {"matches": False},
     )
 
@@ -237,7 +253,7 @@ def test_ingress_gmail_passes_delivery_mode_settings_and_detector_payload(monkey
         captured.update(kwargs)
         return False
 
-    monkeypatch.setattr("routes.api_ingress.email_orchestrator.send_custom_webhook_flow", _capture_send)
+    monkeypatch.setattr("services.ingress_service.email_orchestrator.send_custom_webhook_flow", _capture_send)
 
     payload = {
         "subject": "Média Solution - Missions Recadrage - Lot 107",
@@ -266,19 +282,23 @@ def test_ingress_gmail_enriches_delivery_links_with_r2_when_enabled(monkeypatch,
     # Given: R2 transfer is enabled and returns an r2_url
     import app_render
 
+    from services.deduplication_service import DeduplicationService
+    DeduplicationService.reset_instance()
     monkeypatch.setattr(app_render, "SENDER_LIST_FOR_POLLING", [])
-    monkeypatch.setattr(app_render, "is_email_id_processed_redis", lambda *_a, **_k: False)
-    monkeypatch.setattr(app_render, "_rate_limit_allow_send", lambda: True)
-    monkeypatch.setattr(app_render, "_record_send_event", lambda: None)
-    monkeypatch.setattr(app_render, "_append_webhook_log", lambda *_a, **_k: None)
-    monkeypatch.setattr(app_render, "mark_email_id_as_processed_redis", lambda *_a, **_k: True)
+    from services.deduplication_service import DeduplicationService
+    DeduplicationService.reset_instance()
+    monkeypatch.setattr(DeduplicationService.get_instance(), "is_email_processed", lambda *_a, **_k: False)
+    monkeypatch.setattr(RateLimitService.get_instance(), "allow_send", lambda *_: True)
+    monkeypatch.setattr(RateLimitService.get_instance(), "record_event", lambda *_: None)
+    monkeypatch.setattr(WebhookLoggerService.get_instance(), "append_log", lambda *_: None)
+    monkeypatch.setattr(DeduplicationService.get_instance(), "mark_email_processed", lambda *_a, **_k: True)
 
     monkeypatch.setattr(
-        "routes.api_ingress.email_orchestrator._is_webhook_sending_enabled",
+        "services.ingress_service.email_orchestrator._is_webhook_sending_enabled",
         lambda: True,
     )
     monkeypatch.setattr(
-        "routes.api_ingress.email_orchestrator._get_webhook_config_dict",
+        "services.ingress_service.email_orchestrator._get_webhook_config_dict",
         lambda: {"webhook_url": "https://example.com/webhook", "webhook_ssl_verify": True},
     )
 
@@ -295,7 +315,7 @@ def test_ingress_gmail_enriches_delivery_links_with_r2_when_enabled(monkeypatch,
         def persist_link_pair(self, *, source_url, r2_url, provider, original_filename=None):
             return True
 
-    monkeypatch.setattr("routes.api_ingress.R2TransferService", MagicMock(get_instance=lambda: _FakeR2()))
+    monkeypatch.setattr("services.ingress_service.R2TransferService", MagicMock(get_instance=lambda: _FakeR2()))
 
     captured = {}
 
@@ -303,7 +323,7 @@ def test_ingress_gmail_enriches_delivery_links_with_r2_when_enabled(monkeypatch,
         captured["delivery_links"] = delivery_links
         return False
 
-    monkeypatch.setattr("routes.api_ingress.email_orchestrator.send_custom_webhook_flow", _capture_send)
+    monkeypatch.setattr("services.ingress_service.email_orchestrator.send_custom_webhook_flow", _capture_send)
 
     payload = {
         "subject": "Hello",
@@ -328,19 +348,23 @@ def test_ingress_gmail_r2_errors_do_not_block_send(monkeypatch, flask_client):
     # Given: R2 transfer is enabled but remote fetch errors
     import app_render
 
+    from services.deduplication_service import DeduplicationService
+    DeduplicationService.reset_instance()
     monkeypatch.setattr(app_render, "SENDER_LIST_FOR_POLLING", [])
-    monkeypatch.setattr(app_render, "is_email_id_processed_redis", lambda *_a, **_k: False)
-    monkeypatch.setattr(app_render, "_rate_limit_allow_send", lambda: True)
-    monkeypatch.setattr(app_render, "_record_send_event", lambda: None)
-    monkeypatch.setattr(app_render, "_append_webhook_log", lambda *_a, **_k: None)
-    monkeypatch.setattr(app_render, "mark_email_id_as_processed_redis", lambda *_a, **_k: True)
+    from services.deduplication_service import DeduplicationService
+    DeduplicationService.reset_instance()
+    monkeypatch.setattr(DeduplicationService.get_instance(), "is_email_processed", lambda *_a, **_k: False)
+    monkeypatch.setattr(RateLimitService.get_instance(), "allow_send", lambda *_: True)
+    monkeypatch.setattr(RateLimitService.get_instance(), "record_event", lambda *_: None)
+    monkeypatch.setattr(WebhookLoggerService.get_instance(), "append_log", lambda *_: None)
+    monkeypatch.setattr(DeduplicationService.get_instance(), "mark_email_processed", lambda *_a, **_k: True)
 
     monkeypatch.setattr(
-        "routes.api_ingress.email_orchestrator._is_webhook_sending_enabled",
+        "services.ingress_service.email_orchestrator._is_webhook_sending_enabled",
         lambda: True,
     )
     monkeypatch.setattr(
-        "routes.api_ingress.email_orchestrator._get_webhook_config_dict",
+        "services.ingress_service.email_orchestrator._get_webhook_config_dict",
         lambda: {"webhook_url": "https://example.com/webhook", "webhook_ssl_verify": True},
     )
 
@@ -354,7 +378,7 @@ def test_ingress_gmail_r2_errors_do_not_block_send(monkeypatch, flask_client):
         def request_remote_fetch(self, *, source_url, provider, email_id=None, timeout=30):
             raise RuntimeError("worker down")
 
-    monkeypatch.setattr("routes.api_ingress.R2TransferService", MagicMock(get_instance=lambda: _FakeR2()))
+    monkeypatch.setattr("services.ingress_service.R2TransferService", MagicMock(get_instance=lambda: _FakeR2()))
 
     captured = {}
 
@@ -362,7 +386,7 @@ def test_ingress_gmail_r2_errors_do_not_block_send(monkeypatch, flask_client):
         captured["delivery_links"] = delivery_links
         return False
 
-    monkeypatch.setattr("routes.api_ingress.email_orchestrator.send_custom_webhook_flow", _capture_send)
+    monkeypatch.setattr("services.ingress_service.email_orchestrator.send_custom_webhook_flow", _capture_send)
 
     payload = {
         "subject": "Hello",
@@ -403,30 +427,34 @@ def test_gmail_ingress_idempotent_inflight_lock(monkeypatch, flask_client):
     # Given: two identical POSTs where the 2nd one cannot acquire the inflight lock
     import app_render
 
+    from services.deduplication_service import DeduplicationService
+    DeduplicationService.reset_instance()
     monkeypatch.setattr(app_render, "GMAIL_SENDER_ALLOWLIST", [])
-    monkeypatch.setattr(app_render, "is_email_id_processed_redis", lambda *_a, **_k: False)
+    from services.deduplication_service import DeduplicationService
+    DeduplicationService.reset_instance()
+    monkeypatch.setattr(DeduplicationService.get_instance(), "is_email_processed", lambda *_a, **_k: False)
 
     lock_calls = {"n": 0}
 
-    def _acquire_lock(_email_id: str) -> bool:
+    def _acquire_lock(_email_id: str, ttl_seconds: int = 10) -> bool:
         lock_calls["n"] += 1
         return lock_calls["n"] == 1
 
     release_mock = MagicMock(return_value=True)
-    monkeypatch.setattr(app_render, "acquire_email_id_inflight_lock_redis", _acquire_lock)
-    monkeypatch.setattr(app_render, "release_email_id_inflight_lock_redis", release_mock)
+    monkeypatch.setattr(DeduplicationService.get_instance(), "acquire_email_inflight_lock", _acquire_lock)
+    monkeypatch.setattr(DeduplicationService.get_instance(), "release_email_inflight_lock", release_mock)
 
-    monkeypatch.setattr(app_render, "_rate_limit_allow_send", lambda: True)
-    monkeypatch.setattr(app_render, "_record_send_event", lambda: None)
-    monkeypatch.setattr(app_render, "_append_webhook_log", lambda *_a, **_k: None)
-    monkeypatch.setattr(app_render, "mark_email_id_as_processed_redis", lambda *_a, **_k: True)
+    monkeypatch.setattr(RateLimitService.get_instance(), "allow_send", lambda *_: True)
+    monkeypatch.setattr(RateLimitService.get_instance(), "record_event", lambda *_: None)
+    monkeypatch.setattr(WebhookLoggerService.get_instance(), "append_log", lambda *_: None)
+    monkeypatch.setattr(DeduplicationService.get_instance(), "mark_email_processed", lambda *_a, **_k: True)
 
     monkeypatch.setattr(
-        "routes.api_ingress.email_orchestrator._load_webhook_global_time_window",
+        "services.ingress_service.email_orchestrator._load_webhook_global_time_window",
         lambda: ("", ""),
     )
     monkeypatch.setattr(
-        "routes.api_ingress.email_orchestrator._get_webhook_config_dict",
+        "services.ingress_service.email_orchestrator._get_webhook_config_dict",
         lambda: {"webhook_url": "https://example.com/webhook", "webhook_ssl_verify": True},
     )
 
@@ -468,29 +496,33 @@ def test_gmail_ingress_idempotent_inflight_lock_webhook_failure(monkeypatch, fla
     # Given: first POST proceeds but the webhook returns 500; second POST is deduped by inflight lock
     import app_render
 
+    from services.deduplication_service import DeduplicationService
+    DeduplicationService.reset_instance()
     monkeypatch.setattr(app_render, "GMAIL_SENDER_ALLOWLIST", [])
-    monkeypatch.setattr(app_render, "is_email_id_processed_redis", lambda *_a, **_k: False)
+    from services.deduplication_service import DeduplicationService
+    DeduplicationService.reset_instance()
+    monkeypatch.setattr(DeduplicationService.get_instance(), "is_email_processed", lambda *_a, **_k: False)
 
     lock_calls = {"n": 0}
 
-    def _acquire_lock(_email_id: str) -> bool:
+    def _acquire_lock(_email_id: str, ttl_seconds: int = 10) -> bool:
         lock_calls["n"] += 1
         return lock_calls["n"] == 1
 
-    monkeypatch.setattr(app_render, "acquire_email_id_inflight_lock_redis", _acquire_lock)
-    monkeypatch.setattr(app_render, "release_email_id_inflight_lock_redis", lambda *_a, **_k: True)
+    monkeypatch.setattr(DeduplicationService.get_instance(), "acquire_email_inflight_lock", _acquire_lock)
+    monkeypatch.setattr(DeduplicationService.get_instance(), "release_email_inflight_lock", lambda *_a, **_k: True)
 
-    monkeypatch.setattr(app_render, "_rate_limit_allow_send", lambda: True)
-    monkeypatch.setattr(app_render, "_record_send_event", lambda: None)
-    monkeypatch.setattr(app_render, "_append_webhook_log", lambda *_a, **_k: None)
-    monkeypatch.setattr(app_render, "mark_email_id_as_processed_redis", lambda *_a, **_k: True)
+    monkeypatch.setattr(RateLimitService.get_instance(), "allow_send", lambda *_: True)
+    monkeypatch.setattr(RateLimitService.get_instance(), "record_event", lambda *_: None)
+    monkeypatch.setattr(WebhookLoggerService.get_instance(), "append_log", lambda *_: None)
+    monkeypatch.setattr(DeduplicationService.get_instance(), "mark_email_processed", lambda *_a, **_k: True)
 
     monkeypatch.setattr(
-        "routes.api_ingress.email_orchestrator._load_webhook_global_time_window",
+        "services.ingress_service.email_orchestrator._load_webhook_global_time_window",
         lambda: ("", ""),
     )
     monkeypatch.setattr(
-        "routes.api_ingress.email_orchestrator._get_webhook_config_dict",
+        "services.ingress_service.email_orchestrator._get_webhook_config_dict",
         lambda: {"webhook_url": "https://example.com/webhook", "webhook_ssl_verify": True},
     )
 

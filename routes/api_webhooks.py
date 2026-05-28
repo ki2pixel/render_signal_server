@@ -4,7 +4,7 @@ import os
 import json
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response
 from flask_login import login_required, current_user
 
 from utils.time_helpers import parse_time_hhmm
@@ -65,7 +65,7 @@ def _mask_url(url: str | None) -> str | None:
 
 @bp.route("/config", methods=["GET"])
 @login_required
-def get_webhook_config():
+def get_webhook_config() -> Response | tuple[Response, int]:
     persisted = _load_webhook_config()
 
     # Environment defaults for webhook configuration
@@ -122,7 +122,7 @@ def get_webhook_config():
 
 @bp.route("/config", methods=["POST"])
 @login_required
-def update_webhook_config():
+def update_webhook_config() -> Response | tuple[Response, int]:
     payload = request.get_json(silent=True) or {}
     # Build a minimal updates dict to avoid clobbering unrelated fields with
     # potentially stale cached values.
@@ -230,7 +230,7 @@ def update_webhook_config():
 
 @bp.route("/time-window", methods=["GET"])
 @login_required
-def get_webhook_global_time_window():
+def get_webhook_global_time_window() -> Response | tuple[Response, int]:
     cfg = _load_webhook_config()
     start = (cfg.get("webhook_time_start") or "").strip()
     end = (cfg.get("webhook_time_end") or "").strip()
@@ -243,7 +243,7 @@ def get_webhook_global_time_window():
 
 @bp.route("/time-window", methods=["POST"])
 @login_required
-def set_webhook_global_time_window():
+def set_webhook_global_time_window() -> Response | tuple[Response, int]:
     payload = request.get_json(silent=True) or {}
     start = (payload.get("start") or "").strip()
     end = (payload.get("end") or "").strip()

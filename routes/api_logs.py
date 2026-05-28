@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response
 from flask_login import login_required
 
 from app_logging.webhook_logger import fetch_webhook_logs as _fetch_webhook_logs
@@ -10,7 +10,7 @@ bp = Blueprint("api_logs", __name__)
 
 @bp.route("/api/webhook_logs", methods=["GET"])
 @login_required
-def get_webhook_logs():
+def get_webhook_logs() -> Response | tuple[Response, int]:
     """
     Retourne l'historique des webhooks envoyés (max 50 entrées) avec filtre ?days=N.
     Utilise fetch_webhook_logs du helper avec tri spécifique par id si requis par les tests.
