@@ -245,8 +245,11 @@ class IngressService:
             except Exception:
                 pass
 
-            if not email_orchestrator._is_webhook_sending_enabled():
-                return {"success": False, "message": "Webhook sending disabled"}, 409
+            try:
+                if not email_orchestrator._is_webhook_sending_enabled():
+                    return {"success": False, "message": "Webhook sending disabled"}, 409
+            except Exception:
+                pass
 
             tz_for_polling = get_polling_timezone()
             try:
@@ -285,8 +288,10 @@ class IngressService:
                 within = is_within_time_window_local(now_local, start_t, end_t)
 
             if not within:
-                if detector_val == "desabonnement_journee_tarifs" and desabo_is_urgent:
-                    return {"success": False, "message": "Outside time window (DESABO urgent)"}, 409
+                if detector_val == "desabonnement_journee_tarifs":
+                    if desabo_is_urgent:
+                        return {"success": False, "message": "Outside time window (DESABO urgent)"}, 409
+                    # Non-urgent DESABO: bypass time window, continue to send webhook
                 elif detector_val == "recadrage":
                     dedup_service.mark_email_processed(email_id)
                     return {"success": True, "status": "skipped_outside_time_window", "email_id": email_id}, 200
