@@ -20,13 +20,14 @@ Utilise ce skill pour modifier ou étendre le moteur de routage dynamique introd
    - Respecter la validation stricte (opérateurs autorisés, normalisation strings, booléens explicites).
 3. **Propager côté API**
    - Ajouter les champs dans la validation custom portée par `RoutingRulesService.update_rules()`.
+   - Les routes Flask doivent être typées (ex: `-> Response`) et les fonctions faire < 40 lignes.
    - Couvrir les erreurs 400 détaillées.
 4. **Adapter l'orchestrateur**
    - Étendre `_match_routing_condition` ou `_find_matching_routing_rule` sans casser les early returns.
    - Logger via `app_logging` (pas d'info sensible).
 5. **MAJ Frontend**
-   - Builder ES6 : manipuler `routingRules` via fonctions pures, pas de `innerHTML`.
-   - Ajouter les collectors et états UI (saving/saved/error) avec `MessageHelper`.
+   - Builder ES6 : manipuler `routingRules` via fonctions pures, pas de `innerHTML` (utiliser `DOMHelper` / `data-target`).
+   - Ajouter les collectors et états UI (saving/saved/error) avec `MessageHelper` et implémenter l'interception `beforeunload`.
 6. **Tests & validation**
    - Lancer le helper `bash ./.windsurf/skills/routing-rules-orchestrator/test_routing_rules.sh`.
    - Compléter si besoin avec des tests ciblés sur les nouvelles fonctionnalités.

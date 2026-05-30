@@ -1,6 +1,7 @@
 # Contexte Actif
 
 ## Tâches Terminées
+- [2026-05-30] Audit et mise à jour de .agents/rules/codingstandards.md et .windsurf/rules/codingstandards.md pour refléter les récents refactorings architecturaux (Vite, DOMHelper, ConfigService Singleton, IngressService).
 - [2026-05-28] Résolution complète de la dette technique concernant la pollution du point d'entrée `app_render.py`. Les tests de l'orchestrateur utilisent désormais les instances Singleton et les dépendances correctement moquées sans s'appuyer sur des imports circulaires.
 - [2026-05-28] Refactoring complet de la taille des fonctions des services pour résoudre le premier problème standard identifié dans l'audit backend. Les fonctions critiques (`_normalize_rules`, `consume_token`, `request_remote_fetch`, et `deploy_application`) ont été découpées en sous-méthodes privées et typées de moins de 40 lignes logiques.
 - [2026-05-28] Résolution complète du déficit de typage des services et des routes. Ajout de annotations de type retour (`-> Response` et `-> tuple[Response, int]`) pour tous les endpoints Flask et les méthodes de AuthService et ConfigService.

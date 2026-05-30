@@ -11,10 +11,10 @@ These rules are the single source of truth for backend (Flask), frontend (modula
 ## Tech Stack
 - **Backend:** Python 3.11, Flask app in `app_render.py`, services under `services/`, routes under `routes/`.
 - **Ingestion:** Gmail Push API (`POST /api/ingress/gmail`) as the sole email ingestion method, with Bearer token authentication and sender allowlist.
-- **Frontend:** `dashboard.html` + ES6 modules under `static/` (`services/`, `components/`, `utils/`, `dashboard.js`).
-- **Storage:** Redis-first config store (`config/app_config_store.py`) with JSON fallback; Cloudflare R2 offload via `R2TransferService`.
+- **Frontend:** `dashboard.html` + ES6 modules under `static/` (`services/`, `components/`, `utils/`, `dashboard.js`) bundlés avec **Vite** en développement/production.
+- **Storage:** Redis-first config store via `ConfigService` avec JSON fallback; Cloudflare R2 offload via `R2TransferService`.
 - **Legacy helpers:** Minimal PHP footprint (Render deployment helpers + webhook receiver) adhering to PSR-12.
-- **Tooling:** `black` (88 cols) + `isort` for Python, `Prettier` + `ESLint` for JS, `pytest` with custom markers, Docker + Render for deployment.
+- **Tooling:** `black` (88 cols) + `isort` for Python, `Prettier` + `ESLint` + `Vite` for JS, `pytest` with custom markers, Docker + Render for deployment.
 
 ## Code Style & Structure
 ### Backend (Python)
@@ -26,9 +26,10 @@ These rules are the single source of truth for backend (Flask), frontend (modula
 
 ### Frontend (JS/HTML)
 - Use **modules + named exports** only. `dashboard.js` orchestrates modules; do not reintroduce global script tags.
-- DOM updates must avoid `innerHTML`. Build elements, set `textContent`, and attach listeners declaratively.
+- DOM updates must avoid `innerHTML` et l'injection directe. Privilégier le découplage via `DOMHelper` en utilisant des attributs `data-target`.
 - Respect WCAG AA: keyboard focus states, ARIA roles (`tablist`, `tabpanel`, `aria-expanded`).
-- Auto-save flows use debounced `ApiService` calls (2–3s) with optimistic UI + rollback on failure.
+- Auto-save flows use debounced `ApiService` calls (2–3s) with optimistic UI + rollback on failure (toujours implémenter l'interception `beforeunload` pour éviter la perte de données).
+- **Performance UI:** Utiliser le rendu paresseux (Lazy Rendering / Chunking) pour prévenir les gels d'interface (ex: `JsonViewer`).
 
 ### Legacy / Infra
 - PHP utilities stay PSR-12, UTF-8 LF, no short tags. File writes must be atomic (temp file + rename) guarded by `flock` or Python-side `RLock`.
@@ -37,7 +38,7 @@ These rules are the single source of truth for backend (Flask), frontend (modula
 ## Architecture Decisions to Enforce
 ### Configuration & Secrets
 - Secrets (passwords, tokens) **must come from ENV**. `_get_required_env()` in `config/settings.py` enforces the four mandatory variables—do not bypass it.
-- Redis is the **source of truth** for `routing_rules`, `webhook_config`, `processing_prefs`, and `magic_link_tokens`. Any API or background logic must read via `AppConfigStore` every time.
+- Redis is the **source of truth** for `routing_rules`, `webhook_config`, `processing_prefs`, and `magic_link_tokens`. Any API or background logic must read via `ConfigService` every time.
 
 ### Gmail Push Ingress
 - All email ingestion occurs via `POST /api/ingress/gmail` with Bearer token authentication (`AuthService.verify_api_key_from_request()`).
@@ -56,24 +57,24 @@ These rules are the single source of truth for backend (Flask), frontend (modula
 @login_required
 def update_processing_prefs() -> Response:
     payload = ProcessingPrefsSchema().load(request.json or {})
-    app_config_store.set_config_json("processing_prefs", payload)
+    _config_service.set_config_json("processing_prefs", payload)
     return jsonify({"status": "ok"})
 ```
-- **Pattern:** Load schema, validate, persist via store, return JSON. Never write to `settings` globals.
+- **Pattern:** Load schema, validate, persist via `ConfigService`, return JSON. Never write to `settings` globals.
 
 ### Gmail Push Ingress Flow
 ```python
 @bp.route("/gmail", methods=["POST"])
-def ingest_gmail():
-    if not auth_service.verify_api_key_from_request(request):
+def ingest_gmail() -> tuple[Response, int] | Response:
+    if not _auth_service.verify_api_key_from_request(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
 
     payload = request.get_json(silent=True)
-    # Validate required fields, check sender allowlist, apply time windows
-    # Trigger orchestrator.send_custom_webhook_flow() with enriched payload
-    return jsonify({"success": True, "status": "processed"}), 200
+    # Validation du payload et disponibilité du service
+    result, status_code = ingress_service.process_gmail_push(payload)
+    return jsonify(result), status_code
 ```
-- **Pattern:** Authenticate → Validate → Enrich → Send webhook. Never bypass `AuthService` or log raw email content.
+- **Pattern:** Authenticate → Validate → Pass to `IngressService`. Never bypass `AuthService` or log raw email content.
 
 ### Frontend Panel Save Flow
 ```javascript

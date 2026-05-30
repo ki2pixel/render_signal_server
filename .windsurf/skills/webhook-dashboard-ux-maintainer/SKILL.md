@@ -8,22 +8,26 @@ description: Preserve and extend the modern dashboard (dashboard.html + static m
 Utilise ce skill pour toute évolution de l'interface dashboard (bandeau statut, panneaux webhooks, routing rules builder, magic link, autosave).
 
 ## Pré-requis
-- Connaissance des règles dans `.clinerules/codingstandards.md` (pas d'`innerHTML`, accessibilité, autosave debounce).
+- Connaissance des règles dans `.agents/rules/codingstandards.md` (découplage `DOMHelper`, pas d'`innerHTML`, accessibilité, autosave debounce, interception `beforeunload`).
+- Support de Vite pour le bundling frontend.
 - Accès au dashboard pour les tests manuels.
 - Virtualenv `/mnt/venv_ext4/venv_render_signal_server` pour les tests backend.
 
 ## Workflow
 1. **Définir la zone impactée**
    - Panneaux Webhooks, Routing Rules, Magic Link, indicateurs de statut, etc.
-2. **Mettre à jour le HTML**
+2. **Mettre à jour le HTML & DOMHelper**
    - Respecter les `section-panel`, attributs ARIA (`role="tablist"`, `aria-expanded`).
+   - Privilégier le découplage DOM avec `DOMHelper` en utilisant des attributs `data-target`.
    - Ajouter les hooks `data-*` nécessaires aux modules.
 3. **Adapter les modules ES6**
    - Nouvelles fonctionnalités → créer un service ou composant dédié, exports nommés.
    - Utiliser `ApiService` pour les appels, `MessageHelper` pour les toasts.
-4. **États UX**
+4. **États UX & Performance**
    - Maintenir `updatePanelStatus`, badges `saving/saved/error`, debounces 2-3s.
+   - Intégrer l'interception `beforeunload` pour prévenir la perte de données sur les panneaux auto-save ou manuels.
    - Ajouter focus states visibles et respect `prefers-reduced-motion`.
+   - Utiliser le rendu paresseux (Lazy Rendering / Chunking) pour prévenir les gels d'interface (ex: `JsonViewer`).
 5. **Tests manuels**
    - Lancer le helper `bash ./.agents/skills/webhook-dashboard-ux-maintainer/test_dashboard_ux.sh`.
    - Suivre la checklist fournie par le script.
