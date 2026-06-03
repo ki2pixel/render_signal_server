@@ -20,7 +20,7 @@ Sequential Thinking Logic décompose les problèmes complexes en séquences logi
 ### Workflow obligatoire
 
 1. **Décomposition** : Identifier les composants logiques principaux
-2. **Validation** : Utiliser `sequentialthinking_tools` pour chaque étape
+2. **Validation** : Utiliser `sequentialthinking_tools` (en passant l'action en paramètre) pour chaque étape
 3. **Chaînage** : Connecter les étapes en une séquence cohérente
 4. **Test logique** : Valider les hypothèses et points de rupture
 
@@ -133,28 +133,31 @@ sequentialthinking_tools resolve-dependencies "[composants]"
 
 ## API Reference
 
-### Commandes principales
+> **ATTENTION** : Le seul outil disponible est `sequentialthinking_tools`. Les actions (`decompose`, `validate`, etc.) doivent être passées en paramètres de l'outil et non invoquées comme des outils distincts.
 
-- `sequentialthinking_tools decompose "<concept>"` : Décompose en composants logiques
-- `sequentialthinking_tools validate "<composant>"` : Valide la logique d'un composant
-- `sequentialthinking_tools test-sequence "<flux>"` : Teste une séquence complète
-- `sequentialthinking_tools find-breakpoints "<flux>"` : Identifie les points de rupture
-- `sequentialthinking_tools edge-cases "<composant>"` : Analyse les cas limites
+### Outil principal
 
-### Commandes spécialisées
+- `sequentialthinking_tools` : Accepte des paramètres comme `action` et `target`.
 
-- `sequentialthinking_tools validate-background "<logique>"` : Validation Background Script
-- `sequentialthinking_tools validate-content "<logique>"` : Validation Content Script
-- `sequentialthinking_tools test-communication "<scripts>"` : Test communication inter-scripts
-- `sequentialthinking_tools detect-cycles "<architecture>"` : Détection dépendances circulaires
-- `sequentialthinking_tools resolve-dependencies "<composants>"` : Résolution dépendances
+### Actions disponibles (à passer en paramètre)
 
-### Options avancées
+- `decompose` : Décompose en composants logiques
+- `validate` : Valide la logique d'un composant
+- `test-sequence` : Teste une séquence complète
+- `find-breakpoints` : Identifie les points de rupture
+- `edge-cases` : Analyse les cas limites
+- `validate-background` : Validation Background Script
+- `validate-content` : Validation Content Script
+- `test-communication` : Test communication inter-scripts
+- `detect-cycles` : Détection dépendances circulaires
+- `resolve-dependencies` : Résolution dépendances
 
-- `--depth <n>` : Profondeur d'analyse (1-5)
-- `--verbose` : Sortie détaillée du raisonnement
-- `--export-logic` : Exporte le modèle logique en JSON
-- `--test-cases` : Génère cas de test automatiquement
+### Options avancées (paramètres supplémentaires)
+
+- `depth` : Profondeur d'analyse (1-5)
+- `verbose` : Sortie détaillée du raisonnement
+- `export_logic` : Exporte le modèle logique
+- `test_cases` : Génère cas de test automatiquement
 
 ## Debugging checklist
 
@@ -185,4 +188,4 @@ Utilise pour valider la logique avant les édition chirurgicales avec `edit_file
 
 ### Avec JSON Query
 
-Utilise `json_query_jsonpath` pour extraire les structures logiques des fichiers de configuration avant validation.
+Utilise `json_query_query_json` pour extraire les structures logiques des fichiers de configuration avant validation.

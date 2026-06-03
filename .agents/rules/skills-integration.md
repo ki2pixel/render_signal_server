@@ -12,10 +12,10 @@ Cette matrice définit les patterns de détection automatique pour l'invocation 
 | :--- | :--- | :--- |
 | `vérifier config`, `état store`, `redis file`, `config sanity`, `check config` | **check-config** | 1 |
 | `debug`, `bug`, `crash`, `error`, `troubleshoot`, `systematic debugging` | **debugging-strategies** | 1 |
-| `memory bank`, `docs sync`, `audit docs`, `analyse memory` | **docs-sync-automaton** | 3 |
+| `memory bank`, `docs sync`, `audit docs`, `analyse memory` | **docs-updater (workflow)** | 3 |
 | `docs`, `readme`, `writing`, `technical writing`, `markdown` | **documentation** | 2 |
-| `gros fichier`, `massive file`, `chirurgical`, `edit block` | **fast-filesystem** | 2 |
-| `json`, `path`, `structure`, `inspect`, `valeur`, `clé` | **json-query** | 2 |
+| `gros fichier`, `massive file`, `chirurgical`, `edit block` | **fast-filesystem-ops** | 2 |
+| `json`, `path`, `structure`, `inspect`, `valeur`, `clé` | **json-query-expert** | 2 |
 | `magic link`, `auth`, `token`, `revocation`, `security` | **magic-link-auth-companion** | 3 |
 | `r2 transfer`, `cloudflare r2`, `file offload`, `transfer pipeline` | **r2-transfer-service-playbook** | 3 |
 | `redis config`, `persistence`, `store sync`, `config drift`, `audit redis` | **redis-config-guardian** | 1 |
@@ -23,12 +23,12 @@ Cette matrice définit les patterns de détection automatique pour l'invocation 
 | `test`, `pytest`, `suite`, `coverage`, `unit test` | **run-tests** | 2 |
 | `js module`, `frontend module`, `es6 module`, `scaffold js` | **scaffold-js-module** | 3 |
 | `python service`, `singleton service`, `backend service`, `scaffold python` | **scaffold-service** | 3 |
-| `réflexion`, `think`, `logique`, `architecture`, `analyser` | **sequentialthinking** | 1 |
+| `réflexion`, `think`, `logique`, `architecture`, `analyser` | **sequentialthinking-logic** | 1 |
 | `tâche`, `task`, `backlog`, `planification`, `roadmap` | **shrimp-task-manager** | 1 |
 | `test matrix`, `pytest suites`, `unit redis r2`, `resilience test` | **testing-matrix-navigator** | 2 |
 | `dashboard`, `ux`, `frontend`, `webhook panel`, `autosave` | **webhook-dashboard-ux-maintainer** | 3 |
 | `render`, `déploiement`, `render.com`, `service creation`, `monitoring`, `orchestration` | **render-deployment-manager** | 3 |
-| `git commit`, `push`, `commit push`, `git automation`, `stage changes` | **commit-push** | 2 |
+| `git commit`, `push`, `commit push`, `git automation`, `stage changes` | **commit-push (workflow)** | 2 |
 
 ## Auto-Loading Logic
 

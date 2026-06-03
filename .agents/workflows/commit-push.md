@@ -72,5 +72,5 @@ git push -u origin "$BRANCH"
 - Recommended to run `git status` or `git diff` to review diffs before execution.
 
 ## Technical Lockdown
-Utilisez les outils fast-filesystem (mcp0_fast_*) pour accéder aux fichiers memory-bank avec des chemins absolus.
+Utilisez les outils fast-filesystem (fast_*) pour accéder aux fichiers memory-bank avec des chemins absolus.
 - Antigravity is now in 'Token-Saver' mode. Minimize context usage by using tools instead of pre-loading.

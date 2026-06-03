@@ -7,7 +7,7 @@ import { RoutingRulesService } from './services/RoutingRulesService.js?v=2026012
 import { JsonViewer } from './components/JsonViewer.js?v=20260202-json-viewer';
 import { DOMHelper } from './utils/DOMHelper.js';
 
-window.DASHBOARD_BUILD = 'modular-2026-02-02-json-viewer';
+globalThis.DASHBOARD_BUILD = 'modular-2026-02-02-json-viewer';
 
 let tabManager = null;
 let routingRulesService = null;
@@ -53,7 +53,7 @@ async function handleConfigMigration() {
         return;
     }
 
-    const confirmed = window.confirm('Lancer la migration des configurations vers Redis ?');
+    const confirmed = globalThis.confirm('Lancer la migration des configurations vers Redis ?');
     if (!confirmed) {
         return;
     }
@@ -372,7 +372,7 @@ async function loadInitialData() {
 //     try {
 //         const res = await ApiService.get('/api/webhook_logs?days=1');
 //         if (!res.ok) { 
-//             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+//             if (globalThis.location.hostname === 'localhost' || globalThis.location.hostname === '127.0.0.1') {
 //                 console.warn('metrics: non-200', res.status);
 //             }
 //             clearMetrics(); return; 
@@ -389,7 +389,7 @@ async function loadInitialData() {
 //         setMetric('metricSuccessRate', String(successRate));
 //         renderMiniChart(logs);
 //     } catch (e) {
-//         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+//         if (globalThis.location.hostname === 'localhost' || globalThis.location.hostname === '127.0.0.1') {
 //             console.warn('metrics error', e);
 //         }
 //         clearMetrics();
@@ -612,10 +612,10 @@ async function saveTimeWindow() {
             updatePanelIndicator('time-window');
             
             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
-            if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
+            if (startInput && Object.hasOwn(data, 'webhooks_time_start')) {
                 setSelectedOption(startInput, data.webhooks_time_start || '');
             }
-            if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
+            if (endInput && Object.hasOwn(data, 'webhooks_time_end')) {
                 setSelectedOption(endInput, data.webhooks_time_end || '');
             }
             
@@ -663,14 +663,14 @@ async function loadRuntimeFlags() {
             const flags = data.flags || {};
 
             const disableDedup = DOMHelper.getElement('disableEmailIdDedupToggle');
-            if (disableDedup && Object.prototype.hasOwnProperty.call(flags, 'disable_email_id_dedup')) {
+            if (disableDedup && Object.hasOwn(flags, 'disable_email_id_dedup')) {
                 disableDedup.checked = !!flags.disable_email_id_dedup;
             }
 
             const allowCustom = DOMHelper.getElement('allowCustomWithoutLinksToggle');
             if (
                 allowCustom
-                && Object.prototype.hasOwnProperty.call(flags, 'allow_custom_webhook_without_links')
+                && Object.hasOwn(flags, 'allow_custom_webhook_without_links')
             ) {
                 allowCustom.checked = !!flags.allow_custom_webhook_without_links;
             }
@@ -678,7 +678,7 @@ async function loadRuntimeFlags() {
             const gmailIngressEnabled = DOMHelper.getElement('gmailIngressEnabledToggle');
             if (
                 gmailIngressEnabled
-                && Object.prototype.hasOwnProperty.call(flags, 'gmail_ingress_enabled')
+                && Object.hasOwn(flags, 'gmail_ingress_enabled')
             ) {
                 gmailIngressEnabled.checked = !!flags.gmail_ingress_enabled;
             }
@@ -1027,8 +1027,8 @@ async function applyImportedServerConfig(obj) {
     
     // Time window
     if (obj?.time_window) {
-        const start = obj.time_window.webhooks_time_start ?? '';
-        const end = obj.time_window.webhooks_time_end ?? '';
+        const start = obj.time_globalThis.webhooks_time_start ?? '';
+        const end = obj.time_globalThis.webhooks_time_end ?? '';
         await ApiService.post('/api/set_webhook_time_window', { start, end });
         await loadTimeWindow();
     }
@@ -1135,10 +1135,10 @@ async function saveGlobalWebhookTimeWindow() {
             updatePanelIndicator('time-window');
             
             // Mettre à jour les inputs selon la normalisation renvoyée par le backend
-            if (startInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_start')) {
+            if (startInput && Object.hasOwn(data, 'webhooks_time_start')) {
                 setSelectedOption(startInput, data.webhooks_time_start || '');
             }
-            if (endInput && Object.prototype.hasOwnProperty.call(data, 'webhooks_time_end')) {
+            if (endInput && Object.hasOwn(data, 'webhooks_time_end')) {
                 setSelectedOption(endInput, data.webhooks_time_end || '');
             }
             await loadGlobalWebhookTimeWindow();
@@ -1491,7 +1491,7 @@ async function handleDeployApplication() {
         return;
     }
     
-    const confirmed = window.confirm("Confirmez-vous le déploiement de l'application ? Elle peut être indisponible pendant quelques secondes.");
+    const confirmed = globalThis.confirm("Confirmez-vous le déploiement de l'application ? Elle peut être indisponible pendant quelques secondes.");
     if (!confirmed) {
         return;
     }
@@ -1505,7 +1505,7 @@ async function handleDeployApplication() {
             MessageHelper.showSuccess(messageId, response.message || 'Déploiement planifié. Vérification du service…');
             try {
                 await pollHealthCheck({ attempts: 12, intervalMs: 1500, timeoutMs: 30000 });
-                window.location.reload();
+                globalThis.location.reload();
             } catch (healthError) {
                 console.warn('Health check failed after deployment:', healthError);
                 MessageHelper.showError(messageId, "Le service ne répond pas encore. Réessayez dans quelques secondes ou rechargez la page.");
@@ -1578,7 +1578,7 @@ function initializeManualFieldsTracking() {
  * Initialise la prévention de perte de données (alerte avant de quitter la page)
  */
 function initializeDataLossPrevention() {
-    window.addEventListener('beforeunload', (e) => {
+    globalThis.addEventListener('beforeunload', (e) => {
         if (hasUnsavedChanges()) {
             e.preventDefault();
             e.returnValue = ''; // Standard requis par la plupart des navigateurs
@@ -1876,7 +1876,7 @@ function debounce(func, wait) {
 }
 
 // -------------------- Nettoyage --------------------
-window.addEventListener('beforeunload', () => {
+globalThis.addEventListener('beforeunload', () => {
     // Arrêter le polling des logs
     LogService.stopLogPolling();
     
@@ -1891,7 +1891,7 @@ window.addEventListener('beforeunload', () => {
 
 // -------------------- Export pour compatibilité --------------------
 // Exporter les classes pour utilisation externe si nécessaire
-window.DashboardServices = {
+globalThis.DashboardServices = {
     ApiService,
     WebhookService,
     LogService,

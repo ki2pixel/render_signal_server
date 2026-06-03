@@ -120,22 +120,13 @@ def get_webhook_config() -> Response | tuple[Response, int]:
     return jsonify({"success": True, "config": config}), 200
 
 
-@bp.route("/config", methods=["POST"])
-@login_required
-def update_webhook_config() -> Response | tuple[Response, int]:
-    payload = request.get_json(silent=True) or {}
-    # Build a minimal updates dict to avoid clobbering unrelated fields with
-    # potentially stale cached values.
+def _parse_and_validate_webhook_payload(payload: dict) -> tuple[dict, Response | tuple[Response, int] | None]:
     updates = {}
 
     if "webhook_url" in payload:
         val = payload["webhook_url"].strip() if payload["webhook_url"] else None
-        # Exiger HTTPS strict
         if val and not val.startswith("https://"):
-            return (
-                jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}),
-                400,
-            )
+            return {}, (jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}), 400)
         updates["webhook_url"] = val
 
     if "webhook_ssl_verify" in payload:
@@ -144,77 +135,63 @@ def update_webhook_config() -> Response | tuple[Response, int]:
     if "webhook_delivery_mode" in payload:
         mode = str(payload.get("webhook_delivery_mode") or "").strip().lower()
         if mode not in WEBHOOK_DELIVERY_MODES:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "webhook_delivery_mode doit être 'json' ou 'form'.",
-                    }
-                ),
-                400,
-            )
+            return {}, (jsonify({"success": False, "message": "webhook_delivery_mode doit être 'json' ou 'form'."}), 400)
         updates["webhook_delivery_mode"] = mode
 
     if "webhook_fallback_on_415" in payload:
         updates["webhook_fallback_on_415"] = bool(payload["webhook_fallback_on_415"])
 
-    # New flag: webhook_sending_enabled
     if "webhook_sending_enabled" in payload:
         updates["webhook_sending_enabled"] = bool(payload["webhook_sending_enabled"])
     
-    # Absence pause configuration
     if "absence_pause_enabled" in payload:
         updates["absence_pause_enabled"] = bool(payload["absence_pause_enabled"])
     
     if "absence_pause_days" in payload:
         days = payload["absence_pause_days"]
         if not isinstance(days, list):
-            return jsonify({"success": False, "message": "absence_pause_days doit être une liste."}), 400
-        
-        # Valider les jours
+            return {}, (jsonify({"success": False, "message": "absence_pause_days doit être une liste."}), 400)
         valid_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
         normalized_days = [str(d).strip().lower() for d in days if isinstance(d, str)]
         invalid_days = [d for d in normalized_days if d not in valid_days]
-        
         if invalid_days:
-            return jsonify({"success": False, "message": f"Jours invalides: {', '.join(invalid_days)}"}), 400
-        
+            return {}, (jsonify({"success": False, "message": f"Jours invalides: {', '.join(invalid_days)}"}), 400)
         updates["absence_pause_days"] = normalized_days
     
-    # Validation: si absence_pause_enabled est True, vérifier qu'au moins un jour est sélectionné
     if updates.get("absence_pause_enabled") and not updates.get("absence_pause_days"):
-        return jsonify({"success": False, "message": "Au moins un jour doit être sélectionné pour activer la pause absence."}), 400
+        return {}, (jsonify({"success": False, "message": "Au moins un jour doit être sélectionné pour activer la pause absence."}), 400)
 
-    # Optional: accept time window fields here too, for convenience
-    # Validate format using parse_time_hhmm when provided and non-empty
     if "webhook_time_start" in payload or "webhook_time_end" in payload:
         start = (str(payload.get("webhook_time_start", "")) or "").strip()
         end = (str(payload.get("webhook_time_end", "")) or "").strip()
-        # If both empty -> clear
         if start == "" and end == "":
             updates["webhook_time_start"] = ""
             updates["webhook_time_end"] = ""
         else:
-            # Require both if one is provided
             if not start or not end:
-                return jsonify({"success": False, "message": "Both webhook_time_start and webhook_time_end are required (or both empty to clear)."}), 400
+                return {}, (jsonify({"success": False, "message": "Both webhook_time_start and webhook_time_end are required (or both empty to clear)."}), 400)
             if parse_time_hhmm(start) is None or parse_time_hhmm(end) is None:
-                return jsonify({"success": False, "message": "Invalid time format. Use HHhMM or HH:MM (e.g., 11h30, 17:45)."}), 400
+                return {}, (jsonify({"success": False, "message": "Invalid time format. Use HHhMM or HH:MM (e.g., 11h30, 17:45)."}), 400)
             updates["webhook_time_start"] = start
             updates["webhook_time_end"] = end
 
-    # Nettoyer les champs obsolètes s'ils existent (ne pas supprimer presence_* gérés ci-dessus)
-    obsolete_fields = [
-        "recadrage_webhook_url",
-        "autorepondeur_webhook_url",
-        "polling_enabled",
-    ]
+    obsolete_fields = ["recadrage_webhook_url", "autorepondeur_webhook_url", "polling_enabled"]
     for field in obsolete_fields:
         if field in updates:
             try:
                 del updates[field]
             except Exception:
                 pass
+
+    return updates, None
+
+@bp.route("/config", methods=["POST"])
+@login_required
+def update_webhook_config() -> Response | tuple[Response, int]:
+    payload = request.get_json(silent=True) or {}
+    updates, error_response = _parse_and_validate_webhook_payload(payload)
+    if error_response:
+        return error_response
 
     success, _msg = _webhook_service.update_config(updates)
     if not success:

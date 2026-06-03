@@ -32,5 +32,5 @@ Créer un bundle optimisé du codebase pour analyse par LLMs externes (Claude, C
 - `search_files` - To verify critical files are included in bundle
 
 ## Technical Lockdown
-Utilisez les outils fast-filesystem (mcp0_fast_*) pour accéder aux fichiers memory-bank avec des chemins absolus.
+Utilisez les outils fast-filesystem (fast_*) pour accéder aux fichiers memory-bank avec des chemins absolus.
 - Antigravity is now in 'Token-Saver' mode. Minimize context usage by using tools instead of pre-loading.

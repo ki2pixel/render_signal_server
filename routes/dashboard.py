@@ -16,6 +16,14 @@ _magic_link_service = MagicLinkService.get_instance()
 def _complete_login(username: str, next_page: str | None) -> Response:
     user_obj = _auth_service.create_user(username)
     login_user(user_obj)
+    
+    from urllib.parse import urlparse, urljoin
+    if next_page:
+        ref_url = urlparse(request.host_url)
+        test_url = urlparse(urljoin(request.host_url, next_page))
+        if not (test_url.scheme in ("http", "https") and ref_url.netloc == test_url.netloc):
+            next_page = None
+            
     return redirect(next_page or url_for("dashboard.serve_dashboard_main"))
 
 

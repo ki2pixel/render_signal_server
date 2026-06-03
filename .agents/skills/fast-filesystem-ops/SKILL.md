@@ -144,7 +144,7 @@ read_file file3.js
 read_file massive_config.json  # 5000+ lignes
 
 # ✅ Utiliser JSON Query pour les gros JSON
-json_query_jsonpath massive_config.json "$.database.connection"
+json_query_query_json massive_config.json "$.database.connection"
 
 # ✅ Pour code, recherche ciblée
 fast_search_code "database.*connection" --language python
@@ -229,4 +229,4 @@ Utilise pour implémenter les tâches générées par Shrimp Task Manager de man
 
 ### Avec JSON Query
 
-Utilise `json_query_jsonpath` pour les fichiers JSON volumineux avant édition.
+Utilise `json_query_query_json` pour les fichiers JSON volumineux avant édition.

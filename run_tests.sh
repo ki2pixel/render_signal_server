@@ -17,7 +17,7 @@ echo ""
 
 # Activer explicitement le venv partagé pour garantir l'accès aux dépendances (fakeredis, etc.).
 VENV_PATH="/mnt/venv_ext4/venv_render_signal_server"
-if [ -d "$VENV_PATH" ] && [ -f "$VENV_PATH/bin/activate" ]; then
+if [[ -d "$VENV_PATH" && -f "$VENV_PATH/bin/activate" ]]; then
     # shellcheck disable=SC1090
     source "$VENV_PATH/bin/activate"
     PYTHON_BIN="$(command -v python3)"
@@ -122,13 +122,13 @@ echo ""
 $CMD
 
 # Résultat
-if [ $? -eq 0 ]; then
+if [[ $? -eq 0 ]]; then
     echo ""
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN}  ✓ Tous les tests sont passés !${NC}"
     echo -e "${GREEN}========================================${NC}"
     
-    if [ ! -z "$COVERAGE" ]; then
+    if [[ -n "$COVERAGE" ]]; then
         echo ""
         echo -e "${YELLOW}Rapport de couverture HTML généré dans: htmlcov/index.html${NC}"
     fi

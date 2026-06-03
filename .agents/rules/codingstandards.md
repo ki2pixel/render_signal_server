@@ -9,24 +9,24 @@ globs:
 These rules are the single source of truth for backend (Flask), frontend (modular ES6), and legacy PHP/R2 tooling. Apply them to every change unless an explicit exception is documented here.
 
 ## Tech Stack
-- **Backend:** Python 3.11, Flask app in `app_render.py`, services under `services/`, routes under `routes/`.
-- **Ingestion:** Gmail Push API (`POST /api/ingress/gmail`) as the sole email ingestion method, with Bearer token authentication and sender allowlist.
-- **Frontend:** `dashboard.html` + ES6 modules under `static/` (`services/`, `components/`, `utils/`, `dashboard.js`) bundlés avec **Vite** en développement/production.
+- **Backend:** Python 3.11, Flask app (`app_render.py`), services (`services/`), routes (`routes/`).
+- **Ingestion:** Idempotent Gmail Push API (`POST /api/ingress/gmail`) via `IngressService` & `DeduplicationService` (Redis TTL hash).
+- **Frontend:** `dashboard.html` + ES6 modules (`static/`) bundlés avec **Vite** (fallback automatique en dev).
 - **Storage:** Redis-first config store via `ConfigService` avec JSON fallback; Cloudflare R2 offload via `R2TransferService`.
 - **Legacy helpers:** Minimal PHP footprint (Render deployment helpers + webhook receiver) adhering to PSR-12.
 - **Tooling:** `black` (88 cols) + `isort` for Python, `Prettier` + `ESLint` + `Vite` for JS, `pytest` with custom markers, Docker + Render for deployment.
 
 ## Code Style & Structure
 ### Backend (Python)
-- **Clean Code:** Delete commented-out dead code immediately (no confirmation needed). Comments must state the *why* (intent/business context), never re-describe implementation details.
-- Services are **singletons with typed public methods** (see `RoutingRulesService`, `WebhookConfigService`). Never mutate module-level globals at runtime; read via service getters each time.
-- Keep functions short (<40 logical lines) and typed. Use `TypedDict` / dataclasses for structured payloads (e.g., `email_processing/orchestrator.py`).
+- **Clean Code:** Delete dead code immediately. Comments state the *why*, never the *how*.
+- Services are **singletons** (`ConfigService`, `IngressService`). Read via service getters, never mutate module globals.
+- Keep functions short (<40 lines). Type hints are mandatory (e.g., `from flask import Response`, `-> Response | tuple[Response, int]`). Use `TypedDict`/dataclasses.
 - Input validation lives at route boundaries. Raise `ValueError`/`BadRequest` with explicit messages; let Flask error handlers serialize.
 - Logging goes through `app_logging/` helpers. Always scrub PII with `mask_sensitive_data`.
 
 ### Frontend (JS/HTML)
-- Use **modules + named exports** only. `dashboard.js` orchestrates modules; do not reintroduce global script tags.
-- DOM updates must avoid `innerHTML` et l'injection directe. Privilégier le découplage via `DOMHelper` en utilisant des attributs `data-target`.
+- Use **modules + named exports** only. `dashboard.js` orchestrates modules.
+- DOM updates: Bannir les IDs globaux absolus et `innerHTML`. Privilégier le découplage via `DOMHelper` (ex: `DOMHelper.getElement("myBtn")` résout `[data-target="myBtn"]`).
 - Respect WCAG AA: keyboard focus states, ARIA roles (`tablist`, `tabpanel`, `aria-expanded`).
 - Auto-save flows use debounced `ApiService` calls (2–3s) with optimistic UI + rollback on failure (toujours implémenter l'interception `beforeunload` pour éviter la perte de données).
 - **Performance UI:** Utiliser le rendu paresseux (Lazy Rendering / Chunking) pour prévenir les gels d'interface (ex: `JsonViewer`).
@@ -64,17 +64,15 @@ def update_processing_prefs() -> Response:
 
 ### Gmail Push Ingress Flow
 ```python
+from flask import Response, jsonify
 @bp.route("/gmail", methods=["POST"])
 def ingest_gmail() -> tuple[Response, int] | Response:
-    if not _auth_service.verify_api_key_from_request(request):
-        return jsonify({"success": False, "message": "Unauthorized"}), 401
-
-    payload = request.get_json(silent=True)
-    # Validation du payload et disponibilité du service
-    result, status_code = ingress_service.process_gmail_push(payload)
-    return jsonify(result), status_code
+    if not _auth_service.verify_api_key_from_request(request): return jsonify(...), 401
+    # AuthService Auth + DeduplicationService (Redis hash/ID + TTL) assurent l'idempotence
+    res, code = ingress_service.process_gmail_push(request.get_json(silent=True))
+    return jsonify(res), code
 ```
-- **Pattern:** Authenticate → Validate → Pass to `IngressService`. Never bypass `AuthService` or log raw email content.
+- **Pattern:** Auth → Deduplicate → Process. Never bypass `AuthService` or log raw email bodies.
 
 ### Frontend Panel Save Flow
 ```javascript
@@ -100,12 +98,10 @@ def upload_to_r2(source_url: str) -> R2UploadResult:
 - Always run allowlist validation + token injection before offloading. Fallback gracefully to original URL when transfer fails.
 
 ## Testing & Tooling
-- Use `/mnt/venv_ext4/venv_render_signal_server` for parity with CI. Commands:
-  - `pytest --cov=.` (full suite)
-  - `pytest -m "redis or r2 or resilience" --cov=.` (resilience focus)
-  - `python -m scripts.check_config_store` (Redis JSON sanity)
-- Add tests alongside functionality: routes in `tests/routes/`, services in `tests/services/`, ingress logic in dedicated integration modules.
-- Favor Given/When/Then naming and explicit fixtures (see `tests/test_api_ingress.py`).
+- Environment: `/mnt/venv_ext4/venv_render_signal_server`.
+- Commands: `pytest -m "redis or r2 or resilience" --cov=.`
+- Add tests alongside functionality (`tests/routes/`, `tests/services/`).
+- Structure tests strictly with **# Given / # When / # Then** blocks. Use explicit fixtures and ensure mock isolation.
 
 ### Skill Invocation Policy (Workspace vs Global)
 - **Priority order:** always invoke workspace-scoped skills under `.agents/skills/` before falling back to the global catalog in `~/.gemini/antigravity/skills`. The local skills encapsulate project-specific scripts, environments, and templates that enforce these coding standards.

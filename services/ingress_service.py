@@ -42,7 +42,6 @@ except Exception:
     R2TransferService = None
 
 
-
 class IngressService:
     """Service d'ingestion des webhooks Gmail Push."""
 
@@ -88,16 +87,12 @@ class IngressService:
             pass
         return (sender_raw or "").strip()
 
-    def _maybe_enrich_delivery_links_with_r2(
-            self, delivery_links: list, email_id: str
-    ) -> None:
+    def _maybe_enrich_delivery_links_with_r2(self, delivery_links: list, email_id: str) -> None:
         if not delivery_links:
             return
-
         try:
             if R2TransferService is None:
                 return
-
             r2_service = R2TransferService.get_instance()
             if not r2_service.is_enabled():
                 return
@@ -105,71 +100,74 @@ class IngressService:
             return
 
         for item in delivery_links:
-            if not isinstance(item, dict):
-                continue
+            self._process_single_delivery_link(item, r2_service, email_id)
 
-            raw_url = item.get("raw_url")
-            provider = item.get("provider")
-            if not isinstance(raw_url, str) or not raw_url.strip():
-                continue
-            if not isinstance(provider, str) or not provider.strip():
-                continue
+    def _process_single_delivery_link(self, item: dict, r2_service: Any, email_id: str) -> None:
+        if not isinstance(item, dict):
+            return
 
-            if not isinstance(item.get("direct_url"), str) or not item.get("direct_url"):
-                item["direct_url"] = raw_url
+        raw_url = item.get("raw_url")
+        provider = item.get("provider")
+        if not isinstance(raw_url, str) or not raw_url.strip():
+            return
+        if not isinstance(provider, str) or not provider.strip():
+            return
 
+        if not isinstance(item.get("direct_url"), str) or not item.get("direct_url"):
+            item["direct_url"] = raw_url
+
+        try:
+            normalized_source_url = r2_service.normalize_source_url(raw_url, provider)
+        except Exception:
+            normalized_source_url = raw_url
+
+        remote_fetch_timeout = 15
+        try:
+            if provider == "dropbox" and "/scl/fo/" in normalized_source_url.lower():
+                remote_fetch_timeout = 120
+        except Exception:
+            pass
+
+        try:
+            r2_url, original_filename = r2_service.request_remote_fetch(
+                source_url=normalized_source_url,
+                provider=provider,
+                email_id=email_id,
+                timeout=remote_fetch_timeout,
+            )
+        except Exception:
+            return
+
+        if not isinstance(r2_url, str) or not r2_url.strip():
+            return
+
+        item["r2_url"] = r2_url
+        if isinstance(original_filename, str) and original_filename.strip():
+            item["original_filename"] = original_filename.strip()
+
+        try:
+            self._logger.info(
+                "R2_TRANSFER: Successfully transferred %s link to R2 for email %s",
+                provider,
+                email_id,
+            )
+        except Exception:
+            pass
+
+        try:
+            r2_service.persist_link_pair(
+                source_url=normalized_source_url,
+                r2_url=r2_url,
+                provider=provider,
+                original_filename=(original_filename if isinstance(original_filename, str) else None),
+            )
+        except Exception as ex:
             try:
-                normalized_source_url = r2_service.normalize_source_url(raw_url, provider)
-            except Exception:
-                normalized_source_url = raw_url
-
-            remote_fetch_timeout = 15
-            try:
-                if provider == "dropbox" and "/scl/fo/" in normalized_source_url.lower():
-                    remote_fetch_timeout = 120
-            except Exception:
-                remote_fetch_timeout = 15
-
-            try:
-                r2_url, original_filename = r2_service.request_remote_fetch(
-                    source_url=normalized_source_url,
-                    provider=provider,
-                    email_id=email_id,
-                    timeout=remote_fetch_timeout,
-                )
-            except Exception:
-                continue
-
-            if not isinstance(r2_url, str) or not r2_url.strip():
-                continue
-
-            item["r2_url"] = r2_url
-            if isinstance(original_filename, str) and original_filename.strip():
-                item["original_filename"] = original_filename.strip()
-
-            try:
-                self._logger.info(
-                    "R2_TRANSFER: Successfully transferred %s link to R2 for email %s",
-                    provider,
-                    email_id,
-                )
+                self._logger.debug("R2_TRANSFER: persist_link_pair failed for email %s: %s", email_id, ex)
             except Exception:
                 pass
 
-            try:
-                r2_service.persist_link_pair(
-                    source_url=normalized_source_url,
-                    r2_url=r2_url,
-                    provider=provider,
-                    original_filename=(original_filename if isinstance(original_filename, str) else None),
-                )
-            except Exception as ex:
-                try:
-                    self._logger.debug("R2_TRANSFER: persist_link_pair failed for email %s: %s", email_id, ex)
-                except Exception:
-                    pass
-
-    def process_gmail_push(self, payload: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
+    def _validate_payload(self, payload: Dict[str, Any]) -> Tuple[bool, str, dict]:
         subject = payload.get("subject", "")
         sender_raw = payload.get("sender", "")
         body = payload.get("body", "")
@@ -185,32 +183,121 @@ class IngressService:
             email_date = ""
 
         if not sender_raw:
-            return {"success": False, "message": "Missing field: sender"}, 400
+            return False, "Missing field: sender", {}
         if not body:
-            return {"success": False, "message": "Missing field: body"}, 400
+            return False, "Missing field: body", {}
+            
+        return True, "", {
+            "subject": subject,
+            "sender_raw": sender_raw,
+            "body": body,
+            "email_date": email_date
+        }
 
+    def _check_ingress_enabled(self) -> Tuple[bool, str]:
         try:
             rfs = RuntimeFlagsService.get_instance()
             if rfs is not None:
                 gmail_ingress_enabled = bool(rfs.get_flag("gmail_ingress_enabled", True))
                 if not gmail_ingress_enabled:
                     self._logger.warning("INGRESS: Gmail ingress disabled - gmail_ingress_enabled=False")
-                    return {"success": False, "message": "Gmail ingress disabled"}, 409
+                    return False, "Gmail ingress disabled"
         except Exception:
             pass
+        return True, ""
+
+    def _check_sender_allowlist(self, sender_email: str) -> bool:
+        try:
+            gmail_sender_list = getattr(settings, "GMAIL_SENDER_ALLOWLIST", [])
+            allowed = [
+                str(s).strip().lower()
+                for s in (gmail_sender_list if isinstance(gmail_sender_list, list) else [])
+                if isinstance(s, str) and s.strip()
+            ]
+            if allowed and sender_email not in allowed:
+                return False
+        except Exception:
+            pass
+        return True
+
+    def _get_detector_and_time(self, subject: str, body: str, tz_for_polling: Any) -> Tuple[Optional[str], Optional[str], bool]:
+        detector_val, delivery_time_val, desabo_is_urgent = None, None, False
+        try:
+            ms_res = pattern_matching.check_media_solution_pattern(
+                subject, body, tz_for_polling, self._logger
+            )
+            if isinstance(ms_res, dict) and bool(ms_res.get("matches")):
+                detector_val = "recadrage"
+                delivery_time_val = ms_res.get("delivery_time")
+            else:
+                des_res = pattern_matching.check_desabo_conditions(
+                    subject, body, self._logger
+                )
+                if isinstance(des_res, dict) and bool(des_res.get("matches")):
+                    detector_val = "desabonnement_journee_tarifs"
+                    desabo_is_urgent = bool(des_res.get("is_urgent"))
+        except Exception:
+            pass
+        return detector_val, delivery_time_val, desabo_is_urgent
+
+    def _evaluate_time_window(self, now_local: datetime) -> Tuple[bool, Optional[str], str]:
+        s_str, e_str = "", ""
+        try:
+            s_str, e_str = email_orchestrator._load_webhook_global_time_window()
+        except Exception:
+            pass
+
+        start_t = parse_time_hhmm(s_str) if s_str else None
+        end_t = parse_time_hhmm(e_str) if e_str else None
+        within = True
+        if start_t and end_t:
+            within = is_within_time_window_local(now_local, start_t, end_t)
+
+        start_payload_val = None
+        if start_t and end_t:
+            if within:
+                start_payload_val = "maintenant"
+            # note: logic for desabo non urgent is handled outside
+        return within, start_payload_val, e_str
+
+    def _get_processing_prefs(self) -> dict:
+        processing_prefs = {}
+        try:
+            from routes.api_processing import DEFAULT_PROCESSING_PREFS
+            from config.app_config_store import get_config_json as _config_get
+            from pathlib import Path
+            processing_prefs_file = Path(__file__).resolve().parents[1] / "debug" / "processing_prefs.json"
+            data = _config_get("processing_prefs", file_fallback=processing_prefs_file) or {}
+            if isinstance(data, dict):
+                processing_prefs = {**DEFAULT_PROCESSING_PREFS, **data}
+            else:
+                processing_prefs = DEFAULT_PROCESSING_PREFS.copy()
+        except Exception:
+            pass
+        return processing_prefs
+
+    def process_gmail_push(self, payload: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
+        valid, msg, fields = self._validate_payload(payload)
+        if not valid:
+            return {"success": False, "message": msg}, 400
+
+        subject, sender_raw, body, email_date = fields["subject"], fields["sender_raw"], fields["body"], fields["email_date"]
+
+        enabled, msg = self._check_ingress_enabled()
+        if not enabled:
+            return {"success": False, "message": msg}, 409
 
         try:
             sender_email = self._extract_sender_email(sender_raw)
         except Exception:
             sender_email = sender_raw
-
         sender_email = (sender_email or sender_raw).strip().lower()
         email_id = self._compute_email_id(subject=subject, sender=sender_email, date=email_date)
 
         try:
             self._logger.info(
                 "INGRESS: gmail payload received (email_id=%s sender=%s subject=%s)",
-                email_id,
+                mask_sensitive_data(email_id, "id"),
                 mask_sensitive_data(sender_email, "email"),
                 mask_sensitive_data(subject, "subject"),
             )
@@ -218,7 +305,6 @@ class IngressService:
             pass
 
         dedup_service = DeduplicationService.get_instance()
-
         if dedup_service.is_email_processed(email_id):
             return {"success": True, "status": "already_processed", "email_id": email_id}, 200
 
@@ -232,18 +318,9 @@ class IngressService:
             inflight_acquired = False
 
         try:
-            try:
-                gmail_sender_list = getattr(settings, "GMAIL_SENDER_ALLOWLIST", [])
-                allowed = [
-                    str(s).strip().lower()
-                    for s in (gmail_sender_list if isinstance(gmail_sender_list, list) else [])
-                    if isinstance(s, str) and s.strip()
-                ]
-                if allowed and sender_email not in allowed:
-                    dedup_service.mark_email_processed(email_id)
-                    return {"success": True, "status": "skipped_sender_not_allowed", "email_id": email_id}, 200
-            except Exception:
-                pass
+            if not self._check_sender_allowlist(sender_email):
+                dedup_service.mark_email_processed(email_id)
+                return {"success": True, "status": "skipped_sender_not_allowed", "email_id": email_id}, 200
 
             try:
                 if not email_orchestrator._is_webhook_sending_enabled():
@@ -257,81 +334,55 @@ class IngressService:
             except Exception:
                 now_local = datetime.now()
 
-            detector_val, delivery_time_val, desabo_is_urgent = None, None, False
-            try:
-                ms_res = pattern_matching.check_media_solution_pattern(
-                    subject or "", body, tz_for_polling, self._logger
-                )
-                if isinstance(ms_res, dict) and bool(ms_res.get("matches")):
-                    detector_val = "recadrage"
-                    delivery_time_val = ms_res.get("delivery_time")
-                else:
-                    des_res = pattern_matching.check_desabo_conditions(
-                        subject or "", body, self._logger
-                    )
-                    if isinstance(des_res, dict) and bool(des_res.get("matches")):
-                        detector_val = "desabonnement_journee_tarifs"
-                        desabo_is_urgent = bool(des_res.get("is_urgent"))
-            except Exception:
-                pass
+            detector_val, delivery_time_val, desabo_is_urgent = self._get_detector_and_time(subject, body, tz_for_polling)
 
-            s_str, e_str = "", ""
+            within, start_payload_val, e_str = self._evaluate_time_window(now_local)
+            
+            s_str = ""
             try:
-                s_str, e_str = email_orchestrator._load_webhook_global_time_window()
+                s_str, _ = email_orchestrator._load_webhook_global_time_window()
             except Exception:
                 pass
 
             start_t = parse_time_hhmm(s_str) if s_str else None
-            end_t = parse_time_hhmm(e_str) if e_str else None
-            within = True
-            if start_t and end_t:
-                within = is_within_time_window_local(now_local, start_t, end_t)
 
             if not within:
                 if detector_val == "desabonnement_journee_tarifs":
                     if desabo_is_urgent:
                         return {"success": False, "message": "Outside time window (DESABO urgent)"}, 409
-                    # Non-urgent DESABO: bypass time window, continue to send webhook
                 elif detector_val == "recadrage":
                     dedup_service.mark_email_processed(email_id)
                     return {"success": True, "status": "skipped_outside_time_window", "email_id": email_id}, 200
                 else:
                     return {"success": False, "message": "Outside time window"}, 409
 
-            start_payload_val = None
-            if start_t and end_t:
-                if within:
-                    start_payload_val = "maintenant"
-                elif detector_val == "desabonnement_journee_tarifs" and not desabo_is_urgent and now_local.time() < start_t:
-                    start_payload_val = s_str
+            if not within and start_t and detector_val == "desabonnement_journee_tarifs" and not desabo_is_urgent and now_local.time() < start_t:
+                start_payload_val = s_str
 
             delivery_links = link_extraction.extract_provider_links_from_text(body)
             self._maybe_enrich_delivery_links_with_r2(delivery_links or [], email_id)
 
             payload_for_webhook = {
                 "microsoft_graph_email_id": email_id,
-                "subject": subject or "",
-                "receivedDateTime": email_date or "",
+                "subject": subject,
+                "receivedDateTime": email_date,
                 "sender_address": sender_raw,
-                "bodyPreview": (body or "")[:200],
-                "email_content": body or "",
+                "bodyPreview": (body)[:200],
+                "email_content": body,
                 "source": "gmail_push",
+                "sender_email": sender_email
             }
             if detector_val:
                 payload_for_webhook["detector"] = detector_val
             if detector_val == "recadrage" and delivery_time_val:
                 payload_for_webhook["delivery_time"] = delivery_time_val
-            payload_for_webhook["sender_email"] = sender_email
-
             if start_payload_val is not None:
                 payload_for_webhook["webhooks_time_start"] = start_payload_val
             if e_str:
                 payload_for_webhook["webhooks_time_end"] = e_str
 
             webhook_cfg = email_orchestrator._get_webhook_config_dict() or {}
-            webhook_url = str(webhook_cfg.get("webhook_url") or "").strip()
-            if not webhook_url:
-                webhook_url = str(getattr(settings, "WEBHOOK_URL", "")).strip()
+            webhook_url = str(webhook_cfg.get("webhook_url") or getattr(settings, "WEBHOOK_URL", "")).strip()
             if not webhook_url:
                 return {"success": False, "message": "WEBHOOK_URL not configured"}, 500
 
@@ -347,19 +398,7 @@ class IngressService:
             except Exception:
                 pass
 
-            processing_prefs = {}
-            try:
-                from routes.api_processing import DEFAULT_PROCESSING_PREFS
-                from config.app_config_store import get_config_json as _config_get
-                from pathlib import Path
-                processing_prefs_file = Path(__file__).resolve().parents[1] / "debug" / "processing_prefs.json"
-                data = _config_get("processing_prefs", file_fallback=processing_prefs_file) or {}
-                if isinstance(data, dict):
-                    processing_prefs = {**DEFAULT_PROCESSING_PREFS, **data}
-                else:
-                    processing_prefs = DEFAULT_PROCESSING_PREFS.copy()
-            except Exception:
-                pass
+            processing_prefs = self._get_processing_prefs()
 
             from services.rate_limit_service import RateLimitService
             from services.webhook_logger_service import WebhookLoggerService
@@ -408,4 +447,3 @@ class IngressService:
                     dedup_service.release_email_inflight_lock(email_id)
                 except Exception:
                     pass
-

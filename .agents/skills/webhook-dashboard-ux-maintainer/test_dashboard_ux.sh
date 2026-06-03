@@ -14,7 +14,7 @@ echo "5. Test auto-save flows (modify webhook panel, wait 2-3s)"
 echo "6. Verify ARIA roles (tablist, tabpanel, aria-expanded)"
 echo "7. Test toast notifications (generate magic link)"
 
-if [ -f /mnt/venv_ext4/venv_render_signal_server/bin/activate ]; then
+if [[ -f /mnt/venv_ext4/venv_render_signal_server/bin/activate ]]; then
   # shellcheck disable=SC1091
   source /mnt/venv_ext4/venv_render_signal_server/bin/activate
   echo "\n[info] Running backend tests that affect dashboard UX"

@@ -186,9 +186,10 @@ class MagicLinkService:
         if not ok:
             return False, msg
 
+        from utils.text_helpers import mask_sensitive_data
         username = self._config_service.get_dashboard_user()
         try:
-            self._logger.info("MAGIC_LINK: token %s consommé par %s", token_id, username)
+            self._logger.info("MAGIC_LINK: token %s consommé par %s", mask_sensitive_data(token_id, "token"), mask_sensitive_data(username, "username"))
         except Exception:
             pass
 
@@ -419,12 +420,13 @@ class MagicLinkService:
                 self._save_state(state)
 
     def _invalidate_token(self, token_id: str, reason: str) -> None:
+        from utils.text_helpers import mask_sensitive_data
         with self._file_lock:
             state = self._load_state()
             if token_id in state:
                 del state[token_id]
                 self._save_state(state)
         try:
-            self._logger.info("MAGIC_LINK: token %s invalidated (%s)", token_id, reason)
+            self._logger.info("MAGIC_LINK: token %s invalidated (%s)", mask_sensitive_data(token_id, "token"), reason)
         except Exception:
             pass
