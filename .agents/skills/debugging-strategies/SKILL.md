@@ -517,15 +517,6 @@ afterEach(() => {
 - [ ] Stale data (refresh database)
 ```
 
-## Resources
-
-- **references/debugging-tools-guide.md**: Comprehensive tool documentation
-- **references/performance-profiling.md**: Performance debugging guide
-- **references/production-debugging.md**: Debugging live systems
-- **assets/debugging-checklist.md**: Quick reference checklist
-- **assets/common-bugs.md**: Common bug patterns
-- **scripts/debug-helper.ts**: Debugging utility functions
-
 ## Note on Documentation Paths
 
 When referencing documentation in this project, use the current structure:
@@ -540,6 +531,6 @@ When referencing documentation in this project, use the current structure:
 - `docs/v2/` → **DEPRECATED** (consolidated into main structure)
 
 **Key references for debugging:**
-- `docs/operations/depannage.md` - Production troubleshooting
+- `docs/ops/troubleshooting.md` - Production troubleshooting
 - `docs/quality/testing.md` - Test suite structure and coverage
 - `docs/complexity_hotspots.md` - Performance bottleneck identification

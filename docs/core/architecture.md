@@ -144,35 +144,27 @@ class AppConfigStore:
 ```python
 # routes/api_ingress.py
 @bp.route("/gmail", methods=["POST"])
-def ingest_gmail():
-    # 1. Runtime flag Redis-first
-    gmail_ingress_enabled = runtime_flags_service.get_flag("gmail_ingress_enabled", True)
-    if not gmail_ingress_enabled:
-        return jsonify({"success": False, "message": "Gmail ingress disabled"}), 409
-    
-    # 2. Auth Bearer token
-    if not auth_service.verify_api_key_from_request(request):
-        return jsonify({"success": False}), 401
-    
-    # 3. Validation payload
-    payload = request.get_json()
-    email_id = md5(f"{payload['sender']}:{payload['date']}").hexdigest()
-    
-    # 4. Déduplication Redis
-    if dedup_service.is_email_id_processed(email_id):
-        return jsonify({"success": True, "status": "duplicate"}), 200
-    
-    # 5. Routing dynamique
-    routing_rules = routing_service.get_rules()
-    matched_rule = routing_service.evaluate(payload, routing_rules)
-    
-    # 6. Envoi webhook
-    orchestrator.send_custom_webhook_flow(payload, matched_rule)
-    
-    return jsonify({"success": True}), 200
+def ingest_gmail() -> tuple[Response, int] | Response:
+    if not _auth_service.verify_api_key_from_request(request):
+        return jsonify({"success": False, "message": "Unauthorized"}), 401
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "message": "Invalid JSON payload"}), 400
+
+    ar = sys.modules.get("app_render")
+    if ar is None:
+        return jsonify({"success": False, "message": "Server not ready"}), 503
+
+    ingress_service = getattr(ar, "_ingress_service", None)
+    if not ingress_service:
+        return jsonify({"success": False, "message": "Service unavailable"}), 503
+
+    result, status_code = ingress_service.process_gmail_push(payload)
+    return jsonify(result), status_code
 ```
 
-**Le gain** : zéro polling, bande passante minimale, contrôle tempo via Redis, et l'Apps Script Google est le métronome parfait.
+**Le gain** : la route est désormais un contrôleur extrêmement mince. Toute la complexité d'ingestion (validation, déduplication, fenêtres horaires et offload R2) est déléguée à la classe singleton `IngressService` (dans `services/ingress_service.py`), respectant le principe de responsabilité unique.
 
 ---
 
@@ -255,7 +247,7 @@ def upload_to_r2(self, source_url):
 | Musicien | Complexité radon | Statut | Plan d'action | Documentation |
 |-----------|------------------|--------|---------------|---------------|
 | `orchestrator.py::check_new_emails_and_trigger_webhook` | F (239) | ❌ Legacy | Extraire les solos Media Solution/DESABO | [docs/ingestion/legacy-imap.md](../ingestion/legacy-imap.md) |
-| `api_ingress.py::ingest_gmail` | F (85) | ✅ Actif | Découper par helpers (validation, fenêtre, R2) | [docs/ingestion/gmail-push.md](../ingestion/gmail-push.md) |
+| `services/ingress_service.py::IngressService.process_gmail_push` | F (42) | ✅ Actif | Découpé et délégué via des helpers et singletons | [docs/ingestion/gmail-push.md](../ingestion/gmail-push.md) |
 | `email_processing/orchestrator.py::send_custom_webhook_flow` | E (22) | ✅ Actif | Isoler la logique de routing et enrichissement | [docs/processing/webhooks-outbound.md](../processing/webhooks-outbound.md) |
 | `preferences/processing_prefs.py::validate_processing_prefs` | E (22) | ✅ Actif | Simplifier la validation par schéma | [docs/processing/routing-engine.md](../processing/routing-engine.md) |
 | `services/routing_rules_service.py::_normalize_rules` | D (17) | ✅ Actif | Extraire la normalisation des URLs | [docs/processing/routing-engine.md](../processing/routing-engine.md) |
@@ -263,7 +255,7 @@ def upload_to_r2(self, source_url):
 | `services/webhook_config_service.py::update_config` | C (18) | ✅ Actif | Nettoyage de la logique de cache | [docs/processing/webhooks-outbound.md](../processing/webhooks-outbound.md) |
 | `services/magic_link_service.py::consume_token` | C (18) | ✅ Actif | Simplifier la validation HMAC | [docs/access/magic-links.md](../access/magic-links.md) |
 
-**Moyenne actuelle** : D (25.44) sur 43 blocs analysés
+**Moyenne actuelle** : D (23.14) sur 44 blocs analysés
 
 **La règle** : aucun solo ne doit dépasser 40 lignes logiques. Si c'est le cas, on extrait.
 
@@ -271,13 +263,13 @@ def upload_to_r2(self, source_url):
 
 Les fonctions F/E concentrent la logique métier et les points de défaillance :
 
-- **`ingest_gmail (F)`** : Endpoint unique qui gère auth, validation, routing, R2, et envoi webhook. Une erreur ici bloque toute l'ingestion.
+- **`process_gmail_push (F)`** : Service d'orchestration de l'ingestion qui gère validation, routing, R2 et envoi webhook via helpers et injection de dépendances. Une erreur ici bloque toute l'ingestion.
 - **`send_custom_webhook_flow (E)`** : Orchestrateur qui mélange pattern matching, routing, et construction payload. Difficile à tester unitairement.
 - **`validate_processing_prefs (E)`** : Validation monolithique qui mélange schéma et logique métier.
 
 ### ✅ Stratégie de refactoring en cours
 
-1. **Extraction des helpers** : `ingest_gmail` → `validate_payload()`, `check_time_window()`, `enrich_links_r2()`
+1. **Extraction des helpers** : `process_gmail_push` a été scindée en méthodes privées (`_validate_payload()`, `_evaluate_time_window()`, `_maybe_enrich_delivery_links_with_r2()`).
 2. **Isolation des responsabilités** : `send_custom_webhook_flow` → `PatternMatcher`, `RoutingEvaluator`, `PayloadBuilder`
 3. **Validation par schéma** : Remplacer `validate_processing_prefs` par Pydantic models
 

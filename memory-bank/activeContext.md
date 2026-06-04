@@ -1,21 +1,18 @@
 # Contexte Actif
 
 ## Tâches Terminées
+- [2026-06-04] Synchronisation et mise à jour de la documentation (/docs-updater) :
+  - Alignement de 10 fichiers Markdown avec l'architecture `IngressService` modulaire, la déduplication Redis-first, et l'offload R2.
+  - Intégration des détails de remédiation SonarCloud (masquage PII, open redirect) et des améliorations frontend (Vite, DOMHelper, beforeunload, JsonViewer lazy rendering).
+  - Validation de la conformité globale via tests (368 passed, 0 failures) et mise à jour des métriques Radon à D (23.14) sur 44 blocs.
+- [2026-06-04] Réconciliation des skills et corrections de typage :
+  - Suppression des imports obsolètes d'`AppConfigStore` dans `scaffold-service` et `ingress_service.py` (qui faisait échouer l'initialisation de `IngressService`).
+  - Validation du typage `mypy` corrigée pour l'initialisation optionnelle de `R2TransferService`.
+  - Nettoyage des références mortes dans `debugging-strategies` et `documentation`.
+  - Refonte des instructions de `sequentialthinking-logic` pour l'architecture Flask.
+  - Remplacement des accès DOM natifs par `DOMHelper` dans `scaffold-js-module`.
+- [2026-06-03] Campagne d'archivage Q1 2026 : Extraction des entrées antérieures au 2026-04-04 depuis `progress.md` et `decisionLog.md` vers `archive/progress_2026Q1.md` et `archive/decisionLog_2026Q1.md` via les outils `fast-filesystem`.
 - [2026-06-03] Exécution du plan de remédiation SonarCloud (Vague 1 à 4) : Correction Open Redirect (dashboard.py), masquage PII (ingress_service/magic_link_service), refactoring `ingress_service.py` et `api_webhooks.py` pour réduire la complexité cognitive. Implémentation WCAG AA dans `dashboard.html` et modernisation JS (`Object.hasOwn`). Alignement de la syntaxe bash vers `[[` pour les scripts de tests et skills.
-- [2026-05-31] Audit chirurgical et mise à jour de `codingstandards.md`. Optimisation de l'espace (<12k caractères), densification des consignes sur l'architecture (Vite, DOMHelper, Typage Flask, IngressService, Tests Given/When/Then).
-- [2026-05-31] Audit et correction des fichiers de configuration de l'agent dans `.agents/` (`rules/`, `skills/` et `workflows/`) terminés. Suppression des références aux outils fictifs (`render-signal-mcp`, `task-master-ai`), correction du nommage de `json_query_query_json` et `multi_replace_file_content`, suppression des préfixes obsolètes `mcp0_fast_` et mise à jour de la matrice d'intégration de compétences pour refléter la réalité de l'environnement de l'agent.
-- [2026-05-30] Audit et mise à jour de .agents/rules/codingstandards.md et .windsurf/rules/codingstandards.md pour refléter les récents refactorings architecturaux (Vite, DOMHelper, ConfigService Singleton, IngressService).
-- [2026-05-28] Résolution complète de la dette technique concernant la pollution du point d'entrée `app_render.py`. Les tests de l'orchestrateur utilisent désormais les instances Singleton et les dépendances correctement moquées sans s'appuyer sur des imports circulaires.
-- [2026-05-28] Refactoring complet de la taille des fonctions des services pour résoudre le premier problème standard identifié dans l'audit backend. Les fonctions critiques (`_normalize_rules`, `consume_token`, `request_remote_fetch`, et `deploy_application`) ont été découpées en sous-méthodes privées et typées de moins de 40 lignes logiques.
-- [2026-05-28] Résolution complète du déficit de typage des services et des routes. Ajout de annotations de type retour (`-> Response` et `-> tuple[Response, int]`) pour tous les endpoints Flask et les méthodes de AuthService et ConfigService.
-- [2026-05-28] Refactoring global de l'ingress Gmail (`routes/api_ingress.py`) pour respecter l'architecture Singleton orientée services (création d'`IngressService`, Singleton `DeduplicationService`, et simplification de la couche de routage).
-- [2026-05-27] Synchronisation et mise à jour globale de la documentation (`docs/`) via `/docs-updater` : suppression des références obsolètes à `webhook_sender.py`, intégration des spécifications du fallback 415, documentation des optimisations de performance frontend (`JsonViewer` lazy rendering/chunking, `DOMHelper` data-target, `beforeunload`, et Vite), et correction de tous les liens internes `docs/v2/`.
-- [2026-05-27] Investigation et correction des tests backend (`test_app_render.py`, `tests/test_r2_resilience.py`) échouant suite à la suppression du module `webhook_sender.py`.
-- [2026-05-27] Implémentation de la prévention des pertes de données (interception beforeunload) pour les panneaux auto-save et manuels.
-- [2026-05-27] Optimisation des performances du frontend (JsonViewer) avec Lazy Rendering sur les branches repliées et Chunking (100 éléments par tranche) pour prévenir les gels d'UI avec de gros payloads.
-- [2026-05-27] Intégration d'un outil de Build/Bundling (Vite) pour regrouper et minifier les assets frontend, avec fallback auto en dev (dashboard.html, app_render.py).
-- [2026-05-27] Découplage du DOM et des CSS pour le frontend (création de `DOMHelper.js` et injection de `data-target`).
-- [2026-02-25] Tests de non-régression pour l’idempotence Gmail Push (double POST) + validation ciblée (28 tests OK).
 
 ## Questions Ouvertes
 - Aucune question en attente.

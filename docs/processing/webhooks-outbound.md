@@ -160,46 +160,46 @@ Les logs sont structurés et accessibles via API REST. Le centre de distribution
 Email Gmail Ingress → Orchestrator → Pattern Matching → Routing Rules → send_custom_webhook_flow → Webhook Cible
 ```
 
-### 1. Construction du payload dans l'Ingress
+### 1. Construction du payload dans l'IngressService
 
 ```python
-# routes/api_ingress.py — construction du payload
+# services/ingress_service.py — construction du payload
 payload_for_webhook = {
     "microsoft_graph_email_id": email_id,
-    "subject": subject or "",
-    "receivedDateTime": date_raw or "",
-    "sender_address": from_raw or sender_addr,
-    "bodyPreview": preview,
-    "email_content": combined_text_for_detection or "",
+    "subject": subject,
+    "receivedDateTime": email_date,
+    "sender_address": sender_raw,
+    "bodyPreview": (body)[:200],
+    "email_content": body,
+    "source": "gmail_push",
+    "sender_email": sender_email
 }
 ```
 
 ### 2. Déclenchement de l'envoi
 
 ```python
-# email_processing/orchestrator.py — routage et envoi
-# L'orchestrateur évalue les règles de routage dynamique et lance le flux
-if routing_webhook_url:
-    send_custom_webhook_flow(
-        email_id=email_id,
-        subject=subject or '',
-        payload_for_webhook=payload_for_webhook,
-        delivery_links=delivery_links or [],
-        webhook_url=routing_webhook_url,
-        webhook_ssl_verify=True,
-        allow_without_links=bool(getattr(ar, 'ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS', False)),
-        processing_prefs=getattr(ar, 'PROCESSING_PREFS', {}),
-        rate_limit_allow_send=getattr(ar, '_rate_limit_allow_send'),
-        record_send_event=getattr(ar, '_record_send_event'),
-        append_webhook_log=getattr(ar, '_append_webhook_log'),
-        mark_email_id_as_processed_redis=ar.mark_email_id_as_processed_redis,
-        mark_email_as_read_imap=ar.mark_email_as_read_imap,
-        mail=mail,
-        email_num=num,
-        requests=requests,
-        time=time,
-        logger=logger,
-    )
+# services/ingress_service.py — routage et envoi
+flow_result = email_orchestrator.send_custom_webhook_flow(
+    email_id=email_id,
+    subject=subject,
+    payload_for_webhook=payload_for_webhook,
+    delivery_links=delivery_links or [],
+    webhook_url=webhook_url,
+    webhook_ssl_verify=webhook_ssl_verify,
+    allow_without_links=allow_without_links,
+    processing_prefs=processing_prefs,
+    rate_limit_allow_send=RateLimitService.get_instance().allow_send,
+    record_send_event=RateLimitService.get_instance().record_event,
+    append_webhook_log=WebhookLoggerService.get_instance().append_log,
+    mark_email_id_as_processed_redis=dedup_service.mark_email_processed,
+    mark_email_as_read_imap=lambda *_a, **_kw: True,
+    requests=requests,
+    time=time,
+    logger=self._logger,
+    webhook_delivery_mode=webhook_delivery_mode,
+    webhook_fallback_on_415=webhook_fallback_on_415,
+)
 ```
 
 ### 3. Logging persistant

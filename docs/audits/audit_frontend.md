@@ -65,3 +65,21 @@ Bien que l'architecture soit robuste, voici les points de vigilance identifiés 
 * Certaines interfaces gèrent des événements d'édition, comme le builder de règles ou l'enregistrement de webhooks.
 * *Problème* : Si une erreur réseau survient ou si la session se déconnecte pendant qu'une sauvegarde automatique asynchrone est en attente, l'utilisateur pourrait fermer son onglet en pensant que la configuration est sauvegardée.
 * *Recommandation* : Capter l'événement `beforeunload` du navigateur pour afficher une alerte de confirmation (Avertissement de sortie de page) s'il y a un statut de sauvegarde marqué comme `pending`.
+
+---
+
+### 7. Résolution et Améliorations (Juin 2026)
+
+Toutes les recommandations de l'audit frontend ont été appliquées avec succès pour garantir une expérience utilisateur robuste et moderne :
+
+1. **Découplage DOM résolu** :
+   * Mise en œuvre de `DOMHelper` pour résoudre les éléments du DOM via des sélecteurs d'attributs de données (`[data-target="..."]`). Le code JS ne dépend plus directement d'IDs ou de classes absolus dans le HTML.
+
+2. **Système de Build & Bundling résolu** :
+   * Intégration de **Vite** comme outil de bundling moderne, assurant la minification des assets de production et un serveur de développement à rechargement rapide.
+
+3. **Performance UI & Rendu pour JsonViewer résolu** :
+   * Implémentation du rendu paresseux (Lazy Rendering / Chunking) pour charger dynamiquement les nœuds complexes des structures JSON volumineuses. Cela prévient tout gel de l'interface utilisateur.
+
+4. **Avertissement de sortie de page résolu** :
+   * Mise en place de l'interception de l'événement `beforeunload` au niveau du navigateur, bloquant la fermeture accidentelle de la page si un processus d'enregistrement automatique est marqué comme en cours ou en échec de synchronisation.

@@ -18,14 +18,15 @@ These rules are the single source of truth for backend (Flask), frontend (modula
 
 ## Code Style & Structure
 ### Backend (Python)
-- **Clean Code:** Delete dead code immediately. Comments state the *why*, never the *how*.
+- **Clean Code:** Delete dead code immediately. Comments state the *why*, never the *how*. Keep cognitive complexity strictly low (extract logic into smaller helpers).
 - Services are **singletons** (`ConfigService`, `IngressService`). Read via service getters, never mutate module globals.
 - Keep functions short (<40 lines). Type hints are mandatory (e.g., `from flask import Response`, `-> Response | tuple[Response, int]`). Use `TypedDict`/dataclasses.
-- Input validation lives at route boundaries. Raise `ValueError`/`BadRequest` with explicit messages; let Flask error handlers serialize.
-- Logging goes through `app_logging/` helpers. Always scrub PII with `mask_sensitive_data`.
+- Input validation lives at route boundaries. Raise `ValueError`/`BadRequest` with explicit messages; let Flask error handlers serialize. Prevent Open Redirects by strictly validating all redirect targets.
+- **PII & Logging:** Logging goes through `app_logging/` helpers. You **must** systematically scrub PII (emails, tokens, names) using `mask_sensitive_data` before logging.
 
 ### Frontend (JS/HTML)
 - Use **modules + named exports** only. `dashboard.js` orchestrates modules.
+- **Modern JS:** Use `Object.hasOwn(obj, key)` exclusively for property checking. Ban legacy `obj.hasOwnProperty(key)` syntax.
 - DOM updates: Bannir les IDs globaux absolus et `innerHTML`. Privilégier le découplage via `DOMHelper` (ex: `DOMHelper.getElement("myBtn")` résout `[data-target="myBtn"]`).
 - Respect WCAG AA: keyboard focus states, ARIA roles (`tablist`, `tabpanel`, `aria-expanded`).
 - Auto-save flows use debounced `ApiService` calls (2–3s) with optimistic UI + rollback on failure (toujours implémenter l'interception `beforeunload` pour éviter la perte de données).
@@ -102,6 +103,7 @@ def upload_to_r2(source_url: str) -> R2UploadResult:
 - Commands: `pytest -m "redis or r2 or resilience" --cov=.`
 - Add tests alongside functionality (`tests/routes/`, `tests/services/`).
 - Structure tests strictly with **# Given / # When / # Then** blocks. Use explicit fixtures and ensure mock isolation.
+- **Shell Scripting:** Strictly align bash syntax to use `[[ ]]` for all conditions in test and internal scripts, banishing legacy `[ ]` or `test`.
 
 ### Skill Invocation Policy (Workspace vs Global)
 - **Priority order:** always invoke workspace-scoped skills under `.agents/skills/` before falling back to the global catalog in `~/.gemini/antigravity/skills`. The local skills encapsulate project-specific scripts, environments, and templates that enforce these coding standards.
@@ -136,10 +138,11 @@ def upload_to_r2(source_url: str) -> R2UploadResult:
 ## Anti-Patterns (Never Do)
 - Write secrets or config fallbacks directly in code.
 - Reintroduce `innerHTML` assignments or inline event handlers in the dashboard.
-- Bypass Redis store by editing `debug/*.json` directly during runtime.
+- Bypass the Redis Config Store (e.g., editing `debug/*.json` directly during runtime or hardcoding cache bypasses).
 - Disable authentication on `/api/ingress/gmail` or expose PROCESS_API_TOKEN in logs.
 - Log raw email bodies or personally identifiable information from Gmail payloads.
-- Attempt to restart IMAP polling services (retired).
+- Trust raw user input for routing/redirects (Open Redirect vulnerability).
+- Attempt to restart IMAP polling services or use legacy IMAP variables (`EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `IMAP_SERVER`) outside of isolated test environments.
 
 ## Notes finales
 - Maintenir ce document <12 000 caractères. Réviser après toute évolution majeure.

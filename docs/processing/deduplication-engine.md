@@ -26,14 +26,14 @@ def process_email(email_data):
 ### ✅ Le nouveau monde : déduplication Redis-first à deux niveaux
 
 ```python
-# api_ingress.py - vérification avant traitement
-email_id = _compute_email_id(subject=subject, sender=sender_email, date=email_date)
+# services/ingress_service.py - vérification avant traitement (IngressService.process_gmail_push)
+email_id = self._compute_email_id(subject=subject, sender=sender_email, date=email_date)
 
-if is_email_id_processed_redis(email_id):
-    return jsonify({"success": True, "status": "already_processed"}), 200
+if dedup_service.is_email_processed(email_id):
+    return {"success": True, "status": "already_processed", "email_id": email_id}, 200
 
 # Traitement...
-mark_email_id_as_processed_redis(email_id)
+dedup_service.mark_email_processed(email_id)
 ```
 
 **Le pattern** : vérification avant traitement, marquage immédiat après succès.
@@ -45,8 +45,8 @@ mark_email_id_as_processed_redis(email_id)
 ### Niveau 1 : Déduplication par Email ID (MD5)
 
 ```python
-# routes/api_ingress.py
-def _compute_email_id(*, subject: str, sender: str, date: str) -> str:
+# services/ingress_service.py (IngressService._compute_email_id)
+def _compute_email_id(self, subject: str, sender: str, date: str) -> str:
     unique_str = f"{subject}|{sender}|{date}"
     return hashlib.md5(unique_str.encode("utf-8")).hexdigest()
 ```

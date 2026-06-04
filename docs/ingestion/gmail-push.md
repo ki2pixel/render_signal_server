@@ -81,106 +81,131 @@ function pushEmailToIngress(subject, sender, body, date) {
 Apps Script Gmail → POST /api/ingress/gmail → AuthService → Pattern Matching → Routing Rules → Webhooks
 ```
 
-### 1. Authentification Bearer stricte
+### 1. Contrôleur Flask mince
 
 ```python
 # routes/api_ingress.py
 @bp.route("/gmail", methods=["POST"])
-def ingest_gmail():
-    # Vérification token PROCESS_API_TOKEN
-    if not auth_service.verify_api_key_from_request(request):
+def ingest_gmail() -> tuple[Response, int] | Response:
+    if not _auth_service.verify_api_key_from_request(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
-    
-    # Validation payload stricte
-    payload = request.get_json()
-    if not payload or not payload.get('sender') or not payload.get('body'):
-        return jsonify({"success": False, "message": "Missing required field"}), 400
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "message": "Invalid JSON payload"}), 400
+
+    ar = sys.modules.get("app_render")
+    if ar is None:
+        return jsonify({"success": False, "message": "Server not ready"}), 503
+
+    ingress_service = getattr(ar, "_ingress_service", None)
+    if not ingress_service:
+        return jsonify({"success": False, "message": "Service unavailable"}), 503
+
+    result, status_code = ingress_service.process_gmail_push(payload)
+    return jsonify(result), status_code
 ```
 
-### 2. Déduplication Redis instantanée
+### 2. Validation et extraction des e-mails (IngressService)
 
 ```python
-# Génération email_id unique
-email_id = md5(f"{payload['sender']}:{payload['date']}").hexdigest()
+# services/ingress_service.py (IngressService._validate_payload)
+def _validate_payload(self, payload: Dict[str, Any]) -> Tuple[bool, str, dict]:
+    subject = payload.get("subject", "")
+    sender_raw = payload.get("sender", "")
+    body = payload.get("body", "")
+    email_date = payload.get("date", "")
 
-# Vérification Redis (fallback mémoire)
-if dedup_service.is_email_id_processed(email_id):
-    return jsonify({
-        "success": True, 
-        "status": "already_processed"
-    }), 200
+    if not isinstance(subject, str): subject = ""
+    if not isinstance(sender_raw, str): sender_raw = ""
+    if not isinstance(body, str): body = ""
+    if not isinstance(email_date, str): email_date = ""
 
-# Marquage immédiat pour éviter les doublons
-dedup_service.mark_email_id_as_processed(email_id)
+    if not sender_raw:
+        return False, "Missing field: sender", {}
+    if not body:
+        return False, "Missing field: body", {}
+        
+    return True, "", {
+        "subject": subject,
+        "sender_raw": sender_raw,
+        "body": body,
+        "email_date": email_date
+    }
 ```
 
-### 3. Idempotence : Verrou "In-flight" pour double POST
+### 3. Déduplication et Verrou "In-flight" (IngressService)
+
+L'Email ID unique est généré en concaténant le sujet, l'expéditeur et la date pour prévenir les collisions et regrouper les conversations :
 
 ```python
-# api_ingress.py - verrou anti-double POST
+# services/ingress_service.py (IngressService._compute_email_id)
+def _compute_email_id(self, subject: str, sender: str, date: str) -> str:
+    unique_str = f"{subject}|{sender}|{date}"
+    return hashlib.md5(unique_str.encode("utf-8")).hexdigest()
+```
+
+L'idempotence s'appuie sur `DeduplicationService` avec un verrou "in-flight" Redis à TTL court (10s par défaut) pour intercepter les doubles requêtes POST simultanées :
+
+```python
+# services/ingress_service.py (IngressService.process_gmail_push)
+dedup_service = DeduplicationService.get_instance()
+if dedup_service.is_email_processed(email_id):
+    return {"success": True, "status": "already_processed", "email_id": email_id}, 200
+
 inflight_acquired = False
 try:
-    acquire_lock_fn = getattr(ar, "acquire_email_id_inflight_lock_redis", None)
-    if callable(acquire_lock_fn):
-        inflight_acquired = bool(acquire_lock_fn(email_id))
-        if not inflight_acquired:
-            return jsonify({
-                "success": True, 
-                "status": "already_processing", 
-                "email_id": email_id
-            }), 200
+    lock_ttl = getattr(settings, "EMAIL_ID_INFLIGHT_LOCK_TTL_SECONDS", 10)
+    inflight_acquired = bool(dedup_service.acquire_email_inflight_lock(email_id, lock_ttl))
+    if not inflight_acquired:
+        return {"success": True, "status": "already_processing", "email_id": email_id}, 200
 except Exception:
-    # Fail-open: do not block processing if lock system is unavailable
     inflight_acquired = False
 ```
-
-**Le problème** : Gmail Apps Script peut retry (double POST identique pour le même email) et provoquer un double déclenchement webhook.
-
-**La solution** : Verrou Redis "in-flight" avec TTL court (quelques secondes) :
-- **Premier POST** : Acquiert le verrou, traite l'email
-- **Second POST** : Verrou déjà pris → retour `already_processing`
-- **Fail-open** : Si Redis indisponible, on traite quand même (pas de blocage)
-
-**Comportement** : Si Gmail Apps Script retry (double POST identique), seul le premier traitement est autorisé.
 
 ### 4. Allowlist expéditeurs
 
 ```python
-# GMAIL_SENDER_ALLOWLIST depuis app_render globals
-sender_list = getattr(ar, "GMAIL_SENDER_ALLOWLIST", [])
-allowed = [str(s).strip().lower() for s in sender_list if isinstance(s, str) and s.strip()]
-
-if allowed and sender_email not in allowed:
-    # Marquer comme traité pour éviter les réessais
-    mark_email_id_as_processed_redis(email_id)
-    return jsonify({
-        "success": True,
-        "status": "skipped_sender_not_allowed"
-    }), 200
+# services/ingress_service.py (IngressService._check_sender_allowlist)
+def _check_sender_allowlist(self, sender_email: str) -> bool:
+    try:
+        gmail_sender_list = getattr(settings, "GMAIL_SENDER_ALLOWLIST", [])
+        allowed = [
+            str(s).strip().lower()
+            for s in (gmail_sender_list if isinstance(gmail_sender_list, list) else [])
+            if isinstance(s, str) and s.strip()
+        ]
+        if allowed and sender_email not in allowed:
+            return False
+    except Exception:
+        pass
+    return True
 ```
 
-### 5. Pattern matching temps réel
+### 5. Pattern matching et routage temporel
 
 ```python
-# Détection Media Solution / DESABO
-pattern_result = pattern_matching.check_media_solution_pattern(payload['subject'], payload['body'])
-is_desabo = pattern_matching.check_desabo_pattern(payload['subject'], payload['body'])
-is_urgent = pattern_matching.is_urgent_desabo(payload['subject'], payload['body'])
-
-# Extraction liens fournisseurs
-delivery_links = link_extraction.extract_provider_links_from_text(payload['body'])
+# Détection Media Solution / DESABO et calcul de fenêtre horaire
+detector_val, delivery_time_val, desabo_is_urgent = self._get_detector_and_time(subject, body, tz_for_polling)
+within, start_payload_val, e_str = self._evaluate_time_window(now_local)
 ```
 
 ### 6. Routing dynamique avant envoi
 
-```python
-# Évaluation des règles personnalisées
-routing_rules = routing_service.get_rules()
-matched_rule = routing_service.evaluate(payload, routing_rules)
+Les règles dynamiques de routage sont chargées et évaluées par le service `RoutingRulesService` :
 
-if matched_rule and matched_rule.get('stop_processing'):
-    logger.info(f"Routing rule matched with stop_processing: {matched_rule['name']}")
-    return jsonify({"success": True, "status": "stopped_by_routing_rule"}), 200
+```python
+# services/ingress_service.py (IngressService.process_gmail_push)
+processing_prefs = self._get_processing_prefs()
+# Envoi webhook et mise à jour de l'état
+flow_result = email_orchestrator.send_custom_webhook_flow(
+    email_id=email_id,
+    subject=subject,
+    payload_for_webhook=payload_for_webhook,
+    delivery_links=delivery_links or [],
+    webhook_url=webhook_url,
+    ...
+)
 ```
 
 ---
@@ -247,46 +272,27 @@ delivery_links = [{
 }]
 ```
 
-### ✅ Le nouveau monde : enrichissement R2 intelligent
+### ✅ Le nouveau monde : enrichissement R2 via IngressService
 
 ```python
-# api_ingress.py - _maybe_enrich_delivery_links_with_r2
-def _maybe_enrich_delivery_links_with_r2(delivery_links, email_id, logger):
-    r2_service = R2TransferService.get_instance()
-    if not r2_service.is_enabled():
-        return delivery_links
-    
+# services/ingress_service.py - IngressService._maybe_enrich_delivery_links_with_r2
+def _maybe_enrich_delivery_links_with_r2(self, delivery_links: list, email_id: str) -> None:
+    if not delivery_links:
+        return
+    try:
+        if R2TransferService is None:
+            return
+        r2_service = R2TransferService.get_instance()
+        if not r2_service.is_enabled():
+            return
+    except Exception:
+        return
+
     for item in delivery_links:
-        # Normalisation URL source
-        normalized_url = r2_service.normalize_source_url(item['raw_url'], item['provider'])
-        
-        # Timeout adaptatif (120s pour dossiers Dropbox)
-        timeout = 120 if item['provider'] == 'dropbox' and '/scl/fo/' in normalized_url else 15
-        
-        # Offload vers R2 avec retry
-        r2_url, filename = r2_service.request_remote_fetch(
-            source_url=normalized_url,
-            provider=item['provider'],
-            email_id=email_id,
-            timeout=timeout
-        )
-        
-        if r2_url:
-            item['r2_url'] = r2_url
-            item['original_filename'] = filename
-            
-            # Persistance de la paire pour tracking
-            r2_service.persist_link_pair(
-                source_url=normalized_url,
-                r2_url=r2_url,
-                provider=item['provider'],
-                original_filename=filename
-            )
-            
-            logger.info(f"R2_TRANSFER: Successfully transferred {item['provider']} link")
-    
-    return delivery_links
+        self._process_single_delivery_link(item, r2_service, email_id)
 ```
+
+**Le pattern** : L'offload R2 est délégué à `R2TransferService` pour chaque lien détecté. En cas d'erreur de transfert vers Cloudflare, le système conserve l'URL d'origine dans le payload du webhook sortant pour éviter les interruptions de service.
 
 **Le pattern** : best-effort avec fallback gracieux. Si R2 échoue, le webhook part quand même avec l'URL originale.
 
@@ -368,15 +374,16 @@ if len(payload.get('body', '')) > MAX_EMAIL_SIZE:
 
 ### 3. Logging PII-safe
 
-```python
-# Masquage adresses email dans les logs
-def mask_email(email):
-    if '@' in email:
-        local, domain = email.split('@', 1)
-        return f"{local[:2]}***@{domain}"
-    return "***"
+Afin de respecter les directives de protection des données personnelles (recommandation SonarCloud), les identifiants d'emails, les adresses d'expéditeurs et les sujets des messages sont systématiquement nettoyés et masqués via la fonction `mask_sensitive_data` de `utils/text_helpers.py` avant d'être inscrits dans les logs applicatifs :
 
-logger.info(f"GMAIL_PUSH: Processed email from {mask_email(sender)}")
+```python
+# services/ingress_service.py (IngressService.process_gmail_push)
+self._logger.info(
+    "INGRESS: gmail payload received (email_id=%s sender=%s subject=%s)",
+    mask_sensitive_data(email_id, "id"),
+    mask_sensitive_data(sender_email, "email"),
+    mask_sensitive_data(subject, "subject"),
+)
 ```
 
 ---

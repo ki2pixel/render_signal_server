@@ -16,7 +16,8 @@ from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from services.config_service import ConfigService
-    from config.app_config_store import AppConfigStore
+
+from config.app_config_store import get_config_json, set_config_json
 
 class NewService:
     """Service description alignée avec l'architecture services + Redis-first.
@@ -24,7 +25,6 @@ class NewService:
     Attributes:
         _instance: Instance singleton
         _config: Service de configuration (ENV)
-        _store: AppConfigStore Redis-first
         _logger: Logger centralisé
     """
 
@@ -34,24 +34,21 @@ class NewService:
     def __init__(
         self,
         config_service: Optional[ConfigService] = None,
-        app_config_store: Optional[AppConfigStore] = None,
         logger: Optional[logging.Logger] = None,
     ):
         """Initialise le service (utiliser get_instance() de préférence)."""
         self._config = config_service
-        self._store = app_config_store
         self._logger = logger or logging.getLogger(__name__)
 
     @classmethod
     def get_instance(
         cls,
         config_service: Optional[ConfigService] = None,
-        app_config_store: Optional[AppConfigStore] = None,
     ) -> NewService:
         """Récupère ou crée l'instance singleton."""
         with cls._lock:
             if cls._instance is None:
-                cls._instance = cls(config_service, app_config_store)
+                cls._instance = cls(config_service)
             return cls._instance
 
     @classmethod
@@ -74,9 +71,7 @@ class NewService:
 
     def _read_from_store(self) -> Optional[dict]:
         """Lit les données métier depuis AppConfigStore (Redis-first)."""
-        if not self._store:
-            return None
-        return self._store.get_config_json("new_service")
+        return get_config_json("new_service")
 
     def _fallback_value(self) -> bool:
         """Retourne une valeur sûre lorsque Redis ou la logique échoue."""

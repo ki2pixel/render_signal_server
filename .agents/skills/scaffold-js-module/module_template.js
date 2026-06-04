@@ -1,5 +1,6 @@
 import { ApiService } from '../services/ApiService.js';
 import { MessageHelper } from '../utils/MessageHelper.js';
+import { DOMHelper } from '../utils/DOMHelper.js';
 
 /**
  * Exemple de composant modulaire ES6 respectant les standards UX 2026.
@@ -54,7 +55,7 @@ export class NewComponent {
      * @returns {void}
      */
     bindEvents() {
-        this._actionButton = document.getElementById('actionBtn');
+        this._actionButton = DOMHelper.getElement('actionBtn');
         if (!this._actionButton) {
             return;
         }

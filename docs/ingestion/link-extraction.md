@@ -174,51 +174,44 @@ raw_url = html.unescape(match.group(1).strip())
 ### Flux complet : email → extraction → enrichissement → webhook
 
 ```python
-# routes/api_ingress.py
-@bp.route("/gmail", methods=["POST"])
-def ingest_gmail():
-    # 1. Parsing payload
-    payload = request.get_json()
-    body = payload.get("body", "")
-    
-    # 2. Extraction liens fournisseurs
-    delivery_links = link_extraction.extract_provider_links_from_text(body)
-    
-    # 3. Enrichissement R2 si activé
-    _maybe_enrich_delivery_links_with_r2(delivery_links, email_id, logger)
-    
-    # 4. Construction payload webhook avec liens enrichis
-    webhook_payload = {
-        "microsoft_graph_email_id": email_id,
-        "delivery_links": delivery_links,  # Liens extraits + R2
-        # ... autres champs
-    }
-    
-    # 5. Envoi webhook
-    send_custom_webhook_flow(webhook_payload, ...)
+# services/ingress_service.py (IngressService.process_gmail_push)
+# 1. Extraction liens fournisseurs
+delivery_links = link_extraction.extract_provider_links_from_text(body)
+
+# 2. Enrichissement R2 si activé
+self._maybe_enrich_delivery_links_with_r2(delivery_links or [], email_id)
+
+# 3. Construction payload webhook avec liens enrichis
+payload_for_webhook = {
+    "microsoft_graph_email_id": email_id,
+    "subject": subject,
+    "receivedDateTime": email_date,
+    "sender_address": sender_raw,
+    "bodyPreview": (body)[:200],
+    "email_content": body,
+    "source": "gmail_push",
+    "sender_email": sender_email
+}
 ```
 
 ### Enrichissement R2 conditionnel
 
 ```python
-def _maybe_enrich_delivery_links_with_r2(delivery_links, email_id, logger):
-    r2_service = R2TransferService.get_instance()
-    if not r2_service.is_enabled():
-        return  # Pas d'enrichissement si R2 désactivé
-    
+# services/ingress_service.py (IngressService._maybe_enrich_delivery_links_with_r2)
+def _maybe_enrich_delivery_links_with_r2(self, delivery_links: list, email_id: str) -> None:
+    if not delivery_links:
+        return
+    try:
+        if R2TransferService is None:
+            return
+        r2_service = R2TransferService.get_instance()
+        if not r2_service.is_enabled():
+            return
+    except Exception:
+        return
+
     for item in delivery_links:
-        # Tentative offload vers R2 avec timeout adaptatif
-        r2_url, filename = r2_service.request_remote_fetch(
-            source_url=item['raw_url'],
-            provider=item['provider'], 
-            email_id=email_id,
-            timeout=120 if 'scl/fo' in item['raw_url'] else 15
-        )
-        
-        if r2_url:
-            item['r2_url'] = r2_url
-            item['original_filename'] = filename
-            # Persistance mapping source→R2...
+        self._process_single_delivery_link(item, r2_service, email_id)
 ```
 
 ---

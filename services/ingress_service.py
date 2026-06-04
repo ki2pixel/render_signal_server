@@ -23,7 +23,6 @@ from pathlib import Path
 
 if TYPE_CHECKING:
     from services.config_service import ConfigService
-    from config.app_config_store import AppConfigStore
 
 from email_processing import link_extraction
 from email_processing import orchestrator as email_orchestrator
@@ -36,10 +35,11 @@ from routes.api_processing import DEFAULT_PROCESSING_PREFS
 from services.deduplication_service import DeduplicationService
 from services.runtime_flags_service import RuntimeFlagsService
 
+from typing import Any
 try:
     from services import R2TransferService
 except Exception:
-    R2TransferService = None
+    R2TransferService = None  # type: ignore
 
 
 class IngressService:
@@ -51,22 +51,19 @@ class IngressService:
     def __init__(
         self,
         config_service: Optional[ConfigService] = None,
-        app_config_store: Optional[AppConfigStore] = None,
         logger: Optional[logging.Logger] = None,
     ):
         self._config = config_service
-        self._store = app_config_store
         self._logger = logger or logging.getLogger(__name__)
 
     @classmethod
     def get_instance(
         cls,
         config_service: Optional[ConfigService] = None,
-        app_config_store: Optional[AppConfigStore] = None,
     ) -> IngressService:
         with cls._lock:
             if cls._instance is None:
-                cls._instance = cls(config_service, app_config_store)
+                cls._instance = cls(config_service)
             return cls._instance
 
     @classmethod

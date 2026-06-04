@@ -341,20 +341,19 @@ def check_new_emails_and_trigger_webhook() -> int:
 ### ✅ Le nouveau monde : fonction Gmail Push
 
 ```python
-# MODERNE - api_ingress.py::ingest_gmail
+# MODERNE - routes/api_ingress.py::ingest_gmail
 @bp.route("/gmail", methods=["POST"])
-def ingest_gmail():
-    # Authentification Bearer stricte
-    if not auth_service.verify_api_key_from_request(request):
+def ingest_gmail() -> tuple[Response, int] | Response:
+    if not _auth_service.verify_api_key_from_request(request):
         return jsonify({"success": False, "message": "Unauthorized"}), 401
-    
-    # Validation payload stricte
-    payload = request.get_json()
-    if not payload or not payload.get('sender') or not payload.get('body'):
-        return jsonify({"success": False, "message": "Missing required field"}), 400
-    
-    # Traitement direct, pas de polling
-    return process_gmail_payload(payload)
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "message": "Invalid JSON payload"}), 400
+
+    # Délégation au service d'ingestion
+    result, status_code = ingress_service.process_gmail_push(payload)
+    return jsonify(result), status_code
 ```
 
 ---

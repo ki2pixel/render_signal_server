@@ -349,7 +349,6 @@ try:
     from config import app_config_store
     _ingress_service = IngressService.get_instance(
         config_service=_config_service,
-        app_config_store=app_config_store,
     )
     app.logger.info("SVC: IngressService initialized")
 except Exception as e:

@@ -297,10 +297,12 @@ Les flags runtime permettent d'activer/désactiver des fonctionnalités sans red
 
 **Pattern de vérification** :
 ```python
-# Dans api_ingress.py
-if not runtime_flags_service.get_flag('gmail_ingress_enabled'):
-    logger.info("Gmail ingress disabled, returning 409")
-    return jsonify({"success": False, "message": "Gmail ingress disabled"}), 409
+# Dans services/ingress_service.py (IngressService._check_ingress_enabled)
+rfs = RuntimeFlagsService.get_instance()
+gmail_ingress_enabled = bool(rfs.get_flag("gmail_ingress_enabled", True))
+if not gmail_ingress_enabled:
+    self._logger.warning("INGRESS: Gmail ingress disabled - gmail_ingress_enabled=False")
+    return False, "Gmail ingress disabled"
 ```
 
 ---
