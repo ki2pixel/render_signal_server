@@ -1,6 +1,9 @@
 # Contexte Actif
 
 ## Tâches Terminées
+- [2026-06-05] Correction de l'erreur MAINT_NOTIFICATIONS Redis :
+  - Ajout du paramètre `protocol=2` dans toutes les initialisations `redis.Redis.from_url` (`app_config_store.py`, `lock.py`, `app_render.py`, `test_webhook_logs_redis_persistence.py`).
+  - Validation réussie par la suite de tests.
 - [2026-06-04] Synchronisation et mise à jour de la documentation (/docs-updater) :
   - Alignement de 10 fichiers Markdown avec l'architecture `IngressService` modulaire, la déduplication Redis-first, et l'offload R2.
   - Intégration des détails de remédiation SonarCloud (masquage PII, open redirect) et des améliorations frontend (Vite, DOMHelper, beforeunload, JsonViewer lazy rendering).

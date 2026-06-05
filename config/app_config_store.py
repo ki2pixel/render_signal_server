@@ -38,7 +38,7 @@ def _get_redis_client():
     try:
         import redis  # type: ignore
 
-        _REDIS_CLIENT = redis.Redis.from_url(redis_url, decode_responses=True)
+        _REDIS_CLIENT = redis.Redis.from_url(redis_url, decode_responses=True, protocol=2)
         return _REDIS_CLIENT
     except Exception:
         return None

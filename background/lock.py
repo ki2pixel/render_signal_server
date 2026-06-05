@@ -34,7 +34,7 @@ def acquire_singleton_lock(lock_path: str) -> bool:
         try:
             import redis
 
-            client = redis.Redis.from_url(redis_url)
+            client = redis.Redis.from_url(redis_url, protocol=2)
             token = f"pid={os.getpid()}"
             acquired = bool(
                 client.set(

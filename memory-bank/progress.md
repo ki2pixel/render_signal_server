@@ -13,6 +13,11 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-06-05 11:48:00] - Correction de l'erreur MAINT_NOTIFICATIONS Redis
+- **Objectif** : Forcer le protocole RESP2 pour `redis-py` afin d'éviter l'erreur `unknown subcommand 'MAINT_NOTIFICATIONS'` lors du démarrage sur Render.
+- **Actions réalisées** : Ajout explicite du paramètre `protocol=2` lors de l'instanciation de `redis.Redis.from_url` dans `app_config_store.py`, `lock.py`, `app_render.py` et `test_webhook_logs_redis_persistence.py`.
+- **Validation** : Suite de tests exécutée sans régression.
+
 [2026-06-04 13:30:00] - Synchronisation et mise à jour de la documentation (/docs-updater)
 - **Objectif** : Aligner la documentation technique globale (10 fichiers Markdown) avec les refactorings récents (extraction de `IngressService`, remediation SonarCloud, PII masking, WCAG AA, Vite et `DOMHelper`).
 - **Actions réalisées** :

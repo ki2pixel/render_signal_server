@@ -95,7 +95,7 @@ def _init_redis_client(logger: logging.Logger | None = None):
     try:
         import redis
 
-        return redis.Redis.from_url(redis_url, decode_responses=True)
+        return redis.Redis.from_url(redis_url, decode_responses=True, protocol=2)
     except Exception as e:
         if logger:
             logger.warning("CFG REDIS: failed to initialize redis client: %s", e)

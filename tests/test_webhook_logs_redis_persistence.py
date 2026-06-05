@@ -260,7 +260,7 @@ class TestWebhookLogsIntegration:
         
         try:
             import redis
-            client = redis.Redis.from_url(redis_url, decode_responses=True)
+            client = redis.Redis.from_url(redis_url, decode_responses=True, protocol=2)
             client.ping()
         except Exception:
             pytest.skip("Redis not available")
@@ -270,7 +270,7 @@ class TestWebhookLogsIntegration:
         import redis
         
         redis_url = os.environ.get("REDIS_URL")
-        client = redis.Redis.from_url(redis_url, decode_responses=True)
+        client = redis.Redis.from_url(redis_url, decode_responses=True, protocol=2)
         temp_file = tmp_path / "webhook_logs.json"
         mock_logger = MagicMock()
         
