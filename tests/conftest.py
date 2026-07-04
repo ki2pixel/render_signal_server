@@ -113,9 +113,10 @@ def flask_app():
     # Import tardif pour éviter les effets de bord
     import app_render
 
-    app_render.app.config["TESTING"] = True
-    app_render.app.config["WTF_CSRF_ENABLED"] = False
-    return app_render.app
+    app = app_render.create_app()
+    app.config["TESTING"] = True
+    app.config["WTF_CSRF_ENABLED"] = False
+    return app
 
 
 @pytest.fixture

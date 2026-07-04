@@ -13,6 +13,15 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-07-04 12:50:00] - Restructuration du backend et Application Factory (Audit Backend)
+- **Objectif** : Appliquer l'audit de restructuration du backend pour éliminer les dépendances cycliques, isoler le stockage de fallback, extraire les fonctions de l'orchestrateur et appliquer le pattern Application Factory.
+- **Actions réalisées** :
+  * Création de `utils/storage_backend.py` pour centraliser la persistance Redis avec fallback JSON et mémoire locale. Migration réussie de `preferences/processing_prefs.py` et `app_logging/webhook_logger.py`.
+  * Extraction des responsabilités de `email_processing/orchestrator.py` en fonctions pures compactes et indépendantes (`_parse_email`, `_apply_routing_rules`, `_enforce_time_window`, `_send_webhook`) et suppression des imports cycliques d'`app_render`.
+  * Implémentation du pattern Application Factory dans `app_render.py` avec `create_app()` tout en préservant le module-level `app` pour une parfaite compatibilité WSGI/Gunicorn descendante.
+  * Adaptation de la fixture de tests `flask_app` dans `tests/conftest.py`.
+- **Validation** : Exécution réussie des 375 tests unitaires et d'intégration sans aucune régression.
+
 [2026-06-05 11:48:00] - Correction de l'erreur MAINT_NOTIFICATIONS Redis
 - **Objectif** : Forcer le protocole RESP2 pour `redis-py` afin d'éviter l'erreur `unknown subcommand 'MAINT_NOTIFICATIONS'` lors du démarrage sur Render.
 - **Actions réalisées** : Ajout explicite du paramètre `protocol=2` lors de l'instanciation de `redis.Redis.from_url` dans `app_config_store.py`, `lock.py`, `app_render.py` et `test_webhook_logs_redis_persistence.py`.

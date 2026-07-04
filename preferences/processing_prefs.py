@@ -7,9 +7,10 @@ Processing Preferences management (load/save/validate) with Redis and file fallb
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Tuple
+
+from utils.storage_backend import load_json_with_fallback, save_json_with_fallback
 
 
 def load_processing_prefs(
@@ -20,32 +21,13 @@ def load_processing_prefs(
     logger,
     redis_key: str | None = None,
 ) -> dict:
-    # Try Redis first
-    try:
-        if redis_client is not None and redis_key:
-            raw = redis_client.get(redis_key)
-            if raw:
-                try:
-                    data = json.loads(raw if isinstance(raw, str) else raw.decode("utf-8"))
-                    if isinstance(data, dict):
-                        return {**defaults, **data}
-                except Exception:
-                    pass
-    except Exception as e:
-        if logger:
-            logger.error(f"PROCESSING_PREFS: redis load error: {e}")
-
-    # Fallback to file
-    try:
-        if file_path.exists():
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    return {**defaults, **data}
-    except Exception as e:
-        if logger:
-            logger.error(f"PROCESSING_PREFS: file load error: {e}")
-    return dict(defaults)
+    return load_json_with_fallback(
+        redis_client=redis_client,
+        redis_key=redis_key,
+        file_path=file_path,
+        defaults=defaults,
+        logger=logger,
+    )
 
 
 def save_processing_prefs(
@@ -56,25 +38,13 @@ def save_processing_prefs(
     logger,
     redis_key: str | None = None,
 ) -> bool:
-    # Try Redis first
-    try:
-        if redis_client is not None and redis_key:
-            redis_client.set(redis_key, json.dumps(prefs, ensure_ascii=False))
-            return True
-    except Exception as e:
-        if logger:
-            logger.error(f"PROCESSING_PREFS: redis save error: {e}")
-
-    # Fallback to file
-    try:
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(prefs, f, ensure_ascii=False, indent=2)
-        return True
-    except Exception as e:
-        if logger:
-            logger.error(f"PROCESSING_PREFS: file save error: {e}")
-        return False
+    return save_json_with_fallback(
+        data=prefs,
+        redis_client=redis_client,
+        redis_key=redis_key,
+        file_path=file_path,
+        logger=logger,
+    )
 
 
 def validate_processing_prefs(payload: dict, defaults: dict) -> Tuple[bool, str, dict]:

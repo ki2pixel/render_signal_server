@@ -437,7 +437,7 @@ def _normalize_webhook_failure_reason(*, status_code: int | None, response_text:
     if status_code == 429:
         return "rate_limited"
     if status_code is not None and status_code >= 500:
-        return "upstream_server_error"
+                return "upstream_server_error"
     if status_code is not None and status_code >= 400:
         return "upstream_client_error"
     if response_text_norm:
@@ -445,64 +445,34 @@ def _normalize_webhook_failure_reason(*, status_code: int | None, response_text:
     return "request_failed"
 
 
-def _fetch_and_parse_email(mail, num: bytes, logger, decode_fn, extract_sender_fn) -> Optional[ParsedEmail]:
-    """Fetch et parse un email depuis IMAP.
-    
-    Args:
-        mail: Connection IMAP active
-        num: Numéro de message (bytes)
-        logger: Logger Flask
-        decode_fn: Fonction de décodage des headers (ar.decode_email_header)
-        extract_sender_fn: Fonction d'extraction du sender (ar.extract_sender_email)
-    
-    Returns:
-        ParsedEmail si succès, None si échec
-    """
-    from email import message_from_bytes
-    
+def _parse_email(mail, num: bytes, logger) -> Optional[ParsedEmail]:
+    """Fetch and parse email from IMAP."""
     try:
         status, msg_data = mail.fetch(num, '(RFC822)')
         if status != 'OK' or not msg_data:
             logger.warning("IMAP: Failed to fetch message %s (status=%s)", num, status)
             return None
-        
+
         raw_bytes = None
         for part in msg_data:
             if isinstance(part, tuple) and isinstance(part[1], (bytes, bytearray)):
                 raw_bytes = part[1]
                 break
-        
         if not raw_bytes:
             logger.warning("IMAP: No RFC822 bytes for message %s", num)
             return None
-        
+
+        from email import message_from_bytes
         msg = message_from_bytes(raw_bytes)
         subj_raw = msg.get('Subject', '')
         from_raw = msg.get('From', '')
         date_raw = msg.get('Date', '')
-        
-        subject = decode_fn(subj_raw) if decode_fn else subj_raw
-        sender = extract_sender_fn(from_raw).lower() if extract_sender_fn else from_raw.lower()
-        
-        body_plain = ""
-        body_html = ""
-        try:
-            if msg.is_multipart():
-                for part in msg.walk():
-                    ctype = part.get_content_type()
-                    if ctype == 'text/plain':
-                        body_plain = part.get_payload(decode=True).decode('utf-8', errors='ignore')
-                    elif ctype == 'text/html':
-                        html_payload = part.get_payload(decode=True) or b''
-                        if isinstance(html_payload, (bytes, bytearray)) and len(html_payload) > MAX_HTML_BYTES:
-                            logger.warning("HTML content truncated (exceeded 1MB limit)")
-                            html_payload = html_payload[:MAX_HTML_BYTES]
-                        body_html = html_payload.decode('utf-8', errors='ignore')
-            else:
-                body_plain = msg.get_payload(decode=True).decode('utf-8', errors='ignore')
-        except Exception as e:
-            logger.debug("Email body extraction error for %s: %s", num, e)
-        
+
+        subject = imap_client.decode_email_header_value(subj_raw)
+        sender = imap_client.extract_sender_email(from_raw).lower()
+
+        body_plain, body_html = _extract_email_bodies(msg, logger)
+
         return {
             'num': num.decode() if isinstance(num, bytes) else str(num),
             'subject': subject,
@@ -513,8 +483,298 @@ def _fetch_and_parse_email(mail, num: bytes, logger, decode_fn, extract_sender_f
             'body_html': body_html,
         }
     except Exception as e:
-        logger.error("Error fetching/parsing email %s: %s", num, e)
+        logger.error("IMAP error fetching/parsing email %s: %s", num, e)
         return None
+
+
+def _extract_email_bodies(msg, logger) -> tuple[str, str]:
+    """Extract plain and HTML bodies from message with size limit enforcement."""
+    body_plain = ""
+    body_html = ""
+    try:
+        if msg.is_multipart():
+            html_bytes_total = 0
+            html_truncated_logged = False
+            for part in msg.walk():
+                ctype = part.get_content_type()
+                disp = (part.get('Content-Disposition') or '').lower()
+                if 'attachment' in disp:
+                    continue
+                payload = part.get_payload(decode=True) or b''
+                if ctype == 'text/plain':
+                    body_plain += payload.decode(part.get_content_charset() or 'utf-8', errors='ignore')
+                elif ctype == 'text/html':
+                    if isinstance(payload, (bytes, bytearray)):
+                        remaining = MAX_HTML_BYTES - html_bytes_total
+                        if len(payload) > remaining:
+                            payload = payload[:remaining]
+                            if not html_truncated_logged:
+                                logger.warning("HTML content truncated (exceeded 1MB limit)")
+                                html_truncated_logged = True
+                        html_bytes_total += len(payload)
+                    body_html += payload.decode(part.get_content_charset() or 'utf-8', errors='ignore')
+        else:
+            payload = msg.get_payload(decode=True) or b''
+            ctype = msg.get_content_type() or 'text/plain'
+            if ctype == 'text/html':
+                if len(payload) > MAX_HTML_BYTES:
+                    logger.warning("HTML content truncated (exceeded 1MB limit)")
+                    payload = payload[:MAX_HTML_BYTES]
+                body_html = payload.decode(msg.get_content_charset() or 'utf-8', errors='ignore')
+            else:
+                body_plain = payload.decode(msg.get_content_charset() or 'utf-8', errors='ignore')
+    except Exception as e:
+        logger.debug("Email body extraction error: %s", e)
+    return body_plain, body_html
+
+
+def _apply_routing_rules(
+    subject: str,
+    sender_addr: str,
+    body: str,
+    email_id: str,
+    logger,
+) -> tuple[str | None, bool, str | None]:
+    """Applies dynamic routing rules and returns (webhook_url, stop_processing, priority)."""
+    try:
+        routing_payload = _get_routing_rules_payload()
+        routing_rules = routing_payload.get("rules") if isinstance(routing_payload, dict) else []
+        matched_rule = _find_matching_routing_rule(
+            routing_rules,
+            sender=sender_addr,
+            subject=subject,
+            body=body,
+            email_id=email_id,
+            logger=logger,
+        )
+        if isinstance(matched_rule, dict):
+            actions = matched_rule.get("actions")
+            if isinstance(actions, dict):
+                candidate_url = actions.get("webhook_url")
+                if isinstance(candidate_url, str) and candidate_url.strip():
+                    routing_webhook_url = candidate_url.strip()
+                    routing_stop_processing = bool(actions.get("stop_processing", False))
+                    priority_value = actions.get("priority")
+                    routing_priority = priority_value.strip().lower() if isinstance(priority_value, str) else None
+                    return routing_webhook_url, routing_stop_processing, routing_priority
+                else:
+                    logger.warning(
+                        "ROUTING_RULES: Rule %s missing webhook_url; skipping",
+                        matched_rule.get("id", "unknown"),
+                    )
+    except Exception as routing_exc:
+        logger.debug("ROUTING_RULES: Evaluation error: %s", routing_exc)
+    return None, False, None
+
+
+def _enforce_time_window(
+    detector_val: str | None,
+    desabo_is_urgent: bool,
+    now_local: datetime,
+    s_str: str,
+    e_str: str,
+    within: bool,
+    email_id: str,
+    mail,
+    num,
+    logger,
+) -> bool:
+    """Checks the time window constraints and logs outcomes."""
+    if within:
+        return True
+    tw_start_str = s_str or 'unset'
+    tw_end_str = e_str or 'unset'
+    now_str = now_local.strftime('%H:%M')
+    if detector_val == 'desabonnement_journee_tarifs':
+        if desabo_is_urgent:
+            logger.info("WEBHOOK_GLOBAL_TIME_WINDOW: Outside window for urgent DESABO (now=%s, window=%s-%s)", now_str, tw_start_str, tw_end_str)
+            return False
+        logger.info("WEBHOOK_GLOBAL_TIME_WINDOW: Outside window for DESABO (non-urgent) -> bypassing (now=%s, window=%s-%s)", now_str, tw_start_str, tw_end_str)
+        return True
+    if detector_val == 'recadrage':
+        logger.info("WEBHOOK_GLOBAL_TIME_WINDOW: Outside window for RECADRAGE -> skipping (now=%s, window=%s-%s)", now_str, tw_start_str, tw_end_str)
+        try:
+            DeduplicationService.get_instance().mark_email_processed(email_id)
+            imap_client.mark_email_as_read_imap(logger, mail, num)
+        except Exception:
+            pass
+        return False
+    logger.info("WEBHOOK_GLOBAL_TIME_WINDOW: Outside dedicated window for email %s. Skipping.", email_id)
+    return False
+
+
+def _send_webhook(
+    email_id: str,
+    subject: str,
+    payload_for_webhook: dict,
+    delivery_links: list,
+    webhook_url: str,
+    processing_prefs: dict,
+    mail,
+    num,
+    logger,
+) -> bool:
+    """Dispatches sending to custom webhook flow. Returns success/attempt status."""
+    return send_custom_webhook_flow(
+        email_id=email_id,
+        subject=subject,
+        payload_for_webhook=payload_for_webhook,
+        delivery_links=delivery_links,
+        webhook_url=webhook_url,
+        webhook_ssl_verify=True,
+        allow_without_links=bool(getattr(settings, 'ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS', False)),
+        processing_prefs=processing_prefs,
+        rate_limit_allow_send=RateLimitService.get_instance().allow_send,
+        record_send_event=RateLimitService.get_instance().record_event,
+        append_webhook_log=WebhookLoggerService.get_instance().append_log,
+        mark_email_id_as_processed_redis=DeduplicationService.get_instance().mark_email_processed,
+        mark_email_as_read_imap=lambda *a, **k: imap_client.mark_email_as_read_imap(logger, *a, **k),
+        mail=mail,
+        email_num=num,
+        urlparse=None,
+        requests=__import__('requests'),
+        time=__import__('time'),
+        logger=logger,
+    )
+
+
+def _handle_r2_enrichment(delivery_links: list, email_id: str, logger) -> None:
+    """Enrich delivery links with Cloudflare R2 offload URLs when enabled."""
+    try:
+        from services import R2TransferService
+        r2_service = R2TransferService.get_instance()
+        if not r2_service.is_enabled() or not delivery_links:
+            return
+        for link_item in delivery_links:
+            if not isinstance(link_item, dict):
+                continue
+            source_url = link_item.get('raw_url')
+            provider = link_item.get('provider')
+            if source_url and provider:
+                fallback_raw_url = source_url
+                fallback_direct_url = link_item.get('direct_url') or source_url
+                link_item['raw_url'] = source_url
+                if not link_item.get('direct_url'):
+                    link_item['direct_url'] = fallback_direct_url
+                try:
+                    normalized = r2_service.normalize_source_url(source_url, provider)
+                    timeout = 120 if provider == "dropbox" and "/scl/fo/" in normalized.lower() else 15
+                    r2_result = r2_service.request_remote_fetch(
+                        source_url=normalized, provider=provider, email_id=email_id, timeout=timeout
+                    )
+                    r2_url, filename = r2_result if isinstance(r2_result, tuple) and len(r2_result) == 2 else (None, None)
+                    if r2_url:
+                        link_item['r2_url'] = r2_url
+                        if isinstance(filename, str) and filename.strip():
+                            link_item['original_filename'] = filename.strip()
+                        r2_service.persist_link_pair(normalized, r2_url, provider, filename)
+                        logger.info("R2_TRANSFER: Successfully transferred link to R2 for %s", email_id)
+                    else:
+                        raise ValueError("R2 fetch returned empty url")
+                except Exception:
+                    logger.warning("R2 transfer failed, falling back to source url")
+                    link_item['raw_url'] = fallback_raw_url
+                    link_item['direct_url'] = fallback_direct_url
+    except Exception as ex:
+        logger.debug("R2_TRANSFER: Service unavailable: %s", ex)
+
+
+def _infer_detectors(subject: str, text: str, logger) -> tuple[str | None, str | None, bool]:
+    """Infers pattern matchers (DESABO / RECADRAGE). Returns (detector, delivery_time, is_urgent)."""
+    detector_val = None
+    delivery_time_val = None
+    desabo_is_urgent = False
+    try:
+        pm_mod = globals().get('pattern_matching')
+        if pm_mod is None or not hasattr(pm_mod, 'check_media_solution_pattern'):
+            from email_processing import pattern_matching as _pm
+            pm_mod = _pm
+        ms_res = pm_mod.check_media_solution_pattern(
+            subject or '', text or '', get_polling_timezone(), logger
+        )
+        if isinstance(ms_res, dict) and bool(ms_res.get('matches')):
+            detector_val = 'recadrage'
+            delivery_time_val = ms_res.get('delivery_time')
+        else:
+            des_res = pm_mod.check_desabo_conditions(
+                subject or '', text or '', logger
+            )
+            if isinstance(des_res, dict) and bool(des_res.get('matches')):
+                detector_val = 'desabonnement_journee_tarifs'
+                desabo_is_urgent = bool(des_res.get('is_urgent'))
+    except Exception as _det_ex:
+        logger.debug("DETECTOR_DEBUG: inference error: %s", _det_ex)
+    return detector_val, delivery_time_val, desabo_is_urgent
+
+
+def _build_webhook_payload(
+    email_id: str,
+    subject: str,
+    date_raw: str,
+    from_raw: str,
+    sender_addr: str,
+    combined_text: str,
+    s_str: str,
+    e_str: str,
+    within: bool,
+    detector_val: str | None,
+    delivery_time_val: str | None,
+    desabo_is_urgent: bool,
+    now_local: datetime,
+    start_t,
+    _w_tw,
+) -> dict:
+    """Builds the final payload dictionary for the webhook call."""
+    preview = (combined_text or "")[:200]
+    s_eff = s_str or _w_tw.get_time_window_info().get('start') or ''
+    e_eff = e_str or _w_tw.get_time_window_info().get('end') or ''
+    start_payload_val = None
+    try:
+        if s_eff and e_eff and start_t:
+            now_t = now_local.timetz().replace(tzinfo=None)
+            if within:
+                start_payload_val = "maintenant"
+            elif detector_val == 'desabonnement_journee_tarifs' and not desabo_is_urgent and now_t < start_t:
+                start_payload_val = s_eff
+    except Exception:
+        pass
+    payload = {
+        "microsoft_graph_email_id": email_id,
+        "subject": subject or "",
+        "receivedDateTime": date_raw or "",
+        "sender_address": from_raw or sender_addr,
+        "bodyPreview": preview,
+        "email_content": combined_text or "",
+        "sender_email": sender_addr,
+    }
+    if start_payload_val is not None:
+        payload["webhooks_time_start"] = start_payload_val
+    if e_eff:
+        payload["webhooks_time_end"] = e_eff
+    if detector_val:
+        payload["detector"] = detector_val
+    if detector_val == 'recadrage' and delivery_time_val:
+        payload["delivery_time"] = delivery_time_val
+    return payload
+
+
+def _load_processing_prefs() -> dict:
+    """Loads current processing preferences with default fallback."""
+    try:
+        from routes.api_processing import DEFAULT_PROCESSING_PREFS
+        from config.app_config_store import get_config_json as _config_get
+        from pathlib import Path
+        processing_prefs_file = Path(__file__).resolve().parents[1] / "debug" / "processing_prefs.json"
+        data = _config_get("processing_prefs", file_fallback=processing_prefs_file) or {}
+        if isinstance(data, dict):
+            return {**DEFAULT_PROCESSING_PREFS, **data}
+    except Exception:
+        pass
+    try:
+        from routes.api_processing import DEFAULT_PROCESSING_PREFS
+        return DEFAULT_PROCESSING_PREFS.copy()
+    except Exception:
+        return {}
 
 
 # =============================================================================
@@ -522,78 +782,26 @@ def _fetch_and_parse_email(mail, num: bytes, logger, decode_fn, extract_sender_f
 # =============================================================================
 
 def check_new_emails_and_trigger_webhook() -> int:
-    import app_render as ar
-    """Execute one IMAP polling cycle and trigger webhooks when appropriate.
-    
-    This is the main orchestration function for email-based webhook triggering.
-    It connects to IMAP, fetches unseen emails, applies pattern detection,
-    and triggers appropriate webhooks based on routing rules.
-    
-    Workflow:
-    1. Connect to IMAP server
-    2. Fetch unseen emails from INBOX
-    3. For each email:
-       a. Parse headers and body
-       b. Check sender allowlist and deduplication
-       c. Infer detector type (RECADRAGE, DESABO, or none)
-       d. Route to appropriate handler (Presence, DESABO, Media Solution, Custom)
-       e. Apply time window rules
-       f. Send webhook if conditions are met
-       g. Mark email as processed
-    
-    Routes:
-    - PRESENCE: Thursday/Friday presence notifications via autorepondeur webhook
-    - DESABO: Désabonnement requests via Make.com webhook (bypasses time window)
-    - MEDIA_SOLUTION: Legacy Media Solution route (disabled, uses Custom instead)
-    - CUSTOM: Unified webhook flow via WEBHOOK_URL (with time window enforcement)
-    
-    Detector types:
-    - RECADRAGE: Média Solution pattern (subject + delivery time extraction)
-    - DESABO: Désabonnement + journée + tarifs pattern
-    - None: Falls back to Custom webhook flow
-    
-    Returns:
-        int: Number of triggered actions (best-effort count)
-    
-    Implementation notes:
-    - Imports are lazy (inside function) to avoid circular dependencies
-    - Defensive logging: never raises exceptions to the background loop
-    - Uses deduplication (Redis) to avoid processing same email multiple times
-    - Subject-group deduplication prevents spam from repetitive emails
-    """
+    """Execute one IMAP polling cycle and trigger webhooks when appropriate."""
+    logger = None
     try:
         from app_render import app as _app
-        from email_processing import payloads
-        from email_processing import link_extraction
-        from config import webhook_time_window as _w_tw
-    except Exception as _imp_ex:
-        try:
-            # If wiring isn't ready, log and bail out
-            from app_render import app as _app
-            _app.logger.error(
-                "ORCHESTRATOR: Wiring error; skipping cycle: %s", _imp_ex
-            )
-        except Exception:
-            pass
-        return 0
-
-    logger = getattr(_app, 'logger', None)
-    if not logger:
-        return 0
-
-    try:
-        if not _is_webhook_sending_enabled():
-            try:
-                _day = datetime.now(timezone.utc).astimezone().strftime('%A')
-            except Exception:
-                _day = "unknown"
-            logger.info(
-                "ABSENCE_PAUSE: Global absence active for today (%s) — skipping all webhook sends this cycle.",
-                _day,
-            )
-            return 0
+        logger = getattr(_app, 'logger', None)
     except Exception:
         pass
+    if not logger:
+        import logging
+        logger = logging.getLogger("email_processing.orchestrator")
+    try:
+        from email_processing import payloads, link_extraction
+        from config import webhook_time_window as _w_tw
+    except Exception as _imp_ex:
+        logger.error("ORCHESTRATOR: Wiring error; skipping cycle: %s", _imp_ex)
+        return 0
+
+    if not _is_webhook_sending_enabled():
+        logger.info("ABSENCE_PAUSE: Global absence active — skipping webhook sends.")
+        return 0
 
     mail = imap_client.create_imap_connection(logger)
     if not mail:
@@ -621,703 +829,96 @@ def check_new_emails_and_trigger_webhook() -> int:
             logger.error("IMAP: Exception during search UNSEEN: %s", e_search)
             return 0
 
-        def _is_within_time_window_local(now_local):
-            try:
-                return _w_tw.is_within_global_time_window(now_local)
-            except Exception:
-                return True
-
         for num in email_nums:
             try:
-                status, msg_data = mail.fetch(num, '(RFC822)')
-                if status != 'OK' or not msg_data:
-                    logger.warning("IMAP: Failed to fetch message %s (status=%s)", num, status)
-                    try:
-                        logger.info(
-                            "IGNORED: Skipping email %s due to fetch failure (status=%s)",
-                            num.decode() if isinstance(num, bytes) else str(num),
-                            status,
-                        )
-                    except Exception:
-                        pass
-                    if os.environ.get('ORCH_TEST_RERAISE') == '1':
-                        try:
-                            print("DEBUG_TEST group dedup -> continue")
-                        except Exception:
-                            pass
-                    if os.environ.get('ORCH_TEST_RERAISE') == '1':
-                        try:
-                            print("DEBUG_TEST email-id dedup -> continue")
-                        except Exception:
-                            pass
-                    continue
-                raw_bytes = None
-                for part in msg_data:
-                    if isinstance(part, tuple) and isinstance(part[1], (bytes, bytearray)):
-                        raw_bytes = part[1]
-                        break
-                if not raw_bytes:
-                    logger.warning("IMAP: No RFC822 bytes for message %s", num)
-                    try:
-                        logger.info(
-                            "IGNORED: Skipping email %s due to empty RFC822 payload",
-                            num.decode() if isinstance(num, bytes) else str(num),
-                        )
-                    except Exception:
-                        pass
+                email_data = _parse_email(mail, num, logger)
+                if not email_data:
                     continue
 
-                msg = message_from_bytes(raw_bytes)
-                subj_raw = msg.get('Subject', '')
-                from_raw = msg.get('From', '')
-                date_raw = msg.get('Date', '')
-                subject = imap_client.decode_email_header_value(subj_raw)
-                sender_addr = imap_client.extract_sender_email(from_raw).lower()
-                if os.environ.get('ORCH_TEST_RERAISE') == '1':
-                    try:
-                        print(
-                            "DEBUG_TEST parsed subject='%s' sender='%s'"
-                            % (
-                                mask_sensitive_data(subject or "", "subject"),
-                                mask_sensitive_data(sender_addr or "", "email"),
-                            )
-                        )
-                    except Exception:
-                        pass
-                try:
-                    logger.info(
-                        "POLLER: Email read from IMAP: num=%s, subject='%s', sender='%s'",
-                        num.decode() if isinstance(num, bytes) else str(num),
-                        mask_sensitive_data(subject or "", "subject") or 'N/A',
-                        mask_sensitive_data(sender_addr or "", "email") or 'N/A',
-                    )
-                except Exception:
-                    pass
-
+                subject, sender_addr, msg = email_data['subject'], email_data['sender'], email_data['msg']
                 try:
                     sender_list = getattr(settings, 'SENDER_LIST_FOR_POLLING', [])
                 except Exception:
                     sender_list = []
                 allowed = [str(s).lower() for s in (sender_list or [])]
-                if os.environ.get('ORCH_TEST_RERAISE') == '1':
-                    try:
-                        allowed_masked = [mask_sensitive_data(s or "", "email") for s in allowed][:3]
-                        print(
-                            "DEBUG_TEST allowlist allowed_count=%s allowed_sample=%s sender=%s"
-                            % (
-                                len(allowed),
-                                allowed_masked,
-                                mask_sensitive_data(sender_addr or "", "email"),
-                            )
-                        )
-                    except Exception:
-                        pass
                 if allowed and sender_addr not in allowed:
-                    logger.info(
-                        "POLLER: Skipping email %s (sender %s not in allowlist)",
-                        num.decode() if isinstance(num, bytes) else str(num),
-                        mask_sensitive_data(sender_addr or "", "email"),
-                    )
-                    try:
-                        logger.info(
-                            "IGNORED: Sender not in allowlist for email %s (sender=%s)",
-                            num.decode() if isinstance(num, bytes) else str(num),
-                            mask_sensitive_data(sender_addr or "", "email"),
-                        )
-                    except Exception:
-                        pass
+                    logger.info("POLLER: Skipping email %s (sender not in allowlist)", email_data['num'])
                     continue
 
-                headers_map = {
-                    'Message-ID': msg.get('Message-ID', ''),
-                    'Subject': subject or '',
-                    'Date': date_raw or '',
-                }
+                headers_map = {'Message-ID': msg.get('Message-ID', ''), 'Subject': subject or '', 'Date': email_data['date_raw']}
                 email_id = imap_client.generate_email_id(headers_map)
-                if os.environ.get('ORCH_TEST_RERAISE') == '1':
-                    try:
-                        print(f"DEBUG_TEST email_id={email_id}")
-                    except Exception:
-                        pass
                 if DeduplicationService.get_instance().is_email_processed(email_id):
                     logger.info("DEDUP_EMAIL: Skipping already processed email_id=%s", email_id)
-                    try:
-                        logger.info("IGNORED: Email %s ignored due to email-id dedup", email_id)
-                    except Exception:
-                        pass
                     continue
 
-                try:
-                    original_subject = subject or ''
-                    core_subject = strip_leading_reply_prefixes(original_subject)
-                    if core_subject != original_subject:
-                        logger.info(
-                            "IGNORED: Skipping webhook because subject is a reply/forward (email_id=%s, subject='%s')",
-                            email_id,
-                            mask_sensitive_data(original_subject or "", "subject"),
-                        )
-                        DeduplicationService.get_instance().mark_email_processed(email_id)
-                        imap_client.mark_email_as_read_imap(logger, mail, num)
-                        if os.environ.get('ORCH_TEST_RERAISE') == '1':
-                            try:
-                                print("DEBUG_TEST reply/forward skip -> continue")
-                            except Exception:
-                                pass
-                        continue
-                except Exception:
-                    pass
-
-
-                combined_text_for_detection = ""
-                full_text = ""
-                html_text = ""
-                html_bytes_total = 0
-                html_truncated_logged = False
-                try:
-                    if msg.is_multipart():
-                        for part in msg.walk():
-                            ctype = part.get_content_type()
-                            disp = (part.get('Content-Disposition') or '').lower()
-                            if 'attachment' in disp:
-                                continue
-                            payload = part.get_payload(decode=True) or b''
-                            if ctype == 'text/plain':
-                                decoded = payload.decode(part.get_content_charset() or 'utf-8', errors='ignore')
-                                full_text += decoded
-                            elif ctype == 'text/html':
-                                if isinstance(payload, (bytes, bytearray)):
-                                    remaining = MAX_HTML_BYTES - html_bytes_total
-                                    if remaining <= 0:
-                                        if not html_truncated_logged:
-                                            logger.warning("HTML content truncated (exceeded 1MB limit)")
-                                            html_truncated_logged = True
-                                        continue
-                                    if len(payload) > remaining:
-                                        payload = payload[:remaining]
-                                        if not html_truncated_logged:
-                                            logger.warning("HTML content truncated (exceeded 1MB limit)")
-                                            html_truncated_logged = True
-                                    html_bytes_total += len(payload)
-                                decoded = payload.decode(part.get_content_charset() or 'utf-8', errors='ignore')
-                                html_text += decoded
-                    else:
-                        payload = msg.get_payload(decode=True) or b''
-                        if isinstance(payload, (bytes, bytearray)) and (msg.get_content_type() or 'text/plain') == 'text/html':
-                            if len(payload) > MAX_HTML_BYTES:
-                                logger.warning("HTML content truncated (exceeded 1MB limit)")
-                                payload = payload[:MAX_HTML_BYTES]
-                        decoded = payload.decode(msg.get_content_charset() or 'utf-8', errors='ignore')
-                        ctype_single = msg.get_content_type() or 'text/plain'
-                        if ctype_single == 'text/html':
-                            html_text = decoded
-                        else:
-                            full_text = decoded
-                except Exception:
-                    full_text = full_text or ''
-                    html_text = html_text or ''
-
-                # Combine plain + HTML for detectors that scan raw text (regex catches URLs in HTML too)
-                try:
-                    combined_text_for_detection = (full_text or '') + "\n" + (html_text or '')
-                    if os.environ.get('ORCH_TEST_RERAISE') == '1':
-                        try:
-                            print("DEBUG_TEST combined text ready")
-                        except Exception:
-                            pass
-                except Exception:
-                    combined_text_for_detection = full_text or ''
-
-                # Presence route removed (feature deprecated)
-
-                try:
-                    logger.info("ROUTES: DESABO route disabled — using unified custom webhook flow (WEBHOOK_URL)")
-                except Exception:
-                    pass
-
-                # 3) Media Solution route — disabled (legacy Make.com path). Unified flow via WEBHOOK_URL only.
-                try:
-                    logger.info("ROUTES: Media Solution route disabled — using unified custom webhook flow (WEBHOOK_URL)")
-                except Exception:
-                    pass
-
-
-                # 4) Custom webhook flow (outside-window handling occurs after detector inference)
-
-                # Enforce dedicated webhook-global time window only when sending is enabled
-                try:
-                    now_local = datetime.now(get_polling_timezone())
-                except Exception:
-                    now_local = datetime.now(timezone.utc)
-
-                s_str, e_str = _load_webhook_global_time_window()
-                s_t = parse_time_hhmm(s_str) if s_str else None
-                e_t = parse_time_hhmm(e_str) if e_str else None
-                # Prefer module-level patched helper if available (tests set orch_local.is_within_time_window_local)
-                _patched = globals().get('is_within_time_window_local')
-                if callable(_patched):
-                    within = _patched(now_local, s_t, e_t)
-                else:
-                    try:
-                        from utils import time_helpers as _th
-                        within = _th.is_within_time_window_local(now_local, s_t, e_t)
-                    except Exception:
-                        # Fallback to the locally imported helper
-                        within = is_within_time_window_local(now_local, s_t, e_t)
-                if os.environ.get('ORCH_TEST_RERAISE') == '1':
-                    try:
-                        print(f"DEBUG_TEST window s='{s_str}' e='{e_str}' within={within}")
-                    except Exception:
-                        pass
-
-                delivery_links = link_extraction.extract_provider_links_from_text(combined_text_for_detection or '')
-                
-                # R2 Transfer: enrich delivery_links with R2 URLs if enabled
-                try:
-                    from services import R2TransferService
-                    r2_service = R2TransferService.get_instance()
-                    
-                    if r2_service.is_enabled() and delivery_links:
-                        for link_item in delivery_links:
-                            if not isinstance(link_item, dict):
-                                continue
-                            
-                            source_url = link_item.get('raw_url')
-                            provider = link_item.get('provider')
-                            if source_url:
-                                fallback_raw_url = source_url
-                                fallback_direct_url = link_item.get('direct_url') or source_url
-                                link_item['raw_url'] = source_url
-                                if not link_item.get('direct_url'):
-                                    link_item['direct_url'] = fallback_direct_url
-                            
-                            if source_url and provider:
-                                try:
-                                    normalized_source_url = r2_service.normalize_source_url(
-                                        source_url, provider
-                                    )
-                                    remote_fetch_timeout = 15
-                                    if (
-                                        provider == "dropbox"
-                                        and "/scl/fo/" in normalized_source_url.lower()
-                                    ):
-                                        remote_fetch_timeout = 120
- 
-                                    r2_result = None
-                                    try:
-                                        r2_result = r2_service.request_remote_fetch(
-                                            source_url=normalized_source_url,
-                                            provider=provider,
-                                            email_id=email_id,
-                                            timeout=remote_fetch_timeout
-                                        )
-                                    except Exception:
-                                        r2_result = None
- 
-                                    r2_url = None
-                                    original_filename = None
-                                    if isinstance(r2_result, tuple) and len(r2_result) == 2:
-                                        r2_url, original_filename = r2_result
-                                    elif r2_result is None:
-                                        r2_url = None
- 
-                                    if r2_url:
-                                        link_item['r2_url'] = r2_url
-                                        if isinstance(original_filename, str) and original_filename.strip():
-                                            link_item['original_filename'] = original_filename.strip()
-                                        # Persister la paire source/R2
-                                        r2_service.persist_link_pair(
-                                            source_url=normalized_source_url,
-                                            r2_url=r2_url,
-                                            provider=provider,
-                                            original_filename=original_filename,
-                                        )
-                                        logger.info(
-                                            "R2_TRANSFER: Successfully transferred %s link to R2 for email %s",
-                                            provider,
-                                            email_id
-                                        )
-                                    else:
-                                        logger.warning(
-                                            "R2 transfer failed, falling back to source url"
-                                        )
-                                        if source_url:
-                                            link_item['raw_url'] = fallback_raw_url
-                                            link_item['direct_url'] = fallback_direct_url
-                                except Exception:
-                                    logger.warning(
-                                        "R2 transfer failed, falling back to source url"
-                                    )
-                                    if source_url:
-                                        link_item['raw_url'] = fallback_raw_url
-                                        link_item['direct_url'] = fallback_direct_url
-                                    # Continue avec le lien source original
-                except Exception as r2_service_ex:
-                     logger.debug("R2_TRANSFER: Service unavailable or disabled: %s", str(r2_service_ex))
-                
-                # Group dedup check for custom webhook
-                group_id = DeduplicationService.get_instance().generate_subject_group_id(subject or '')
-                if DeduplicationService.get_instance().is_subject_group_processed(group_id):
-                    logger.info("DEDUP_GROUP: Skipping email %s (group %s processed)", email_id, group_id)
+                core_subject = strip_leading_reply_prefixes(subject or '')
+                if core_subject != subject:
+                    logger.info("IGNORED: Skipping reply/forward (email_id=%s)", email_id)
                     DeduplicationService.get_instance().mark_email_processed(email_id)
                     imap_client.mark_email_as_read_imap(logger, mail, num)
-                    try:
-                        logger.info(
-                            "IGNORED: Email %s ignored due to subject-group dedup (group=%s)",
-                            email_id,
-                            group_id,
-                        )
-                    except Exception:
-                        pass
                     continue
 
+                combined_text = (email_data['body_plain'] or '') + "\n" + (email_data['body_html'] or '')
+                delivery_links = link_extraction.extract_provider_links_from_text(combined_text)
+                _handle_r2_enrichment(delivery_links, email_id, logger)
 
-                # Infer a detector for PHP receiver (Gmail sending path)
-                if os.environ.get('ORCH_TEST_RERAISE') == '1':
-                    try:
-                        print("DEBUG_TEST entering detector inference")
-                    except Exception:
-                        pass
-                detector_val = None
-                delivery_time_val = None  # for recadrage
-                desabo_is_urgent = False  # for DESABO
-                try:
-                    # Obtain pattern_matching each time, preferring a monkeypatched object on this module
-                    pm_mod = globals().get('pattern_matching')
-                    if pm_mod is None or not hasattr(pm_mod, 'check_media_solution_pattern'):
-                        from email_processing import pattern_matching as _pm
-                        pm_mod = _pm
-                    if os.environ.get('ORCH_TEST_RERAISE') == '1':
-                        try:
-                            print(f"DEBUG_TEST pm_mod={type(pm_mod)} has_ms={hasattr(pm_mod,'check_media_solution_pattern')} has_des={hasattr(pm_mod,'check_desabo_conditions')}")
-                        except Exception:
-                            pass
-                    # Prefer Media Solution if matched
-                    ms_res = pm_mod.check_media_solution_pattern(
-                        subject or '', combined_text_for_detection or '', get_polling_timezone(), logger
-                    )
-                    if isinstance(ms_res, dict) and bool(ms_res.get('matches')):
-                        detector_val = 'recadrage'
-                        try:
-                            delivery_time_val = ms_res.get('delivery_time')
-                        except Exception:
-                            delivery_time_val = None
-                    else:
-                        # Fallback: DESABO detector if base conditions are met
-                        des_res = pm_mod.check_desabo_conditions(
-                            subject or '', combined_text_for_detection or '', logger
-                        )
-                        if os.environ.get('ORCH_TEST_RERAISE') == '1':
-                            try:
-                                print(f"DEBUG_TEST ms_res={ms_res} des_res={des_res}")
-                            except Exception:
-                                pass
-                        if isinstance(des_res, dict) and bool(des_res.get('matches')):
-                            # Optionally require a Dropbox request hint if provided by helper
-                            if des_res.get('has_dropbox_request') is True:
-                                detector_val = 'desabonnement_journee_tarifs'
-                            else:
-                                detector_val = 'desabonnement_journee_tarifs'
-                            try:
-                                desabo_is_urgent = bool(des_res.get('is_urgent'))
-                            except Exception:
-                                desabo_is_urgent = False
-                except Exception as _det_ex:
-                    try:
-                        logger.debug("DETECTOR_DEBUG: inference error for email %s: %s", email_id, _det_ex)
-                    except Exception:
-                        pass
+                group_id = DeduplicationService.get_instance().generate_subject_group_id(subject or '')
+                if DeduplicationService.get_instance().is_subject_group_processed(group_id):
+                    logger.info("DEDUP_GROUP: Skipping email %s (group processed)", email_id)
+                    DeduplicationService.get_instance().mark_email_processed(email_id)
+                    imap_client.mark_email_as_read_imap(logger, mail, num)
+                    continue
 
-                try:
-                    logger.info(
-                        "CUSTOM_WEBHOOK: detector inferred for email %s: %s", email_id, detector_val or 'none'
-                    )
-                    if detector_val == 'recadrage':
-                        logger.info(
-                            "CUSTOM_WEBHOOK: recadrage delivery_time for email %s: %s", email_id, delivery_time_val or 'none'
-                        )
-                except Exception:
-                    pass
+                detector_val, delivery_time_val, desabo_is_urgent = _infer_detectors(subject, combined_text, logger)
+                logger.info("CUSTOM_WEBHOOK: detector inferred for email %s: %s", email_id, detector_val or 'none')
 
-                # Test-only: surface decision inputs
-                if os.environ.get('ORCH_TEST_RERAISE') == '1':
-                    try:
-                        print(
-                            "DEBUG_TEST within=%s detector=%s start='%s' end='%s' subj='%s'"
-                            % (
-                                within,
-                                detector_val,
-                                s_str,
-                                e_str,
-                                mask_sensitive_data(subject or "", "subject"),
-                            )
-                        )
-                    except Exception:
-                        pass
+                now_local = datetime.now(get_polling_timezone())
+                s_str, e_str = _load_webhook_global_time_window()
+                s_t, e_t = parse_time_hhmm(s_str) if s_str else None, parse_time_hhmm(e_str) if e_str else None
 
-                # DESABO: bypass window, RECADRAGE: skip sending
-                if not within:
-                    tw_start_str = (s_str or 'unset')
-                    tw_end_str = (e_str or 'unset')
-                    if detector_val == 'desabonnement_journee_tarifs':
-                        if desabo_is_urgent:
-                            logger.info(
-                                "WEBHOOK_GLOBAL_TIME_WINDOW: Outside window for email %s and detector=DESABO but URGENT -> skipping webhook (now=%s, window=%s-%s)",
-                                email_id,
-                                now_local.strftime('%H:%M'),
-                                tw_start_str,
-                                tw_end_str,
-                            )
-                            try:
-                                logger.info("IGNORED: DESABO urgent skipped outside window (email %s)", email_id)
-                            except Exception:
-                                pass
-                            continue
-                        else:
-                            logger.info(
-                                "WEBHOOK_GLOBAL_TIME_WINDOW: Outside window for email %s but detector=DESABO (non-urgent) -> bypassing window and proceeding to send (now=%s, window=%s-%s)",
-                                email_id,
-                                now_local.strftime('%H:%M'),
-                                tw_start_str,
-                                tw_end_str,
-                            )
-                            # Fall through to payload/send below
-                    elif detector_val == 'recadrage':
-                        logger.info(
-                            "WEBHOOK_GLOBAL_TIME_WINDOW: Outside window for email %s and detector=RECADRAGE -> skipping webhook AND marking read/processed (now=%s, window=%s-%s)",
-                            email_id,
-                            now_local.strftime('%H:%M'),
-                            tw_start_str,
-                            tw_end_str,
-                        )
-                        try:
-                            DeduplicationService.get_instance().mark_email_processed(email_id)
-                            imap_client.mark_email_as_read_imap(logger, mail, num)
-                            logger.info("IGNORED: RECADRAGE skipped outside window and marked processed (email %s)", email_id)
-                        except Exception:
-                            pass
-                        continue
-                    else:
-                        logger.info(
-                            "WEBHOOK_GLOBAL_TIME_WINDOW: Outside dedicated window for email %s (now=%s, window=%s-%s). Skipping.",
-                            email_id,
-                            now_local.strftime('%H:%M'),
-                            tw_start_str,
-                            tw_end_str,
-                        )
-                        try:
-                            logger.info("IGNORED: Webhook skipped due to dedicated time window (email %s)", email_id)
-                        except Exception:
-                            pass
-                        continue
+                _patched = globals().get('is_within_time_window_local')
+                within = _patched(now_local, s_t, e_t) if callable(_patched) else is_within_time_window_local(now_local, s_t, e_t)
 
-                # Required by validator: sender_address, subject, receivedDateTime
-                # Provide email_content to avoid server-side IMAP search and allow URL extraction.
-                preview = (combined_text_for_detection or "")[:200]
-                # Load current global time window strings and compute start payload logic
-                # IMPORTANT: Prefer the same source used for the bypass decision (s_str/e_str)
-                # to avoid desynchronization with config overrides. Fall back to
-                # config.webhook_time_window.get_time_window_info() only if needed.
-                try:
-                    # s_str/e_str were loaded earlier via _load_webhook_global_time_window()
-                    _pref_start = (s_str or '').strip()
-                    _pref_end = (e_str or '').strip()
-                    if not _pref_start or not _pref_end:
-                        tw_info = _w_tw.get_time_window_info()
-                        _pref_start = _pref_start or (tw_info.get('start') or '').strip()
-                        _pref_end = _pref_end or (tw_info.get('end') or '').strip()
-                    tw_start_str = _pref_start or None
-                    tw_end_str = _pref_end or None
-                except Exception:
-                    tw_start_str = None
-                    tw_end_str = None
+                if not _enforce_time_window(detector_val, desabo_is_urgent, now_local, s_str, e_str, within, email_id, mail, num, logger):
+                    continue
 
-                # Determine start payload:
-                # - If within window: "maintenant"
-                # - If before window start AND detector is DESABO non-urgent (bypass case): use configured start string
-                # - Else (after window end or window inactive): leave unset (PHP defaults to 'maintenant')
-                start_payload_val = None
-                try:
-                    if tw_start_str and tw_end_str:
-                        from utils.time_helpers import parse_time_hhmm as _parse_hhmm
-                        start_t = _parse_hhmm(tw_start_str)
-                        end_t = _parse_hhmm(tw_end_str)
-                        if start_t and end_t:
-                            # Reuse the already computed local time and within decision
-                            now_t = now_local.timetz().replace(tzinfo=None)
-                            if within:
-                                start_payload_val = "maintenant"
-                            else:
-                                # Before window start: for DESABO non-urgent bypass, fix start to configured start
-                                if (
-                                    detector_val == 'desabonnement_journee_tarifs'
-                                    and not desabo_is_urgent
-                                    and now_t < start_t
-                                ):
-                                    start_payload_val = tw_start_str
-                except Exception:
-                    start_payload_val = None
-                payload_for_webhook = {
-                    "microsoft_graph_email_id": email_id,  # reuse our ID for compatibility
-                    "subject": subject or "",
-                    "receivedDateTime": date_raw or "",  # raw Date header (RFC 2822)
-                    "sender_address": from_raw or sender_addr,
-                    "bodyPreview": preview,
-                    "email_content": combined_text_for_detection or "",
-                }
-                # Attach window strings if configured
-                try:
-                    if start_payload_val is not None:
-                        payload_for_webhook["webhooks_time_start"] = start_payload_val
-                    if tw_end_str is not None:
-                        payload_for_webhook["webhooks_time_end"] = tw_end_str
-                except Exception:
-                    pass
-                # Add fields used by PHP handler for detector-based Gmail sending
-                try:
-                    if detector_val:
-                        payload_for_webhook["detector"] = detector_val
-                    # Provide delivery_time for recadrage flow if available
-                    if detector_val == 'recadrage' and delivery_time_val:
-                        payload_for_webhook["delivery_time"] = delivery_time_val
-                    # Provide a clean sender email explicitly
-                    payload_for_webhook["sender_email"] = sender_addr or imap_client.extract_sender_email(from_raw)
-                except Exception:
-                    pass
+                payload = _build_webhook_payload(
+                    email_id, subject, email_data['date_raw'], msg.get('From', ''), sender_addr, combined_text,
+                    s_str, e_str, within, detector_val, delivery_time_val, desabo_is_urgent, now_local, s_t, _w_tw
+                )
+                processing_prefs = _load_processing_prefs()
 
-                routing_webhook_url = None
-                routing_stop_processing = False
-                routing_priority = None
-                try:
-                    routing_payload = _get_routing_rules_payload()
-                    routing_rules = routing_payload.get("rules") if isinstance(routing_payload, dict) else []
-                    matched_rule = _find_matching_routing_rule(
-                        routing_rules,
-                        sender=sender_addr,
-                        subject=subject or "",
-                        body=combined_text_for_detection or "",
-                        email_id=email_id,
-                        logger=logger,
-                    )
-                    if isinstance(matched_rule, dict):
-                        actions = matched_rule.get("actions")
-                        if isinstance(actions, dict):
-                            candidate_url = actions.get("webhook_url")
-                            if isinstance(candidate_url, str) and candidate_url.strip():
-                                routing_webhook_url = candidate_url.strip()
-                                routing_stop_processing = bool(actions.get("stop_processing", False))
-                                priority_value = actions.get("priority")
-                                if isinstance(priority_value, str) and priority_value.strip():
-                                    routing_priority = priority_value.strip().lower()
-                            else:
-                                try:
-                                    logger.warning(
-                                        "ROUTING_RULES: Rule %s missing webhook_url; skipping",
-                                        matched_rule.get("id", "unknown"),
-                                    )
-                                except Exception:
-                                    pass
-                        if routing_webhook_url:
-                            payload_for_webhook["routing_rule"] = {
-                                "id": matched_rule.get("id"),
-                                "name": matched_rule.get("name"),
-                                "priority": routing_priority or "normal",
-                            }
-                except Exception as routing_exc:
-                    try:
-                        logger.debug("ROUTING_RULES: Evaluation error: %s", routing_exc)
-                    except Exception:
-                        pass
-
-                # Load processing prefs dynamically/freshly
-                processing_prefs = {}
-                try:
-                    from routes.api_processing import DEFAULT_PROCESSING_PREFS
-                    from config.app_config_store import get_config_json as _config_get
-                    from pathlib import Path
-                    processing_prefs_file = Path(__file__).resolve().parents[1] / "debug" / "processing_prefs.json"
-                    data = _config_get("processing_prefs", file_fallback=processing_prefs_file) or {}
-                    if isinstance(data, dict):
-                        processing_prefs = {**DEFAULT_PROCESSING_PREFS, **data}
-                    else:
-                        processing_prefs = DEFAULT_PROCESSING_PREFS.copy()
-                except Exception:
-                    pass
-
-                # Execute custom webhook flow (handles retries, logging, read marking on success)
+                routing_webhook_url, routing_stop_processing, routing_priority = _apply_routing_rules(
+                    subject, sender_addr, combined_text, email_id, logger
+                )
                 if routing_webhook_url:
-                    cont = send_custom_webhook_flow(
-                        email_id=email_id,
-                        subject=subject or '',
-                        payload_for_webhook=payload_for_webhook,
-                        delivery_links=delivery_links or [],
-                        webhook_url=routing_webhook_url,
-                        webhook_ssl_verify=True,
-                        allow_without_links=bool(getattr(settings, 'ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS', False)),
-                        processing_prefs=processing_prefs,
-                        # Use singletons instead of runtime helpers
-                        rate_limit_allow_send=RateLimitService.get_instance().allow_send,
-                        record_send_event=RateLimitService.get_instance().record_event,
-                        append_webhook_log=WebhookLoggerService.get_instance().append_log,
-                        mark_email_id_as_processed_redis=DeduplicationService.get_instance().mark_email_processed,
-                        mark_email_as_read_imap=lambda *a, **k: imap_client.mark_email_as_read_imap(logger, *a, **k),
-                        mail=mail,
-                        email_num=num,
-                        urlparse=None,
-                        requests=__import__('requests'),
-                        time=__import__('time'),
-                        logger=logger,
-                    )
-                    # Best-effort: if the flow returned False, an attempt was made (success or handled error)
+                    if routing_priority:
+                        payload["routing_rule"] = {"id": payload.get("routing_rule", {}).get("id"), "name": payload.get("routing_rule", {}).get("name"), "priority": routing_priority}
+                    cont = _send_webhook(email_id, subject, payload, delivery_links, routing_webhook_url, processing_prefs, mail, num, logger)
                     if cont is False:
                         triggered_count += 1
                     if routing_stop_processing:
                         continue
 
                 should_send_default = True
-                if routing_webhook_url and routing_webhook_url == getattr(settings, 'WEBHOOK_URL', ''):
+                default_webhook_url = getattr(settings, 'WEBHOOK_URL', '')
+                if routing_webhook_url and routing_webhook_url == default_webhook_url:
                     should_send_default = False
                 if should_send_default:
-                    cont = send_custom_webhook_flow(
-                        email_id=email_id,
-                        subject=subject or '',
-                        payload_for_webhook=payload_for_webhook,
-                        delivery_links=delivery_links or [],
-                        webhook_url=getattr(settings, 'WEBHOOK_URL', ''),
-                        webhook_ssl_verify=True,
-                        allow_without_links=bool(getattr(settings, 'ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS', False)),
-                        processing_prefs=processing_prefs,
-                        # Use singletons instead of runtime helpers
-                        rate_limit_allow_send=RateLimitService.get_instance().allow_send,
-                        record_send_event=RateLimitService.get_instance().record_event,
-                        append_webhook_log=WebhookLoggerService.get_instance().append_log,
-                        mark_email_id_as_processed_redis=DeduplicationService.get_instance().mark_email_processed,
-                        mark_email_as_read_imap=lambda *a, **k: imap_client.mark_email_as_read_imap(logger, *a, **k),
-                        mail=mail,
-                        email_num=num,
-                        urlparse=None,
-                        requests=__import__('requests'),
-                        time=__import__('time'),
-                        logger=logger,
-                    )
-                    # Best-effort: if the flow returned False, an attempt was made (success or handled error)
+                    cont = _send_webhook(email_id, subject, payload, delivery_links, default_webhook_url, processing_prefs, mail, num, logger)
                     if cont is False:
                         triggered_count += 1
 
-
             except Exception as e_one:
-                # In tests, allow re-raising to surface the exact failure location
                 if os.environ.get('ORCH_TEST_RERAISE') == '1':
                     raise
                 logger.error("POLLER: Exception while processing message %s: %s", num, e_one)
-                # Keep going for other emails
                 continue
 
         return triggered_count
     finally:
-        # Ensure IMAP is closed
         try:
             imap_client.close_imap_connection(logger, mail)
-
         except Exception:
             pass
 

@@ -102,128 +102,24 @@ def _init_redis_client(logger: logging.Logger | None = None):
         return None
 
 
-app = Flask(__name__, template_folder='.', static_folder='static')
-app.secret_key = settings.FLASK_SECRET_KEY
-
-_config_service = ConfigService()
-
+# Module level service pointers populated during create_app()
+_config_service = None
 _runtime_flags_service = None
-
 _webhook_service = None
-
-_auth_service = AuthService(_config_service)
-
-
-app.register_blueprint(health_bp)
-app.register_blueprint(api_webhooks_bp)
-app.register_blueprint(api_processing_bp)
-app.register_blueprint(api_processing_legacy_bp)
-app.register_blueprint(api_test_bp)
-app.register_blueprint(dashboard_bp)
-app.register_blueprint(api_logs_bp)
-app.register_blueprint(api_admin_bp)
-app.register_blueprint(api_utility_bp)
-app.register_blueprint(api_config_bp)
-app.register_blueprint(api_auth_bp)
-app.register_blueprint(api_routing_rules_bp)
-app.register_blueprint(api_ingress_bp)
-
-@app.context_processor
-def inject_bundler_helpers():
-    import json
-    from flask import url_for
-    
-    dist_path = os.path.join(app.root_path, "static", "dist")
-    use_bundle = os.path.exists(dist_path)
-    
-    bundled_js = ""
-    bundled_css = []
-    
-    if use_bundle:
-        manifest_paths = [
-            os.path.join(dist_path, ".vite", "manifest.json"),
-            os.path.join(dist_path, "manifest.json")
-        ]
-        
-        manifest = None
-        for path in manifest_paths:
-            if os.path.exists(path):
-                try:
-                    with open(path, "r") as f:
-                        manifest = json.load(f)
-                    break
-                except Exception as e:
-                    app.logger.warning(f"Impossible de charger le manifest Vite à {path}: {e}")
-        
-        if manifest:
-            try:
-                js_entry = "static/dashboard.js"
-                if js_entry in manifest:
-                    bundled_js = url_for("static", filename=f"dist/{manifest[js_entry]['file']}")
-                
-                css_entry = "static/css/dashboard-bundle.css"
-                if css_entry in manifest:
-                    bundled_css.append(url_for("static", filename=f"dist/{manifest[css_entry]['file']}"))
-            except Exception as e:
-                app.logger.warning(f"Erreur lors de l'extraction des assets du manifest: {e}")
-        
-        if not bundled_js:
-            if os.path.exists(os.path.join(dist_path, "js", "dashboard.js")):
-                bundled_js = url_for("static", filename="dist/js/dashboard.js")
-            if os.path.exists(os.path.join(dist_path, "css", "dashboard-bundle.css")):
-                bundled_css.append(url_for("static", filename="dist/css/dashboard-bundle.css"))
-                
-    return {
-        "use_bundle": use_bundle,
-        "bundled_js": bundled_js,
-        "bundled_css": bundled_css
-    }
-
-
-_cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
-if _cors_origins:
-    CORS(
-        app,
-        resources={
-            r"/api/test/*": {
-                "origins": _cors_origins,
-                "supports_credentials": False,
-                "methods": ["GET", "POST", "OPTIONS"],
-                "allow_headers": ["Content-Type", "X-API-Key"],
-                "max_age": 600,
-            }
-        },
-    )
-
-login_manager = _auth_service.init_flask_login(app, login_view='dashboard.login')
-
-auth_user.init_login_manager(app, login_view='dashboard.login')
+_auth_service = None
+_dedup_service = None
+_ingress_service = None
+login_manager = None
 
 WEBHOOK_URL = settings.WEBHOOK_URL
 WEBHOOK_SSL_VERIFY = settings.WEBHOOK_SSL_VERIFY
-
 EXPECTED_API_TOKEN = settings.EXPECTED_API_TOKEN
-
 ENABLE_SUBJECT_GROUP_DEDUP = settings.ENABLE_SUBJECT_GROUP_DEDUP
 SENDER_LIST_FOR_POLLING = settings.SENDER_LIST_FOR_POLLING
-
-# Runtime flags and files
 DISABLE_EMAIL_ID_DEDUP = settings.DISABLE_EMAIL_ID_DEDUP
 ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS = settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS
 TRIGGER_SIGNAL_FILE = settings.TRIGGER_SIGNAL_FILE
 RUNTIME_FLAGS_FILE = settings.RUNTIME_FLAGS_FILE
-
-# Configuration du logging
-log_level_str = os.environ.get('FLASK_LOG_LEVEL', 'INFO').upper()
-log_level = getattr(logging, log_level_str, logging.INFO)
-logging.basicConfig(level=log_level,
-                    format='%(asctime)s - %(levelname)s - %(name)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s')
-if not REDIS_AVAILABLE:
-    logging.warning(
-        "CFG REDIS (module level): 'redis' Python library not installed. Redis-based features will be disabled or use fallbacks.")
-
-redis_client = _init_redis_client(app.logger)
-
 
 # Diagnostics (process start + heartbeat)
 try:
@@ -231,6 +127,222 @@ try:
     PROCESS_START_TIME = datetime.now(_tz.utc)
 except Exception:
     PROCESS_START_TIME = None
+
+from utils.time_helpers import get_polling_timezone
+TZ_FOR_POLLING = get_polling_timezone()
+
+WEBHOOK_LOGS_FILE = Path(__file__).resolve().parent / "debug" / "webhook_logs.json"
+WEBHOOK_LOGS_REDIS_KEY = "r:ss:webhook_logs:v1"
+PROCESSING_PREFS_FILE = Path(__file__).resolve().parent / "debug" / "processing_prefs.json"
+PROCESSING_PREFS_REDIS_KEY = "r:ss:processing_prefs:v1"
+
+PROCESSED_EMAIL_IDS_REDIS_KEY = settings.PROCESSED_EMAIL_IDS_REDIS_KEY
+PROCESSED_SUBJECT_GROUPS_REDIS_KEY = settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY
+SUBJECT_GROUP_REDIS_PREFIX = settings.SUBJECT_GROUP_REDIS_PREFIX
+SUBJECT_GROUP_TTL_SECONDS = settings.SUBJECT_GROUP_TTL_SECONDS
+EMAIL_ID_INFLIGHT_LOCK_PREFIX = settings.EMAIL_ID_INFLIGHT_LOCK_PREFIX
+EMAIL_ID_INFLIGHT_LOCK_TTL_SECONDS = settings.EMAIL_ID_INFLIGHT_LOCK_TTL_SECONDS
+SUBJECT_GROUPS_MEMORY = set()
+email_config_valid = False
+
+
+def _log_webhook_config_startup(app_instance: Flask):
+    try:
+        config = None
+        if _webhook_service is not None:
+            try:
+                config = _webhook_service.get_all_config()
+            except Exception:
+                pass
+        if config is None:
+            from routes.api_webhooks import _load_webhook_config
+            config = _load_webhook_config()
+        if not config:
+            app_instance.logger.info("CFG WEBHOOK_CONFIG: Aucune configuration webhook trouvée (fichier vide ou inexistant)")
+            return
+        keys_to_log = [
+            'webhook_ssl_verify', 'webhook_sending_enabled', 'webhook_time_start',
+            'webhook_time_end', 'global_time_start', 'global_time_end'
+        ]
+        for key in keys_to_log:
+            value = config.get(key, 'non défini')
+            app_instance.logger.info("CFG WEBHOOK_CONFIG: %s=%s", key, value)
+    except Exception as e:
+        app_instance.logger.warning("CFG WEBHOOK_CONFIG: Erreur lors de la lecture de la configuration: %s", str(e))
+
+
+def create_app(config_class=None) -> Flask:
+    """Application Factory to create and configure the Flask application."""
+    app = Flask(__name__, template_folder='.', static_folder='static')
+    app.secret_key = settings.FLASK_SECRET_KEY
+
+    # 1. CORS Setup
+    _cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+    if _cors_origins:
+        CORS(
+            app,
+            resources={
+                r"/api/test/*": {
+                    "origins": _cors_origins,
+                    "supports_credentials": False,
+                    "methods": ["GET", "POST", "OPTIONS"],
+                    "allow_headers": ["Content-Type", "X-API-Key"],
+                    "max_age": 600,
+                }
+            },
+        )
+
+    # 2. Register Blueprints
+    app.register_blueprint(health_bp)
+    app.register_blueprint(api_webhooks_bp)
+    app.register_blueprint(api_processing_bp)
+    app.register_blueprint(api_processing_legacy_bp)
+    app.register_blueprint(api_test_bp)
+    app.register_blueprint(dashboard_bp)
+    app.register_blueprint(api_logs_bp)
+    app.register_blueprint(api_admin_bp)
+    app.register_blueprint(api_utility_bp)
+    app.register_blueprint(api_config_bp)
+    app.register_blueprint(api_auth_bp)
+    app.register_blueprint(api_routing_rules_bp)
+    app.register_blueprint(api_ingress_bp)
+
+    # 3. Context Processor
+    @app.context_processor
+    def inject_bundler_helpers():
+        import json
+        from flask import url_for
+        dist_path = os.path.join(app.root_path, "static", "dist")
+        use_bundle = os.path.exists(dist_path)
+        bundled_js = ""
+        bundled_css = []
+        if use_bundle:
+            manifest_paths = [
+                os.path.join(dist_path, ".vite", "manifest.json"),
+                os.path.join(dist_path, "manifest.json")
+            ]
+            manifest = None
+            for path in manifest_paths:
+                if os.path.exists(path):
+                    try:
+                        with open(path, "r") as f:
+                            manifest = json.load(f)
+                        break
+                    except Exception as e:
+                        app.logger.warning(f"Impossible de charger le manifest Vite à {path}: {e}")
+            if manifest:
+                try:
+                    js_entry = "static/dashboard.js"
+                    if js_entry in manifest:
+                        bundled_js = url_for("static", filename=f"dist/{manifest[js_entry]['file']}")
+                    css_entry = "static/css/dashboard-bundle.css"
+                    if css_entry in manifest:
+                        bundled_css.append(url_for("static", filename=f"dist/{manifest[css_entry]['file']}"))
+                except Exception as e:
+                    app.logger.warning(f"Erreur lors de l'extraction des assets du manifest: {e}")
+            if not bundled_js:
+                if os.path.exists(os.path.join(dist_path, "js", "dashboard.js")):
+                    bundled_js = url_for("static", filename="dist/js/dashboard.js")
+                if os.path.exists(os.path.join(dist_path, "css", "dashboard-bundle.css")):
+                    bundled_css.append(url_for("static", filename="dist/css/dashboard-bundle.css"))
+        return {"use_bundle": use_bundle, "bundled_js": bundled_js, "bundled_css": bundled_css}
+
+    # 4. Logging configuration
+    log_level_str = os.environ.get('FLASK_LOG_LEVEL', 'INFO').upper()
+    log_level = getattr(logging, log_level_str, logging.INFO)
+    logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(name)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s')
+
+    # 5. Redis Client
+    global redis_client
+    redis_client = _init_redis_client(app.logger)
+
+    # 6. Service instances
+    global _config_service, _runtime_flags_service, _webhook_service, _auth_service, _dedup_service, _ingress_service, login_manager, email_config_valid
+    _config_service = ConfigService()
+    _auth_service = AuthService(_config_service)
+    login_manager = _auth_service.init_flask_login(app, login_view='dashboard.login')
+    auth_user.init_login_manager(app, login_view='dashboard.login')
+
+    try:
+        from config import app_config_store
+        _runtime_flags_service = RuntimeFlagsService.get_instance(
+            file_path=settings.RUNTIME_FLAGS_FILE,
+            defaults={
+                "disable_email_id_dedup": bool(settings.DISABLE_EMAIL_ID_DEDUP),
+                "allow_custom_webhook_without_links": bool(settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
+                "gmail_ingress_enabled": True,
+            },
+            external_store=app_config_store,
+        )
+        app.logger.info(f"SVC: RuntimeFlagsService initialized (cache_ttl={_runtime_flags_service.get_cache_ttl()}s)")
+    except Exception as e:
+        app.logger.error(f"SVC: Failed to initialize RuntimeFlagsService: {e}")
+        _runtime_flags_service = None
+
+    try:
+        from config import app_config_store
+        _webhook_service = WebhookConfigService.get_instance(
+            file_path=Path(__file__).parent / "debug" / "webhook_config.json",
+            external_store=app_config_store
+        )
+        app.logger.info(f"SVC: WebhookConfigService initialized (has_url={_webhook_service.has_webhook_url()})")
+    except Exception as e:
+        app.logger.error(f"SVC: Failed to initialize WebhookConfigService: {e}")
+        _webhook_service = None
+
+    email_config_valid = _config_service.is_email_config_valid()
+
+    try:
+        webhook_time_window.initialize_webhook_time_window(
+            start_str=(os.environ.get("WEBHOOKS_TIME_START") or os.environ.get("WEBHOOK_TIME_START") or ""),
+            end_str=(os.environ.get("WEBHOOKS_TIME_END") or os.environ.get("WEBHOOK_TIME_END") or ""),
+        )
+        webhook_time_window.reload_time_window_from_disk()
+    except Exception:
+        pass
+
+    try:
+        _dedup_service = DeduplicationService.get_instance(
+            redis_client=redis_client,
+            logger=app.logger,
+            config_service=_config_service,
+        )
+        app.logger.info(f"SVC: DeduplicationService initialized {_dedup_service}")
+    except Exception as e:
+        app.logger.error(f"SVC: Failed to initialize DeduplicationService: {e}")
+        _dedup_service = None
+
+    try:
+        _ingress_service = IngressService.get_instance(
+            config_service=_config_service,
+        )
+        app.logger.info("SVC: IngressService initialized")
+    except Exception as e:
+        app.logger.error(f"SVC: Failed to initialize IngressService: {e}")
+        _ingress_service = None
+
+    # Log Startup Configurations
+    settings.log_configuration(app.logger)
+    if not WEBHOOK_SSL_VERIFY:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        app.logger.warning("CFG WEBHOOK: SSL verification DISABLED for webhook calls (development/legacy). Use valid certificates in production.")
+
+    _log_webhook_config_startup(app)
+
+    try:
+        app.logger.info(
+            "CFG CUSTOM_WEBHOOK: WEBHOOK_URL configured=%s value=%s",
+            bool(WEBHOOK_URL),
+            (WEBHOOK_URL[:80] if WEBHOOK_URL else ""),
+        )
+    except Exception:
+        pass
+
+    return app
+
+
+# Maintain backward compatibility with Gunicorn gunicorn app_render:app
+app = create_app()
 
 # Process signal handlers (observability)
 def _handle_sigterm(signum, frame):  # pragma: no cover - environment dependent
@@ -241,176 +353,5 @@ def _handle_sigterm(signum, frame):  # pragma: no cover - environment dependent
 
 try:
     signal.signal(signal.SIGTERM, _handle_sigterm)
-except Exception:
-    # Some environments may not allow setting signal handlers (e.g., Windows)
-    pass
-
-
-# Configuration (log centralisé)
-settings.log_configuration(app.logger)
-if not WEBHOOK_SSL_VERIFY:
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    app.logger.warning("CFG WEBHOOK: SSL verification DISABLED for webhook calls (development/legacy). Use valid certificates in production.")
-
-from utils.time_helpers import get_polling_timezone
-TZ_FOR_POLLING = get_polling_timezone()
-
-
-# =============================================================================
-# SERVICES INITIALIZATION
-# =============================================================================
-
-# 5. Runtime Flags Service (Singleton)
-try:
-    from config import app_config_store
-
-    _runtime_flags_service = RuntimeFlagsService.get_instance(
-        file_path=settings.RUNTIME_FLAGS_FILE,
-        defaults={
-            "disable_email_id_dedup": bool(settings.DISABLE_EMAIL_ID_DEDUP),
-            "allow_custom_webhook_without_links": bool(settings.ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS),
-            "gmail_ingress_enabled": True,
-        },
-        external_store=app_config_store,
-    )
-    app.logger.info(f"SVC: RuntimeFlagsService initialized (cache_ttl={_runtime_flags_service.get_cache_ttl()}s)")
-except Exception as e:
-    app.logger.error(f"SVC: Failed to initialize RuntimeFlagsService: {e}")
-    _runtime_flags_service = None
-
-# 6. Webhook Config Service (Singleton)
-try:
-    from config import app_config_store
-    _webhook_service = WebhookConfigService.get_instance(
-        file_path=Path(__file__).parent / "debug" / "webhook_config.json",
-        external_store=app_config_store
-    )
-    app.logger.info(f"SVC: WebhookConfigService initialized (has_url={_webhook_service.has_webhook_url()})")
-except Exception as e:
-    app.logger.error(f"SVC: Failed to initialize WebhookConfigService: {e}")
-    _webhook_service = None
-
-
-if not EXPECTED_API_TOKEN:
-    app.logger.warning("CFG TOKEN: PROCESS_API_TOKEN not set. API endpoints called by Make.com will be insecure.")
-else:
-    app.logger.info(f"CFG TOKEN: PROCESS_API_TOKEN (for Make.com calls) configured: '{EXPECTED_API_TOKEN[:5]}...')")
-
-# --- Configuration des Webhooks de Présence ---
-# Présence: déjà fournie par settings (alias ci-dessus)
-
-# --- Email server config validation flag (maintenant via ConfigService) ---
-email_config_valid = _config_service.is_email_config_valid()
-
-# --- Webhook time window initialization (env -> then optional UI override from disk) ---
-try:
-    webhook_time_window.initialize_webhook_time_window(
-        start_str=(
-            os.environ.get("WEBHOOKS_TIME_START")
-            or os.environ.get("WEBHOOK_TIME_START")
-            or ""
-        ),
-        end_str=(
-            os.environ.get("WEBHOOKS_TIME_END")
-            or os.environ.get("WEBHOOK_TIME_END")
-            or ""
-        ),
-    )
-    webhook_time_window.reload_time_window_from_disk()
-except Exception:
-    pass
-
-# --- Dedup constants mapping (from central settings) ---
-PROCESSED_EMAIL_IDS_REDIS_KEY = settings.PROCESSED_EMAIL_IDS_REDIS_KEY
-PROCESSED_SUBJECT_GROUPS_REDIS_KEY = settings.PROCESSED_SUBJECT_GROUPS_REDIS_KEY
-SUBJECT_GROUP_REDIS_PREFIX = settings.SUBJECT_GROUP_REDIS_PREFIX
-SUBJECT_GROUP_TTL_SECONDS = settings.SUBJECT_GROUP_TTL_SECONDS
-
-EMAIL_ID_INFLIGHT_LOCK_PREFIX = settings.EMAIL_ID_INFLIGHT_LOCK_PREFIX
-EMAIL_ID_INFLIGHT_LOCK_TTL_SECONDS = settings.EMAIL_ID_INFLIGHT_LOCK_TTL_SECONDS
-
-# Memory fallback set for subject groups when Redis is not available
-SUBJECT_GROUPS_MEMORY = set()
-
-# 7. Deduplication Service (avec Redis ou fallback mémoire)
-try:
-    _dedup_service = DeduplicationService.get_instance(
-        redis_client=redis_client,  # None = fallback mémoire automatique
-        logger=app.logger,
-        config_service=_config_service,
-    )
-    app.logger.info(f"SVC: DeduplicationService initialized {_dedup_service}")
-except Exception as e:
-    app.logger.error(f"SVC: Failed to initialize DeduplicationService: {e}")
-    _dedup_service = None
-
-# 8. Ingress Service
-try:
-    from config import app_config_store
-    _ingress_service = IngressService.get_instance(
-        config_service=_config_service,
-    )
-    app.logger.info("SVC: IngressService initialized")
-except Exception as e:
-    app.logger.error(f"SVC: Failed to initialize IngressService: {e}")
-    _ingress_service = None
-
-
-
-
-WEBHOOK_LOGS_FILE = Path(__file__).resolve().parent / "debug" / "webhook_logs.json"
-WEBHOOK_LOGS_REDIS_KEY = "r:ss:webhook_logs:v1"  # Redis list, each item is JSON string
-
-# --- Processing Preferences (Filters, Reliability, Rate limiting) ---
-PROCESSING_PREFS_FILE = Path(__file__).resolve().parent / "debug" / "processing_prefs.json"
-PROCESSING_PREFS_REDIS_KEY = "r:ss:processing_prefs:v1"
-
-
-
-
-def _log_webhook_config_startup():
-    try:
-        # Préférer le service si disponible, sinon fallback sur chargement direct
-        config = None
-        if _webhook_service is not None:
-            try:
-                config = _webhook_service.get_all_config()
-            except Exception:
-                pass
-        
-        if config is None:
-            from routes.api_webhooks import _load_webhook_config
-            config = _load_webhook_config()
-        
-        if not config:
-            app.logger.info("CFG WEBHOOK_CONFIG: Aucune configuration webhook trouvée (fichier vide ou inexistant)")
-            return
-            
-        # Liste des clés à logger avec des valeurs par défaut si absentes
-        keys_to_log = [
-            'webhook_ssl_verify',
-            'webhook_sending_enabled',
-            'webhook_time_start',
-            'webhook_time_end',
-            'global_time_start',
-            'global_time_end'
-        ]
-        
-        # Log chaque valeur individuellement pour une meilleure lisibilité
-        for key in keys_to_log:
-            value = config.get(key, 'non défini')
-            app.logger.info("CFG WEBHOOK_CONFIG: %s=%s", key, value)
-            
-    except Exception as e:
-        app.logger.warning("CFG WEBHOOK_CONFIG: Erreur lors de la lecture de la configuration: %s", str(e))
-
-_log_webhook_config_startup()
-
-try:
-    app.logger.info(
-        "CFG CUSTOM_WEBHOOK: WEBHOOK_URL configured=%s value=%s",
-        bool(WEBHOOK_URL),
-        (WEBHOOK_URL[:80] if WEBHOOK_URL else ""),
-    )
 except Exception:
     pass

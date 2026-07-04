@@ -1,6 +1,11 @@
 # Contexte Actif
 
 ## Tâches Terminées
+- [2026-07-04] Intégration complète de l'audit de restructuration du backend :
+  - Phase 1 : Création de `utils/storage_backend.py` pour centraliser la persistance avec fallback, migration de `preferences/processing_prefs.py` et `app_logging/webhook_logger.py` et ajout de tests.
+  - Phase 2 : Refactoring de `email_processing/orchestrator.py` pour éliminer le couplage dur avec `app_render` et extraire les fonctions pure helper (`_parse_email`, `_apply_routing_rules`, `_enforce_time_window`, `_send_webhook`).
+  - Phase 3 : Application du pattern "Application Factory" via `create_app` dans `app_render.py` et mise à jour de la fixture `flask_app` de tests tout en conservant une compatibilité WSGI/Gunicorn descendante via `app = create_app()`.
+  - Phase 4 : Exécution et validation de la suite complète de 375 tests, garantissant une non-régression de typage, de sécurité et fonctionnelle.
 - [2026-06-05] Correction de l'erreur MAINT_NOTIFICATIONS Redis :
   - Ajout du paramètre `protocol=2` dans toutes les initialisations `redis.Redis.from_url` (`app_config_store.py`, `lock.py`, `app_render.py`, `test_webhook_logs_redis_persistence.py`).
   - Validation réussie par la suite de tests.
