@@ -5,6 +5,7 @@ auth.user
 Gestion des utilisateurs et authentification Flask-Login pour le dashboard.
 """
 
+import hmac
 from flask_login import LoginManager, UserMixin
 from config.settings import TRIGGER_PAGE_USER, TRIGGER_PAGE_PASSWORD
 
@@ -57,7 +58,9 @@ def verify_credentials(username: str, password: str) -> bool:
     Returns:
         True si credentials valides, False sinon
     """
-    return username == TRIGGER_PAGE_USER and password == TRIGGER_PAGE_PASSWORD
+    if username != TRIGGER_PAGE_USER:
+        return False
+    return hmac.compare_digest(password, TRIGGER_PAGE_PASSWORD)
 
 
 def create_user_from_credentials(username: str, password: str) -> User | None:

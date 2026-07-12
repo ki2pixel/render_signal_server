@@ -108,9 +108,11 @@ def reset_env_vars():
 
 
 @pytest.fixture
-def flask_app():
+def flask_app(monkeypatch):
     """Fixture pour créer une instance Flask pour les tests."""
-    # Import tardif pour éviter les effets de bord
+    import config.settings as _settings
+    monkeypatch.setattr(_settings, "EXPECTED_API_TOKEN", "test-process-api-token")
+
     import app_render
 
     app = app_render.create_app()

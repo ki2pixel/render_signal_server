@@ -24,6 +24,7 @@ Usage:
 
 from services.config_service import ConfigService
 from services.runtime_flags_service import RuntimeFlagsService
+from services.runtime_metrics_service import RuntimeMetricsService
 from services.webhook_config_service import WebhookConfigService
 from services.auth_service import AuthService
 from services.deduplication_service import DeduplicationService
@@ -35,6 +36,7 @@ from services.ingress_service import IngressService
 __all__ = [
     "ConfigService",
     "RuntimeFlagsService",
+    "RuntimeMetricsService",
     "WebhookConfigService",
     "AuthService",
     "DeduplicationService",

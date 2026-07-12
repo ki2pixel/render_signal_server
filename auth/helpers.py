@@ -5,6 +5,7 @@ auth.helpers
 Fonctions helpers pour l'authentification API (endpoints de test).
 """
 
+import hmac
 import os
 from flask import request
 
@@ -27,7 +28,8 @@ def testapi_authorized(req: request) -> bool:
     expected = os.environ.get("TEST_API_KEY")
     if not expected:
         return False
-    return req.headers.get("X-API-Key") == expected
+    provided = req.headers.get("X-API-Key", "")
+    return hmac.compare_digest(provided, expected)
 
 
 def api_key_required(func):

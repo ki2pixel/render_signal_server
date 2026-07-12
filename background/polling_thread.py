@@ -91,12 +91,10 @@ def background_email_poller_loop(
                 logger.info(
                     f"BG_POLLER: Active poll cycle finished. {triggered} webhook(s) triggered."
                 )
-                # Update last poll cycle timestamp in main module if available
                 try:
-                    import sys, time as _t
-                    _mod = sys.modules.get("app_render")
-                    if _mod is not None:
-                        setattr(_mod, "LAST_POLL_CYCLE_TS", int(_t.time()))
+                    import time as _t
+                    from services.runtime_metrics_service import RuntimeMetricsService
+                    RuntimeMetricsService.get_instance().set_last_poll_cycle_ts(int(_t.time()))
                 except Exception:
                     pass
                 consecutive_error_count = 0

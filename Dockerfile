@@ -49,6 +49,9 @@ ENV PORT=8000 \
     GUNICORN_MAX_REQUESTS_JITTER=3000
 EXPOSE 8000
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-8000}/health')" || exit 1
+
 # Gunicorn écrit déjà ses logs sur stdout/stderr ;
 # PYTHONUNBUFFERED assure la remontée immédiate des logs applicatifs (BG_POLLER, HEARTBEAT, etc.).
 CMD gunicorn \

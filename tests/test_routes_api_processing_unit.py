@@ -3,16 +3,44 @@ Unit tests focusing on internal validators and IO helpers in routes/api_processi
 to raise coverage above the 70% target for routes/.
 """
 import json
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 import pytest
+
+
+def _make_isolated_store(tmp_path: Path):
+    """Return a store-like object that uses only the file path, bypassing Redis."""
+    class _IsolatedStore:
+        @staticmethod
+        def get_config_json(key, *, file_fallback=None):
+            if file_fallback and file_fallback.exists():
+                try:
+                    with open(file_fallback, "r", encoding="utf-8") as f:
+                        return json.load(f)
+                except Exception:
+                    pass
+            return {}
+
+        @staticmethod
+        def set_config_json(key, value, *, file_fallback=None):
+            if file_fallback is not None:
+                file_fallback.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_fallback, "w", encoding="utf-8") as f:
+                    json.dump(value, f, indent=2, ensure_ascii=False)
+                return True
+            return False
+
+    return _IsolatedStore()
 
 
 @pytest.mark.unit
 def test_load_processing_prefs_missing_file(tmp_path):
     from routes import api_processing as mod
 
-    with patch.object(mod, "PROCESSING_PREFS_FILE", tmp_path / "prefs.json"):
+    isolated_store = _make_isolated_store(tmp_path)
+    with patch.object(mod, "PROCESSING_PREFS_FILE", tmp_path / "prefs.json"), \
+         patch.object(mod, "_store", isolated_store):
         # File does not exist -> defaults returned
         prefs = mod._load_processing_prefs()
         assert isinstance(prefs, dict)
@@ -27,7 +55,9 @@ def test_load_processing_prefs_malformed_json(tmp_path):
 
     bad = tmp_path / "prefs.json"
     bad.write_text("{not-json}", encoding="utf-8")
-    with patch.object(mod, "PROCESSING_PREFS_FILE", bad):
+    isolated_store = _make_isolated_store(tmp_path)
+    with patch.object(mod, "PROCESSING_PREFS_FILE", bad), \
+         patch.object(mod, "_store", isolated_store):
         prefs = mod._load_processing_prefs()
         # Malformed -> fall back to defaults
         assert prefs["retry_count"] == 0
@@ -38,8 +68,10 @@ def test_load_processing_prefs_malformed_json(tmp_path):
 def test_validate_processing_prefs_errors_and_success(tmp_path):
     from routes import api_processing as mod
 
+    isolated_store = _make_isolated_store(tmp_path)
     # Use isolated file so validator starts from defaults
-    with patch.object(mod, "PROCESSING_PREFS_FILE", tmp_path / "prefs.json"):
+    with patch.object(mod, "PROCESSING_PREFS_FILE", tmp_path / "prefs.json"), \
+         patch.object(mod, "_store", isolated_store):
         # Invalid: exclude_keywords_recadrage must be list[str]
         ok, msg, out = mod._validate_processing_prefs({"exclude_keywords_recadrage": "oops"})
         assert ok is False

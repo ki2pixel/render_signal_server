@@ -241,11 +241,13 @@ class AuthService:
         Returns:
             True si X-API-Key est valide
         """
+        import hmac
         import os
         expected = os.environ.get("TEST_API_KEY")
         if not expected:
             return False
-        return request.headers.get("X-API-Key") == expected
+        provided = request.headers.get("X-API-Key", "")
+        return hmac.compare_digest(provided, expected)
     
     def __repr__(self) -> str:
         login_mgr = "initialized" if self._login_manager else "not initialized"

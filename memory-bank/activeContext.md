@@ -1,6 +1,12 @@
 # Contexte Actif
 
 ## Tâches Terminées
+- [2026-07-12] Remédiation complète de l'audit backend Juillet 2026 (4 phases, 3 sessions) :
+  - **Phase 1** : Sécurité timing-attack (`hmac.compare_digest`), fail-closed allowlist, découplage `api_ingress.py`, corrections test (3 fichiers).
+  - **Phase 2** : `RuntimeMetricsService` singleton, refactor `create_app()` en helpers privés, DI pour `WebhookLoggerService`, `CSRFProtect`.
+  - **Phase 3** : Décomposition `send_custom_webhook_flow` (7 helpers) et `process_gmail_push` (6 helpers), conformité < 40 lignes.
+  - **Phase 4** : `HEALTHCHECK` Dockerfile, `requirements.txt` pinné, CSRF templates + JS, `@login_required` sur 2 endpoints.
+  - **Stabilisation tests** : 5 causes racines résolues dans `conftest.py`, `test_api_ingress.py`, `test_routes_api_utility_unit.py`, `app_render.py`. Résultat final : **375 passed, 7 skipped**, 0 erreur mypy nouvelle.
 - [2026-07-04] Intégration complète de l'audit de restructuration du backend :
   - Phase 1 : Création de `utils/storage_backend.py` pour centraliser la persistance avec fallback, migration de `preferences/processing_prefs.py` et `app_logging/webhook_logger.py` et ajout de tests.
   - Phase 2 : Refactoring de `email_processing/orchestrator.py` pour éliminer le couplage dur avec `app_render` et extraire les fonctions pure helper (`_parse_email`, `_apply_routing_rules`, `_enforce_time_window`, `_send_webhook`).

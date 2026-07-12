@@ -1,4 +1,9 @@
 export class ApiService {
+    static _getCsrfToken() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute('content') : '';
+    }
+
     /** Gère la réponse HTTP et redirige en cas d'erreur 401/403 */
     static async handleResponse(res) {
         if (res.status === 401) {
@@ -30,7 +35,7 @@ export class ApiService {
     static async post(url, data) {
         const res = await ApiService.request(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': ApiService._getCsrfToken() },
             body: JSON.stringify(data)
         });
         return res.json();
@@ -40,7 +45,7 @@ export class ApiService {
     static async put(url, data) {
         const res = await ApiService.request(url, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': ApiService._getCsrfToken() },
             body: JSON.stringify(data)
         });
         return res.json();
@@ -48,7 +53,10 @@ export class ApiService {
 
     /** Requête DELETE */
     static async delete(url) {
-        const res = await ApiService.request(url, { method: 'DELETE' });
+        const res = await ApiService.request(url, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': ApiService._getCsrfToken() }
+        });
         return res.json();
     }
 }

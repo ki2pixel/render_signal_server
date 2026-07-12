@@ -8,6 +8,11 @@ def test_r2_worker_failure_does_not_break_webhook_send_exception(monkeypatch):
     from email_processing import orchestrator as orch
     import app_render as ar
     import services
+    from services.deduplication_service import DeduplicationService
+    from services.rate_limit_service import RateLimitService
+    from services.webhook_logger_service import WebhookLoggerService
+    DeduplicationService.reset_instance()
+    RateLimitService.reset_instance()
 
     dropbox_url = "https://www.dropbox.com/scl/fo/abc123"
 
@@ -244,6 +249,7 @@ def test_html_body_over_1mb_is_truncated_and_warning_logged(monkeypatch):
 
     from email_processing import orchestrator as orch
     import app_render as ar
+    import services
 
     dropbox_url = "https://www.dropbox.com/scl/fo/abc123"
 
@@ -312,12 +318,12 @@ def test_html_body_over_1mb_is_truncated_and_warning_logged(monkeypatch):
     monkeypatch.setattr('email_processing.imap_client.mark_email_as_read_imap', lambda *a, **k: None, raising=False)
     monkeypatch.setattr(DeduplicationService.get_instance(), 'generate_subject_group_id', lambda s: "g-html-1", raising=False)
     monkeypatch.setattr(DeduplicationService.get_instance(), 'is_subject_group_processed', lambda gid: False, raising=False)
-    monkeypatch.setattr(ar, "_rate_limit_allow_send", lambda: True, raising=False)
-    monkeypatch.setattr(ar, "_record_send_event", lambda: None, raising=False)
-    monkeypatch.setattr(ar, "_append_webhook_log", lambda e: None, raising=False)
-    monkeypatch.setattr(ar, "WEBHOOK_URL", "https://example.com/hook", raising=False)
-    monkeypatch.setattr(ar, "ALLOW_CUSTOM_WEBHOOK_WITHOUT_LINKS", True, raising=False)
-    monkeypatch.setattr(ar, "PROCESSING_PREFS", {"retry_count": 0, "retry_delay_sec": 0, "webhook_timeout_sec": 1}, raising=False)
+    class _FakeR2Disabled:
+        def is_enabled(self):
+            return False
+
+    monkeypatch.setattr(services.R2TransferService, "get_instance", lambda: _FakeR2Disabled())
+
     monkeypatch.setattr(ar, "SENDER_LIST_FOR_POLLING", ["allowed@example.com"], raising=False)
     monkeypatch.setattr(ar, "TZ_FOR_POLLING", orch.timezone.utc, raising=False)
     monkeypatch.setattr(

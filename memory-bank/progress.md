@@ -13,6 +13,16 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-07-12 19:02:00] - Remédiation Audit Backend Juillet 2026 — Phases 1 à 4 + Stabilisation Tests (Sessions 1-3)
+- **Objectif** : Appliquer le plan de remédiation en 4 phases issu de l'audit backend de juillet 2026 (sécurité, découplage architectural, réduction de complexité, durcissement Ops) et corriger toutes les régressions de tests induites.
+- **Actions réalisées** :
+  * **Phase 1 — Sécurité** : Remplacement des comparaisons `==` par `hmac.compare_digest()` dans `config_service.py`, `auth/user.py`, `auth/helpers.py`. Fail-closed dans `ingress_service._check_ingress_enabled()` et `_check_sender_allowlist()`. Découplage des singletons module-level dans `routes/api_ingress.py` via `_get_auth_service()` / `_get_ingress_service()`. Corrections test : `test_r2_resilience.py`, `test_scripts_check_config_store.py`, `test_routes_api_processing_unit.py`.
+  * **Phase 2 — Découplage architectural** : Création de `services/runtime_metrics_service.py` (singleton thread-safe). `background/polling_thread.py` et `routes/api_utility.py` utilisent `RuntimeMetricsService` à la place de `sys.modules.get("app_render")`. `services/webhook_logger_service.py` refactorisé en DI via `configure(redis_client, logger)`. `app_render.create_app()` décomposé en `_register_blueprints()`, `_configure_vite_context()`, `_init_services()` avec services attachés à l'instance Flask via `setattr`. `CSRFProtect(app)` enregistré avec exemptions `api_ingress_bp` et `api_test_bp`.
+  * **Phase 3 — Réduction de complexité** : `email_processing/orchestrator.send_custom_webhook_flow()` décomposé en 7 helpers privés. `services/ingress_service.process_gmail_push()` décomposé en 6 helpers privés. Toutes les fonctions < 40 lignes.
+  * **Phase 4 — Durcissement Ops** : `HEALTHCHECK` dans `Dockerfile`. `requirements.txt` avec versions pinées + `Flask-WTF==1.3.0`. Tokens CSRF dans `dashboard.html` et `login.html`. Entête `X-CSRFToken` injecté dans `static/services/ApiService.js`. `@login_required` sur `/api/diag/runtime` et `/api/check_trigger`.
+  * **Session 3 — Stabilisation tests** : Résolution de 5 causes racines distinctes de régressions. (1) `conftest.py` : fixture `flask_app` utilise `monkeypatch` pour écraser `config.settings.EXPECTED_API_TOKEN`. (2) `test_api_ingress.py` : 6 tests corrigés — `monkeypatch.setattr(settings, "GMAIL_SENDER_ALLOWLIST", [])` à la place des anciens patches module-level. (3) 2 tests inflight lock : désactivation R2 + mock `_get_processing_prefs` pour éliminer les appels HTTP non comptés. (4) `test_routes_api_utility_unit.py` : 3 tests passés de `flask_client` à `authenticated_flask_client`. (5) `app_render.py` : `app.X = y` → `setattr(app, "X", y)` pour corriger les erreurs `mypy attr-defined`.
+- **Validation** : `pytest` — **375 passed, 7 skipped**, 0 failure. `mypy` — 0 nouvelle erreur introduite.
+
 [2026-07-04 12:50:00] - Restructuration du backend et Application Factory (Audit Backend)
 - **Objectif** : Appliquer l'audit de restructuration du backend pour éliminer les dépendances cycliques, isoler le stockage de fallback, extraire les fonctions de l'orchestrateur et appliquer le pattern Application Factory.
 - **Actions réalisées** :

@@ -21,6 +21,7 @@ Usage:
 """
 
 from __future__ import annotations
+import hmac
 from typing import Optional, Any
 
 
@@ -114,7 +115,7 @@ class ConfigService:
         expected = self.get_api_token()
         if not expected:
             return False
-        return token == expected
+        return hmac.compare_digest(token, expected)
     
     def has_api_token(self) -> bool:
         return bool(self._settings.EXPECTED_API_TOKEN)
@@ -127,7 +128,7 @@ class ConfigService:
         expected = self.get_test_api_key()
         if not expected:
             return False
-        return key == expected
+        return hmac.compare_digest(key, expected)
     
     # Configuration Render (Déploiement)
     
@@ -169,10 +170,13 @@ class ConfigService:
         Returns:
             True si credentials valides
         """
-        return (
-            username == self._settings.TRIGGER_PAGE_USER
-            and password == self._settings.TRIGGER_PAGE_PASSWORD
-        )
+        expected_user = self._settings.TRIGGER_PAGE_USER
+        expected_pass = self._settings.TRIGGER_PAGE_PASSWORD
+        if not expected_user or not expected_pass:
+            return False
+        if username != expected_user:
+            return False
+        return hmac.compare_digest(password, expected_pass)
     
     # Configuration Déduplication
     

@@ -45,6 +45,11 @@ def test_run_returns_zero_when_all_keys_valid(monkeypatch, mock_redis):
         json.dumps({"_updated_at": "2026-01-19T00:00:00Z", "rules": []}),
     )
 
+    mock_redis.set(
+        "testprefix:runtime_flags",
+        json.dumps({"gmail_ingress_enabled": True}),
+    )
+
     exit_code = check_config_store._run(check_config_store.KEY_CHOICES, raw=False)
 
     assert exit_code == 0

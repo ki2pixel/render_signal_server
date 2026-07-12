@@ -3,6 +3,7 @@ redis_client = None
 from flask import Flask, jsonify, request
 from flask_login import login_required
 from flask_cors import CORS
+from flask_wtf.csrf import CSRFProtect
 import os
 import threading
 import time
@@ -171,12 +172,7 @@ def _log_webhook_config_startup(app_instance: Flask):
         app_instance.logger.warning("CFG WEBHOOK_CONFIG: Erreur lors de la lecture de la configuration: %s", str(e))
 
 
-def create_app(config_class=None) -> Flask:
-    """Application Factory to create and configure the Flask application."""
-    app = Flask(__name__, template_folder='.', static_folder='static')
-    app.secret_key = settings.FLASK_SECRET_KEY
-
-    # 1. CORS Setup
+def _register_blueprints(app: Flask) -> None:
     _cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
     if _cors_origins:
         CORS(
@@ -191,8 +187,6 @@ def create_app(config_class=None) -> Flask:
                 }
             },
         )
-
-    # 2. Register Blueprints
     app.register_blueprint(health_bp)
     app.register_blueprint(api_webhooks_bp)
     app.register_blueprint(api_processing_bp)
@@ -207,7 +201,8 @@ def create_app(config_class=None) -> Flask:
     app.register_blueprint(api_routing_rules_bp)
     app.register_blueprint(api_ingress_bp)
 
-    # 3. Context Processor
+
+def _configure_vite_context(app: Flask) -> None:
     @app.context_processor
     def inject_bundler_helpers():
         import json
@@ -247,21 +242,17 @@ def create_app(config_class=None) -> Flask:
                     bundled_css.append(url_for("static", filename="dist/css/dashboard-bundle.css"))
         return {"use_bundle": use_bundle, "bundled_js": bundled_js, "bundled_css": bundled_css}
 
-    # 4. Logging configuration
-    log_level_str = os.environ.get('FLASK_LOG_LEVEL', 'INFO').upper()
-    log_level = getattr(logging, log_level_str, logging.INFO)
-    logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(name)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s')
 
-    # 5. Redis Client
-    global redis_client
-    redis_client = _init_redis_client(app.logger)
-
-    # 6. Service instances
+def _init_services(app: Flask, redis_client_instance) -> None:
     global _config_service, _runtime_flags_service, _webhook_service, _auth_service, _dedup_service, _ingress_service, login_manager, email_config_valid
+
     _config_service = ConfigService()
     _auth_service = AuthService(_config_service)
     login_manager = _auth_service.init_flask_login(app, login_view='dashboard.login')
     auth_user.init_login_manager(app, login_view='dashboard.login')
+
+    setattr(app, "config_service", _config_service)
+    setattr(app, "auth_service", _auth_service)
 
     try:
         from config import app_config_store
@@ -303,7 +294,7 @@ def create_app(config_class=None) -> Flask:
 
     try:
         _dedup_service = DeduplicationService.get_instance(
-            redis_client=redis_client,
+            redis_client=redis_client_instance,
             logger=app.logger,
             config_service=_config_service,
         )
@@ -317,11 +308,48 @@ def create_app(config_class=None) -> Flask:
             config_service=_config_service,
         )
         app.logger.info("SVC: IngressService initialized")
+        setattr(app, "ingress_service", _ingress_service)
     except Exception as e:
         app.logger.error(f"SVC: Failed to initialize IngressService: {e}")
         _ingress_service = None
 
-    # Log Startup Configurations
+    try:
+        from services.webhook_logger_service import WebhookLoggerService
+        wls = WebhookLoggerService.get_instance()
+        wls.configure(redis_client=redis_client_instance, logger=app.logger)
+        app.logger.info("SVC: WebhookLoggerService initialized with DI dependencies")
+    except Exception as e:
+        app.logger.error(f"SVC: Failed to configure WebhookLoggerService: {e}")
+
+    try:
+        from services.runtime_metrics_service import RuntimeMetricsService
+        RuntimeMetricsService.get_instance()
+        app.logger.info("SVC: RuntimeMetricsService initialized")
+    except Exception as e:
+        app.logger.error(f"SVC: Failed to initialize RuntimeMetricsService: {e}")
+
+
+def create_app(config_class=None) -> Flask:
+    """Application Factory to create and configure the Flask application."""
+    app = Flask(__name__, template_folder='.', static_folder='static')
+    app.secret_key = settings.FLASK_SECRET_KEY
+
+    log_level_str = os.environ.get('FLASK_LOG_LEVEL', 'INFO').upper()
+    log_level = getattr(logging, log_level_str, logging.INFO)
+    logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(name)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s')
+
+    _register_blueprints(app)
+    _configure_vite_context(app)
+
+    csrf = CSRFProtect(app)
+    csrf.exempt(api_ingress_bp)
+    csrf.exempt(api_test_bp)
+
+    global redis_client
+    redis_client = _init_redis_client(app.logger)
+
+    _init_services(app, redis_client)
+
     settings.log_configuration(app.logger)
     if not WEBHOOK_SSL_VERIFY:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)

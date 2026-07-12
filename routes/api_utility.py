@@ -20,13 +20,7 @@ def ping() -> Response | tuple[Response, int]:
     )
 
 
-@bp.route("/diag/runtime", methods=["GET"])
-def diag_runtime() -> Response | tuple[Response, int]:
-    """Expose basic runtime state without requiring auth.
-
-    Reads values from the main module (app_render) if available. All fields are best-effort.
-    """
-    now = datetime.now(timezone.utc)
+def _get_runtime_metrics_payload(now: datetime) -> dict:
     process_start_iso = None
     uptime_sec = None
     last_poll_cycle_ts = None
@@ -35,22 +29,22 @@ def diag_runtime() -> Response | tuple[Response, int]:
     make_watcher_alive = None
     enable_bg = None
 
+    try:
+        from services.runtime_metrics_service import RuntimeMetricsService
+        svc = RuntimeMetricsService.get_instance()
+        ps = svc.get_process_start_time()
+        if ps:
+            process_start_iso = ps.isoformat()
+            try:
+                uptime_sec = int((now - ps).total_seconds())
+            except Exception:
+                uptime_sec = None
+        last_poll_cycle_ts = svc.get_last_poll_cycle_ts()
+    except Exception:
+        pass
+
     mod = sys.modules.get("app_render")
     if mod is not None:
-        try:
-            ps = getattr(mod, "PROCESS_START_TIME", None)
-            if ps:
-                process_start_iso = getattr(ps, "isoformat", lambda: str(ps))()
-                try:
-                    uptime_sec = int((now - ps).total_seconds())
-                except Exception:
-                    uptime_sec = None
-        except Exception:
-            pass
-        try:
-            last_poll_cycle_ts = getattr(mod, "LAST_POLL_CYCLE_TS", None)
-        except Exception:
-            pass
         try:
             last_webhook_sent_ts = getattr(mod, "LAST_WEBHOOK_SENT_TS", None)
         except Exception:
@@ -70,7 +64,7 @@ def diag_runtime() -> Response | tuple[Response, int]:
         except Exception:
             enable_bg = None
 
-    payload = {
+    return {
         "process_start_time": process_start_iso,
         "uptime_sec": uptime_sec,
         "last_poll_cycle_ts": last_poll_cycle_ts,
@@ -80,10 +74,17 @@ def diag_runtime() -> Response | tuple[Response, int]:
         "enable_background_tasks": enable_bg,
         "server_time_utc": now.isoformat(),
     }
-    return jsonify(payload), 200
+
+
+@bp.route("/diag/runtime", methods=["GET"])
+@login_required
+def diag_runtime() -> Response | tuple[Response, int]:
+    now = datetime.now(timezone.utc)
+    return jsonify(_get_runtime_metrics_payload(now)), 200
 
 
 @bp.route("/check_trigger", methods=["GET"])
+@login_required
 def check_local_workflow_trigger() -> Response | tuple[Response, int]:
     if TRIGGER_SIGNAL_FILE.exists():
         try:
