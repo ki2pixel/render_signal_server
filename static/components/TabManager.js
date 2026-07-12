@@ -4,12 +4,14 @@ export class TabManager {
         this.activeTab = null;
         this.tabButtons = [];
         this.tabContents = [];
+        this._abortController = null;
     }
 
     /**
      * Initialise le système d'onglets
      */
     init() {
+        this._abortController = new AbortController();
         this.findTabElements();
         this.bindEvents();
         this.showInitialTab();
@@ -38,15 +40,16 @@ export class TabManager {
     }
 
     /**
-     * Lie les événements aux boutons d'onglets
+     * Lie les événements aux boutons d'onglets via AbortController
      */
     bindEvents() {
+        const signal = this._abortController?.signal;
         this.tabButtons.forEach(button => {
             button.addEventListener('click', (e) => {
                 e.preventDefault();
                 const targetId = button.dataset.target;
                 this.showTab(targetId);
-            });
+            }, { signal });
         });
     }
 
@@ -54,7 +57,6 @@ export class TabManager {
      * Affiche l'onglet initial (premier onglet ou celui marqué comme actif)
      */
     showInitialTab() {
-        // Chercher d'abord un onglet marqué comme actif
         const activeButton = document.querySelector('.tab-btn.active');
         if (activeButton) {
             const targetId = activeButton.dataset.target;
@@ -62,7 +64,6 @@ export class TabManager {
             return;
         }
         
-        // Sinon, afficher le premier onglet
         if (this.tabs.length > 0) {
             const firstTab = this.tabs[0];
             this.showTab(`#${firstTab.id}`);
@@ -70,43 +71,36 @@ export class TabManager {
     }
 
     /**
-     * Affiche un onglet spécifique avec lazy loading
+     * Affiche un onglet spécifique
      * @param {string} targetId - ID de la cible (ex: "#sec-overview")
      */
     showTab(targetId) {
-        // Masquer tous les contenus d'onglets
         this.tabContents.forEach(content => {
             content.classList.remove('active');
             content.style.display = 'none';
         });
         
-        // Désactiver tous les boutons
         this.tabButtons.forEach(button => {
             button.classList.remove('active');
             button.setAttribute('aria-selected', 'false');
+            button.setAttribute('tabindex', '-1');
         });
         
-        // Afficher le contenu cible avec animation
         const targetContent = document.querySelector(targetId);
         if (targetContent) {
             targetContent.classList.add('active');
             targetContent.style.display = 'block';
-            
-            // Lazy loading: charger les données de l'onglet seulement lors du premier affichage
-            this.lazyLoadTabContent(targetId.replace('#', ''));
         }
         
-        // Activer le bouton cible
         const targetButton = document.querySelector(`[data-target="${targetId}"]`);
         if (targetButton) {
             targetButton.classList.add('active');
             targetButton.setAttribute('aria-selected', 'true');
+            targetButton.setAttribute('tabindex', '0');
         }
         
-        // Mettre à jour l'onglet actif
         this.activeTab = targetId.replace('#', '');
         
-        // Déclencher un événement personnalisé pour le changement d'onglet
         this.dispatchTabChange(targetId);
     }
 
@@ -122,20 +116,6 @@ export class TabManager {
             }
         });
         document.dispatchEvent(event);
-    }
-
-    /**
-     * Signale une erreur lors du chargement d'un onglet via un événement personnalisé
-     * @param {string} tabId
-     * @param {Error} error
-     */
-    dispatchTabLoadError(tabId, error) {
-        document.dispatchEvent(new CustomEvent('tabloaderror', {
-            detail: {
-                tabId,
-                error
-            }
-        }));
     }
 
     /**
@@ -159,7 +139,12 @@ export class TabManager {
      * Ajoute des attributs ARIA pour l'accessibilité
      */
     enhanceAccessibility() {
-        this.tabButtons.forEach((button, index) => {
+        const tabList = this.tabButtons[0]?.parentElement;
+        if (tabList) {
+            tabList.setAttribute('role', 'tablist');
+        }
+
+        this.tabButtons.forEach((button) => {
             button.setAttribute('role', 'tab');
             button.setAttribute('aria-controls', button.dataset.target.replace('#', ''));
             button.setAttribute('aria-selected', button.classList.contains('active'));
@@ -174,14 +159,14 @@ export class TabManager {
             }
         });
         
-        // Gestion du clavier
         this.bindKeyboardEvents();
     }
 
     /**
-     * Lie les événements clavier pour la navigation au clavier
+     * Lie les événements clavier pour la navigation au clavier via AbortController
      */
     bindKeyboardEvents() {
+        const signal = this._abortController?.signal;
         this.tabButtons.forEach((button, index) => {
             button.addEventListener('keydown', (e) => {
                 let targetIndex = index;
@@ -215,94 +200,22 @@ export class TabManager {
                     const targetId = targetButton.dataset.target;
                     this.showTab(targetId);
                 }
-            });
+            }, { signal });
         });
     }
 
     /**
-     * Détruit le gestionnaire d'onglets et nettoie les événements
+     * Détruit le gestionnaire d'onglets et nettoie les événements via AbortController
      */
     destroy() {
-        this.tabButtons.forEach(button => {
-            button.removeEventListener('click', this.handleTabClick);
-            button.removeEventListener('keydown', this.handleKeyDown);
-        });
+        if (this._abortController) {
+            this._abortController.abort();
+            this._abortController = null;
+        }
         
         this.tabs = [];
         this.activeTab = null;
         this.tabButtons = [];
         this.tabContents = [];
-        this.loadedTabs = null;
-    }
-
-    /**
-     * Charge les données d'un onglet de manière paresseuse
-     * @param {string} tabId - ID de l'onglet à charger
-     */
-    async lazyLoadTabContent(tabId) {
-        // Vérifier si l'onglet a déjà été chargé
-        if (this.isTabLoaded(tabId)) {
-            return;
-        }
-        
-        try {
-            switch (tabId) {
-                case 'sec-overview':
-                    // Les logs sont déjà chargés via LogService
-                    break;
-                case 'sec-webhooks':
-                    // La configuration webhooks est chargée au démarrage
-                    break;
-                case 'sec-preferences':
-                    // Charger les préférences de traitement si nécessaire
-                    await this.loadProcessingPreferences();
-                    break;
-                case 'sec-tools':
-                    // Les outils n'ont pas besoin de chargement supplémentaire
-                    break;
-            }
-            
-            // Marquer l'onglet comme chargé
-            this.markTabAsLoaded(tabId);
-        } catch (error) {
-            this.dispatchTabLoadError(tabId, error);
-        }
-    }
-
-    /**
-     * Vérifie si un onglet a déjà été chargé
-     * @param {string} tabId - ID de l'onglet
-     * @returns {boolean} True si déjà chargé
-     */
-    isTabLoaded(tabId) {
-        return this.loadedTabs && this.loadedTabs.has(tabId);
-    }
-
-    /**
-     * Marque un onglet comme chargé
-     * @param {string} tabId - ID de l'onglet
-     */
-    markTabAsLoaded(tabId) {
-        if (!this.loadedTabs) {
-            this.loadedTabs = new Set();
-        }
-        this.loadedTabs.add(tabId);
-    }
-
-    /**
-     * Charge les préférences email (lazy loading)
-     */
-    async loadEmailPreferences() {
-        // Polling configuration retired - no-op
-    }
-
-    /**
-     * Charge les préférences de traitement (lazy loading)
-     */
-    async loadProcessingPreferences() {
-        // Cette fonction sera implémentée dans dashboard.js
-        if (typeof window.loadProcessingPrefsFromServer === 'function') {
-            await window.loadProcessingPrefsFromServer();
-        }
     }
 }

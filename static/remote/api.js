@@ -2,6 +2,12 @@
 
 window.appAPI = window.appAPI || {};
 
+/** Extrait le jeton CSRF depuis la balise meta. */
+function _getCsrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+}
+
 /**
  * Interroge le backend pour obtenir le statut du worker local.
  * @returns {Promise<object|null>} Les données de statut ou null en cas d'erreur.
@@ -52,7 +58,7 @@ window.appAPI.setWebhookTimeWindow = async function(start, end) {
     try {
         const res = await fetch('/api/set_webhook_time_window', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': _getCsrfToken() },
             body: JSON.stringify({ start, end })
         });
         const data = await res.json();
@@ -70,7 +76,7 @@ window.appAPI.triggerWorkflow = async function() {
     try {
         const response = await fetch('/api/trigger_local_workflow', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': _getCsrfToken() },
             body: JSON.stringify({ command: "start_manual_generic_from_remote_ui", source: "trigger_page_html" })
         });
         const data = await response.json();
@@ -89,7 +95,10 @@ window.appAPI.triggerWorkflow = async function() {
  */
 window.appAPI.checkEmails = async function() {
     try {
-        const response = await fetch('/api/check_emails_and_download', { method: 'POST' });
+        const response = await fetch('/api/check_emails_and_download', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': _getCsrfToken() }
+        });
         const data = await response.json();
         if (response.status === 401) {
             return { success: false, sessionExpired: true, data };

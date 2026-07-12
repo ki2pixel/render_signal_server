@@ -1,0 +1,215 @@
+/* static/css/routing-rules.css - Routing rules builder and lock button */
+
+/* Routing Rules */
+.routing-rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.routing-rules-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.routing-rules-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-sm);
+}
+
+.routing-rules-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-sm);
+}
+
+.routing-rules-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.routing-rule-card {
+  background: rgba(8, 12, 28, 0.7);
+  border: 1px solid var(--cork-border-color);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.routing-rule-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.routing-rule-title {
+  flex: 1;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.routing-rule-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.routing-icon-btn {
+  background: rgba(67, 97, 238, 0.12);
+  border: 1px solid rgba(67, 97, 238, 0.4);
+  color: var(--cork-text-primary);
+  border-radius: var(--radius-md);
+  padding: 6px 8px;
+  cursor: pointer;
+  transition: transform var(--transition-fast) ease, border-color var(--transition-fast) ease;
+}
+
+.routing-icon-btn:hover {
+  border-color: var(--cork-primary-accent);
+  transform: translateY(-1px);
+}
+
+.routing-section-title {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--cork-text-secondary);
+  margin-top: 6px;
+}
+
+.routing-conditions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.routing-condition-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 160px) minmax(120px, 160px) 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.routing-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.routing-inline {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.routing-input,
+.routing-select {
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--cork-border-color);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--cork-text-primary);
+  font-size: 0.9em;
+  box-sizing: border-box;
+}
+
+.routing-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85em;
+  color: var(--cork-text-secondary);
+}
+
+.routing-invalid {
+  border-color: var(--cork-danger) !important;
+  box-shadow: var(--focus-ring-danger);
+}
+
+.routing-empty {
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--cork-text-secondary);
+}
+
+.routing-add-btn {
+  margin-top: 4px;
+  align-self: flex-start;
+}
+
+/* Lock Button */
+.lock-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  margin-left: 8px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-normal) ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lock-btn:hover {
+  background: rgba(67, 97, 238, 0.1);
+  transform: scale(1.1);
+}
+
+.lock-btn:active {
+  transform: scale(0.95);
+}
+
+.lock-btn:focus {
+  outline: 2px solid var(--cork-primary-accent);
+  outline-offset: 2px;
+}
+
+.lock-icon {
+  font-size: 1.1em;
+  transition: opacity var(--transition-normal) ease;
+}
+
+.lock-icon.locked {
+  opacity: 1;
+}
+
+.lock-icon.unlocked {
+  opacity: 0.7;
+}
+
+.routing-rules-list.locked {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.routing-rules-list input:disabled,
+.routing-rules-list select:disabled,
+.routing-rules-list textarea:disabled,
+.routing-rules-list button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .routing-rules-list {
+    max-height: 300px;
+  }
+
+  .routing-condition-row {
+    grid-template-columns: 1fr;
+  }
+
+  .routing-rule-controls {
+    justify-content: flex-start;
+  }
+}

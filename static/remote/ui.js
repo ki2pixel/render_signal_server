@@ -71,7 +71,7 @@ function updateProgressBar(data, workerStatusCode) {
 function updateDownloadsList(downloads) {
     if (downloads && downloads.length > 0) {
         dom.downloadsTitle.style.display = 'block';
-        dom.downloadsList.innerHTML = '';
+        dom.downloadsList.replaceChildren();
         downloads.forEach(dl => {
             const li = document.createElement('li');
             const status = (dl.status || "").toLowerCase();
@@ -80,12 +80,17 @@ function updateDownloadsList(downloads) {
             else if (status === 'failed') color = 'var(--cork-danger)';
             else if (['downloading', 'starting'].includes(status)) color = 'var(--cork-info)';
 
-            li.innerHTML = `<span style="color:${color}; font-weight:bold;">[${dl.status || 'N/A'}]</span> ${dl.filename || 'N/A'}`;
+            const span = document.createElement('span');
+            span.style.color = color;
+            span.style.fontWeight = 'bold';
+            span.textContent = `[${dl.status || 'N/A'}]`;
+            li.appendChild(span);
+            li.append(` ${dl.filename || 'N/A'}`);
             dom.downloadsList.appendChild(li);
         });
     } else {
         dom.downloadsTitle.style.display = 'none';
-        dom.downloadsList.innerHTML = '';
+        dom.downloadsList.replaceChildren();
     }
 }
 

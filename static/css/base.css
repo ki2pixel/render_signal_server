@@ -151,6 +151,22 @@ h1 .emoji {
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
+}
+
+/* Focus Visible — WCAG AA keyboard accessibility */
+:focus-visible {
+  outline: 2px solid var(--cork-primary-accent);
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 /* Accessibility - Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -227,3 +243,84 @@ h1 .emoji {
     margin-bottom: 10px;
   }
 }
+
+/* Dashboard Layout Utilities */
+
+.toggle-row .toggle-switch {
+  vertical-align: middle;
+}
+
+.toggle-row-text {
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
+.toggle-switch--inline {
+  vertical-align: middle;
+  margin-left: 10px;
+}
+
+.subsection-title {
+  margin: 0 0 10px 0;
+  color: var(--cork-text-primary);
+}
+
+.callout {
+  padding: 12px;
+  background: rgba(67, 97, 238, 0.1);
+  border-radius: 6px;
+  border-left: 3px solid var(--cork-primary-accent);
+}
+
+.grid-2col {
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.checkbox-group {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.divider {
+  margin: 18px 0;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.preformatted {
+  margin-top: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--cork-border-color);
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  max-height: 200px;
+  overflow: auto;
+  color: var(--cork-text-primary);
+}
+
+/* Spacing utilities */
+.mt-6 { margin-top: 6px; }
+.mt-8 { margin-top: 8px; }
+.mt-10 { margin-top: 10px; }
+.mt-12 { margin-top: 12px; }
+.mt-15 { margin-top: 15px; }
+.mt-20 { margin-top: 20px; }
+.mb-10 { margin-bottom: 10px; }
+.mb-12 { margin-bottom: 12px; }
+.mb-15 { margin-bottom: 15px; }
+.mb-20 { margin-bottom: 20px; }
+.ml-10 { margin-left: 10px; }
+
+/* Width utilities for selects */
+.select-medium { width: 100%; max-width: 220px; }
+.select-narrow { width: 100%; max-width: 120px; }
+.select-narrow-sm { width: 100%; max-width: 100px; }
+
+.fw-600 { font-weight: 600; }

@@ -1,0 +1,44 @@
+/* static/css/tabs.css - Tab buttons and section panel hierarchy */
+
+/* Tab Buttons */
+.nav-tabs .tab-btn {
+  appearance: none;
+  background: var(--cork-card-bg);
+  color: var(--cork-text-primary);
+  border: 1px solid var(--cork-border-color);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background var(--transition-fast) ease, border-color var(--transition-fast) ease, transform var(--transition-fast) ease;
+}
+
+.nav-tabs .tab-btn.active {
+  background: var(--cork-primary-accent);
+  border-color: var(--cork-primary-accent);
+  color: #ffffff;
+}
+
+.nav-tabs .tab-btn:hover {
+  border-color: var(--cork-primary-accent);
+}
+
+.nav-tabs .tab-btn:active {
+  transform: translateY(1px);
+}
+
+.nav-tabs .tab-btn:focus {
+  outline: 2px solid var(--cork-primary-accent);
+  outline-offset: 2px;
+}
+
+/* Section Panel Hierarchy */
+.section-panel.config .card {
+  border-left: 4px solid var(--cork-primary-accent);
+  background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(67, 97, 238, 0.05) 100%);
+}
+
+.section-panel.monitoring .card {
+  border-left: 4px solid var(--cork-info);
+  background: linear-gradient(135deg, var(--cork-card-bg) 0%, rgba(33, 150, 243, 0.03) 100%);
+}

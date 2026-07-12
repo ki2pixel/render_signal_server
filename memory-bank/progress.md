@@ -13,6 +13,16 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-07-12 20:25:00] - Remédiation Frontend Audit Juillet 2026 — Finalisation (30/30 items)
+- **Objectif** : Implémenter les 5 derniers items de l'audit frontend (sur 30), clôturant 100% du plan de remédiation.
+- **Actions réalisées** :
+  * **2.8 CSS Splitting** : `modules.css` (874 lignes) découpé en 5 fichiers : `tabs.css`, `status-banner.css`, `timeline.css`, `panels.css`, `routing-rules.css`. Distribution des règles responsive (`@media 768px/480px`) vers chaque fichier correspondant.
+  * **2.9 Barrel imports** : `modules.css` → barrel `@import` des 5 fichiers. `dashboard.html` charge les 5 fichiers individuellement en dev mode. Suppression des query strings cache-busting (`?v=20260202-json-viewer`).
+  * **4.1 Cache-partage** : `LogService` — `_cachedLogs`, `_logsCacheTime`, `getCachedLogs()`, `isLogCacheFresh()` (TTL 30s). `WebhookService` — `_cachedConfig`, `_configCacheTime`, `getCachedConfig()`, `isConfigCacheFresh()` (TTL 60s). Cache peuplé lors des fetchs existants (`loadAndRenderLogs`, `loadConfig`).
+  * **4.2 Cache dans updateGlobalStatus** : `status_banner.js` utilise `LogService.getCachedLogs()` et `WebhookService.getCachedConfig()` quand le cache est frais, évitant 2 appels API redondants. Ajout import `ApiService` pour correction de portée.
+  * **4.10 Extraction inline styles** : 79 `style="..."` → 0. 21 classes utilitaires ajoutées au `base.css` (`.toggle-row`, `.toggle-row-text`, `.toggle-switch--inline`, `.subsection-title`, `.callout`, `.grid-2col`, `.checkbox-group`, `.checkbox-row`, `.divider`, `.preformatted`, spacing/width/font-weight utilities). `display:none` → attribut `hidden` HTML.
+- **Validation** : `npx vite build` réussi (26 kB CSS, 65 kB JS), `npx vitest run` 9/9 tests passent, 0 `style="` dans `dashboard.html`.
+
 [2026-07-12 19:02:00] - Remédiation Audit Backend Juillet 2026 — Phases 1 à 4 + Stabilisation Tests (Sessions 1-3)
 - **Objectif** : Appliquer le plan de remédiation en 4 phases issu de l'audit backend de juillet 2026 (sécurité, découplage architectural, réduction de complexité, durcissement Ops) et corriger toutes les régressions de tests induites.
 - **Actions réalisées** :

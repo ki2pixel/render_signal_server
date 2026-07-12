@@ -6,6 +6,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export default defineConfig({
+  server: {
+    proxy: {
+      '/api': 'http://localhost:5000',
+      '/health': 'http://localhost:5000'
+    }
+  },
   build: {
     outDir: 'static/dist',
     emptyOutDir: true,

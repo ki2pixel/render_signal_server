@@ -1,0 +1,226 @@
+/* static/css/panels.css - Collapsible panels, section indicators, toast, auto-save */
+
+/* Collapsible Panels */
+.collapsible-panel {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--cork-border-color);
+  border-radius: var(--radius-lg);
+  margin-bottom: 16px;
+  overflow: hidden;
+  transition: all var(--transition-slow) ease;
+}
+
+.collapsible-panel:hover {
+  border-color: rgba(67, 97, 238, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(67, 97, 238, 0.05);
+  border-bottom: 1px solid var(--cork-border-color);
+  cursor: pointer;
+  user-select: none;
+  transition: all var(--transition-normal) ease;
+}
+
+.panel-header:hover {
+  background: rgba(67, 97, 238, 0.1);
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--cork-text-primary);
+}
+
+.panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle-icon {
+  width: 20px;
+  height: 20px;
+  transition: transform var(--transition-slow) ease;
+  color: var(--cork-text-secondary);
+}
+
+.toggle-icon.rotated {
+  transform: rotate(180deg);
+}
+
+.panel-status {
+  font-size: 0.7em;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(226, 160, 63, 0.15);
+  color: var(--cork-warning);
+  font-weight: 600;
+}
+
+.panel-status.saved {
+  background: rgba(26, 188, 156, 0.15);
+  color: var(--cork-success);
+}
+
+.panel-content {
+  padding: 16px;
+  max-height: 1000px;
+  opacity: 1;
+  transition: all var(--transition-slow) ease;
+}
+
+.panel-content.collapsed {
+  max-height: 0;
+  padding: 0 16px;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.panel-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.panel-save-btn {
+  background: var(--cork-primary-accent);
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8em;
+  cursor: pointer;
+  transition: all var(--transition-normal) ease;
+}
+
+.panel-save-btn:hover {
+  background: #5470f1;
+  transform: translateY(-1px);
+}
+
+.panel-save-btn:disabled {
+  background: var(--cork-text-secondary);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.panel-indicator {
+  font-size: 0.7em;
+  color: var(--cork-text-secondary);
+  font-style: italic;
+}
+
+/* Section Indicators */
+.section-indicator {
+  font-size: 0.6em;
+  padding: 2px 6px;
+  border-radius: 8px;
+  margin-left: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all var(--transition-normal) ease;
+}
+
+.section-indicator.modifié {
+  background: rgba(226, 160, 63, 0.15);
+  color: var(--cork-warning);
+  animation: pulse-modified 2s infinite;
+}
+
+.section-indicator.sauvegardé {
+  background: rgba(26, 188, 156, 0.15);
+  color: var(--cork-success);
+}
+
+@keyframes pulse-modified {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.card.modified,
+.collapsible-panel.modified {
+  border-left: 3px solid var(--cork-warning);
+  background: rgba(226, 160, 63, 0.02);
+}
+
+.card.saved,
+.collapsible-panel.saved {
+  border-left: 3px solid var(--cork-success);
+  background: rgba(26, 188, 156, 0.02);
+}
+
+/* Toast Notification */
+.copied-feedback {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: var(--cork-success);
+  color: white;
+  padding: 12px 20px;
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transform: translateX(400px);
+  transition: transform var(--transition-slow) ease;
+  z-index: var(--z-toast);
+  font-weight: 500;
+}
+
+.copied-feedback.show {
+  transform: translateX(0);
+}
+
+/* Auto-save Feedback (positioning) */
+.auto-save-feedback {
+  position: absolute;
+  bottom: -20px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  z-index: var(--z-dropdown);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .panel-header {
+    padding: 10px 12px;
+  }
+
+  .panel-content {
+    padding: 12px;
+  }
+
+  .panel-actions {
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .panel-save-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .copied-feedback {
+    right: 10px;
+    top: 10px;
+    left: 10px;
+    transform: translateY(-100px);
+  }
+
+  .copied-feedback.show {
+    transform: translateY(0);
+  }
+}

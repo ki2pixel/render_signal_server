@@ -5,6 +5,8 @@ import { DOMHelper } from '../utils/DOMHelper.js';
 export class LogService {
     static logPollingInterval = null;
     static currentLogDays = 7;
+    static _cachedLogs = null;
+    static _logsCacheTime = null;
 
     /**
      * Démarre le polling automatique des logs
@@ -53,8 +55,11 @@ export class LogService {
         const daysToLoad = days || this.currentLogDays;
         
         try {
-            const logs = await ApiService.get(`/api/webhook_logs?days=${daysToLoad}`);
-            this.renderLogs(logs.logs || []);
+            const data = await ApiService.get(`/api/webhook_logs?days=${daysToLoad}`);
+            const logs = data.logs || [];
+            this._cachedLogs = logs;
+            this._logsCacheTime = Date.now();
+            this.renderLogs(logs);
         } catch (e) {
             MessageHelper.showError('logMsg', 'Erreur lors du chargement des logs.');
             this.renderLogs([]);
@@ -69,10 +74,16 @@ export class LogService {
         const container = DOMHelper.getElement('webhookLogs');
         if (!container) return;
         
-        container.innerHTML = '';
+        container.replaceChildren();
         
         if (!logs || logs.length === 0) {
-            container.innerHTML = '<div class="timeline-item"><div class="timeline-content">Aucun log trouvé pour cette période.</div></div>';
+            const emptyItem = document.createElement('div');
+            emptyItem.className = 'timeline-item';
+            const emptyContent = document.createElement('div');
+            emptyContent.className = 'timeline-content';
+            emptyContent.textContent = 'Aucun log trouvé pour cette période.';
+            emptyItem.appendChild(emptyContent);
+            container.appendChild(emptyItem);
             return;
         }
         
@@ -121,20 +132,20 @@ export class LogService {
             
             if (log.subject) {
                 const subjectDiv = document.createElement('div');
-                subjectDiv.textContent = `Sujet: ${this.escapeHtml(log.subject)}`;
+                subjectDiv.textContent = `Sujet: ${log.subject}`;
                 details.appendChild(subjectDiv);
             }
             
             if (log.webhook_url) {
                 const urlDiv = document.createElement('div');
-                urlDiv.textContent = `URL: ${this.escapeHtml(log.webhook_url)}`;
+                urlDiv.textContent = `URL: ${log.webhook_url}`;
                 details.appendChild(urlDiv);
             }
             
             if (log.error_message) {
                 const errorDiv = document.createElement('div');
                 errorDiv.style.color = 'var(--cork-danger)';
-                errorDiv.textContent = `Erreur: ${this.escapeHtml(log.error_message)}`;
+                errorDiv.textContent = `Erreur: ${log.error_message}`;
                 details.appendChild(errorDiv);
             }
             
@@ -143,8 +154,7 @@ export class LogService {
             timelineContainer.appendChild(timelineItem);
         });
         
-        container.innerHTML = '';
-        container.appendChild(timelineContainer);
+        container.replaceChildren(timelineContainer);
     }
 
     /**
@@ -162,7 +172,11 @@ export class LogService {
     static clearLogs() {
         const container = DOMHelper.getElement('webhookLogs');
         if (container) {
-            container.innerHTML = '<div class="log-entry">Logs vidés.</div>';
+            container.replaceChildren();
+            const clearedEntry = document.createElement('div');
+            clearedEntry.className = 'log-entry';
+            clearedEntry.textContent = 'Logs vidés.';
+            container.appendChild(clearedEntry);
         }
     }
 
@@ -219,17 +233,6 @@ export class LogService {
         } catch (e) {
             return isoString;
         }
-    }
-
-    /**
-     * Échappement HTML pour éviter les XSS
-     * @param {string} text - Texte à échapper
-     * @returns {string} Texte échappé
-     */
-    static escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 
     /**
@@ -311,10 +314,14 @@ export class LogService {
         
         const canvas = document.createElement('canvas');
         canvas.className = 'sparkline-canvas';
-        canvas.width = 200;
-        canvas.height = 40;
+        const dpr = globalThis.devicePixelRatio || 1;
+        canvas.width = 200 * dpr;
+        canvas.height = 40 * dpr;
+        canvas.style.width = '200px';
+        canvas.style.height = '40px';
         
         const ctx = canvas.getContext('2d');
+        ctx.scale(dpr, dpr);
         
         const hours = 24;
         const data = [];
@@ -356,10 +363,29 @@ export class LogService {
         sparklineContainer.appendChild(canvas);
         
         const legend = document.createElement('div');
-        legend.style.cssText = 'position: absolute; top: 5px; right: 10px; font-size: 0.7em; color: var(--cork-text-secondary);';
+        legend.className = 'sparkline-legend';
         legend.textContent = `24h - Max: ${maxCount}`;
         sparklineContainer.appendChild(legend);
         
         return sparklineContainer;
+    }
+
+    /**
+     * Retourne les logs en cache (dernier fetch réussi)
+     * @returns {Array|null} Logs en cache ou null
+     */
+    static getCachedLogs() {
+        return this._cachedLogs;
+    }
+
+    /**
+     * Vérifie si le cache des logs est encore frais
+     * @param {number} maxAgeMs - Âge maximum en ms (défaut: 30000)
+     * @returns {boolean} True si le cache est frais
+     */
+    static isLogCacheFresh(maxAgeMs = 30000) {
+        return this._cachedLogs !== null &&
+               this._logsCacheTime !== null &&
+               (Date.now() - this._logsCacheTime) < maxAgeMs;
     }
 }

@@ -15,8 +15,12 @@
     {% else %}
         <link rel="stylesheet" href="{{ url_for('static', filename='css/variables.css') }}">
         <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
-        <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}?v=20260202-json-viewer">
-        <link rel="stylesheet" href="{{ url_for('static', filename='css/modules.css') }}">
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}">
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/tabs.css') }}">
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/status-banner.css') }}">
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/timeline.css') }}">
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/panels.css') }}">
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/routing-rules.css') }}">
     {% endif %}
   </head>
   <body>
@@ -27,7 +31,7 @@
         </h1>
         <a href="/logout" class="logout-link">Déconnexion</a>
       </div>
-      
+
       <!-- Bandeau Statut Global -->
       <div id="globalStatusBanner" data-target="globalStatusBanner" class="global-status-banner">
         <div class="status-header">
@@ -59,10 +63,10 @@
         </div>
 
       </div>
-      
+
       <!-- Navigation principale -->
       <div class="nav-tabs" role="tablist" aria-label="Menu principal">
-        <button class="tab-btn active" data-target="#sec-overview" type="button" role="tab" aria-selected="true" aria-controls="sec-overview" id="tab-overview">Vue d’ensemble</button>
+        <button class="tab-btn active" data-target="#sec-overview" type="button" role="tab" aria-selected="true" aria-controls="sec-overview" id="tab-overview">Vue d'ensemble</button>
         <button class="tab-btn" data-target="#sec-webhooks" type="button" role="tab" aria-selected="false" aria-controls="sec-webhooks" id="tab-webhooks">Webhooks</button>
         <button class="tab-btn" data-target="#sec-preferences" type="button" role="tab" aria-selected="false" aria-controls="sec-preferences" id="tab-preferences">Préférences</button>
         <button class="tab-btn" data-target="#sec-tools" type="button" role="tab" aria-selected="false" aria-controls="sec-tools" id="tab-tools">Outils</button>
@@ -87,34 +91,34 @@
               <label for="webhookUrl">Webhook Personnalisé (WEBHOOK_URL)</label>
               <input id="webhookUrl" data-target="webhookUrl" type="text" placeholder="https://...">
             </div>
-            <div style="margin-top: 15px;">
-              <label class="toggle-switch" style="vertical-align: middle;">
+            <div class="toggle-row mt-15">
+              <label class="toggle-switch">
                 <input type="checkbox" id="sslVerifyToggle" data-target="sslVerifyToggle">
                 <span class="toggle-slider"></span>
               </label>
-              <span style="margin-left: 10px; vertical-align: middle;">Vérification SSL (WEBHOOK_SSL_VERIFY)</span>
+              <span class="toggle-row-text">Vérification SSL (WEBHOOK_SSL_VERIFY)</span>
             </div>
-            <div style="margin-top: 12px;">
-              <label class="toggle-switch" style="vertical-align: middle;">
+            <div class="toggle-row mt-12">
+              <label class="toggle-switch">
                 <input type="checkbox" id="webhookSendingToggle" data-target="webhookSendingToggle">
                 <span class="toggle-slider"></span>
               </label>
-              <span style="margin-left: 10px; vertical-align: middle;">Activer l'envoi des webhooks (global)</span>
+              <span class="toggle-row-text">Activer l'envoi des webhooks (global)</span>
             </div>
-            <div class="form-group" style="margin-top: 15px;">
+            <div class="form-group mt-15">
               <label for="webhookDeliveryMode">Mode d'envoi HTTP</label>
-              <select id="webhookDeliveryMode" data-target="webhookDeliveryMode" style="width: 100%; max-width: 220px;">
+              <select id="webhookDeliveryMode" data-target="webhookDeliveryMode" class="select-medium">
                 <option value="json">JSON brut (`application/json`)</option>
                 <option value="form">Corps brut avec header form (`application/x-www-form-urlencoded`)</option>
               </select>
               <div class="small-text">Le fallback 415 peut automatiquement basculer vers l'autre media type si le reverse proxy rejette le mode primaire.</div>
             </div>
-            <div style="margin-top: 12px;">
-              <label class="toggle-switch" style="vertical-align: middle;">
+            <div class="toggle-row mt-12">
+              <label class="toggle-switch">
                 <input type="checkbox" id="webhookFallbackOn415Toggle" data-target="webhookFallbackOn415Toggle">
                 <span class="toggle-slider"></span>
               </label>
-              <span style="margin-left: 10px; vertical-align: middle;">Activer le fallback automatique en cas de 415</span>
+              <span class="toggle-row-text">Activer le fallback automatique en cas de 415</span>
             </div>
             <div class="panel-actions">
               <button class="panel-save-btn" data-panel="urls-ssl">💾 Enregistrer</button>
@@ -137,19 +141,19 @@
             </div>
           </div>
           <div class="panel-content">
-            <div style="margin-bottom: 12px;">
-              <label class="toggle-switch" style="vertical-align: middle;">
+            <div class="toggle-row mb-12">
+              <label class="toggle-switch">
                 <input type="checkbox" id="absencePauseToggle" data-target="absencePauseToggle">
                 <span class="toggle-slider"></span>
               </label>
-              <span style="margin-left: 10px; vertical-align: middle; font-weight: 600;">Activer l'absence globale (stop emails)</span>
+              <span class="toggle-row-text fw-600">Activer l'absence globale (stop emails)</span>
             </div>
-            <div class="small-text" style="margin-bottom: 10px;">
+            <div class="small-text mb-10">
               Lorsque activé, <strong>aucun email</strong> ne sera envoyé (ni DESABO ni Média Solution, urgent ou non) pour les jours sélectionnés ci-dessous.
             </div>
             <div class="form-group">
               <label>Jours d'absence (aucun email envoyé)</label>
-              <div id="absencePauseDaysGroup" data-target="absencePauseDaysGroup" class="inline-group" style="flex-wrap: wrap; gap: 12px; margin-top: 6px;">
+              <div id="absencePauseDaysGroup" data-target="absencePauseDaysGroup" class="inline-group checkbox-group mt-6">
                 <label><input type="checkbox" name="absencePauseDay" value="monday"> Lundi</label>
                 <label><input type="checkbox" name="absencePauseDay" value="tuesday"> Mardi</label>
                 <label><input type="checkbox" name="absencePauseDay" value="wednesday"> Mercredi</label>
@@ -181,49 +185,49 @@
             </div>
           </div>
           <div class="panel-content">
-            <div style="margin-bottom: 20px;">
-              <h4 style="margin: 0 0 10px 0; color: var(--cork-text-primary);">Fenêtre Horaire Globale</h4>
+            <div class="mb-20">
+              <h4 class="subsection-title">Fenêtre Horaire Globale</h4>
               <div class="form-group">
                 <label for="webhooksTimeStart">Heure de début</label>
-                <select id="webhooksTimeStart" data-target="webhooksTimeStart" style="width: 100%; max-width: 120px;">
+                <select id="webhooksTimeStart" data-target="webhooksTimeStart" class="select-narrow">
                   <option value="">Sélectionner...</option>
                 </select>
               </div>
               <div class="form-group">
                 <label for="webhooksTimeEnd">Heure de fin</label>
-                <select id="webhooksTimeEnd" data-target="webhooksTimeEnd" style="width: 100%; max-width: 120px;">
+                <select id="webhooksTimeEnd" data-target="webhooksTimeEnd" class="select-narrow">
                   <option value="">Sélectionner...</option>
                 </select>
               </div>
               <div id="timeWindowMsg" data-target="timeWindowMsg" class="status-msg"></div>
               <div id="timeWindowDisplay" data-target="timeWindowDisplay" class="small-text"></div>
               <div class="small-text">Laissez les deux champs vides pour désactiver la contrainte horaire.</div>
-              <div style="margin-top: 12px;">
+              <div class="mt-12">
                 <button id="saveTimeWindowBtn" data-target="saveTimeWindowBtn" class="btn btn-primary btn-small">💾 Enregistrer Fenêtre Globale</button>
               </div>
             </div>
-            
-            <div style="padding: 12px; background: rgba(67, 97, 238, 0.1); border-radius: 6px; border-left: 3px solid var(--cork-primary-accent);">
-              <h4 style="margin: 0 0 10px 0; color: var(--cork-text-primary);">Fenêtre Horaire Webhooks</h4>
-              <div class="form-group" style="margin-bottom: 10px;">
+
+            <div class="callout">
+              <h4 class="subsection-title">Fenêtre Horaire Webhooks</h4>
+              <div class="form-group mb-10">
                 <label for="globalWebhookTimeStart">Heure de début</label>
-                <select id="globalWebhookTimeStart" data-target="globalWebhookTimeStart" style="width: 100%; max-width: 100px;">
+                <select id="globalWebhookTimeStart" data-target="globalWebhookTimeStart" class="select-narrow-sm">
                   <option value="">Sélectionner...</option>
                 </select>
               </div>
-              <div class="form-group" style="margin-bottom: 10px;">
+              <div class="form-group mb-10">
                 <label for="globalWebhookTimeEnd">Heure de fin</label>
-                <select id="globalWebhookTimeEnd" data-target="globalWebhookTimeEnd" style="width: 100%; max-width: 100px;">
+                <select id="globalWebhookTimeEnd" data-target="globalWebhookTimeEnd" class="select-narrow-sm">
                   <option value="">Sélectionner...</option>
                 </select>
               </div>
-              <div id="globalWebhookTimeMsg" data-target="globalWebhookTimeMsg" class="status-msg" style="margin-top: 8px;"></div>
+              <div id="globalWebhookTimeMsg" data-target="globalWebhookTimeMsg" class="status-msg mt-8"></div>
               <div class="small-text">Définissez quand les webhooks peuvent être envoyés (laissez vide pour désactiver).</div>
-              <div style="margin-top: 12px;">
+              <div class="mt-12">
                 <button id="saveGlobalWebhookTimeBtn" data-target="saveGlobalWebhookTimeBtn" class="btn btn-primary btn-small">💾 Enregistrer Fenêtre Webhook</button>
               </div>
             </div>
-            
+
             <div class="panel-actions">
               <span class="panel-indicator" id="time-window-indicator" data-target="time-window-indicator">Dernière sauvegarde: —</span>
             </div>
@@ -245,11 +249,11 @@
           </div>
         </div>
         <div class="panel-content">
-          <div class="small-text" style="margin-bottom: 10px;">
+          <div class="small-text mb-10">
             Définissez des règles conditionnelles pour router les emails vers des webhooks dédiés.
             Les règles sont évaluées dans l'ordre affiché.
           </div>
-          <div class="inline-group" style="margin-bottom: 12px;">
+          <div class="inline-group mb-12">
             <button id="addRoutingRuleBtn" data-target="addRoutingRuleBtn" type="button" class="btn btn-primary btn-small">➕ Ajouter une règle</button>
             <button id="reloadRoutingRulesBtn" data-target="reloadRoutingRulesBtn" type="button" class="btn btn-secondary btn-small">🔄 Recharger</button>
           </div>
@@ -258,36 +262,36 @@
             <span class="panel-indicator" id="routing-rules-indicator" data-target="routing-rules-indicator">Dernière sauvegarde: —</span>
           </div>
           <div id="routing-rules-msg" data-target="routing-rules-msg" class="status-msg"></div>
-          <div id="routingRulesRedisInspectMsg" data-target="routingRulesRedisInspectMsg" class="status-msg" style="margin-top: 12px;"></div>
-          <pre id="routingRulesRedisInspectLog" data-target="routingRulesRedisInspectLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-          <div id="routingRulesRedisInspectViewer" data-target="routingRulesRedisInspectViewer" class="json-viewer-container" style="display:none;"></div>
+          <div id="routingRulesRedisInspectMsg" data-target="routingRulesRedisInspectMsg" class="status-msg mt-12"></div>
+          <pre id="routingRulesRedisInspectLog" data-target="routingRulesRedisInspectLog" class="code-block small-text mt-12" hidden></pre>
+          <div id="routingRulesRedisInspectViewer" data-target="routingRulesRedisInspectViewer" class="json-viewer-container" hidden></div>
         </div>
       </div>
       </div>
 
-      
+
       <!-- Section: Préférences (filtres + fiabilité) -->
       <div id="sec-preferences" data-target="sec-preferences" class="section-panel" role="tabpanel" aria-labelledby="tab-preferences" tabindex="0">
         <div class="card">
           <div class="card-title">🔍 Filtres Email Avancés</div>
           <div class="form-group">
             <label for="excludeKeywordsRecadrage">Mots-clés à exclure (Recadrage) — un par ligne</label>
-            <textarea id="excludeKeywordsRecadrage" data-target="excludeKeywordsRecadrage" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+            <textarea id="excludeKeywordsRecadrage" data-target="excludeKeywordsRecadrage" rows="4"></textarea>
             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `RECADRAGE_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
           </div>
           <div class="form-group">
             <label for="excludeKeywordsAutorepondeur">Mots-clés à exclure (Autorépondeur) — un par ligne</label>
-            <textarea id="excludeKeywordsAutorepondeur" data-target="excludeKeywordsAutorepondeur" rows="4" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+            <textarea id="excludeKeywordsAutorepondeur" data-target="excludeKeywordsAutorepondeur" rows="4"></textarea>
             <div class="small-text">Ces mots-clés empêcheront l'envoi du webhook `AUTOREPONDEUR_MAKE_WEBHOOK_URL` si trouvés dans le sujet ou le corps.</div>
           </div>
           <div class="form-group">
             <label for="excludeKeywords">Mots-clés à exclure (global, compatibilité) — un par ligne</label>
-            <textarea id="excludeKeywords" data-target="excludeKeywords" rows="3" style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+            <textarea id="excludeKeywords" data-target="excludeKeywords" rows="3"></textarea>
             <div class="small-text">Liste globale (héritage). S'applique avant toute logique et avant les listes spécifiques.</div>
           </div>
           <div class="form-group">
             <label for="attachmentDetectionToggle">Détection de pièces jointes requise</label>
-            <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+            <label class="toggle-switch toggle-switch--inline">
               <input type="checkbox" id="attachmentDetectionToggle" data-target="attachmentDetectionToggle">
               <span class="toggle-slider"></span>
             </label>
@@ -298,13 +302,13 @@
           </div>
           <div class="form-group">
             <label for="senderPriority">Priorité des expéditeurs (JSON simple)</label>
-            <textarea id="senderPriority" data-target="senderPriority" rows="3" placeholder='{"vip@example.com":"high","team@example.com":"medium"}' style="width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
+            <textarea id="senderPriority" data-target="senderPriority" rows="3" placeholder='{"vip@example.com":"high","team@example.com":"medium"}'></textarea>
             <div class="small-text">Format: { "email": "high|medium|low", ... } — Validé côté client uniquement pour l'instant.</div>
           </div>
         </div>
-        <div class="card" style="margin-top: 20px;">
+        <div class="card mt-20">
           <div class="card-title">⚡ Paramètres de Fiabilité</div>
-          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div class="grid grid-2col">
             <div class="form-group">
               <label for="retryCount">Nombre de tentatives (retries)</label>
               <input id="retryCount" data-target="retryCount" type="number" min="0" max="10" placeholder="ex: 3">
@@ -322,14 +326,14 @@
               <input id="rateLimitPerHour" data-target="rateLimitPerHour" type="number" min="1" max="10000" placeholder="ex: 300">
             </div>
           </div>
-          <div style="margin-top: 8px;">
-            <label class="toggle-switch" style="vertical-align: middle;">
+          <div class="toggle-row mt-8">
+            <label class="toggle-switch">
               <input type="checkbox" id="notifyOnFailureToggle" data-target="notifyOnFailureToggle">
               <span class="toggle-slider"></span>
             </label>
-            <span style="margin-left: 10px; vertical-align: middle;">Notifications d'échec par email (UI-only)</span>
+            <span class="toggle-row-text">Notifications d'échec par email (UI-only)</span>
           </div>
-          <div style="margin-top: 12px;">
+          <div class="mt-12">
             <button id="processingPrefsSaveBtn" data-target="processingPrefsSaveBtn" class="btn btn-primary">💾 Enregistrer Préférences de Traitement</button>
             <div id="processingPrefsMsg" data-target="processingPrefsMsg" class="status-msg"></div>
           </div>
@@ -340,7 +344,7 @@
       <div id="sec-overview" data-target="sec-overview" class="section-panel monitoring active" role="tabpanel" aria-labelledby="tab-overview" tabindex="0">
         <div class="logs-container">
           <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
-          <div style="margin-bottom: 15px;">
+          <div class="mb-15">
             <button id="refreshLogsBtn" data-target="refreshLogsBtn" class="btn btn-primary">🔄 Actualiser</button>
           </div>
           <div id="webhookLogs" data-target="webhookLogs">
@@ -353,124 +357,124 @@
       <div id="sec-tools" data-target="sec-tools" class="section-panel" role="tabpanel" aria-labelledby="tab-tools" tabindex="0">
         <div class="card">
           <div class="card-title">💾 Gestion des Configurations</div>
-          <div class="inline-group" style="margin-bottom: 10px;">
+          <div class="inline-group mb-10">
             <button id="exportConfigBtn" data-target="exportConfigBtn" class="btn btn-primary">⬇️ Exporter</button>
-            <input id="importConfigFile" data-target="importConfigFile" type="file" accept="application/json" style="display:none;"/>
+            <input id="importConfigFile" data-target="importConfigFile" type="file" accept="application/json" hidden>
             <button id="importConfigBtn" data-target="importConfigBtn" class="btn btn-primary">⬆️ Importer</button>
           </div>
           <div id="configMgmtMsg" data-target="configMgmtMsg" class="status-msg"></div>
           <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
         </div>
-        <div class="card" style="margin-top: 20px;">
+        <div class="card mt-20">
           <div class="card-title">🚀 Déploiement de l'application</div>
           <div class="form-group">
             <p class="small-text">Certaines modifications (ex: paramètres applicatifs, configuration reverse proxy) nécessitent un déploiement pour être pleinement appliquées.</p>
           </div>
-          <div class="inline-group" style="margin-bottom: 10px;">
+          <div class="inline-group mb-10">
             <button id="restartServerBtn" data-target="restartServerBtn" class="btn btn-success">🚀 Déployer l'application</button>
           </div>
           <div id="restartMsg" data-target="restartMsg" class="status-msg"></div>
           <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
         </div>
-        <div class="card" style="margin-top: 20px;">
+        <div class="card mt-20">
           <div class="card-title">🗂️ Migration configs → Redis</div>
           <p>Rejouez le script <code>migrate_configs_to_redis.py</code> directement sur le serveur Render avec toutes les variables d'environnement de production.</p>
-          <div class="inline-group" style="margin-bottom: 10px;">
+          <div class="inline-group mb-10">
             <button id="migrateConfigsBtn" data-target="migrateConfigsBtn" class="btn btn-warning">📦 Migrer les configurations</button>
           </div>
           <div id="migrateConfigsMsg" data-target="migrateConfigsMsg" class="status-msg"></div>
-          <pre id="migrateConfigsLog" data-target="migrateConfigsLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-          <hr style="margin: 18px 0; border-color: rgba(255,255,255,0.1);">
-          <p style="margin-bottom:10px;">Vérifiez l'état des données persistées dans Redis (structures JSON, attributs requis, dates de mise à jour).</p>
-          <div class="inline-group" style="margin-bottom: 10px;">
+          <pre id="migrateConfigsLog" data-target="migrateConfigsLog" class="code-block small-text mt-12" hidden></pre>
+          <hr class="divider">
+          <p class="mb-10">Vérifiez l'état des données persistées dans Redis (structures JSON, attributs requis, dates de mise à jour).</p>
+          <div class="inline-group mb-10">
             <button id="verifyConfigStoreBtn" data-target="verifyConfigStoreBtn" class="btn btn-info">🔍 Vérifier les données en Redis</button>
           </div>
-          <label for="verifyConfigStoreRawToggle" class="small-text" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+          <label for="verifyConfigStoreRawToggle" class="small-text checkbox-row">
             <input type="checkbox" id="verifyConfigStoreRawToggle" data-target="verifyConfigStoreRawToggle">
             <span>Inclure le JSON complet dans le log pour faciliter le debug.</span>
           </label>
           <div id="verifyConfigStoreMsg" data-target="verifyConfigStoreMsg" class="status-msg"></div>
-          <pre id="verifyConfigStoreLog" data-target="verifyConfigStoreLog" class="code-block small-text" style="display:none;margin-top:12px;"></pre>
-          <div id="verifyConfigStoreViewer" data-target="verifyConfigStoreViewer" class="json-viewer-container" style="display:none;"></div>
+          <pre id="verifyConfigStoreLog" data-target="verifyConfigStoreLog" class="code-block small-text mt-12" hidden></pre>
+          <div id="verifyConfigStoreViewer" data-target="verifyConfigStoreViewer" class="json-viewer-container" hidden></div>
         </div>
-        <div class="card" style="margin-top: 20px;">
+        <div class="card mt-20">
           <div class="card-title">🔐 Accès Magic Link</div>
           <p>Générez un lien pré-authentifié à usage unique pour ouvrir rapidement le dashboard sans retaper vos identifiants. Le lien est automatiquement copié.</p>
-          <div class="inline-group" style="margin-bottom: 12px;">
+          <div class="inline-group mb-12">
             <label class="toggle-switch">
               <input type="checkbox" id="magicLinkUnlimitedToggle" data-target="magicLinkUnlimitedToggle">
               <span class="toggle-slider"></span>
             </label>
-            <span style="margin-left: 10px;">
+            <span class="ml-10">
               Mode illimité (désactivé = lien one-shot avec expiration)
             </span>
           </div>
           <button id="generateMagicLinkBtn" data-target="generateMagicLinkBtn" class="btn btn-primary">✨ Générer un magic link</button>
-          <div id="magicLinkOutput" data-target="magicLinkOutput" class="status-msg" style="margin-top: 12px;"></div>
+          <div id="magicLinkOutput" data-target="magicLinkOutput" class="status-msg mt-12"></div>
           <div class="small-text">
             Important : partagez ce lien uniquement avec des personnes autorisées.
             En mode one-shot, il expire après quelques minutes et s'invalide dès qu'il est utilisé.
             En mode illimité, aucun délai mais vous devez révoquer manuellement en cas de fuite.
           </div>
         </div>
-        <div class="card" style="margin-top: 20px;">
+        <div class="card mt-20">
           <div class="card-title">🧪 Outils de Test</div>
-          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div class="grid grid-2col">
             <div class="form-group">
               <label for="testWebhookUrl">Valider une URL de webhook</label>
               <input id="testWebhookUrl" data-target="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
-              <button id="validateWebhookUrlBtn" data-target="validateWebhookUrlBtn" class="btn btn-primary" style="margin-top: 8px;">Valider</button>
+              <button id="validateWebhookUrlBtn" data-target="validateWebhookUrlBtn" class="btn btn-primary mt-8">Valider</button>
               <div id="webhookUrlValidationMsg" data-target="webhookUrlValidationMsg" class="status-msg"></div>
             </div>
             <div class="form-group">
               <label>Prévisualiser un payload</label>
               <input id="previewSubject" data-target="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
-              <input id="previewSender" data-target="previewSender" type="email" placeholder="Expéditeur (ex: media@solution.fr)" style="margin-top: 6px;">
-              <textarea id="previewBody" data-target="previewBody" rows="4" placeholder="Corps de l'email (coller du texte)" style="margin-top: 6px; width:100%; padding:10px; border-radius:4px; border:1px solid var(--cork-border-color); background: rgba(0,0,0,0.2); color: var(--cork-text-primary);"></textarea>
-              <button id="buildPayloadPreviewBtn" data-target="buildPayloadPreviewBtn" class="btn btn-primary" style="margin-top: 8px;">Générer</button>
-              <pre id="payloadPreview" data-target="payloadPreview" style="margin-top:8px; background: rgba(0,0,0,0.2); border:1px solid var(--cork-border-color); padding:10px; border-radius:4px; max-height:200px; overflow:auto; color: var(--cork-text-primary);"></pre>
+              <input id="previewSender" data-target="previewSender" type="email" class="mt-6" placeholder="Expéditeur (ex: media@solution.fr)">
+              <textarea id="previewBody" data-target="previewBody" rows="4" class="mt-6" placeholder="Corps de l'email (coller du texte)"></textarea>
+              <button id="buildPayloadPreviewBtn" data-target="buildPayloadPreviewBtn" class="btn btn-primary mt-8">Générer</button>
+              <pre id="payloadPreview" data-target="payloadPreview" class="preformatted"></pre>
             </div>
           </div>
           <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
         </div>
-        <div class="card" style="margin-top: 20px;">
+        <div class="card mt-20">
           <div class="card-title">🔗 Ouvrir une page de téléchargement</div>
           <div class="form-group">
             <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
             <input id="downloadPageUrl" data-target="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
-            <button id="openDownloadPageBtn" data-target="openDownloadPageBtn" class="btn btn-primary" style="margin-top: 8px;">Ouvrir la page</button>
+            <button id="openDownloadPageBtn" data-target="openDownloadPageBtn" class="btn btn-primary mt-8">Ouvrir la page</button>
             <div id="openDownloadMsg" data-target="openDownloadMsg" class="status-msg"></div>
             <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
           </div>
         </div>
-        <div class="card" style="margin-top: 20px;">
+        <div class="card mt-20">
           <div class="card-title"> Flags Runtime (Debug)</div>
           <div class="form-group">
-            <label>Bypass déduplication par ID d’email (debug)</label>
-            <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+            <label>Bypass déduplication par ID d'email (debug)</label>
+            <label class="toggle-switch toggle-switch--inline">
               <input type="checkbox" id="disableEmailIdDedupToggle" data-target="disableEmailIdDedupToggle">
               <span class="toggle-slider"></span>
             </label>
             <div class="small-text">Quand activé, ignore la déduplication par ID d'email. À utiliser uniquement pour des tests.
             </div>
           </div>
-          <div class="form-group" style="margin-top: 10px;">
+          <div class="form-group mt-10">
             <label>Autoriser envoi CUSTOM sans liens de livraison</label>
-            <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+            <label class="toggle-switch toggle-switch--inline">
               <input type="checkbox" id="allowCustomWithoutLinksToggle" data-target="allowCustomWithoutLinksToggle">
               <span class="toggle-slider"></span>
             </label>
-            <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu’aucun lien (Dropbox/FromSmash/SwissTransfer) n’est détecté, pour éviter les 422.</div>
+            <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu'aucun lien (Dropbox/FromSmash/SwissTransfer) n'est détecté, pour éviter les 422.</div>
           </div>
-          <div class="form-group" style="margin-top: 10px;">
-            <label>Activer l’ingestion Gmail Push</label>
-            <label class="toggle-switch" style="vertical-align: middle; margin-left:10px;">
+          <div class="form-group mt-10">
+            <label>Activer l'ingestion Gmail Push</label>
+            <label class="toggle-switch toggle-switch--inline">
               <input type="checkbox" id="gmailIngressEnabledToggle" data-target="gmailIngressEnabledToggle">
               <span class="toggle-slider"></span>
             </label>
             <div class="small-text">Quand désactivé, <strong>le serveur refusera</strong> les appels du Google Apps Script sur <code>/api/ingress/gmail</code> (409) et les emails resteront en attente.</div>
           </div>
-          <div style="margin-top: 12px;">
+          <div class="mt-12">
             <button id="runtimeFlagsSaveBtn" data-target="runtimeFlagsSaveBtn" class="btn btn-primary"> Enregistrer Flags Runtime</button>
             <div id="runtimeFlagsMsg" data-target="runtimeFlagsMsg" class="status-msg"></div>
           </div>
@@ -486,7 +490,7 @@
         <script type="module" src="{{ url_for('static', filename='services/WebhookService.js') }}"></script>
         <script type="module" src="{{ url_for('static', filename='services/LogService.js') }}"></script>
         <script type="module" src="{{ url_for('static', filename='components/TabManager.js') }}"></script>
-        <script type="module" src="{{ url_for('static', filename='dashboard.js') }}?v=20260202-json-viewer"></script>
+        <script type="module" src="{{ url_for('static', filename='dashboard.js') }}"></script>
     {% endif %}
   </body>
 </html>

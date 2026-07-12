@@ -7,6 +7,8 @@ export class WebhookService {
         /hook\.eu\d+\.make\.com/i,
         /^webhook\.kidpixel\.fr$/i
     ];
+    static _cachedConfig = null;
+    static _configCacheTime = null;
     /**
      * Charge la configuration des webhooks depuis le serveur
      * @returns {Promise<object>} Configuration des webhooks
@@ -51,7 +53,10 @@ export class WebhookService {
                 if (config.absence_pause_days && Array.isArray(config.absence_pause_days)) {
                     this.setAbsenceDayCheckboxes(config.absence_pause_days);
                 }
-                
+
+                this._cachedConfig = config;
+                this._configCacheTime = Date.now();
+
                 return config;
             }
         } catch (e) {
@@ -277,16 +282,7 @@ export class WebhookService {
         }
     }
 
-    /**
-     * Échappement HTML pour éviter les XSS
-     * @param {string} text - Texte à échapper
-     * @returns {string} Texte échappé
-     */
-    static escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
+
 
     /**
      * Formatage d'horodatage
@@ -349,5 +345,24 @@ export class WebhookService {
         });
         
         return Array.from(new Set(selectedDays));
+    }
+
+    /**
+     * Retourne la configuration en cache (dernier fetch réussi)
+     * @returns {object|null} Configuration en cache ou null
+     */
+    static getCachedConfig() {
+        return this._cachedConfig;
+    }
+
+    /**
+     * Vérifie si le cache de configuration est encore frais
+     * @param {number} maxAgeMs - Âge maximum en ms (défaut: 60000)
+     * @returns {boolean} True si le cache est frais
+     */
+    static isConfigCacheFresh(maxAgeMs = 60000) {
+        return this._cachedConfig !== null &&
+               this._configCacheTime !== null &&
+               (Date.now() - this._configCacheTime) < maxAgeMs;
     }
 }

@@ -1,6 +1,12 @@
 # Contexte Actif
 
 ## Tâches Terminées
+- [2026-07-12] Remédiation complète de l'audit frontend Juillet 2026 (30/30 items, 4 phases) :
+  - **Phase 1** (7/7) : XSS `remote/ui.js` éliminé, `time_globalThis` → `time_window`, `dashboard_legacy.js` supprimé, code mort nettoyé, CSRF `remote/api.js`, bindings morts supprimés.
+  - **Phase 2** (9/9) : `dashboard.js` 1901 → ~170 lignes (6 modules ES6), CSS splitting `modules.css` → 5 fichiers (`tabs.css`, `status-banner.css`, `timeline.css`, `panels.css`, `routing-rules.css`), barrel `modules.css` + imports `dashboard.html` dev mode.
+  - **Phase 3** (11/11) : `innerHTML` éradiqué de `LogService`, double-échappement corrigé, `AbortController` dans `TabManager`, boutons inertes activés, `:focus-visible` WCAG AA, `<body>` + extraction CSS `login.html`, null-checks DOM, styles inline dynamiques → CSS.
+  - **Phase 4** (9/9) : Cache-partage `LogService`/`WebhookService` (TTL 30s/60s), `updateGlobalStatus` utilise le cache (0 appel API redondant au load), proxy dev Vite, cache-busting supprimé, sparkline HiDPI, ESLint+Prettier+Vitest (9 tests), extraction des 79 styles inline `dashboard.html` → 21 classes CSS utilitaires dans `base.css`.
+  - **Validation finale** : `npx vite build` ✓, `npx vitest run` 9/9 ✓, 0 `innerHTML` JS, 0 `style="` HTML, 0 `escapeHtml` mort.
 - [2026-07-12] Remédiation complète de l'audit backend Juillet 2026 (4 phases, 3 sessions) :
   - **Phase 1** : Sécurité timing-attack (`hmac.compare_digest`), fail-closed allowlist, découplage `api_ingress.py`, corrections test (3 fichiers).
   - **Phase 2** : `RuntimeMetricsService` singleton, refactor `create_app()` en helpers privés, DI pour `WebhookLoggerService`, `CSRFProtect`.
