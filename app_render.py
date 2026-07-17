@@ -96,7 +96,16 @@ def _init_redis_client(logger: logging.Logger | None = None):
     try:
         import redis
 
-        return redis.Redis.from_url(redis_url, decode_responses=True, protocol=2)
+        return redis.Redis.from_url(
+            redis_url,
+            decode_responses=True,
+            protocol=2,
+            max_connections=10,
+            socket_timeout=5,
+            socket_connect_timeout=5,
+            retry_on_timeout=True,
+            health_check_interval=30,
+        )
     except Exception as e:
         if logger:
             logger.warning("CFG REDIS: failed to initialize redis client: %s", e)
@@ -328,6 +337,14 @@ def _init_services(app: Flask, redis_client_instance) -> None:
     except Exception as e:
         app.logger.error(f"SVC: Failed to initialize RuntimeMetricsService: {e}")
 
+    try:
+        from services.rate_limit_service import RateLimitService
+        rls = RateLimitService.get_instance()
+        rls.configure(redis_client=redis_client_instance)
+        app.logger.info("SVC: RateLimitService initialized with Redis")
+    except Exception as e:
+        app.logger.error(f"SVC: Failed to initialize RateLimitService: {e}")
+
 
 def create_app(config_class=None) -> Flask:
     """Application Factory to create and configure the Flask application."""
@@ -344,6 +361,40 @@ def create_app(config_class=None) -> Flask:
     csrf = CSRFProtect(app)
     csrf.exempt(api_ingress_bp)
     csrf.exempt(api_test_bp)
+
+    # Rate limiting (Phase 1: SEC-04)
+    try:
+        from utils.limiter import limiter
+        limiter.init_app(app)
+        app.logger.info("CFG RATELIMIT: Flask-Limiter initialized (backend=%s)", "redis" if os.environ.get("REDIS_URL") else "memory")
+    except Exception as e:
+        app.logger.warning("CFG RATELIMIT: Failed to initialize Flask-Limiter: %s", e)
+
+    # Session security (Phase 1: SEC-12)
+    app.config.update(
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE='Lax',
+        PERMANENT_SESSION_LIFETIME=28800,  # 8 heures
+    )
+
+    # Security headers (Phase 2: SEC-06)
+    @app.after_request
+    def apply_security_headers(response):
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        return response
+
+    # Global error handler (Phase 3: SEC-11)
+    @app.errorhandler(Exception)
+    def handle_unhandled_exception(e):
+        app.logger.error("Unhandled exception: %s", e, exc_info=True)
+        if request.path.startswith("/api/"):
+            return jsonify({"success": False, "message": "Internal server error"}), 500
+        return jsonify({"success": False, "message": "Internal server error"}), 500
 
     global redis_client
     redis_client = _init_redis_client(app.logger)

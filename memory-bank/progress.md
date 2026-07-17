@@ -13,6 +13,15 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-07-17 16:00:00] - Remédiation Audit Backend Consolidé (Juillet 2026)
+- **Objectif** : Appliquer le plan de remédiation complet basé sur l'audit du 17 Juillet 2026 (Sécurité Immédiate, Stabilisation, Qualité & Code Mort).
+- **Actions réalisées** :
+  * **Phase 1 — Sécurité Immédiate** : Correction de la vulnérabilité RCE dans `api_admin.py` via `shlex.split()`, mitigation OOM Redis via clés individuelles à TTL pour le `deduplication_service.py`, et implémentation du `RateLimiter` avec Redis ZSETs.
+  * **Phase 2 — Stabilisation** : Ingestion asynchrone R2 (ThreadPoolExecutor), remplacement de `re` par `google-re2` pour prévenir les ReDoS, validation DNS/IP pour prévenir les SSRF, headers de sécurité globaux (CSP, HSTS).
+  * **Phase 3 — Qualité** : Éradication de code mort (`handle_presence_route`, `background/lock.py`, etc.), refactorisation de la gestion du cache et intégration du pipeline CI/CD GitHub Actions.
+- **Validation** : Suite de tests exécutée avec 336 tests passés (100%), couverture à 71.79%.
+- **Statut** : Terminé avec succès.
+
 [2026-07-12 20:25:00] - Remédiation Frontend Audit Juillet 2026 — Finalisation (30/30 items)
 - **Objectif** : Implémenter les 5 derniers items de l'audit frontend (sur 30), clôturant 100% du plan de remédiation.
 - **Actions réalisées** :

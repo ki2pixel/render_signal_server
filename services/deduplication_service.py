@@ -33,8 +33,9 @@ from __future__ import annotations
 
 import hashlib
 import re
+import uuid
 from datetime import datetime
-from typing import Optional, Set, TYPE_CHECKING
+from typing import Optional, Set, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from services.config_service import ConfigService
@@ -57,6 +58,20 @@ class DeduplicationService:
     """
     
     _instance: Optional[DeduplicationService] = None
+    _LOCK_SCRIPT: Optional[str] = None
+
+    @classmethod
+    def _get_lock_script(cls) -> str:
+        """Return cached Lua script for atomic lock release."""
+        if cls._LOCK_SCRIPT is None:
+            cls._LOCK_SCRIPT = """
+                if redis.call("GET", KEYS[1]) == ARGV[1] then
+                    return redis.call("DEL", KEYS[1])
+                else
+                    return 0
+                end
+            """
+        return cls._LOCK_SCRIPT
 
     @classmethod
     def get_instance(cls, redis_client=None, logger=None, config_service=None) -> DeduplicationService:
@@ -110,12 +125,11 @@ class DeduplicationService:
         if self.is_email_dedup_disabled():
             return False
         
-        # Essayer Redis d'abord
+        # Essayer Redis d'abord (clés individuelles avec TTL au lieu d'un Set global)
         if self._use_redis():
             try:
-                keys_config = self._get_dedup_keys()
-                key = keys_config["email_ids_key"]
-                return bool(self._redis.sismember(key, email_id))
+                email_key = f"r:ss:processed_email:{email_id}"
+                return bool(self._redis.exists(email_key))
             except Exception as e:
                 if self._logger:
                     self._logger.error(
@@ -143,12 +157,11 @@ class DeduplicationService:
         if self.is_email_dedup_disabled():
             return True  # Considéré comme succès (pas d'erreur)
         
-        # Essayer Redis d'abord
+        # Essayer Redis d'abord (clé individuelle avec TTL de 30 jours)
         if self._use_redis():
             try:
-                keys_config = self._get_dedup_keys()
-                key = keys_config["email_ids_key"]
-                self._redis.sadd(key, email_id)
+                email_key = f"r:ss:processed_email:{email_id}"
+                self._redis.set(email_key, "1", ex=2592000)  # 30 jours
                 return True
             except Exception as e:
                 if self._logger:
@@ -159,7 +172,7 @@ class DeduplicationService:
         self._processed_email_ids.add(email_id)
         return True
     
-    def acquire_email_inflight_lock(self, email_id: str, ttl_seconds: int = 10) -> bool:
+    def acquire_email_inflight_lock(self, email_id: str, ttl_seconds: int = 10) -> Tuple[bool, Optional[str]]:
         """Acquiert un verrou pour éviter le traitement concurrent d'un même email.
         
         Args:
@@ -167,35 +180,56 @@ class DeduplicationService:
             ttl_seconds: Durée de vie du verrou en secondes
             
         Returns:
-            True si le verrou a été acquis, False sinon
+            Tuple (acquired: bool, lock_token: Optional[str]).
+            acquired=True + token si le verrou a été acquis.
+            acquired=False si le verrou est déjà pris ou Redis indisponible (fail-closed).
+            Le token doit être passé à release_email_inflight_lock pour libération atomique.
         """
         if not email_id or not self._use_redis():
-            return True
+            return True, None
             
         try:
             lock_key = f"r:ss:inflight_email:{email_id}"
-            acquired = self._redis.set(lock_key, "1", nx=True, ex=ttl_seconds)
-            return bool(acquired)
+            lock_token = str(uuid.uuid4())
+            acquired = self._redis.set(lock_key, lock_token, nx=True, ex=ttl_seconds)
+            if acquired:
+                return True, lock_token
+            if self._logger:
+                self._logger.info("DEDUP: Inflight lock already held for '%s'", email_id)
+            return False, None
         except Exception as e:
             if self._logger:
-                self._logger.error(f"DEDUP: Error acquiring inflight lock for '{email_id}': {e}")
-            return True # Fallback on allow
+                self._logger.error(
+                    "DEDUP: Error acquiring inflight lock for '%s': %s. Fail-closed.", email_id, e
+                )
+            return False, None
             
-    def release_email_inflight_lock(self, email_id: str) -> None:
-        """Libère le verrou de traitement pour un email.
+    def release_email_inflight_lock(self, email_id: str, lock_token: Optional[str] = None) -> None:
+        """Libère le verrou de traitement pour un email de manière atomique.
+        
+        Utilise un script Lua pour vérifier que le token correspond avant de supprimer
+        la clé, évitant la suppression aveugle d'un verrou détenu par un autre thread.
         
         Args:
             email_id: Identifiant unique de l'email
+            lock_token: Token UUID retourné par acquire_email_inflight_lock.
+                        Si None, pas de vérification (rétrocompatibilité ou fallback sans Redis).
         """
         if not email_id or not self._use_redis():
             return
             
         try:
             lock_key = f"r:ss:inflight_email:{email_id}"
-            self._redis.delete(lock_key)
+            if lock_token is not None:
+                script = self._redis.register_script(self._get_lock_script())
+                script(keys=[lock_key], args=[lock_token])
+            else:
+                self._redis.delete(lock_key)
         except Exception as e:
             if self._logger:
-                self._logger.error(f"DEDUP: Error releasing inflight lock for '{email_id}': {e}")
+                self._logger.error(
+                    "DEDUP: Error releasing inflight lock for '%s': %s", email_id, e
+                )
     
     # =========================================================================
     # Déduplication Subject Group

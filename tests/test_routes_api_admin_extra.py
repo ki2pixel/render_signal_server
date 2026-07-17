@@ -11,6 +11,13 @@ def test_restart_server_is_mocked(authenticated_flask_client):
     with patch('routes.api_admin.subprocess.Popen') as mock_popen:
         r = authenticated_flask_client.post('/api/restart_server')
         assert r.status_code == 200
+        data = r.get_json()
+        assert data["success"] is True
+        import time
+        for _ in range(20):
+            if mock_popen.called:
+                break
+            time.sleep(0.05)
         mock_popen.assert_called()
 
 
@@ -79,12 +86,14 @@ def test_check_emails_and_download_202_with_thread_mock(authenticated_flask_clie
 
 @pytest.mark.integration
 def test_restart_server_uses_custom_restart_cmd(authenticated_flask_client, monkeypatch):
-    # Ensure custom env var is used
     monkeypatch.setenv('RESTART_CMD', 'echo custom-restart')
     with patch('routes.api_admin.subprocess.Popen') as mock_popen:
         r = authenticated_flask_client.post('/api/restart_server')
         assert r.status_code == 200
-        # Check the command string contains our custom command
+        import time
+        for _ in range(20):
+            if mock_popen.called:
+                break
+            time.sleep(0.05)
         args, kwargs = mock_popen.call_args
-        # args[0] is the list ["/bin/bash","-lc", "sleep 1; echo custom-restart"]
         assert any("custom-restart" in str(part) for part in args[0])

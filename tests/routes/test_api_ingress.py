@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Optional, Tuple
 from unittest.mock import MagicMock
 
 import pytest
@@ -180,7 +181,10 @@ def test_ingress_gmail_happy_path(monkeypatch, flask_client):
     )
 
     send_mock = MagicMock(return_value=False)
-    monkeypatch.setattr("services.ingress_service.email_orchestrator.send_custom_webhook_flow", send_mock)
+    monkeypatch.setattr(
+        "services.ingress_service.IngressService._handle_allowed_email",
+        lambda self, **kwargs: ({"success": True, "status": "processed", "email_id": kwargs.get("email_id", "")}, 200),
+    )
 
     payload = {
         "subject": "Hello",
@@ -192,12 +196,11 @@ def test_ingress_gmail_happy_path(monkeypatch, flask_client):
     # When: posting to ingress
     resp = flask_client.post("/api/ingress/gmail", json=payload, headers=_auth_headers())
 
-    # Then: it is processed and underlying flow is called
+    # Then: response is immediate (queued for background processing)
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["success"] is True
-    assert data["status"] == "processed"
-    assert send_mock.call_count == 1
+    assert data["status"] == "queued"
 
 
 @pytest.mark.unit
@@ -265,8 +268,10 @@ def test_ingress_gmail_passes_delivery_mode_settings_and_detector_payload(monkey
     # When: posting the Gmail payload to ingress
     resp = flask_client.post("/api/ingress/gmail", json=payload, headers=_auth_headers())
 
-    # Then: ingress forwards detector fields, delivery links, and delivery-mode settings to the webhook flow
+    # Then: response is queued; wait for background processing
     assert resp.status_code == 200
+    from services.ingress_service import IngressService
+    IngressService.shutdown_executor()
     assert captured["webhook_delivery_mode"] == "form"
     assert captured["webhook_fallback_on_415"] is False
     assert captured["payload_for_webhook"]["detector"] == "recadrage"
@@ -337,6 +342,8 @@ def test_ingress_gmail_enriches_delivery_links_with_r2_when_enabled(monkeypatch,
 
     # Then: delivery_links includes an r2_url for PHP logging
     assert resp.status_code == 200
+    from services.ingress_service import IngressService
+    IngressService.shutdown_executor()
     assert isinstance(captured.get("delivery_links"), list)
     assert len(captured["delivery_links"]) >= 1
     assert captured["delivery_links"][0].get("r2_url") == "https://media.example.com/r2-object"
@@ -400,6 +407,8 @@ def test_ingress_gmail_r2_errors_do_not_block_send(monkeypatch, flask_client):
 
     # Then: request succeeds and delivery_links does not include r2_url
     assert resp.status_code == 200
+    from services.ingress_service import IngressService
+    IngressService.shutdown_executor()
     assert isinstance(captured.get("delivery_links"), list)
     assert len(captured["delivery_links"]) >= 1
     assert captured["delivery_links"][0].get("provider") == "dropbox"
@@ -439,9 +448,11 @@ def test_gmail_ingress_idempotent_inflight_lock(monkeypatch, flask_client):
 
     lock_calls = {"n": 0}
 
-    def _acquire_lock(_email_id: str, ttl_seconds: int = 10) -> bool:
+    def _acquire_lock(_email_id: str, ttl_seconds: int = 10) -> Tuple[bool, Optional[str]]:
         lock_calls["n"] += 1
-        return lock_calls["n"] == 1
+        if lock_calls["n"] == 1:
+            return True, "test-token-1"
+        return False, None
 
     release_mock = MagicMock(return_value=True)
     monkeypatch.setattr(DeduplicationService.get_instance(), "acquire_email_inflight_lock", _acquire_lock)
@@ -480,17 +491,19 @@ def test_gmail_ingress_idempotent_inflight_lock(monkeypatch, flask_client):
     resp1 = flask_client.post("/api/ingress/gmail", json=payload, headers=_auth_headers())
     resp2 = flask_client.post("/api/ingress/gmail", json=payload, headers=_auth_headers())
 
-    # Then: first request is processed, second request is deduped by inflight lock
+    # Then: first request is queued for background, second is blocked by inflight lock
     assert resp1.status_code == 200
     data1 = resp1.get_json()
     assert data1["success"] is True
-    assert data1["status"] == "processed"
+    assert data1["status"] == "queued"
 
     assert resp2.status_code == 200
     data2 = resp2.get_json()
     assert data2["success"] is True
     assert data2["status"] == "already_processing"
 
+    from services.ingress_service import IngressService
+    IngressService.shutdown_executor()
     assert post_mock.call_count == 1
     assert release_mock.call_count == 1
 
@@ -512,9 +525,11 @@ def test_gmail_ingress_idempotent_inflight_lock_webhook_failure(monkeypatch, fla
 
     lock_calls = {"n": 0}
 
-    def _acquire_lock(_email_id: str, ttl_seconds: int = 10) -> bool:
+    def _acquire_lock(_email_id: str, ttl_seconds: int = 10) -> Tuple[bool, Optional[str]]:
         lock_calls["n"] += 1
-        return lock_calls["n"] == 1
+        if lock_calls["n"] == 1:
+            return True, "test-token-2"
+        return False, None
 
     monkeypatch.setattr(DeduplicationService.get_instance(), "acquire_email_inflight_lock", _acquire_lock)
     monkeypatch.setattr(DeduplicationService.get_instance(), "release_email_inflight_lock", lambda *_a, **_k: True)
@@ -554,16 +569,17 @@ def test_gmail_ingress_idempotent_inflight_lock_webhook_failure(monkeypatch, fla
     resp1 = flask_client.post("/api/ingress/gmail", json=payload, headers=_auth_headers())
     resp2 = flask_client.post("/api/ingress/gmail", json=payload, headers=_auth_headers())
 
-    # Then: only one outgoing webhook call is attempted
+    # Then: first is queued, second blocked by inflight lock
     assert resp1.status_code == 200
     data1 = resp1.get_json()
     assert data1["success"] is True
-    assert data1["status"] == "processed"
-    assert data1["flow_result"] is False
+    assert data1["status"] == "queued"
 
     assert resp2.status_code == 200
     data2 = resp2.get_json()
     assert data2["success"] is True
     assert data2["status"] == "already_processing"
 
+    from services.ingress_service import IngressService
+    IngressService.shutdown_executor()
     assert post_mock.call_count == 1

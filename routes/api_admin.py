@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import io
 import os
+import shlex
 import subprocess
 import threading
+import time
 from contextlib import redirect_stdout, redirect_stderr
 from datetime import datetime
 from typing import Iterable, List, Tuple
@@ -23,6 +25,32 @@ bp = Blueprint("api_admin", __name__, url_prefix="/api")
 
 _config_service = ConfigService()
 ALLOWED_CONFIG_KEYS = CONFIG_STORE_KEYS
+
+
+def _run_command_background(cmd_args: list, delay_seconds: float = 1.0) -> None:
+    """Execute a command in a background thread after a delay, without shell.
+
+    Uses a fixed argument list (no shell interpolation) to prevent command injection.
+    The delay replaces the legacy ``sleep 1`` pattern without invoking bash.
+    """
+    def _delayed_run():
+        time.sleep(delay_seconds)
+        try:
+            subprocess.Popen(
+                cmd_args,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception:
+            try:
+                current_app.logger.warning(
+                    "ADMIN: Failed to execute background command: %s", cmd_args, exc_info=True
+                )
+            except Exception:
+                pass
+
+    threading.Thread(target=_delayed_run, daemon=True).start()
 
 
 def _invoke_config_migration(selected_keys: Iterable[str]) -> Tuple[int, str]:
@@ -54,23 +82,18 @@ def _run_config_store_verification(selected_keys: Iterable[str], raw: bool = Fal
 def restart_server() -> Response | tuple[Response, int]:
     try:
         restart_cmd = os.environ.get("RESTART_CMD", "sudo systemctl restart render-signal-server")
-        # Journaliser explicitement la demande de redémarrage pour traçabilité
+        user_id = getattr(current_user, "id", "unknown")
         try:
             current_app.logger.info(
                 "ADMIN: Server restart requested by '%s' with command: %s",
-                getattr(current_user, "id", "unknown"),
+                user_id,
                 restart_cmd,
             )
         except Exception:
-            pass
+            pass  # logging must never break the request flow
 
-        # Exécuter la commande en arrière-plan pour ne pas bloquer la requête HTTP
-        subprocess.Popen(
-            ["/bin/bash", "-lc", f"sleep 1; {restart_cmd}"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        args = shlex.split(restart_cmd)
+        _run_command_background(args, delay_seconds=1.0)
 
         try:
             current_app.logger.info("ADMIN: Restart command scheduled (background).")
@@ -311,12 +334,8 @@ def _deploy_via_fallback() -> tuple[Response, int]:
     user_id = getattr(current_user, "id", "unknown")
     current_app.logger.info("ADMIN: Deploy (fallback cmd) requested by '%s' with command: %s", user_id, deploy_cmd)
 
-    subprocess.Popen(
-        ["/bin/bash", "-lc", f"sleep 1; {deploy_cmd}"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    args = shlex.split(deploy_cmd)
+    _run_command_background(args, delay_seconds=1.0)
 
     current_app.logger.info("ADMIN: Deploy command scheduled (background).")
 

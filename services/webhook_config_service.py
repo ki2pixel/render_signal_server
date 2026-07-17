@@ -28,12 +28,16 @@ Usage:
 
 from __future__ import annotations
 
+import ipaddress
 import json
+import logging
 import os
+import socket
 import threading
 import time
 from pathlib import Path
 from typing import Dict, Optional, Any, Tuple
+from urllib.parse import urlparse
 
 from utils.validators import normalize_make_webhook_url
 
@@ -285,7 +289,10 @@ class WebhookConfigService:
     
     @staticmethod
     def validate_webhook_url(url: str) -> Tuple[bool, str]:
-        """Valide une URL webhook.
+        """Valide une URL webhook avec protection SSRF.
+        
+        Résout le nom d'hôte DNS et bloque les adresses IP privées,
+        de boucle locale et link-local.
         
         Args:
             url: URL à valider
@@ -299,8 +306,29 @@ class WebhookConfigService:
         if not url.startswith("https://"):
             return False, "L'URL doit commencer par https://"
         
-        if len(url) < 10 or "." not in url:
+        if len(url) < 10:
             return False, "Format d'URL invalide"
+        
+        # Validation DNS + blocage IP privées (SSRF)
+        try:
+            parsed = urlparse(url)
+            hostname = parsed.hostname
+            if not hostname:
+                return False, "Nom d'hôte introuvable dans l'URL"
+            
+            addrinfo = socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
+            for _, _, _, _, sockaddr in addrinfo:
+                ip_str = sockaddr[0]
+                try:
+                    ip_addr = ipaddress.ip_address(ip_str)
+                except ValueError:
+                    continue
+                if ip_addr.is_private or ip_addr.is_loopback or ip_addr.is_link_local:
+                    return False, "L'URL pointe vers une adresse réseau interdite (IP privée/locale)"
+        except socket.gaierror:
+            return False, "Impossible de résoudre le nom d'hôte de l'URL"
+        except Exception:
+            return False, "Erreur lors de la validation de l'URL"
         
         return True, "URL valide"
     

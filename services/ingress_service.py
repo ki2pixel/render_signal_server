@@ -16,6 +16,7 @@ import hashlib
 import logging
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from email.utils import parseaddr
 from typing import Optional, Tuple, Dict, Any, TYPE_CHECKING
@@ -47,6 +48,20 @@ class IngressService:
 
     _instance: Optional[IngressService] = None
     _lock = threading.RLock()
+    _executor: Optional[ThreadPoolExecutor] = None
+
+    @classmethod
+    def _get_executor(cls) -> ThreadPoolExecutor:
+        if cls._executor is None:
+            cls._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ingress-")
+        return cls._executor
+
+    @classmethod
+    def shutdown_executor(cls) -> None:
+        """Shutdown the background executor (for tests)."""
+        if cls._executor is not None:
+            cls._executor.shutdown(wait=True)
+            cls._executor = None
 
     def __init__(
         self,
@@ -437,6 +452,57 @@ class IngressService:
             subject=subject, body=body, email_date=email_date, sender_raw=sender_raw,
         )
 
+    def _check_preconditions(
+        self,
+        sender_email: str,
+        dedup_service: Any,
+        email_id: str,
+    ) -> Tuple[bool, Tuple[Dict[str, Any], int] | None]:
+        """Fast synchronous checks before dispatching to background.
+
+        Returns (can_proceed, early_response).
+        early_response is set if the email should be rejected synchronously.
+        """
+        if not self._check_sender_allowlist(sender_email):
+            dedup_service.mark_email_processed(email_id)
+            return False, ({"success": True, "status": "skipped_sender_not_allowed", "email_id": email_id}, 200)
+        try:
+            if not email_orchestrator._is_webhook_sending_enabled():
+                return False, ({"success": False, "message": "Webhook sending disabled"}, 409)
+        except Exception:
+            pass
+        return True, None
+
+    def _process_in_background(
+        self,
+        dedup_service: Any,
+        email_id: str,
+        lock_token: Optional[str],
+        sender_email: str,
+        subject: str,
+        body: str,
+        email_date: str,
+        sender_raw: str,
+    ) -> None:
+        """Background processing: link extraction, R2 transfer, webhook dispatch."""
+        try:
+            self._handle_allowed_email(
+                dedup_service=dedup_service, email_id=email_id, sender_email=sender_email,
+                subject=subject, body=body, email_date=email_date, sender_raw=sender_raw,
+            )
+        except Exception:
+            try:
+                self._logger.error(
+                    "INGRESS: Background processing failed for %s", email_id, exc_info=True
+                )
+            except Exception:
+                pass
+        finally:
+            try:
+                dedup_service.release_email_inflight_lock(email_id, lock_token)
+            except Exception:
+                pass
+
     def process_gmail_push(self, payload: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
         valid, msg, fields = self._validate_payload(payload)
         if not valid:
@@ -456,23 +522,36 @@ class IngressService:
         if dedup_service.is_email_processed(email_id):
             return {"success": True, "status": "already_processed", "email_id": email_id}, 200
 
+        # Fast synchronous preconditions (allowlist, webhook enabled)
+        can_proceed, early = self._check_preconditions(sender_email, dedup_service, email_id)
+        if not can_proceed:
+            return early  # type: ignore[return-value]
+
+        lock_token = None
         inflight_acquired = False
         try:
             lock_ttl = getattr(settings, "EMAIL_ID_INFLIGHT_LOCK_TTL_SECONDS", 10)
-            inflight_acquired = bool(dedup_service.acquire_email_inflight_lock(email_id, lock_ttl))
+            inflight_acquired, lock_token = dedup_service.acquire_email_inflight_lock(email_id, lock_ttl)
             if not inflight_acquired:
                 return {"success": True, "status": "already_processing", "email_id": email_id}, 200
         except Exception:
             inflight_acquired = False
 
-        try:
-            return self._process_fresh_email(
-                dedup_service=dedup_service, email_id=email_id, sender_email=sender_email,
-                subject=subject, body=body, email_date=email_date, sender_raw=sender_raw,
+        if inflight_acquired:
+            self._get_executor().submit(
+                self._process_in_background,
+                dedup_service=dedup_service,
+                email_id=email_id,
+                lock_token=lock_token,
+                sender_email=sender_email,
+                subject=subject,
+                body=body,
+                email_date=email_date,
+                sender_raw=sender_raw,
             )
-        finally:
-            if inflight_acquired:
-                try:
-                    dedup_service.release_email_inflight_lock(email_id)
-                except Exception:
-                    pass
+            return {"success": True, "status": "queued", "email_id": email_id}, 200
+
+        return self._process_fresh_email(
+            dedup_service=dedup_service, email_id=email_id, sender_email=sender_email,
+            subject=subject, body=body, email_date=email_date, sender_raw=sender_raw,
+        )

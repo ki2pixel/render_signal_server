@@ -24,6 +24,8 @@ from __future__ import annotations
 import hmac
 from typing import Optional, Any
 
+from werkzeug.security import check_password_hash
+
 
 class ConfigService:
     """Service centralisé pour accéder à la configuration applicative.
@@ -163,9 +165,12 @@ class ConfigService:
     def verify_dashboard_credentials(self, username: str, password: str) -> bool:
         """Vérifie les credentials du dashboard.
         
+        Supports both hashed (werkzeug/bcrypt/scrypt) and plaintext passwords
+        for backward compatibility during migration.
+        
         Args:
             username: Nom d'utilisateur
-            password: Mot de passe
+            password: Mot de passe en clair
             
         Returns:
             True si credentials valides
@@ -176,6 +181,11 @@ class ConfigService:
             return False
         if username != expected_user:
             return False
+        if "$" in expected_pass and len(expected_pass) >= 20:
+            try:
+                return check_password_hash(expected_pass, password)
+            except Exception:
+                pass
         return hmac.compare_digest(password, expected_pass)
     
     # Configuration Déduplication

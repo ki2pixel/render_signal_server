@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from flask import Blueprint, render_template, request, redirect, url_for, Response
+from flask import Blueprint, render_template, request, redirect, url_for, Response, session
 from flask_login import login_required, login_user, logout_user, current_user
 
 from services import AuthService, ConfigService, MagicLinkService
+from utils.limiter import limiter
 
 bp = Blueprint("dashboard", __name__)
 
@@ -16,25 +17,26 @@ _magic_link_service = MagicLinkService.get_instance()
 def _complete_login(username: str, next_page: str | None) -> Response:
     user_obj = _auth_service.create_user(username)
     login_user(user_obj)
-    
+    session.permanent = True
+
     from urllib.parse import urlparse, urljoin
     if next_page:
         ref_url = urlparse(request.host_url)
         test_url = urlparse(urljoin(request.host_url, next_page))
         if not (test_url.scheme in ("http", "https") and ref_url.netloc == test_url.netloc):
             next_page = None
-            
+
     return redirect(next_page or url_for("dashboard.serve_dashboard_main"))
 
 
 @bp.route("/")
 @login_required
 def serve_dashboard_main() -> str:
-    # Keep same template rendering as legacy
     return render_template("dashboard.html")
 
 
 @bp.route("/login", methods=["GET", "POST"])
+@limiter.limit("5 per 5 minutes", methods=["POST"])
 def login() -> Response | str:
     # If already authenticated, go to dashboard
     if current_user and getattr(current_user, "is_authenticated", False):

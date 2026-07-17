@@ -155,5 +155,9 @@ def test_deploy_fallback_local(authenticated_flask_client, monkeypatch, mock_pop
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["success"] is True
-    # ensure subprocess was invoked for fallback command
+    import time
+    for _ in range(20):
+        if mock_popen.called:
+            break
+        time.sleep(0.05)
     assert mock_popen.called

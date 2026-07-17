@@ -33,9 +33,17 @@
   - Remplacement des accès DOM natifs par `DOMHelper` dans `scaffold-js-module`.
 - [2026-06-03] Campagne d'archivage Q1 2026 : Extraction des entrées antérieures au 2026-04-04 depuis `progress.md` et `decisionLog.md` vers `archive/progress_2026Q1.md` et `archive/decisionLog_2026Q1.md` via les outils `fast-filesystem`.
 - [2026-06-03] Exécution du plan de remédiation SonarCloud (Vague 1 à 4) : Correction Open Redirect (dashboard.py), masquage PII (ingress_service/magic_link_service), refactoring `ingress_service.py` et `api_webhooks.py` pour réduire la complexité cognitive. Implémentation WCAG AA dans `dashboard.html` et modernisation JS (`Object.hasOwn`). Alignement de la syntaxe bash vers `[[` pour les scripts de tests et skills.
+- [2026-07-17] Consolidation et fusion des rapports d'audit backend Juillet 2026 :
+  - Création du rapport d'audit consolidé [audit_backend_consolidated_2026-07-17.md](file:///home/kidpixel/render_signal_server-main/docs/audits/audit_backend_consolidated_2026-07-17.md) réunissant les constats d'audit 1 et d'audit 2.
+  - Réconciliation des sévérités selon l'échelle OWASP/CVSS et mise à jour du statut des failles (recherche active de la remédiation CSRF déjà appliquée le 12 Juillet 2026).
+- [2026-07-17] Remédiation complète de l'audit consolidé backend (3 phases) :
+  - **Phase 1** (Sécurité) : Correction RCE (`api_admin.py`), mitigation OOM Redis (`deduplication_service.py`), sécurité des verrous, et rate limiting (`utils/limiter.py`).
+  - **Phase 2** (Stabilisation) : Transfert R2 asynchrone (`ingress_service.py`), protection ReDoS (`re2`), validation DNS/IP (`webhook_config_service.py`), `safe_join` pour les chemins et suppression du shell.
+  - **Phase 3** (Qualité) : Suppression des dead routes/files (`handle_presence_route`, `polling_thread.py`), centralisation des configs et intégration CI/CD Github Actions.
+  - **Validation finale** : 336 tests passés (0 failures), 71.79% coverage.
 
 ## Questions Ouvertes
 - Aucune question en attente.
 
 ## Prochaine Étape
-- Aucune tâche active (session finalisée).
+- Maintien en condition opérationnelle et suivi de la stabilité post-remédiation.

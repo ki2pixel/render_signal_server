@@ -25,6 +25,10 @@ os.environ.setdefault("PROCESS_API_TOKEN", "test-process-api-token")
 os.environ.setdefault("WEBHOOK_URL", "https://example.com/webhook")
 os.environ.setdefault("MAKECOM_API_KEY", "test-makecom-api-key")
 
+# Force memory storage for Redis-dependent services in tests
+# (avoid connecting to real Redis host that may be unreachable in CI)
+os.environ.pop("REDIS_URL", None)
+
 
 @pytest.fixture
 def mock_redis():

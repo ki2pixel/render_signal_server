@@ -8,12 +8,23 @@ Provides a stable interface for email processing with detector-specific routing.
 from __future__ import annotations
 
 from typing import Optional, Any, Dict
-import re
+import logging
+import re as _stdlib_re  # kept for fallback when re2 is unavailable
 from typing_extensions import TypedDict
 from datetime import datetime, timezone
 import os
 import json
 from pathlib import Path
+
+try:
+    import re2 as re
+    _USING_RE2 = True
+except ImportError:
+    re = _stdlib_re
+    _USING_RE2 = False
+    logging.getLogger(__name__).warning(
+        "ORCH: google-re2 not installed; falling back to stdlib re (no ReDoS protection)."
+    )
 from utils.time_helpers import parse_time_hhmm, is_within_time_window_local, get_polling_timezone
 from utils.text_helpers import mask_sensitive_data, strip_leading_reply_prefixes
 from config import settings
@@ -949,26 +960,6 @@ def compute_desabo_time_window(
     # Payload rule: early -> configured start; within window -> "maintenant"
     time_start_payload = webhooks_time_start_str if early_ok else "maintenant"
     return early_ok, time_start_payload, True
-
-
-def handle_presence_route(
-    *,
-    subject: str,
-    full_email_content: str,
-    email_id: str,
-    sender_raw: str,
-    tz_for_polling,
-    webhooks_time_start_str,
-    webhooks_time_end_str,
-    presence_flag,
-    presence_true_url,
-    presence_false_url,
-    is_within_time_window_local,
-    extract_sender_email,
-    send_makecom_webhook,
-    logger,
-) -> bool:
-    return False
 
 
 def handle_desabo_route(

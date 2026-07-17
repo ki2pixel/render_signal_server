@@ -23,11 +23,18 @@ from typing_extensions import TypedDict
 
 from utils.validators import normalize_make_webhook_url
 
+try:
+    import re2
+    _HAS_RE2 = True
+except ImportError:
+    re2 = None  # type: ignore
+    _HAS_RE2 = False
 
 ROUTING_RULES_KEY = "routing_rules"
 VALID_FIELDS = {"sender", "subject", "body"}
 VALID_OPERATORS = {"contains", "equals", "regex"}
 VALID_PRIORITIES = {"normal", "high"}
+MAX_REGEX_LENGTH = 200
 
 
 class RoutingRuleCondition(TypedDict):
@@ -298,6 +305,21 @@ class RoutingRulesService:
             value = str(cond.get("value") or "").strip()
             if not value:
                 return False, "Valeur de condition requise.", []
+
+            if operator == "regex":
+                if len(value) > MAX_REGEX_LENGTH:
+                    return False, f"Expression régulière trop longue (max {MAX_REGEX_LENGTH} caractères).", []
+                if _HAS_RE2:
+                    try:
+                        re2.compile(value)
+                    except Exception:
+                        return False, "Expression régulière invalide (échec de compilation re2).", []
+                else:
+                    import re as _stdlib_re
+                    try:
+                        _stdlib_re.compile(value)
+                    except _stdlib_re.error:
+                        return False, "Expression régulière invalide.", []
 
             case_sensitive = bool(cond.get("case_sensitive", False))
 
