@@ -8,6 +8,11 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 
 ## Décisions 2026
 
+- **[2026-07-17] Migration de l'architecture frontend legacy vers ES6 Modules**
+  - **Décision** : Remplacer l'architecture basée sur l'espace de noms global (`window.appAPI`, `window.ui`) par des modules ES6 avec exports nommés stricts pour l'application `remote/`, et intégrer la configuration de build dans `vite.config.js`.
+  - **Raisons** : Garantir l'encapsulation, simplifier les tests unitaires (Vitest) et standardiser le codebase selon les coding standards en place.
+  - **Impacts** : Mise à jour de la configuration de build Vite pour gérer les multiples points d'entrée (dashboard et remote). Réduction de la dette technique.
+
 - **[2026-07-12 20:25:00] - Remédiation frontend complète : CSS modulaire, cache-partage, éradication styles inline**
   - **Décision** : Finaliser l'audit frontend Juillet 2026 (30/30 items) en (1) découpant `modules.css` en 5 fichiers thématiques, (2) introduisant un cache partagé logs/config entre services frontend, et (3) extrayant les 79 styles inline de `dashboard.html` vers des classes CSS.
   - **Raisons** : `modules.css` (874 lignes) violait le principe de responsabilité unique ; `updateGlobalStatus` effectuait 2 appels API redondants avec `LogService`/`WebhookService` qui avaient déjà les données ; 79 styles inline violaient le standard « No inline styles » du projet.

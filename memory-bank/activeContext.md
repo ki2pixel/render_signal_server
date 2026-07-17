@@ -1,6 +1,12 @@
 # Contexte Actif
 
 ## Tâches Terminées
+- [2026-07-17] Remédiation complète de l'audit frontend du 17 Juillet 2026 (17 items, 4 phases) :
+  - **Phase 1** : Amélioration de l'accessibilité (ARIA) et sécurisation DOM (retrait d'innerHTML).
+  - **Phase 2** : Éradication des fuites mémoire et refonte CSRF.
+  - **Phase 3** : Modernisation CSS et rationalisation des variables.
+  - **Phase 4** : Migration `remote/` vers l'architecture ES6/Vite.
+  - **Validation** : 38 tests passés, Lint sans erreurs, build production validé.
 - [2026-07-12] Remédiation complète de l'audit frontend Juillet 2026 (30/30 items, 4 phases) :
   - **Phase 1** (7/7) : XSS `remote/ui.js` éliminé, `time_globalThis` → `time_window`, `dashboard_legacy.js` supprimé, code mort nettoyé, CSRF `remote/api.js`, bindings morts supprimés.
   - **Phase 2** (9/9) : `dashboard.js` 1901 → ~170 lignes (6 modules ES6), CSS splitting `modules.css` → 5 fichiers (`tabs.css`, `status-banner.css`, `timeline.css`, `panels.css`, `routing-rules.css`), barrel `modules.css` + imports `dashboard.html` dev mode.

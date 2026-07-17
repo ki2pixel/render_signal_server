@@ -5,6 +5,9 @@ import { DOMHelper } from '../utils/DOMHelper.js';
 /**
  * Génère un magic link et le copie dans le presse-papiers
  */
+
+let _copiedToastTimer = null;
+
 export async function generateMagicLink() {
     const btn = DOMHelper.getElement('generateMagicLinkBtn');
     const output = DOMHelper.getElement('magicLinkOutput');
@@ -51,16 +54,22 @@ export async function generateMagicLink() {
  * Affiche un toast de feedback après copie
  */
 export function showCopiedFeedback() {
+    if (_copiedToastTimer) {
+        clearTimeout(_copiedToastTimer);
+    }
     let toast = document.querySelector('.copied-feedback');
     if (!toast) {
         toast = document.createElement('div');
         toast.className = 'copied-feedback';
+        toast.setAttribute('role', 'status');
+        toast.setAttribute('aria-live', 'polite');
         toast.textContent = '🔗 Magic link copié dans le presse-papiers !';
         document.body.appendChild(toast);
     }
     toast.classList.add('show');
     
-    setTimeout(() => {
+    _copiedToastTimer = setTimeout(() => {
         toast.classList.remove('show');
+        _copiedToastTimer = null;
     }, 3000);
 }

@@ -11,24 +11,6 @@
   padding-right: 8px;
 }
 
-.routing-rules-list::-webkit-scrollbar {
-  width: 8px;
-}
-
-.routing-rules-list::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: var(--radius-sm);
-}
-
-.routing-rules-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: var(--radius-sm);
-}
-
-.routing-rules-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
-
 .routing-rule-card {
   background: rgba(8, 12, 28, 0.7);
   border: 1px solid var(--cork-border-color);

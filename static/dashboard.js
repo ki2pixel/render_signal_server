@@ -163,7 +163,7 @@ function bindEvents() {
         .forEach(id => {
             const select = DOMHelper.getElement(id);
             if (select) {
-                select.innerHTML = generateTimeOptions(30);
+                select.replaceChildren(...generateTimeOptions(30));
             }
         });
     

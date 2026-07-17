@@ -1,27 +1,13 @@
-// static/remote/api.js
+import { ApiService } from '../services/ApiService.js';
 
-window.appAPI = window.appAPI || {};
-
-/** Extrait le jeton CSRF depuis la balise meta. */
-function _getCsrfToken() {
-    const meta = document.querySelector('meta[name="csrf-token"]');
-    return meta ? meta.getAttribute('content') : '';
-}
-
-/**
- * Interroge le backend pour obtenir le statut du worker local.
- * @returns {Promise<object|null>} Les données de statut ou null en cas d'erreur.
- */
-window.appAPI.fetchStatus = async function() {
+export async function fetchStatus() {
     try {
-        const response = await fetch(`/api/get_local_status`);
+        const response = await fetch('/api/get_local_status');
         if (!response.ok) {
-            // Gère les erreurs HTTP (4xx, 5xx) et tente de lire le corps de la réponse.
             const errorData = await response.json().catch(() => ({
                 overall_status_text: `Erreur Serveur (${response.status})`,
                 status_text: "Impossible de récupérer les détails de l'erreur.",
             }));
-            // Renvoie un objet d'erreur structuré pour que l'UI puisse l'afficher.
             return { error: true, data: errorData };
         }
         return { error: false, data: await response.json() };
@@ -36,10 +22,7 @@ window.appAPI.fetchStatus = async function() {
     }
 }
 
-/**
- * Récupère la fenêtre horaire actuelle des webhooks.
- */
-window.appAPI.getWebhookTimeWindow = async function() {
+export async function getWebhookTimeWindow() {
     try {
         const res = await fetch('/api/get_webhook_time_window');
         const data = await res.json();
@@ -49,16 +32,11 @@ window.appAPI.getWebhookTimeWindow = async function() {
     }
 }
 
-/**
- * Met à jour la fenêtre horaire des webhooks.
- * @param {string} start ex: "11h30" ou "11:30"
- * @param {string} end ex: "17h30" ou "17:30"
- */
-window.appAPI.setWebhookTimeWindow = async function(start, end) {
+export async function setWebhookTimeWindow(start, end) {
     try {
         const res = await fetch('/api/set_webhook_time_window', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': _getCsrfToken() },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': ApiService._getCsrfToken() },
             body: JSON.stringify({ start, end })
         });
         const data = await res.json();
@@ -68,15 +46,11 @@ window.appAPI.setWebhookTimeWindow = async function(start, end) {
     }
 }
 
-/**
- * Envoie la commande pour déclencher le workflow sur le worker local.
- * @returns {Promise<object>} Un objet indiquant le succès ou l'échec de l'envoi.
- */
-window.appAPI.triggerWorkflow = async function() {
+export async function triggerWorkflow() {
     try {
         const response = await fetch('/api/trigger_local_workflow', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': _getCsrfToken() },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': ApiService._getCsrfToken() },
             body: JSON.stringify({ command: "start_manual_generic_from_remote_ui", source: "trigger_page_html" })
         });
         const data = await response.json();
@@ -89,15 +63,11 @@ window.appAPI.triggerWorkflow = async function() {
     }
 }
 
-/**
- * Demande au backend de lancer la vérification des emails.
- * @returns {Promise<object>} Un objet indiquant le succès ou l'échec de la demande.
- */
-window.appAPI.checkEmails = async function() {
+export async function checkEmails() {
     try {
         const response = await fetch('/api/check_emails_and_download', {
             method: 'POST',
-            headers: { 'X-CSRFToken': _getCsrfToken() }
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': ApiService._getCsrfToken() }
         });
         const data = await response.json();
         if (response.status === 401) {

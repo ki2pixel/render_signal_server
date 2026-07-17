@@ -14,53 +14,49 @@ export class WebhookService {
      * @returns {Promise<object>} Configuration des webhooks
      */
     static async loadConfig() {
-        try {
-            const data = await ApiService.get('/api/webhooks/config');
+        const data = await ApiService.get('/api/webhooks/config');
+        
+        if (data.success) {
+            const config = data.config;
             
-            if (data.success) {
-                const config = data.config;
-                
-                const webhookUrlEl = DOMHelper.getElement('webhookUrl');
-                if (webhookUrlEl) {
-                    webhookUrlEl.placeholder = config.webhook_url || 'Non configuré';
-                }
-                
-                const sslToggle = DOMHelper.getElement('sslVerifyToggle');
-                if (sslToggle) {
-                    sslToggle.checked = !!config.webhook_ssl_verify;
-                }
-                
-                const sendingToggle = DOMHelper.getElement('webhookSendingToggle');
-                if (sendingToggle) {
-                    sendingToggle.checked = config.webhook_sending_enabled ?? true;
-                }
-
-                const deliveryModeSelect = DOMHelper.getElement('webhookDeliveryMode');
-                if (deliveryModeSelect) {
-                    deliveryModeSelect.value = config.webhook_delivery_mode || 'json';
-                }
-
-                const fallbackOn415Toggle = DOMHelper.getElement('webhookFallbackOn415Toggle');
-                if (fallbackOn415Toggle) {
-                    fallbackOn415Toggle.checked = config.webhook_fallback_on_415 ?? true;
-                }
-                
-                const absenceToggle = DOMHelper.getElement('absencePauseToggle');
-                if (absenceToggle) {
-                    absenceToggle.checked = !!config.absence_pause_enabled;
-                }
-                
-                if (config.absence_pause_days && Array.isArray(config.absence_pause_days)) {
-                    this.setAbsenceDayCheckboxes(config.absence_pause_days);
-                }
-
-                this._cachedConfig = config;
-                this._configCacheTime = Date.now();
-
-                return config;
+            const webhookUrlEl = DOMHelper.getElement('webhookUrl');
+            if (webhookUrlEl) {
+                webhookUrlEl.placeholder = config.webhook_url || 'Non configuré';
             }
-        } catch (e) {
-            throw e;
+            
+            const sslToggle = DOMHelper.getElement('sslVerifyToggle');
+            if (sslToggle) {
+                sslToggle.checked = !!config.webhook_ssl_verify;
+            }
+            
+            const sendingToggle = DOMHelper.getElement('webhookSendingToggle');
+            if (sendingToggle) {
+                sendingToggle.checked = config.webhook_sending_enabled ?? true;
+            }
+
+            const deliveryModeSelect = DOMHelper.getElement('webhookDeliveryMode');
+            if (deliveryModeSelect) {
+                deliveryModeSelect.value = config.webhook_delivery_mode || 'json';
+            }
+
+            const fallbackOn415Toggle = DOMHelper.getElement('webhookFallbackOn415Toggle');
+            if (fallbackOn415Toggle) {
+                fallbackOn415Toggle.checked = config.webhook_fallback_on_415 ?? true;
+            }
+            
+            const absenceToggle = DOMHelper.getElement('absencePauseToggle');
+            if (absenceToggle) {
+                absenceToggle.checked = !!config.absence_pause_enabled;
+            }
+            
+            if (config.absence_pause_days && Array.isArray(config.absence_pause_days)) {
+                this.setAbsenceDayCheckboxes(config.absence_pause_days);
+            }
+
+            this._cachedConfig = config;
+            this._configCacheTime = Date.now();
+
+            return config;
         }
     }
 

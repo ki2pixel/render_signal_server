@@ -3,6 +3,13 @@ import { WebhookService } from './WebhookService.js';
 import { MessageHelper } from '../utils/MessageHelper.js';
 import { DOMHelper } from '../utils/DOMHelper.js';
 
+const _registeredHandlers = [];
+
+function _addTrackedListener(el, type, handler) {
+    el.addEventListener(type, handler);
+    _registeredHandlers.push({ el, type, handler });
+}
+
 // -------------------- Panneaux Pliables --------------------
 
 /**
@@ -36,8 +43,8 @@ export function initializeCollapsiblePanels() {
                 }
             };
 
-            header.addEventListener('click', togglePanel);
-            header.addEventListener('keydown', (e) => {
+            _addTrackedListener(header, 'click', togglePanel);
+            _addTrackedListener(header, 'keydown', (e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
                     togglePanel();
@@ -212,20 +219,29 @@ export async function saveWebhookPanel(panelType) {
 export function initializeManualFieldsTracking() {
     const panels = document.querySelectorAll('.collapsible-panel');
     panels.forEach(panel => {
-        // Ignorer le panneau de règles de routage car il gère son propre état
         if (panel.dataset.panel === 'routing-rules') return;
         
         const saveBtn = panel.querySelector('.panel-save-btn');
         if (saveBtn) {
             const inputs = panel.querySelectorAll('input, select, textarea');
             inputs.forEach(input => {
-                input.addEventListener('input', () => {
+                _addTrackedListener(input, 'input', () => {
                     panel.classList.add('modified');
                 });
-                input.addEventListener('change', () => {
+                _addTrackedListener(input, 'change', () => {
                     panel.classList.add('modified');
                 });
             });
         }
     });
+}
+
+/**
+ * Nettoie tous les listeners enregistrés pour les panneaux.
+ */
+export function destroy() {
+    _registeredHandlers.forEach(({ el, type, handler }) => {
+        el.removeEventListener(type, handler);
+    });
+    _registeredHandlers.length = 0;
 }

@@ -124,7 +124,7 @@
               <button class="panel-save-btn" data-panel="urls-ssl">💾 Enregistrer</button>
               <span class="panel-indicator" id="urls-ssl-indicator" data-target="urls-ssl-indicator">Dernière sauvegarde: —</span>
             </div>
-            <div id="urls-ssl-msg" data-target="urls-ssl-msg" class="status-msg"></div>
+            <div id="urls-ssl-msg" data-target="urls-ssl-msg" class="status-msg" aria-live="polite"></div>
           </div>
         </div>
 
@@ -168,7 +168,7 @@
               <button class="panel-save-btn" data-panel="absence">💾 Enregistrer</button>
               <span class="panel-indicator" id="absence-indicator" data-target="absence-indicator">Dernière sauvegarde: —</span>
             </div>
-            <div id="absence-msg" data-target="absence-msg" class="status-msg"></div>
+            <div id="absence-msg" data-target="absence-msg" class="status-msg" aria-live="polite"></div>
           </div>
         </div>
 
@@ -199,7 +199,7 @@
                   <option value="">Sélectionner...</option>
                 </select>
               </div>
-              <div id="timeWindowMsg" data-target="timeWindowMsg" class="status-msg"></div>
+              <div id="timeWindowMsg" data-target="timeWindowMsg" class="status-msg" aria-live="polite"></div>
               <div id="timeWindowDisplay" data-target="timeWindowDisplay" class="small-text"></div>
               <div class="small-text">Laissez les deux champs vides pour désactiver la contrainte horaire.</div>
               <div class="mt-12">
@@ -221,7 +221,7 @@
                   <option value="">Sélectionner...</option>
                 </select>
               </div>
-              <div id="globalWebhookTimeMsg" data-target="globalWebhookTimeMsg" class="status-msg mt-8"></div>
+              <div id="globalWebhookTimeMsg" data-target="globalWebhookTimeMsg" class="status-msg mt-8" aria-live="polite"></div>
               <div class="small-text">Définissez quand les webhooks peuvent être envoyés (laissez vide pour désactiver).</div>
               <div class="mt-12">
                 <button id="saveGlobalWebhookTimeBtn" data-target="saveGlobalWebhookTimeBtn" class="btn btn-primary btn-small">💾 Enregistrer Fenêtre Webhook</button>
@@ -261,8 +261,8 @@
           <div class="panel-actions">
             <span class="panel-indicator" id="routing-rules-indicator" data-target="routing-rules-indicator">Dernière sauvegarde: —</span>
           </div>
-          <div id="routing-rules-msg" data-target="routing-rules-msg" class="status-msg"></div>
-          <div id="routingRulesRedisInspectMsg" data-target="routingRulesRedisInspectMsg" class="status-msg mt-12"></div>
+          <div id="routing-rules-msg" data-target="routing-rules-msg" class="status-msg" aria-live="polite"></div>
+          <div id="routingRulesRedisInspectMsg" data-target="routingRulesRedisInspectMsg" class="status-msg mt-12" aria-live="polite"></div>
           <pre id="routingRulesRedisInspectLog" data-target="routingRulesRedisInspectLog" class="code-block small-text mt-12" hidden></pre>
           <div id="routingRulesRedisInspectViewer" data-target="routingRulesRedisInspectViewer" class="json-viewer-container" hidden></div>
         </div>
@@ -335,7 +335,7 @@
           </div>
           <div class="mt-12">
             <button id="processingPrefsSaveBtn" data-target="processingPrefsSaveBtn" class="btn btn-primary">💾 Enregistrer Préférences de Traitement</button>
-            <div id="processingPrefsMsg" data-target="processingPrefsMsg" class="status-msg"></div>
+            <div id="processingPrefsMsg" data-target="processingPrefsMsg" class="status-msg" aria-live="polite"></div>
           </div>
         </div>
       </div>
@@ -362,7 +362,7 @@
             <input id="importConfigFile" data-target="importConfigFile" type="file" accept="application/json" hidden>
             <button id="importConfigBtn" data-target="importConfigBtn" class="btn btn-primary">⬆️ Importer</button>
           </div>
-          <div id="configMgmtMsg" data-target="configMgmtMsg" class="status-msg"></div>
+          <div id="configMgmtMsg" data-target="configMgmtMsg" class="status-msg" aria-live="polite"></div>
           <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
         </div>
         <div class="card mt-20">
@@ -373,7 +373,7 @@
           <div class="inline-group mb-10">
             <button id="restartServerBtn" data-target="restartServerBtn" class="btn btn-success">🚀 Déployer l'application</button>
           </div>
-          <div id="restartMsg" data-target="restartMsg" class="status-msg"></div>
+          <div id="restartMsg" data-target="restartMsg" class="status-msg" aria-live="polite"></div>
           <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
         </div>
         <div class="card mt-20">
@@ -382,7 +382,7 @@
           <div class="inline-group mb-10">
             <button id="migrateConfigsBtn" data-target="migrateConfigsBtn" class="btn btn-warning">📦 Migrer les configurations</button>
           </div>
-          <div id="migrateConfigsMsg" data-target="migrateConfigsMsg" class="status-msg"></div>
+          <div id="migrateConfigsMsg" data-target="migrateConfigsMsg" class="status-msg" aria-live="polite"></div>
           <pre id="migrateConfigsLog" data-target="migrateConfigsLog" class="code-block small-text mt-12" hidden></pre>
           <hr class="divider">
           <p class="mb-10">Vérifiez l'état des données persistées dans Redis (structures JSON, attributs requis, dates de mise à jour).</p>
@@ -393,7 +393,7 @@
             <input type="checkbox" id="verifyConfigStoreRawToggle" data-target="verifyConfigStoreRawToggle">
             <span>Inclure le JSON complet dans le log pour faciliter le debug.</span>
           </label>
-          <div id="verifyConfigStoreMsg" data-target="verifyConfigStoreMsg" class="status-msg"></div>
+          <div id="verifyConfigStoreMsg" data-target="verifyConfigStoreMsg" class="status-msg" aria-live="polite"></div>
           <pre id="verifyConfigStoreLog" data-target="verifyConfigStoreLog" class="code-block small-text mt-12" hidden></pre>
           <div id="verifyConfigStoreViewer" data-target="verifyConfigStoreViewer" class="json-viewer-container" hidden></div>
         </div>
@@ -410,7 +410,7 @@
             </span>
           </div>
           <button id="generateMagicLinkBtn" data-target="generateMagicLinkBtn" class="btn btn-primary">✨ Générer un magic link</button>
-          <div id="magicLinkOutput" data-target="magicLinkOutput" class="status-msg mt-12"></div>
+          <div id="magicLinkOutput" data-target="magicLinkOutput" class="status-msg mt-12" aria-live="polite"></div>
           <div class="small-text">
             Important : partagez ce lien uniquement avec des personnes autorisées.
             En mode one-shot, il expire après quelques minutes et s'invalide dès qu'il est utilisé.
@@ -424,7 +424,7 @@
               <label for="testWebhookUrl">Valider une URL de webhook</label>
               <input id="testWebhookUrl" data-target="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
               <button id="validateWebhookUrlBtn" data-target="validateWebhookUrlBtn" class="btn btn-primary mt-8">Valider</button>
-              <div id="webhookUrlValidationMsg" data-target="webhookUrlValidationMsg" class="status-msg"></div>
+              <div id="webhookUrlValidationMsg" data-target="webhookUrlValidationMsg" class="status-msg" aria-live="polite"></div>
             </div>
             <div class="form-group">
               <label>Prévisualiser un payload</label>
@@ -443,7 +443,7 @@
             <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
             <input id="downloadPageUrl" data-target="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
             <button id="openDownloadPageBtn" data-target="openDownloadPageBtn" class="btn btn-primary mt-8">Ouvrir la page</button>
-            <div id="openDownloadMsg" data-target="openDownloadMsg" class="status-msg"></div>
+            <div id="openDownloadMsg" data-target="openDownloadMsg" class="status-msg" aria-live="polite"></div>
             <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
           </div>
         </div>
@@ -476,7 +476,7 @@
           </div>
           <div class="mt-12">
             <button id="runtimeFlagsSaveBtn" data-target="runtimeFlagsSaveBtn" class="btn btn-primary"> Enregistrer Flags Runtime</button>
-            <div id="runtimeFlagsMsg" data-target="runtimeFlagsMsg" class="status-msg"></div>
+            <div id="runtimeFlagsMsg" data-target="runtimeFlagsMsg" class="status-msg" aria-live="polite"></div>
           </div>
         </div>
       </div>

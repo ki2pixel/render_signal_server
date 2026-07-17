@@ -1,6 +1,8 @@
 import { ApiService } from './ApiService.js';
 import { DOMHelper } from '../utils/DOMHelper.js';
 
+const _registeredHandlers = [];
+
 /**
  * Fonction de debounce pour limiter les appels
  * @param {Function} func - Fonction à débouncer
@@ -20,6 +22,17 @@ export function debounce(func, wait) {
 }
 
 /**
+ * Enregistre un gestionnaire d'événement traçable
+ * @param {Element} el
+ * @param {string} type
+ * @param {Function} handler
+ */
+function _addTrackedListener(el, type, handler) {
+    el.addEventListener(type, handler);
+    _registeredHandlers.push({ el, type, handler });
+}
+
+/**
  * Initialise l'auto-sauvegarde intelligente
  */
 export function initializeAutoSave() {
@@ -35,12 +48,12 @@ export function initializeAutoSave() {
     autoSaveFields.forEach(fieldId => {
         const field = DOMHelper.getElement(fieldId);
         if (field) {
-            field.addEventListener('change', () => {
+            _addTrackedListener(field, 'change', () => {
                 markSectionAsModified(fieldId);
                 handleAutoSaveChange(fieldId);
             });
-            field.addEventListener('input', () => markSectionAsModified(fieldId));
-            field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 2000));
+            _addTrackedListener(field, 'input', () => markSectionAsModified(fieldId));
+            _addTrackedListener(field, 'input', debounce(() => handleAutoSaveChange(fieldId), 2000));
         }
     });
     
@@ -54,8 +67,8 @@ export function initializeAutoSave() {
     preferenceTextareas.forEach(fieldId => {
         const field = DOMHelper.getElement(fieldId);
         if (field) {
-            field.addEventListener('input', () => markSectionAsModified(fieldId));
-            field.addEventListener('input', debounce(() => handleAutoSaveChange(fieldId), 3000));
+            _addTrackedListener(field, 'input', () => markSectionAsModified(fieldId));
+            _addTrackedListener(field, 'input', debounce(() => handleAutoSaveChange(fieldId), 3000));
         }
     });
 }
@@ -227,6 +240,8 @@ export function showAutoSaveFeedback(fieldId, success, message = '') {
     if (!feedback) {
         feedback = document.createElement('div');
         feedback.className = 'auto-save-feedback';
+        feedback.setAttribute('role', 'status');
+        feedback.setAttribute('aria-live', 'polite');
         field.parentElement.appendChild(feedback);
     }
     
@@ -253,10 +268,22 @@ export function showAutoSaveFeedback(fieldId, success, message = '') {
  * @param {Function} hasUnsavedChangesFn - Vérifie les changements non sauvegardés
  */
 export function initializeDataLossPrevention(hasUnsavedChangesFn) {
-    globalThis.addEventListener('beforeunload', (e) => {
+    const handler = (e) => {
         if (hasUnsavedChangesFn()) {
             e.preventDefault();
             e.returnValue = '';
         }
+    };
+    globalThis.addEventListener('beforeunload', handler);
+    _registeredHandlers.push({ el: globalThis, type: 'beforeunload', handler });
+}
+
+/**
+ * Nettoie tous les listeners d'auto-sauvegarde enregistrés.
+ */
+export function destroy() {
+    _registeredHandlers.forEach(({ el, type, handler }) => {
+        el.removeEventListener(type, handler);
     });
+    _registeredHandlers.length = 0;
 }

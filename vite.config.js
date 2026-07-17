@@ -20,7 +20,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         dashboard: resolve(__dirname, 'static/dashboard.js'),
-        style: resolve(__dirname, 'static/css/dashboard-bundle.css')
+        style: resolve(__dirname, 'static/css/dashboard-bundle.css'),
+        remote: resolve(__dirname, 'static/remote/main.js'),
       },
       output: {
         entryFileNames: 'js/[name]-[hash].js',

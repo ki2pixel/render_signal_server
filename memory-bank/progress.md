@@ -13,6 +13,16 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-07-17 18:06:00] - Remédiation Audit Frontend (Juillet 2026)
+- **Objectif** : Appliquer le plan de remédiation des 17 points de l'audit frontend du 17 Juillet 2026.
+- **Actions réalisées** :
+  * **Phase 1 — Sécurité & Accessibilité** : Suppression d'`innerHTML`, attributs ARIA (`aria-live`, `role="status"`), contrastes CSS, tabindex.
+  * **Phase 2 — Qualité & Fuites Mémoire** : Nettoyage des `try/catch` redondants, centralisation des tokens CSRF, implémentation de lifecycles `destroy()`.
+  * **Phase 3 — CSS** : Refactoring avec variables CSS, élimination des duplications.
+  * **Phase 4 — Outillage & Architecture** : Migration des scripts `remote/` en modules ES6, mise à jour Vite/Vitest.
+- **Validation** : 38 tests passés, linting clean (0 erreur), build Vite de production vérifié.
+- **Statut** : Terminé avec succès.
+
 [2026-07-17 16:00:00] - Remédiation Audit Backend Consolidé (Juillet 2026)
 - **Objectif** : Appliquer le plan de remédiation complet basé sur l'audit du 17 Juillet 2026 (Sécurité Immédiate, Stabilisation, Qualité & Code Mort).
 - **Actions réalisées** :

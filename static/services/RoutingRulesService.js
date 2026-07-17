@@ -717,12 +717,14 @@ export class RoutingRulesService {
             if (!nameValue) {
                 errors.push('Le nom de la règle est requis.');
                 nameInput?.classList.add('routing-invalid');
+                nameInput?.setAttribute('aria-invalid', 'true');
             }
 
             const webhookCheck = this._validateWebhookUrl(webhookValue);
             if (!webhookCheck.ok) {
                 errors.push(webhookCheck.message);
                 webhookInput?.classList.add('routing-invalid');
+                webhookInput?.setAttribute('aria-invalid', 'true');
             }
 
             const conditions = [];
@@ -739,6 +741,7 @@ export class RoutingRulesService {
                 if (!fieldValue || !operatorValue || !valueValue) {
                     if (!valueValue) {
                         valueInput?.classList.add('routing-invalid');
+                        valueInput?.setAttribute('aria-invalid', 'true');
                     }
                     return;
                 }
@@ -870,9 +873,11 @@ export class RoutingRulesService {
         // Désactiver les boutons d'action principaux
         if (this.addButton) {
             this.addButton.disabled = !enabled;
+            this.addButton.tabIndex = enabled ? 0 : -1;
         }
         if (this.reloadButton) {
             this.reloadButton.disabled = !enabled;
+            this.reloadButton.tabIndex = enabled ? 0 : -1;
         }
 
         // Désactiver tous les champs de saisie dans les cartes de règles
@@ -881,18 +886,17 @@ export class RoutingRulesService {
         const inputs = this.container.querySelectorAll('input, select, textarea, button');
         inputs.forEach(input => {
             if (input.type === 'button' || input.tagName === 'BUTTON') {
-                // Conserver l'état pour les boutons d'action qui ne modifient pas les données
                 const isActionButton = input.closest('[data-action]');
                 if (isActionButton) {
                     input.disabled = !enabled;
+                    input.tabIndex = enabled ? 0 : -1;
                 }
             } else {
-                // Désactiver tous les champs de saisie
                 input.disabled = !enabled;
+                input.tabIndex = enabled ? 0 : -1;
             }
         });
 
-        // Ajouter un style visuel quand verrouillé
         if (this._isLocked) {
             this.container.classList.add('locked');
         } else {
@@ -904,6 +908,7 @@ export class RoutingRulesService {
         if (!this.container) return;
         this.container.querySelectorAll('.routing-invalid').forEach((el) => {
             el.classList.remove('routing-invalid');
+            el.removeAttribute('aria-invalid');
         });
     }
 

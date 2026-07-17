@@ -181,16 +181,6 @@
   transform: translateX(0);
 }
 
-/* Auto-save Feedback (positioning) */
-.auto-save-feedback {
-  position: absolute;
-  bottom: -20px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  z-index: var(--z-dropdown);
-}
-
 /* Responsive */
 @media (max-width: 768px) {
   .panel-header {
