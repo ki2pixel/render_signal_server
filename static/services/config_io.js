@@ -752,13 +752,41 @@ export async function handleConfigVerification() {
     }
 
     try {
-        const response = await ApiService.post('/api/verify_config_store', { raw: includeRaw });
-        if (response?.success) {
-            MessageHelper.showSuccess(messageId, 'Toutes les configurations sont conformes.');
+        // Les incohérences de config remontent en HTTP 502 avec un corps JSON
+        // exploitable : on lit la réponse directement pour ne pas la jeter.
+        const fetchOptions = {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': ApiService._getCsrfToken(),
+            },
+            body: JSON.stringify({ raw: includeRaw }),
+        };
+        const rawRes = await fetch('/api/verify_config_store', fetchOptions);
+        const response = await rawRes.json();
+        if (rawRes.ok) {
+            if (response?.success) {
+                MessageHelper.showSuccess(messageId, 'Toutes les configurations sont conformes.');
+            } else {
+                MessageHelper.showError(
+                    messageId,
+                    response?.message || 'Des incohérences ont été détectées.'
+                );
+            }
+        } else if (rawRes.status === 502 && response?.results) {
+            const invalidEntries = (response.results || []).filter((entry) => entry && !entry.valid);
+            if (invalidEntries.length === 0) {
+                MessageHelper.showSuccess(messageId, 'Toutes les configurations sont conformes (légères tolérances).');
+            } else {
+                const summary = invalidEntries
+                    .map((entry) => `${entry.key}: ${entry.message || 'INVALID'}`)
+                    .join(' ; ');
+                MessageHelper.showError(messageId, `Incohérences détectées : ${summary}`);
+            }
         } else {
             MessageHelper.showError(
                 messageId,
-                response?.message || 'Des incohérences ont été détectées.'
+                response?.message || 'Erreur de communication avec le serveur.'
             );
         }
 

@@ -258,6 +258,17 @@ def test_webhook_config_service_update_config_accepts_delivery_mode(temp_json_fi
     assert config["webhook_fallback_on_415"] is False
 
 
+def test_webhook_config_service_update_config_injects_updated_at(temp_json_file):
+    service = WebhookConfigService.get_instance(temp_json_file)
+
+    ok, msg = service.update_config({"webhook_delivery_mode": "json"})
+
+    assert ok is True
+    config = service.get_all_config()
+    assert isinstance(config.get("_updated_at"), str)
+    assert config["_updated_at"]
+
+
 def test_webhook_config_service_update_config_rejects_invalid_delivery_mode(temp_json_file):
     service = WebhookConfigService.get_instance(temp_json_file)
 

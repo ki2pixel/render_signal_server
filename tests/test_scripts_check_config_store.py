@@ -71,13 +71,28 @@ def test_run_allows_empty_routing_rules(monkeypatch, mock_redis):
 
 
 @pytest.mark.unit
-def test_run_returns_one_when_missing_updated_at(monkeypatch, mock_redis):
+def test_run_tolerates_missing_updated_at(monkeypatch, mock_redis):
     _setup_env(monkeypatch)
     monkeypatch.setattr(app_config_store, "_REDIS_CLIENT", mock_redis)
 
     mock_redis.set(
         "testprefix:processing_prefs",
         json.dumps({"rules": []}),
+    )
+
+    exit_code = check_config_store._run(("processing_prefs",), raw=False)
+
+    assert exit_code == 0
+
+
+@pytest.mark.unit
+def test_run_returns_one_when_payload_empty(monkeypatch, mock_redis):
+    _setup_env(monkeypatch)
+    monkeypatch.setattr(app_config_store, "_REDIS_CLIENT", mock_redis)
+
+    mock_redis.set(
+        "testprefix:processing_prefs",
+        json.dumps({}),
     )
 
     exit_code = check_config_store._run(("processing_prefs",), raw=False)

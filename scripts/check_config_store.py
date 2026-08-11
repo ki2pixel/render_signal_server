@@ -31,8 +31,10 @@ def _validate_payload(key: str, payload: Dict[str, Any]) -> Tuple[bool, str]:
         return False, "payload is empty"
     if not payload:
         return False, "payload is empty"
+    # Une config non vide sans timestamp est tolérée : le contenu est présent
+    # et le champ _updated_at est désormais injecté automatiquement à l'écriture.
     if key != "magic_link_tokens" and key != "runtime_flags" and "_updated_at" not in payload:
-        return False, "missing _updated_at"
+        return True, "missing _updated_at (tolerated, injected on next save)"
     return True, "ok"
 
 

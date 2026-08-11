@@ -35,6 +35,7 @@ import os
 import socket
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, Any, Tuple
 from urllib.parse import urlparse
@@ -475,13 +476,16 @@ class WebhookConfigService:
     
     def _save_to_disk(self, data: Dict[str, Any]) -> bool:
         """Sauvegarde la configuration.
-        
+
         Args:
             data: Configuration à sauvegarder
-            
+
         Returns:
             True si succès
         """
+        # Timestamp de mise à jour requis par la vérification config store.
+        if isinstance(data, dict) and "_updated_at" not in data:
+            data["_updated_at"] = datetime.now(timezone.utc).isoformat()
         # Essayer external store d'abord
         if self._external_store:
             try:
