@@ -86,6 +86,21 @@ def test_run_tolerates_missing_updated_at(monkeypatch, mock_redis):
 
 
 @pytest.mark.unit
+def test_run_tolerates_empty_runtime_flags(monkeypatch, mock_redis):
+    _setup_env(monkeypatch)
+    monkeypatch.setattr(app_config_store, "_REDIS_CLIENT", mock_redis)
+
+    mock_redis.set(
+        "testprefix:runtime_flags",
+        json.dumps({}),
+    )
+
+    exit_code = check_config_store._run(("runtime_flags",), raw=False)
+
+    assert exit_code == 0
+
+
+@pytest.mark.unit
 def test_run_returns_one_when_payload_empty(monkeypatch, mock_redis):
     _setup_env(monkeypatch)
     monkeypatch.setattr(app_config_store, "_REDIS_CLIENT", mock_redis)

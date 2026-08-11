@@ -28,7 +28,9 @@ def _validate_payload(key: str, payload: Dict[str, Any]) -> Tuple[bool, str]:
     if key == "routing_rules" and not payload:
         return True, "empty (allowed)"
     if key == "runtime_flags" and not payload:
-        return False, "payload is empty"
+        # Toléré : RuntimeFlagsService fusionne les defaults à la lecture
+        # et une config vide n'a aucun impact fonctionnel.
+        return True, "empty (allowed, defaults applied)"
     if not payload:
         return False, "payload is empty"
     # Une config non vide sans timestamp est tolérée : le contenu est présent
