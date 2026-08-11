@@ -57,3 +57,11 @@ deployment/
 # Frontend / Vite
 node_modules/
 static/dist/
+
+# Reasonix AI
+.reasonix/
+
+# Command Code Agent
+.commandcode/
+.commandcode/*.md
+.commandcode/taste/taste.md

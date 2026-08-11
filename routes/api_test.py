@@ -19,6 +19,7 @@ from config.settings import (
     POLLING_TIMEZONE_STR,
 )
 from utils.validators import normalize_make_webhook_url as _normalize_make_webhook_url
+from utils.validators import is_placeholder_webhook_url as _is_placeholder_webhook_url
 
 bp = Blueprint("api_test", __name__, url_prefix="/api/test")
 
@@ -124,6 +125,11 @@ def update_webhook_config() -> Response | tuple[Response, int]:
             if val and not val.startswith("http"):
                 return (
                     jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}),
+                    400,
+                )
+            if val and _is_placeholder_webhook_url(val):
+                return (
+                    jsonify({"success": False, "message": "webhook_url ne peut pas être une URL placeholder (ex: example.com)."}),
                     400,
                 )
             config["webhook_url"] = val

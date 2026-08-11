@@ -229,7 +229,7 @@ def test_save_and_load_webhook_config(temp_config_file):
     On vérifie que les clés sauvegardées sont bien présentes.
     """
     config = {
-        "webhook_url": "https://test.example.com/webhook",
+        "webhook_url": "https://webhook.kidpixel.fr/index.php",
         "presence_flag": True,
         "polling_enabled": False
     }
@@ -273,13 +273,13 @@ def test_get_webhook_config_requires_auth(client):
 def test_get_webhook_config_success(authenticated_client, temp_config_file):
     """Test récupération de la configuration avec succès."""
     config = {
-        "webhook_url": "https://test.example.com/webhook",
+        "webhook_url": "https://webhook.kidpixel.fr/index.php",
         "presence_flag": True
     }
     temp_config_file.write_text(json.dumps(config))
     
     with patch.object(routes_api_webhooks, 'WEBHOOK_CONFIG_FILE', temp_config_file):
-        with patch.object(app_render, 'WEBHOOK_URL', 'https://webhook.example.com/test'):
+        with patch.object(app_render, 'WEBHOOK_URL', 'https://webhook.kidpixel.fr/index.php'):
             response = authenticated_client.get('/api/webhooks/config')
     
     assert response.status_code == 200
@@ -287,7 +287,7 @@ def test_get_webhook_config_success(authenticated_client, temp_config_file):
     assert data["success"] is True
     assert "config" in data
     # L'API masque toujours l'URL webhook côté lecture (sécurité)
-    assert data["config"]["webhook_url"] == "https://test.example.com/***"
+    assert data["config"]["webhook_url"] == "https://webhook.kidpixel.fr/***"
 
 
 def test_get_webhook_config_empty(authenticated_client, temp_config_file):
@@ -316,7 +316,7 @@ def test_update_webhook_config_valid_https_url(authenticated_client, temp_config
     Phase 5: Vérifier via API GET au lieu de lire le fichier directement.
     """
     payload = {
-        "webhook_url": "https://new.example.com/webhook"
+        "webhook_url": "https://webhook.kidpixel.fr/index.php"
     }
     
     with patch.object(routes_api_webhooks, 'WEBHOOK_CONFIG_FILE', temp_config_file):
@@ -335,7 +335,7 @@ def test_update_webhook_config_valid_https_url(authenticated_client, temp_config
         get_response = authenticated_client.get('/api/webhooks/config')
         response_data = get_response.get_json()
         assert response_data["success"] is True
-        assert response_data["config"]["webhook_url"] == "https://new.example.com/***"
+        assert response_data["config"]["webhook_url"] == "https://webhook.kidpixel.fr/***"
 
 
 def test_update_webhook_config_invalid_url(authenticated_client, temp_config_file):

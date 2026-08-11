@@ -1,4 +1,5 @@
 ---
+name: fast-filesystem-ops
 description: Expert en édition chirurgicale de fichiers volumineux pour préserver les tokens et optimiser les modifications.
 ---
 

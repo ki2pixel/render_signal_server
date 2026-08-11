@@ -353,7 +353,16 @@ class IngressService:
         import time as _time
 
         webhook_cfg = email_orchestrator._get_webhook_config_dict() or {}
-        webhook_url = str(webhook_cfg.get("webhook_url") or getattr(settings, "WEBHOOK_URL", "")).strip()
+        webhook_url = str(webhook_cfg.get("webhook_url") or "").strip()
+        # Refuse les URLs placeholder (example.com, etc.) : elles ne doivent
+        # jamais servir de cible réelle. On retombe alors sur l'env var,
+        # puis sur le défaut documenté.
+        from utils.validators import is_placeholder_webhook_url as _is_placeholder_webhook_url
+
+        if not webhook_url or _is_placeholder_webhook_url(webhook_url):
+            webhook_url = str(getattr(settings, "WEBHOOK_URL", "")).strip()
+        if not webhook_url or _is_placeholder_webhook_url(webhook_url):
+            webhook_url = "https://webhook.kidpixel.fr/index.php"
         if not webhook_url:
             return {"success": False, "message": "WEBHOOK_URL not configured"}, 500
         webhook_ssl_verify = bool(webhook_cfg.get("webhook_ssl_verify", True))

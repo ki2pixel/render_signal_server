@@ -1,5 +1,6 @@
 ---
-description: Expert en manipulation de données JSON massives via le pattern Sniper pour une édition précise et efficace.
+name: json-query-expert
+description: Expert en manipulation de données JSON massives via le pattern "Sniper". Stratégie | Ne jamais charger un fichier > 1000 lignes. Inspection via json_query_query_json. Édition via edit_file.
 ---
 
 # JSON Query Expert

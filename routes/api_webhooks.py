@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request, Response
 from flask_login import login_required, current_user
 
 from utils.time_helpers import parse_time_hhmm
+from utils.validators import is_placeholder_webhook_url
 from config import app_config_store as _store
 
 from services import WebhookConfigService
@@ -127,6 +128,8 @@ def _parse_and_validate_webhook_payload(payload: dict) -> tuple[dict, Response |
         val = payload["webhook_url"].strip() if payload["webhook_url"] else None
         if val and not val.startswith("https://"):
             return {}, (jsonify({"success": False, "message": "webhook_url doit être une URL HTTPS valide."}), 400)
+        if val and is_placeholder_webhook_url(val):
+            return {}, (jsonify({"success": False, "message": "webhook_url ne peut pas être une URL placeholder (ex: example.com)."}), 400)
         updates["webhook_url"] = val
 
     if "webhook_ssl_verify" in payload:

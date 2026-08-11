@@ -83,10 +83,18 @@ class TestWebhooksConfigEndpoints:
             )
             assert response.status_code == 400
             
-            # URL valide (HTTPS)
+            # URL placeholder (example.com) refusée
             response = authenticated_flask_client.post(
                 '/api/webhooks/config',
                 json={'webhook_url': 'https://example.com/hook'},
+                content_type='application/json'
+            )
+            assert response.status_code == 400
+
+            # URL valide (HTTPS, domaine non-placeholder)
+            response = authenticated_flask_client.post(
+                '/api/webhooks/config',
+                json={'webhook_url': 'https://webhook.kidpixel.fr/index.php'},
                 content_type='application/json'
             )
             assert response.status_code == 200

@@ -13,6 +13,16 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-08-11 17:10:00] - Protection contre les URLs webhook placeholder et fallback cible
+- **Objectif** : Empêcher la récurrence de l'incident du 11/08 (2 emails Média Solution non livrés) causé par une URL webhook placeholder `https://example.com/hook` stockée en config (écrasant l'env var `WEBHOOK_URL=https://webhook.kidpixel.fr/index.php`).
+- **Actions réalisées** :
+  * `utils/validators.py` : ajout de `is_placeholder_webhook_url()` (blocage domaines RFC 2606 `example.com/net/org`, `test.com`, `localhost`, `127.0.0.1`, sous-domaines `.example.com/.example.net`).
+  * `services/ingress_service.py` (`_send_ingress_webhook`) : chaîne de résolution défensive — config stockée → si vide/placeholder → env var `WEBHOOK_URL` → si vide/placeholder → défaut `https://webhook.kidpixel.fr/index.php`.
+  * `routes/api_webhooks.py` et `routes/api_test.py` : rejet HTTP 400 des URLs placeholder à la sauvegarde (empêche la réintroduction).
+  * Tests : `tests/test_placeholder_webhook_url.py` (9 tests : helper + fallbacks) ; mise à jour de `tests/test_routes_integration.py` et `test_app_render.py` (remplacement `example.com` par `webhook.kidpixel.fr`).
+- **Validation** : Suite complète **384 passed, 7 skipped**, `ruff` propre sur les lignes ajoutées.
+- **Statut** : Terminé avec succès. Suivi post-déploiement par l'utilisateur (surveillance des logs `CUSTOM_WEBHOOK_DEBUG`).
+
 [2026-07-17 18:06:00] - Remédiation Audit Frontend (Juillet 2026)
 - **Objectif** : Appliquer le plan de remédiation des 17 points de l'audit frontend du 17 Juillet 2026.
 - **Actions réalisées** :

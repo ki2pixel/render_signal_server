@@ -114,3 +114,41 @@ def normalize_make_webhook_url(value: Optional[str]) -> Optional[str]:
     
     # Format non reconnu
     return None
+
+
+PLACEHOLDER_WEBHOOK_HOSTS = {"example.com", "example.org", "example.net", "test.com", "localhost", "127.0.0.1"}
+
+
+def is_placeholder_webhook_url(value: Optional[str]) -> bool:
+    """Indique si une URL webhook est un placeholder de test/documentation.
+
+    Bloque les domaines réservés (RFC 2606) et les hôtes locaux afin d'éviter
+    d'envoyer des payloads réels vers des endpoints factices (ex: example.com).
+
+    Args:
+        value: URL à vérifier
+
+    Returns:
+        True si l'URL est un placeholder (ou invalide), False sinon
+
+    Examples:
+        >>> is_placeholder_webhook_url("https://example.com/hook")
+        True
+        >>> is_placeholder_webhook_url("https://webhook.kidpixel.fr/index.php")
+        False
+    """
+    if not value:
+        return True
+    try:
+        from urllib.parse import urlparse
+
+        hostname = (urlparse(value).hostname or "").lower()
+    except Exception:
+        return True
+    if not hostname:
+        return True
+    if hostname in PLACEHOLDER_WEBHOOK_HOSTS:
+        return True
+    if hostname.endswith(".example.com") or hostname.endswith(".example.net"):
+        return True
+    return False

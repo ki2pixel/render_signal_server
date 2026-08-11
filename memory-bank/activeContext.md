@@ -1,6 +1,10 @@
 # Contexte Actif
 
 ## Tâches Terminées
+- [2026-08-11] Protection contre les URLs webhook placeholder et fallback cible :
+  - **Cause racine (incident 2 emails non livrés)** : config webhook stockée contenait `https://example.com/hook` (placeholder) qui écrasait l'env var `WEBHOOK_URL=https://webhook.kidpixel.fr/index.php` ; POST → 405, emails non livrés.
+  - **Correctif** : `is_placeholder_webhook_url()` dans `utils/validators.py` ; résolution défensive dans `_send_ingress_webhook` (config → env var → défaut `https://webhook.kidpixel.fr/index.php`) ; rejet 400 à la sauvegarde (`api_webhooks.py`, `api_test.py`).
+  - **Validation** : 384 passed, 7 skipped ; tests dédiés ajoutés ; `test_app_render.py` et `test_routes_integration.py` ajustés.
 - [2026-07-17] Remédiation complète de l'audit frontend du 17 Juillet 2026 (17 items, 4 phases) :
   - **Phase 1** : Amélioration de l'accessibilité (ARIA) et sécurisation DOM (retrait d'innerHTML).
   - **Phase 2** : Éradication des fuites mémoire et refonte CSRF.
@@ -52,4 +56,4 @@
 - Aucune question en attente.
 
 ## Prochaine Étape
-- Maintien en condition opérationnelle et suivi de la stabilité post-remédiation.
+- Suivi post-déploiement du correctif placeholder (surveillance des logs `CUSTOM_WEBHOOK_DEBUG` et de la valeur de `webhook_url` stockée).

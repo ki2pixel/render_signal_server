@@ -8,6 +8,16 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 
 ## Décisions 2026
 
+- **[2026-08-11] Protection défensive contre les URLs webhook placeholder (incident 2 emails non livrés)**
+  - **Décision** : Ajouter un garde-fou empêchant l'envoi de payloads webhook vers des URLs placeholder (`example.com`, `test.com`, hôtes locaux) et garantir un fallback vers une cible valide.
+  - **Raisons** : Incident du 11/08/2026 — la config webhook stockée contenait `https://example.com/hook` (placeholder), qui écrasait l'env var `WEBHOOK_URL=https://webhook.kidpixel.fr/index.php` (la config stockée a priorité sur l'env var dans `_send_ingress_webhook`). Les 2 emails Média Solution ont été POSTés vers `example.com` (405) et non livrés. Le champ vide du dashboard ne peut pas vider la config (le serveur ignore les URL vides), donc la valeur placeholder provenait d'une saisie antérieure.
+  - **Changements clés** :
+    1. `utils/validators.py` : `is_placeholder_webhook_url()` — détecte domaines RFC 2606 (`example.com/net/org`), `test.com`, `localhost`, `127.0.0.1`, et sous-domaines `.example.com/.example.net`.
+    2. `services/ingress_service.py` (`_send_ingress_webhook`) : chaîne de résolution défensive `config stockée → env var WEBHOOK_URL → défaut https://webhook.kidpixel.fr/index.php`, en sautant les valeurs vides/placeholders.
+    3. `routes/api_webhooks.py` et `routes/api_test.py` : rejet HTTP 400 à la sauvegarde d'une URL placeholder (empêche la réintroduction via le dashboard).
+  - **Impacts** : Suite de tests complète 384 passed / 7 skipped ; 9 nouveaux tests (`tests/test_placeholder_webhook_url.py`) ; tests existants ajustés (`test_app_render.py`, `test_routes_integration.py`). À surveiller : le fallback silencieux pourrait masquer une config erronée — un log explicite à l'envoi serait un bonus futur.
+  - **Alternatives écartées** : Ne pas étendre la protection au flux `send_custom_webhook_flow` (réservé pour plus tard si besoin) ; pas de priorité inversée env var > config (changerait la sémantique existante).
+
 - **[2026-07-17] Migration de l'architecture frontend legacy vers ES6 Modules**
   - **Décision** : Remplacer l'architecture basée sur l'espace de noms global (`window.appAPI`, `window.ui`) par des modules ES6 avec exports nommés stricts pour l'application `remote/`, et intégrer la configuration de build dans `vite.config.js`.
   - **Raisons** : Garantir l'encapsulation, simplifier les tests unitaires (Vitest) et standardiser le codebase selon les coding standards en place.
