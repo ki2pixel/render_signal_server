@@ -36,7 +36,7 @@ def test_save_and_load_webhook_config_roundtrip(tmp_path):
 
 
 @pytest.mark.unit
-def test_save_webhook_config_preserves_existing_updated_at(tmp_path):
+def test_save_webhook_config_refreshes_updated_at(tmp_path):
     p = tmp_path / "webhook_config.json"
     data = {
         "webhook_url": "https://webhook.kidpixel.fr/index.php",
@@ -45,5 +45,7 @@ def test_save_webhook_config_preserves_existing_updated_at(tmp_path):
     ok = wc.save_webhook_config(p, data)
     assert ok is True
     loaded = wc.load_webhook_config(p)
-    # La valeur existante n'est pas écrasée
-    assert loaded["_updated_at"] == "2026-01-01T00:00:00Z"
+    # La valeur existante est rafraîchie (timestamp à jour), pas préservée
+    assert loaded["_updated_at"] != "2026-01-01T00:00:00Z"
+    assert isinstance(loaded["_updated_at"], str)
+    assert loaded["_updated_at"]

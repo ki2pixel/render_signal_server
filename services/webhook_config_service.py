@@ -483,8 +483,9 @@ class WebhookConfigService:
         Returns:
             True si succès
         """
-        # Timestamp de mise à jour requis par la vérification config store.
-        if isinstance(data, dict) and "_updated_at" not in data:
+        # Timestamp de mise à jour requis par la vérification config store ;
+        # rafraîchi à chaque sauvegarde pour refléter la fraîcheur réelle.
+        if isinstance(data, dict):
             data["_updated_at"] = datetime.now(timezone.utc).isoformat()
         # Essayer external store d'abord
         if self._external_store:

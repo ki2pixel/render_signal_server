@@ -28,8 +28,9 @@ def load_webhook_config(file_path: Path) -> Dict[str, Any]:
 def save_webhook_config(file_path: Path, cfg: Dict[str, Any]) -> bool:
     """Persist webhook configuration to JSON file."""
     try:
-        # Timestamp requis par la vérification config store.
-        if isinstance(cfg, dict) and "_updated_at" not in cfg:
+        # Timestamp requis par la vérification config store ;
+        # rafraîchi à chaque sauvegarde pour refléter la fraîcheur réelle.
+        if isinstance(cfg, dict):
             cfg["_updated_at"] = datetime.now(timezone.utc).isoformat()
         file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(file_path, "w", encoding="utf-8") as f:
