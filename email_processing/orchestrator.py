@@ -1172,6 +1172,47 @@ def _prepare_payload(
     return payload_to_send, serialized_payload, payload_size_bytes
 
 
+def build_dry_run_preview(
+    *,
+    email_id: str,
+    subject: str | None,
+    payload_for_webhook: dict,
+    delivery_links: list,
+    webhook_url: str,
+    webhook_delivery_mode: str | None = None,
+    webhook_fallback_on_415: bool | None = None,
+) -> dict:
+    """Build a full send preview without sending anything.
+
+    Mirrors send_custom_webhook_flow up to the point of the HTTP call:
+    final payload, serialization, byte size, resolved delivery mode(s)
+    and the ordered delivery sequence. No request is made.
+    """
+    payload_to_send, serialized_payload, payload_size_bytes = _prepare_payload(
+        email_id=email_id,
+        subject=subject,
+        payload_for_webhook=payload_for_webhook,
+        delivery_links=delivery_links,
+    )
+    resolved_delivery_mode, resolved_fallback_on_415 = _resolve_webhook_delivery_settings(
+        webhook_delivery_mode=webhook_delivery_mode,
+        webhook_fallback_on_415=webhook_fallback_on_415,
+    )
+    mode_sequence = _build_webhook_mode_sequence(
+        resolved_delivery_mode,
+        fallback_on_415=resolved_fallback_on_415,
+    )
+    return {
+        "payload": payload_to_send,
+        "serialized_payload": serialized_payload,
+        "payload_size_bytes": payload_size_bytes,
+        "resolved_delivery_mode": resolved_delivery_mode,
+        "fallback_on_415": resolved_fallback_on_415,
+        "delivery_mode_sequence": mode_sequence,
+        "webhook_url": webhook_url,
+    }
+
+
 def _log_webhook_outcome(
     *,
     email_id: str,
