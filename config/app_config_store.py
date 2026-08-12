@@ -38,7 +38,16 @@ def _get_redis_client():
     try:
         import redis  # type: ignore
 
-        _REDIS_CLIENT = redis.Redis.from_url(redis_url, decode_responses=True, protocol=2)
+        _REDIS_CLIENT = redis.Redis.from_url(
+            redis_url,
+            decode_responses=True,
+            protocol=2,
+            max_connections=10,
+            socket_timeout=5,
+            socket_connect_timeout=5,
+            retry_on_timeout=True,
+            health_check_interval=30,
+        )
         return _REDIS_CLIENT
     except Exception:
         return None
@@ -96,6 +105,17 @@ def _redis_set_json(key: str, value: Dict[str, Any]) -> bool:
     except Exception:
         return False
 
+
+def _log_store_warning(message: str) -> None:
+    """Log a store fallback warning without raising (store is best-effort)."""
+    try:
+        import logging
+
+        logging.getLogger("config.app_config_store").warning("STORE_FALLBACK: %s", message)
+    except Exception:
+        pass
+
+
 def get_config_json(key: str, *, file_fallback: Optional[Path] = None) -> Dict[str, Any]:
     """Fetch config dict for a key from External JSON backend, with file fallback.
     Returns empty dict on any error.
@@ -141,6 +161,10 @@ def set_config_json(key: str, value: Dict[str, Any], *, file_fallback: Optional[
     if mode == "redis_first":
         if _redis_set_json(key, value):
             return True
+        _log_store_warning(
+            f"redis write failed for key={key} (mode={mode}); falling back to external/file. "
+            "Redis still holds the previous value and will win on reads."
+        )
 
     base_url = os.environ.get("EXTERNAL_CONFIG_BASE_URL")
     api_token = os.environ.get("CONFIG_API_TOKEN")
@@ -155,6 +179,10 @@ def set_config_json(key: str, value: Dict[str, Any], *, file_fallback: Optional[
     if mode == "php_first":
         if _redis_set_json(key, value):
             return True
+        _log_store_warning(
+            f"redis write failed for key={key} (mode={mode}); falling back to file. "
+            "Redis still holds the previous value and will win on reads."
+        )
 
     # File fallback
     if file_fallback is not None:

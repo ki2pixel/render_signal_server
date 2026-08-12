@@ -300,6 +300,15 @@ def _is_webhook_sending_enabled() -> bool:
                     if isinstance(d, str)
                 ]
                 if current_day in normalized_days:
+                    try:
+                        logging.getLogger("email_processing.orchestrator").info(
+                            "WEBHOOK_SENDING_DISABLED: absence_pause bloque l'envoi "
+                            "(jour=%s, jours_configures=%s)",
+                            current_day,
+                            normalized_days,
+                        )
+                    except Exception:
+                        pass
                     return False
 
         if isinstance(data, dict) and "webhook_sending_enabled" in data:
