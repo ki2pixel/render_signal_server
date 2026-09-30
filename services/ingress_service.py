@@ -250,6 +250,14 @@ class IngressService:
                 if isinstance(des_res, dict) and bool(des_res.get("matches")):
                     detector_val = "desabonnement_journee_tarifs"
                     desabo_is_urgent = bool(des_res.get("is_urgent"))
+                else:
+                    # Template « vidéos du samedi » : demande de disponibilité,
+                    # même famille que DESABO (flux AUTOREPONDEUR côté PHP).
+                    samedi_res = pattern_matching.check_media_solution_samedi_conditions(
+                        subject, body, self._logger
+                    )
+                    if isinstance(samedi_res, dict) and bool(samedi_res.get("matches")):
+                        detector_val = "desabonnement_journee_tarifs"
         except Exception:
             pass
         return detector_val, delivery_time_val, desabo_is_urgent

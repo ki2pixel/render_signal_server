@@ -235,6 +235,88 @@ class TestCheckDesaboConditions:
         assert result['matches'] is False
 
 
+class TestCheckMediaSolutionSamediConditions:
+    """Tests pour check_media_solution_samedi_conditions()"""
+
+    @pytest.mark.unit
+    def test_samedi_template_matches(self, mock_logger):
+        """Test le template réel « vidéos du samedi » (email du 29/09)"""
+        # Given: le template « Missions de recadrage » demandant la dispo pour les vidéos du samedi
+        subject = "Média Solution - Missions de recadrage 29/09"
+        body = (
+            "Missions de recadrage\n"
+            "(ce mail a été envoyé à plusieurs monteurs)\n"
+            "Bonjour Camille,\n"
+            "Es-tu dispo pour les quelques vidéos du samedi ?\n"
+            "Lien de dépôt :\n"
+            "https://www.dropbox.com/request/8IzhWfYHHw019hPphv0L"
+        )
+
+        # When: la détection est exécutée
+        result = pattern_matching.check_media_solution_samedi_conditions(subject, body, mock_logger)
+
+        # Then: le template est reconnu
+        assert result['matches'] is True
+
+    @pytest.mark.unit
+    def test_lot_template_does_not_match(self, mock_logger):
+        """Test qu'un email de lot (missions à traiter) n'est pas reconnu comme template samedi"""
+        # Given: un email de lot classique
+        subject = "Média Solution - Missions Recadrage - Lot 162"
+        body = (
+            "Recadrage 9:16 standard à faire pour 11h56 (aujourd'hui 18/09) :\n"
+            "Lien : https://www.dropbox.com/scl/fo/fyddcxv7ggb7yqwskf36h/ADxILn8pGR6peazey"
+        )
+
+        # When: la détection est exécutée
+        result = pattern_matching.check_media_solution_samedi_conditions(subject, body, mock_logger)
+
+        # Then: pas de match
+        assert result['matches'] is False
+
+    @pytest.mark.unit
+    def test_journee_template_does_not_match(self, mock_logger):
+        """Test que le template « lots du jour » (tarifs habituels) n'est pas reconnu comme template samedi"""
+        # Given: le template « Des lots de vidéos vont arriver tout au long de la journée »
+        subject = "Média Solution - Missions de recadrage 18/09"
+        body = (
+            "Des lots de vidéos vont arriver tout au long de la journée, "
+            "seras-tu disponible pour les traiter ?\n"
+            "Nous ferons un récap en fin de journée, aux tarifs habituels."
+        )
+
+        # When: la détection est exécutée
+        result = pattern_matching.check_media_solution_samedi_conditions(subject, body, mock_logger)
+
+        # Then: pas de match
+        assert result['matches'] is False
+
+    @pytest.mark.unit
+    def test_accents_and_case_insensitive(self, mock_logger):
+        """Test insensibilité aux accents et à la casse"""
+        # Given: variantes de casse/accents du template samedi
+        subject = "média solution - missions recadrage 29/09"
+        body = "Es-tu disponible pour les quelques VIDÉOS DU SAMEDI ?"
+
+        # When: la détection est exécutée
+        result = pattern_matching.check_media_solution_samedi_conditions(subject, body, mock_logger)
+
+        # Then: le template est reconnu
+        assert result['matches'] is True
+
+    @pytest.mark.unit
+    def test_none_and_empty_inputs(self, mock_logger):
+        """Test avec entrées None puis vides"""
+        # Given: entrées manquantes
+        # When: la détection est exécutée
+        result_none = pattern_matching.check_media_solution_samedi_conditions(None, None, mock_logger)
+        result_empty = pattern_matching.check_media_solution_samedi_conditions("", "", mock_logger)
+
+        # Then: pas de match et aucune exception
+        assert result_none['matches'] is False
+        assert result_empty['matches'] is False
+
+
 class TestURLProvidersPattern:
     """Tests pour le pattern regex URL_PROVIDERS_PATTERN"""
     

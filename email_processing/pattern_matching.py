@@ -218,6 +218,64 @@ def check_media_solution_pattern(subject, email_content, tz_for_polling, logger)
     return result
 
 
+# =============================================================================
+# PATTERN MÉDIA SOLUTION - TEMPLATE « VIDÉOS DU SAMEDI »
+# =============================================================================
+
+# Mots-clés requis dans le sujet normalisé pour le template « Missions de recadrage » du samedi
+SAMEDI_REQUIRED_SUBJECT_KEYWORDS = ["media solution", "recadrage"]
+
+# Marqueur distinctif du template dans le corps normalisé
+SAMEDI_REQUIRED_BODY_KEYWORDS = ["videos du samedi"]
+
+
+def check_media_solution_samedi_conditions(subject: str, email_content: str, logger) -> Dict[str, Any]:
+    """Vérifie si l'email correspond au template « Missions de recadrage » (vidéos du samedi).
+
+    Ce template demande la disponibilité pour les vidéos du samedi
+    (« Es-tu dispo pour les quelques vidéos du samedi ? »). Il ne contient pas
+    « tarifs habituels » et n'est donc couvert ni par check_media_solution_pattern
+    (pas de « lot » dans le sujet) ni par check_desabo_conditions.
+
+    Critères (texte normalisé sans accents, minuscules):
+    - Sujet contenant « media solution » et « recadrage »
+    - Corps contenant « videos du samedi »
+
+    Args:
+        subject: Sujet de l'email
+        email_content: Contenu/corps de l'email
+        logger: Logger Flask (app.logger)
+
+    Returns:
+        dict avec 'matches' (bool)
+    """
+    result = {"matches": False}
+    try:
+        norm_subject = normalize_no_accents_lower_trim(subject or "")
+        norm_body = normalize_no_accents_lower_trim(email_content or "")
+
+        subject_ok = all(token in norm_subject for token in SAMEDI_REQUIRED_SUBJECT_KEYWORDS)
+        body_ok = all(token in norm_body for token in SAMEDI_REQUIRED_BODY_KEYWORDS)
+        result["matches"] = bool(subject_ok and body_ok)
+
+        try:
+            logger.debug(
+                "SAMEDI_HELPER_DEBUG: subject_ok=%s, body_ok=%s",
+                subject_ok,
+                body_ok,
+            )
+        except Exception:
+            pass
+
+        return result
+    except Exception as e:
+        try:
+            logger.error("SAMEDI_HELPER: Exception during detection: %s", e)
+        except Exception:
+            pass
+        return result
+
+
 def check_desabo_conditions(subject: str, email_content: str, logger) -> Dict[str, Any]:
     """Vérifie les conditions du pattern DESABO.
 

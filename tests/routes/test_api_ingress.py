@@ -283,6 +283,75 @@ def test_ingress_gmail_passes_delivery_mode_settings_and_detector_payload(monkey
 
 
 @pytest.mark.unit
+def test_ingress_gmail_samedi_template_detected_as_autorepondeur(monkeypatch, flask_client):
+    # Given: le template « vidéos du samedi » arrive via Gmail Push (dans la fenêtre horaire)
+    import config.settings as settings
+
+    from services.deduplication_service import DeduplicationService
+    DeduplicationService.reset_instance()
+    monkeypatch.setattr(settings, "GMAIL_SENDER_ALLOWLIST", [])
+    DeduplicationService.reset_instance()
+    monkeypatch.setattr(DeduplicationService.get_instance(), "is_email_processed", lambda *_a, **_k: False)
+    monkeypatch.setattr(RateLimitService.get_instance(), "allow_send", lambda *_: True)
+    monkeypatch.setattr(RateLimitService.get_instance(), "record_event", lambda *_: None)
+    monkeypatch.setattr(WebhookLoggerService.get_instance(), "append_log", lambda *_: None)
+    monkeypatch.setattr(DeduplicationService.get_instance(), "mark_email_processed", lambda *_a, **_k: True)
+
+    monkeypatch.setattr(
+        "services.ingress_service.email_orchestrator._is_webhook_sending_enabled",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "services.ingress_service.email_orchestrator._load_webhook_global_time_window",
+        lambda: ("10:30", "19:00"),
+    )
+    monkeypatch.setattr(
+        "services.ingress_service.is_within_time_window_local",
+        lambda *_a, **_k: True,
+    )
+    monkeypatch.setattr(
+        "services.ingress_service.email_orchestrator._get_webhook_config_dict",
+        lambda: {"webhook_url": "https://example.com/webhook", "webhook_ssl_verify": True},
+    )
+    monkeypatch.setattr(
+        "services.ingress_service.R2TransferService",
+        MagicMock(get_instance=lambda: MagicMock(is_enabled=lambda: False)),
+    )
+
+    captured = {}
+
+    def _capture_send(**kwargs):
+        captured.update(kwargs)
+        return False
+
+    monkeypatch.setattr("services.ingress_service.email_orchestrator.send_custom_webhook_flow", _capture_send)
+
+    payload = {
+        "subject": "Média Solution - Missions de recadrage 29/09",
+        "sender": "L'équipe Média Solution <technique@media-solution.fr>",
+        "body": (
+            "Missions de recadrage\n"
+            "Bonjour Camille,\n"
+            "Es-tu dispo pour les quelques vidéos du samedi ?\n"
+            "Lien de dépôt : https://www.dropbox.com/request/8IzhWfYHHw019hPphv0L\n"
+            "Nous te souhaitons une excellente journée."
+        ),
+        "date": "2026-09-29T07:48:24Z",
+    }
+
+    # When: le payload est posté sur l'ingress
+    resp = flask_client.post("/api/ingress/gmail", json=payload, headers=_auth_headers())
+
+    # Then: il est traité et classé dans la famille disponibilité (flux AUTOREPONDEUR côté PHP)
+    assert resp.status_code == 200
+    from services.ingress_service import IngressService
+    IngressService.shutdown_executor()
+    assert captured["payload_for_webhook"]["detector"] == "desabonnement_journee_tarifs"
+    assert "delivery_time" not in captured["payload_for_webhook"]
+    assert captured["payload_for_webhook"]["sender_email"] == "technique@media-solution.fr"
+
+
+@pytest.mark.unit
 def test_ingress_gmail_enriches_delivery_links_with_r2_when_enabled(monkeypatch, flask_client):
     # Given: R2 transfer is enabled and returns an r2_url
     import config.settings as settings

@@ -1,6 +1,10 @@
 # Contexte Actif
 
 ## Tâches Terminées
+- [2026-09-18] Diagnostic et fiabilisation de l'ingestor Gmail Apps Script :
+  - **Causes racines** : Syntaxe de négation incorrecte dans le filtre Gmail utilisateur (`-{Lien de dépôt}` agissant comme un `OU` et rejetant les mails contenant "Lien" ou "de") ; bug dans `google_script.js` où `allMessagesHandled = true` retirait le label sans envoyer si le message était lu/prévisualisé avant le déclencheur ; absence de repli plain-text sur `message.getBody()`.
+  - **Correctifs** : Mise à jour de `scripts/google_script.js` avec fallback `getBody() || getPlainBody()`, traitement garanti du dernier message si aucun unread (`messagesToProcess`), et suppression de label conditionnée à `processedCount > 0 && !hasErrors`. Directives d'ajustement du filtre Gmail (`-"Lien de dépôt"`).
+  - **Validation** : 12 tests `test_api_ingress.py` passés, validation de détection regex et extraction des liens Dropbox sur `Lot-162.eml` et `Lot-169.eml`.
 - [2026-08-11] Protection contre les URLs webhook placeholder et fallback cible :
   - **Cause racine (incident 2 emails non livrés)** : config webhook stockée contenait `https://example.com/hook` (placeholder) qui écrasait l'env var `WEBHOOK_URL=https://webhook.kidpixel.fr/index.php` ; POST → 405, emails non livrés.
   - **Correctif** : `is_placeholder_webhook_url()` dans `utils/validators.py` ; résolution défensive dans `_send_ingress_webhook` (config → env var → défaut `https://webhook.kidpixel.fr/index.php`) ; rejet 400 à la sauvegarde (`api_webhooks.py`, `api_test.py`).
@@ -56,4 +60,4 @@
 - Aucune question en attente.
 
 ## Prochaine Étape
-- Suivi post-déploiement du correctif placeholder (surveillance des logs `CUSTOM_WEBHOOK_DEBUG` et de la valeur de `webhook_url` stockée).
+- Déploiement de la version fiabilisée de `google_script.js` dans le projet Google Apps Script et mise à jour du filtre Gmail correspondant.

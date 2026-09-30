@@ -32,58 +32,58 @@ function processWebhookTransfer() {
 
   for (const thread of threads) {
     const messages = thread.getMessages();
-    let allMessagesHandled = true;
+    let processedCount = 0;
+    let hasErrors = false;
     
-    for (const message of messages) {
-      // On ne traite que les messages non lus du fil de discussion
-      if (message.isUnread()) {
+    // Priorité aux messages non lus ; si aucun message n'est marqué non lu
+    // (ex: l'utilisateur a ouvert le mail ou un client de messagerie l'a prévisualisé avant le déclencheur),
+    // on traite au minimum le dernier message reçu dans ce fil portant le libellé.
+    const unreadMessages = messages.filter(m => m.isUnread());
+    const messagesToProcess = unreadMessages.length > 0 ? unreadMessages : (messages.length > 0 ? [messages[messages.length - 1]] : []);
+
+    for (const message of messagesToProcess) {
+      const payload = {
+        "subject": message.getSubject(),
+        "sender": message.getFrom(), // "Nom <email@domaine.com>"
+        "date": message.getDate().toISOString(),
+        "body": message.getBody() || message.getPlainBody(), // HTML si disponible, sinon texte brut (évite 'Missing field: body' sur emails texte pur)
+        "snippet": message.getPlainBody().substring(0, 200) // Pour les logs
+      };
+
+      const options = {
+        "method": "post",
+        "contentType": "application/json",
+        "headers": {
+          "Authorization": "Bearer " + API_TOKEN,
+          "X-Source": "GoogleAppsScript"
+        },
+        "payload": JSON.stringify(payload),
+        "muteHttpExceptions": true // Pour pouvoir lire le corps de l'erreur si échec
+      };
+
+      try {
+        const response = UrlFetchApp.fetch(SERVER_URL, options);
+        const responseCode = response.getResponseCode();
         
-        const payload = {
-          "subject": message.getSubject(),
-          "sender": message.getFrom(), // "Nom <email@domaine.com>"
-          "date": message.getDate().toISOString(),
-          "body": message.getBody(), // On envoie le HTML pour que votre extracteur de lien fonctionne
-          "snippet": message.getPlainBody().substring(0, 200) // Pour les logs
-        };
-
-        const options = {
-          "method": "post",
-          "contentType": "application/json",
-          "headers": {
-            "Authorization": "Bearer " + API_TOKEN,
-            "X-Source": "GoogleAppsScript"
-          },
-          "payload": JSON.stringify(payload),
-          "muteHttpExceptions": true // Pour pouvoir lire le corps de l'erreur si échec
-        };
-
-        try {
-          const response = UrlFetchApp.fetch(SERVER_URL, options);
-          const responseCode = response.getResponseCode();
-          
-          if (responseCode === 200) {
-            console.log("Succès pour : " + payload.subject);
-            // On laisse volontairement le message en "non lu" pour conserver un repère visuel.
-            // La suppression du label (voir plus bas) suffit à éviter une double ingestion.
-          } else {
-            console.error("Erreur Serveur (" + responseCode + ") : " + response.getContentText());
-            // On laisse en "non lu" pour retenter plus tard, ou on loggue l'erreur
-            allMessagesHandled = false;
-          }
-        } catch (e) {
-          console.error("Erreur de connexion : " + e.toString());
-          allMessagesHandled = false;
+        if (responseCode === 200) {
+          console.log("Succès pour : " + payload.subject);
+          processedCount++;
+        } else {
+          console.error("Erreur Serveur (" + responseCode + ") : " + response.getContentText());
+          hasErrors = true;
         }
+      } catch (e) {
+        console.error("Erreur de connexion : " + e.toString());
+        hasErrors = true;
       }
     }
     
-    if (allMessagesHandled) {
-      // Une fois le thread traité, on retire le label "A_TRANSFERER_WEBHOOK".
-      // Cela empêche le script de reprendre ces messages même s'ils restent "non lus".
+    // On ne retire le label QUE si au moins un message a été transmis avec succès et sans erreur
+    if (processedCount > 0 && !hasErrors) {
       thread.removeLabel(label);
     } else {
       console.log(
-        "Thread non terminé (au moins un message non ingéré). Label conservé pour retenter plus tard."
+        "Thread non terminé (erreurs ou aucun message traité). Label conservé pour retenter plus tard."
       );
     }
   }

@@ -13,6 +13,18 @@ Les périodes antérieures à 90 jours sont archivées dans `/memory-bank/archiv
 
 ## Terminé
 
+[2026-09-18 17:28:00] - Diagnostic et fiabilisation de l'ingestor Gmail Apps Script
+- **Objectif** : Résoudre l'incident de non-détection de certains emails de missions automatiques (Lot 162, Lot 169) par l'ingestor Google Apps Script.
+- **Causes racines identifiées** :
+  * Erreur de syntaxe dans le filtre Gmail utilisateur (`-{Lien de dépôt}` interprété par Gmail comme `-(Lien OU de OU dépôt)`, excluant tous les emails contenant le mot "Lien" ou "de").
+  * Faille logique dans `google_script.js` : la variable `allMessagesHandled = true` provoquait la suppression silencieuse du libellé `A_TRANSFERER_WEBHOOK` sans aucun envoi vers Render dès qu'un email était marqué comme lu avant le déclencheur.
+  * Absence de repli texte brut dans `google_script.js` (`message.getBody()` vide sur les emails en `text/plain` provoquant un rejet HTTP 400).
+- **Actions réalisées** :
+  * `scripts/google_script.js` : fiabilisation de la boucle pour traiter au minimum le dernier message reçu si aucun n'est unread (`messagesToProcess`), conditionnement de la suppression du libellé à `processedCount > 0 && !hasErrors`, et ajout du repli `message.getBody() || message.getPlainBody()`.
+  * Analyse des filtres Gmail et recommandation de correction de syntaxe (`-"Lien de dépôt"` avec guillemets).
+- **Validation** : Suite de tests `tests/routes/test_api_ingress.py` (12 tests passés), validation du pattern matching et de l'extraction de liens sur les fichiers bruts `debug/mails/*.eml`.
+- **Statut** : Terminé avec succès.
+
 [2026-08-11 17:10:00] - Protection contre les URLs webhook placeholder et fallback cible
 - **Objectif** : Empêcher la récurrence de l'incident du 11/08 (2 emails Média Solution non livrés) causé par une URL webhook placeholder `https://example.com/hook` stockée en config (écrasant l'env var `WEBHOOK_URL=https://webhook.kidpixel.fr/index.php`).
 - **Actions réalisées** :

@@ -108,6 +108,25 @@ if matches:
     return f"{h:02d}h{m:02d}"
 ```
 
+### Média Solution « vidéos du samedi » : demande de disponibilité
+
+**Détection** : sujet « Média Solution … recadrage » + corps mentionnant les vidéos du samedi.
+
+```python
+# email_processing/pattern_matching.py
+def check_media_solution_samedi_conditions(subject, email_content, logger):
+    norm_subject = normalize_no_accents_lower_trim(subject)
+    norm_body = normalize_no_accents_lower_trim(email_content)
+    subject_ok = all(token in norm_subject for token in ["media solution", "recadrage"])
+    body_ok = "videos du samedi" in norm_body
+    return {"matches": subject_ok and body_ok}
+```
+
+Ce template (« Es-tu dispo pour les quelques vidéos du samedi ? ») ne contient pas « tarifs habituels » :
+il n'est couvert ni par le pattern « Lot » ni par DESABO. Il est classé dans la même famille de détection
+(`desabonnement_journee_tarifs`) que les autres demandes de disponibilité, afin de déclencher le flux
+AUTOREPONDEUR côté webhook PHP (email d'acceptation).
+
 ### DESABO : désabonnement journées/tarifs
 
 **Détection** : Mots-clés requis + absence de mots interdits + lien Dropbox optionnel.
