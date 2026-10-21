@@ -46,8 +46,8 @@ Access these via `fast_read_file`, `edit_file`, or `fast_list_directory` using a
 
 ### Retention Policy
 -   **90-day Detail:** Keep full details for the last 90 days in `decisionLog.md` and `progress.md`.
--   **Archiving:** Summarize older entries and move them to `memory-bank/archives/*.md`.
--   **Archiving Tool:** Use `fast_write_file(path="/home/kidpixel/render_signal_server-main/memory-bank/archives/...")` to archive old entries. Never delete data without archiving via this tool first.
+-   **Archiving:** Summarize older entries and move them to `memory-bank/archive/*.md`.
+-   **Archiving Tool:** Use `fast_write_file(path="/home/kidpixel/render_signal_server-main/memory-bank/archive/...")` to archive old entries. Never delete data without archiving via this tool first.
 -   **Creation Restriction:** `fast_write_file` is only for initialization (creation of the 5 base files) or archiving. Interdiction de créer de nouveaux types de fichiers à la racine de `memory-bank/` sans autorisation.
 -   **Traceability:** Ensure the archive path is mentioned in the active file.
 
