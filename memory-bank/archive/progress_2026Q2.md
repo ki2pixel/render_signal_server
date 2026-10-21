@@ -1,0 +1,98 @@
+# Archives Q2 2026 - Progression
+
+## Terminé
+
+[2026-06-05 11:48:00] - Correction de l'erreur MAINT_NOTIFICATIONS Redis
+- **Objectif** : Forcer le protocole RESP2 pour `redis-py` afin d'éviter l'erreur `unknown subcommand 'MAINT_NOTIFICATIONS'` lors du démarrage sur Render.
+- **Actions réalisées** : Ajout explicite du paramètre `protocol=2` lors de l'instanciation de `redis.Redis.from_url` dans `app_config_store.py`, `lock.py`, `app_render.py` et `test_webhook_logs_redis_persistence.py`.
+- **Validation** : Suite de tests exécutée sans régression.
+
+[2026-06-04 13:30:00] - Synchronisation et mise à jour de la documentation (/docs-updater)
+- **Objectif** : Aligner la documentation technique globale (10 fichiers Markdown) avec les refactorings récents (extraction de `IngressService`, remediation SonarCloud, PII masking, WCAG AA, Vite et `DOMHelper`).
+- **Actions réalisées** :
+  * **Core & Audits** : Mis à jour `docs/core/architecture.md` (métriques Radon actualisées à D (23.14) sur 44 blocs, diagrammes et code de route épurés) ; `docs/core/configuration-reference.md` ; clôturé les audits dans `docs/audits/audit_backend.md` et `docs/audits/audit_frontend.md` (sections Remédiation et Résolution ajoutées).
+  * **Ingestion** : Mis à jour `docs/ingestion/gmail-push.md` (architecture IngressService, génération de l'Email ID via `subject|sender|date`, R2 offload, et section de sécurité PII detaille) ; `docs/ingestion/link-extraction.md` ; `docs/ingestion/legacy-imap.md`.
+  * **Processing** : Mis à jour `docs/processing/deduplication-engine.md` ; `docs/processing/pattern-matching.md` ; `docs/processing/webhooks-outbound.md`.
+- **Validation** : Suite de tests complète validée avec succès (368 tests passed, 0 failures).
+
+[2026-06-04 13:25:00] - Réconciliation des skills et corrections de typage
+- **Actions réalisées** : Nettoyage de `scaffold-service`, `scaffold-js-module`, `debugging-strategies`, `documentation`, correction de l'initialisation de `IngressService` dans `app_render.py`, et résolution des erreurs `mypy`.
+- **Tracking** : Tests unitaires passés avec succès.
+
+[2026-06-03 23:41:00] - Campagne d'archivage Q1 2026
+- **Objectif** : Archiver les entrées historiques de plus de 60 jours pour réduire la taille des fichiers principaux tout en conservant l'historique.
+- **Actions réalisées** : Extraction des données antérieures au 2026-04-04 depuis `progress.md` et `decisionLog.md`, et création de `archive/progress_2026Q1.md` et `archive/decisionLog_2026Q1.md`.
+
+[2026-06-03] - Exécution du plan de remédiation SonarCloud (Vague 1 à 4)
+- **Objectif** : Traiter les constats SonarCloud en quatre vagues.
+- **Actions réalisées** : Correction Open Redirect (`dashboard.py`), masquage PII (`ingress_service`/`magic_link_service`), refactoring `ingress_service.py` et `api_webhooks.py` pour réduire la complexité cognitive, WCAG AA dans `dashboard.html`, modernisation JS (`Object.hasOwn`), syntaxe bash `[[ ]]` pour les scripts de tests et skills.
+- **Statut** : Terminé avec succès.
+
+[2026-05-28 18:15:00] - Refactoring de la taille des fonctions (Dette technique)
+- **Objectif** : Corriger le premier problème standard de l'audit backend (`docs/audits/audit_backend.md`) en s'assurant que toutes les fonctions des services respectent la limite stricte de 40 lignes logiques.
+- **Actions réalisées** :
+  1. **Refactoring de `routing_rules_service.py`** : Scindé `_normalize_rules` en extrayant `_normalize_single_rule`, `_validate_conditions`, et `_validate_actions`.
+  2. **Refactoring de `magic_link_service.py`** : Extrait la validation dans `_verify_token_validity` et la consommation dans `_process_token_consumption` à partir de `consume_token`.
+  3. **Refactoring de `r2_transfer_service.py`** : Isolé la validation du domaine (`_validate_remote_fetch_domain`) et l'appel externe (`_execute_remote_fetch_request`) hors de `request_remote_fetch`.
+  4. **Refactoring de `routes/api_admin.py`** : Découpé la route `deploy_application` en trois helpers spécialisés (`_deploy_via_hook`, `_deploy_via_api`, `_deploy_via_fallback`).
+- **Validation** : Exécution de la suite de tests complète (`pytest -q tests/`) réussie avec 100% de succès (334 tests passed, 0 failures).
+- **Statut** : Terminé avec succès.
+
+[2026-05-28 18:00:00] - Résolution du déficit de typage des services et des routes
+- **Objectif** : Traiter le deuxième point critique identifié dans `docs/audits/audit_backend.md` en ajoutant des annotations de type de retour (`-> Response` et `-> tuple[Response, int]`) pour tous les endpoints Flask et les méthodes clés dans les services.
+- **Actions réalisées** :
+  1. **Typage de AuthService** : Ajout des annotations `Callable[..., Any]` pour les décorateurs et typage de `__init__` avec `ConfigService`.
+  2. **Typage de ConfigService** : Ajout du typage de retour `str` et `Any` sur les méthodes utilitaires de configuration.
+  3. **Typage des Routes Flask** : Passage complet sur 12 fichiers de routes (`api_ingress.py`, `api_processing.py`, `api_admin.py`, `api_test.py`, `api_auth.py`, `api_config.py`, `api_routing_rules.py`, `api_webhooks.py`, `api_logs.py`, `api_utility.py`, `dashboard.py`, `health.py`) pour déclarer explicitement `-> Response`, `-> str`, `-> Response | str`, ou `-> Response | tuple[Response, int]`.
+  4. **Validation** : Exécution de la suite de tests complète (`./run_tests.sh -u`), validée à 100% (213 passed).
+- **Statut** : Terminé avec succès.
+
+[2026-05-28 17:50:00] - Refactoring global de l'ingress Gmail (api_ingress.py)
+- **Objectif** : Traiter la violation de périmètre identifiée lors de l'audit dans `routes/api_ingress.py` en isolant la logique métier dans un service singleton.
+- **Actions réalisées** :
+  1. **Singleton DeduplicationService** : Refactorisé pour respecter pleinement le pattern Singleton avec des méthodes d'acquisition et libération de verrous temporaires.
+  2. **Singleton IngressService** : Créé `services/ingress_service.py` pour encapsuler toute la logique métier de l'ingress (auth, allowlist, deduplication, time windows, R2 offload et webhook trigger).
+  3. **Simplification Ingress Route** : Réduit le fichier `routes/api_ingress.py` à une couche de routage ultra-fine (< 30 lignes).
+  4. **Cycle de vie & Tests** : Enregistrement des singletons dans `app_render.py` et validation de la suite de tests complète (`tests/routes/test_api_ingress.py` - 12/12 passés).
+- **Statut** : Terminé avec succès.
+
+[2026-05-27 20:35:00] - Documentation Globale & Synchro Métriques (/docs-updater)
+- **Objectif** : Analyser la base de code, aligner les spécifications, et mettre à jour la documentation suite aux récentes évolutions majeures (Vite, DOMHelper, JsonViewer, beforeunload, et suppression de `webhook_sender.py`).
+- **Actions réalisées** :
+  1. Nettoyage et refactoring de `docs/README.md`, `docs/processing/webhooks-outbound.md` et `docs/processing/file-offload.md` pour enlever toute référence obsolète à `webhook_sender.py` et refléter le flux `send_custom_webhook_flow` unifié.
+  2. Spécification détaillée du mécanisme défensif de **Fallback 415** (séquence de delivery modes) et de la journalisation Redis associée dans `docs/processing/webhooks-outbound.md`.
+  3. Rédaction complète de la section d'optimisations et de robustesse frontend (JsonViewer lazy-rendering/chunking, centralisation de `DOMHelper.js` avec sélecteurs `data-target`, interceptions `beforeunload`, et bundling/minification via Vite) dans `docs/access/dashboard-ui.md`.
+  4. Réconciliation et correction de l'intégralité des 10 liens internes obsolètes (`docs/v2/`) à travers 10 fichiers markdown distincts vers leurs chemins cibles réels.
+- **Validation** : Remplacement validé par audit global (0 lien rompu).
+- **Statut** : Terminé avec succès.
+
+[2026-05-27 20:30:00] - Correction des Tests Backend (Webhook Sender)
+- **Objectif** : Investiguer et corriger les tests échouant suite à la suppression du module `webhook_sender.py`.
+- **Actions réalisées** :
+  1. Suppression du test obsolète `test_webhook_logging_integration` dans `test_app_render.py` qui ciblait l'ancienne fonction `app_render.send_makecom_webhook`.
+  2. Correction du mock `fake_post` dans `tests/test_r2_resilience.py` pour parser la chaîne JSON via le kwarg `data` (adapté à l'implémentation de `send_custom_webhook_flow`).
+- **Validation** : Les tests (56/56) passent avec succès.
+- **Statut** : Terminé avec succès.
+
+[2026-05-27 18:27:00] - Prévention des pertes de données (beforeunload)
+- **Objectif** : Implémenter une interception `beforeunload` et un suivi d'état "dirty" pour éviter la fermeture accidentelle de page pendant une sauvegarde (Audit frontend reco #4).
+- **Implémentation** : Ajout de la classe `modified` aux panneaux configurables (auto-save et manuels) sur changement. Modification de `RoutingRulesService.js` (`hasUnsavedChanges`) et `dashboard.js` (écouteurs globaux `beforeunload`).
+- **Validation** : Re-build avec `npm run build` réussi, vérification de la logique de protection.
+
+[2026-05-27 18:20:00] - Optimisation des performances du JsonViewer (Lazy Loading & Chunking)
+- **Objectif** : Améliorer les performances de rendu du composant JsonViewer pour éviter le gel du Main Thread lors du chargement de gros payloads.
+- **Implémentation** : Modification de `JsonViewer.js` pour intégrer un rendu asynchrone des nœuds repliés via l'événement `toggle` et une pagination/chunking (100 éléments par défaut) des très larges tableaux/objets avec ajout d'un bouton de chargement progressif. Stylisation ajoutée dans `components.css`.
+- **Validation** : Rendu fluide vérifié et suite de tests (`pytest`) validée sans régression induite.
+- **Tracking** : Task list complétée, Walkthrough généré.
+
+[2026-05-27 18:09:00] - Intégration d'un outil de Build/Bundling (Vite)
+- **Objectif** : Minifier et regrouper les assets frontend (JS, CSS) pour améliorer les performances, tout en préservant le workflow de dev sans build.
+- **Implémentation** : Création de `package.json`, `vite.config.js`, `dashboard-bundle.css`. Ajout d'un *context processor* `inject_bundler_helpers` dans `app_render.py` qui parse `manifest.json`. Conditionnement des balises `<script>` et `<link>` dans `dashboard.html` selon `use_bundle`.
+- **Validation** : Les tests unitaires (routes) passent. `npm run build` génère correctement le bundle, et le rendu Flask injecte dynamiquement les bons URLs hachés. Workflow UMB.
+- **Tracking** : Walkthrough généré.
+
+[2026-05-27 18:03:00] - Découplage du DOM et des CSS (Attributs de données)
+- **Objectif** : Eliminer le couplage fort avec le DOM (ID) dans l'orchestrateur frontend.
+- **Implémentation** : Création de `DOMHelper.js`, injection des attributs `data-target` dans `dashboard.html`, et refactoring des services ES6 (`MessageHelper`, `WebhookService`, `RoutingRulesService`, `LogService`, `dashboard.js`) pour utiliser le fallback `DOMHelper.getElement`.
+- **Validation** : Rétrocompatibilité préservée (fallback via `getElementById`), architecture de sélection unifiée.
+- **Tracking** : Walkthrough généré.

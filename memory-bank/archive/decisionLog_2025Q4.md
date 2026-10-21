@@ -1007,3 +1007,12 @@ Ce document enregistre les décisions techniques et architecturales importantes 
   - Payloads Make complétés avec `webhooks_time_start`/`webhooks_time_end` (PRESENCE + désabonnement).
   - Correctifs front: passage à `window.appAPI`/`window.ui`, ordre de scripts (`ui.js` → `api.js` → `main.js`), suppression des modules ES et gardes anti-cache.
 - **Impacts** : Les contraintes horaires et les payloads reflètent immédiatement les réglages UI, sans redéploiement. Robustesse accrue au rechargement et en production (Render).
+
+---
+
+## Synthèse thématique Q4 2025
+- **Standardisation des environnements virtuels** (2025-12-21) : Priorité à l'environnement partagé `/mnt/venv_ext4/venv_render_signal_server` avec alternative locale.
+- **Architecture orientée services finalisée** (2025-11-17) : 6 services (ConfigService, RuntimeFlagsService, WebhookConfigService, AuthService, PollingConfigService, DeduplicationService) intégrés, 83/83 tests OK.
+- **Absence Globale** (2025-11-21/24) : Refactoring terminologique "presence_pause" → "absence_pause" et application stricte avec garde de cycle.
+- **Refactoring email_processing** (2025-11-18) : TypedDict, helpers extraits, types sécurisés, 282 tests OK.
+- **Suppression fonctionnalité "Presence"** (2025-11-18) : Nettoyage complet du code obsolète.
