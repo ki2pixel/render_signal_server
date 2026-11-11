@@ -276,6 +276,7 @@ def test_ingress_gmail_passes_delivery_mode_settings_and_detector_payload(monkey
     assert captured["webhook_fallback_on_415"] is False
     assert captured["payload_for_webhook"]["detector"] == "recadrage"
     assert captured["payload_for_webhook"]["delivery_time"] == "13h47"
+    assert captured["payload_for_webhook"]["email_content"] == payload["body"]
     assert captured["payload_for_webhook"]["sender_email"] == "technique@media-solution.fr"
     assert captured["payload_for_webhook"]["webhooks_time_end"] == "19:00"
     assert isinstance(captured["delivery_links"], list)

@@ -15,6 +15,20 @@ Les entrées de plus de 90 jours sont archivées par trimestre dans `/memory-ban
 
 ## Terminé
 
+[2026-11-11 20:30:00] - Archive des emails « Missions Recadrage » (stockage hybride PHP + proxy)
+- **Objectif** : Persister les corps complets des emails de recadrage et les exposer via une API HTTP légère, sans dégrader les performances ni la fiabilité du webhook.
+- **Analyse amont** : `scripts/google_script.js` envoie déjà `body` (`getBody()`/`getPlainBody()`) ; `IngressService` transmet `email_content` sans troncature ; `_prepare_payload()` ne modifie pas le corps. Aucun changement Apps Script/Flask.
+- **Décision** : Option B, un fichier JSON par lot (`deployment/data/emails/recadrage_*.json`) + index plafonné à 200 entrées (`deployment/data/emails_recadrage_index.json`).
+- **Actions réalisées** :
+  * `deployment/src/EmailStorageLogger.php` : extraction lot/date/sujet/corps/deadline/liens, masquage de l'expéditeur, écriture atomique temp+rename, index sous `flock`, cap configurable, garde-fou taille corps.
+  * `deployment/src/WebhookHandler.php` : persistance avant les branches à retour précoce, erreurs loguées sans échec d'acquittement, validation `Subject` en fallback.
+  * `deployment/public_html/email_proxy.php` : index/détail en lecture seule, alias `recadrage_lot_XXX`, validation stricte d'ID, `realpath`, token optionnel.
+  * `deployment/verify-compatibility.php` : 31 assertions (2 lots, déduplication, cap 10, PII, deadline texte, détection `URGENT`/`URGENCE`, template samedi exclu).
+  * `tests/routes/test_api_ingress.py` : assertion `email_content == body`.
+- **Validation** : PHP 7.4/8.2 `php -l` OK ; `verify-compatibility.php` 31/31 ; email réel `Lot 80 - URGENT` reconnu et stocké (`urgent: true`) ; smoke test proxy (index 200, détail 200, alias 200, traversal 400, absent 404, POST 405, token 401/200) ; pytest ciblé 52 passed ; suite complète **399 passed, 7 skipped**.
+- **Déploiement** : `deployment/` étant ignoré par Git, upload manuel requis (voir `UPLOAD_CHECKLIST.md`).
+- **Statut** : Terminé avec succès.
+
 [2026-10-21 17:45:16] - Campagne d'archivage memory-bank (Q2/Q3 2026)
 - **Objectif** : Réduire `decisionLog.md` et `progress.md` aux entrées de moins de 90 jours (cutoff 2026-07-23) et vider `activeContext.md` de ses tâches terminées.
 - **Actions réalisées** :

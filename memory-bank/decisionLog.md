@@ -9,6 +9,17 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 
 ## Décisions récentes (90 jours)
 
+- **[2026-11-11] Archive des emails « Missions Recadrage » : stockage hybride fichier-par-lot + index**
+  - **Décision** : Stocker chaque email de recadrage dans un fichier JSON individuel (`deployment/data/emails/recadrage_lot_<num>_<date>.json`) et maintenir un index léger plafonné (`deployment/data/emails_recadrage_index.json`). Exposer le tout via un proxy read-only `public_html/email_proxy.php`.
+  - **Raisons** : Un JSON unique atteindrait 10 à 30 Mo après quelques centaines de lots, avec un `json_decode()` complet à chaque lecture et un risque de corruption lors des réécritures concurrentes. Le stockage par fichier donne une lecture O(1), des écritures isolées et un index de quelques dizaines de Ko.
+  - **Changements clés** :
+    1. `EmailStorageLogger` : extraction lot/date/sujet/corps/deadline/liens, masquage de l'expéditeur uniquement, hash SHA-256 de l'ID Gmail, écriture atomique temp+rename, index sous `flock`, cap `EMAIL_INDEX_MAX_ENTRIES` (défaut 200), garde-fou `EMAIL_STORAGE_MAX_BODY_BYTES`.
+    2. `WebhookHandler` : persistance déclenchée après validation/autorisation et avant les branches à retour précoce (`recadrage`, `desabonnement_journee_tarifs`) ; une erreur de stockage est loguée sans faire échouer l'acquittement.
+    3. `email_proxy.php` : `GET` uniquement, index ou détail, alias `recadrage_lot_XXX`, validation stricte de l'ID, `realpath()` + préfixe `data/emails/`, token `EMAIL_PROXY_TOKEN` optionnel.
+    4. `verify-compatibility.php` : 31 assertions couvrant deux lots, la déduplication, le plafond d'index, le masquage PII, la deadline en texte pur, la détection `URGENT`/`URGENCE` et l'exclusion du template samedi.
+  - **Impacts** : Aucun changement Apps Script/Flask ; le corps est déjà transmis intégralement via `email_content`. La suite Python reste verte (399 passed, 7 skipped). Le dossier `deployment/` étant ignoré par Git, l'upload des fichiers PHP reste manuel.
+  - **Alternatives écartées** : JSON unique (mémoire et réécritures), base MySQL (complexité opérationnelle), stockage R2 (latence et gestion des credentials), index non plafonné (croissance inutile).
+
 - **[2026-09-30] Classification du template « vidéos du samedi » dans la famille DESABO (flux AUTOREPONDEUR)**
   - **Décision** : Détecter le template « Missions de recadrage » (vidéos du samedi) avec un pattern dédié (`check_media_solution_samedi_conditions`) et le classer sous le détecteur existant `desabonnement_journee_tarifs`, sans introduire de nouvelle valeur de détecteur.
   - **Raisons** : Le handler PHP (`deployment/src/WebhookHandler.php`, hors git) ne route que `desabonnement_journee_tarifs` (flux AUTOREPONDEUR) et `recadrage` (confirmation mission) ; le template est une demande de disponibilité, comme les emails « lots de vidéos / tarifs habituels ». Réutiliser le détecteur existant évite une modification PHP manuelle (dossier `deployment/` déployé hors CI).
