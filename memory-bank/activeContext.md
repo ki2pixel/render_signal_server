@@ -1,18 +1,16 @@
 # Contexte Actif
 
 ## Tâche en cours
-- Archive des emails « Missions Recadrage » : stockage hybride PHP + proxy public `email_proxy.php`.
+- Ajustement des livraisons « Missions Recadrage » hors fenêtre horaire (report au prochain matin ouvré).
 
 ## Décisions récentes
-- Option B retenue : un fichier JSON par mission (`data/emails/recadrage_*.json`) + index léger plafonné (`data/emails_recadrage_index.json`).
-- Corps, sujet et snippet bruts (contenu de la mission) ; seul `sender` est masqué ; ID Gmail hashé.
-- Proxy public en lecture, avec `EMAIL_PROXY_TOKEN` optionnel.
-- Détection d'urgence alignée sur `URGENT` et `URGENCE` (regex `/\b(urgent|urgence)\b/i`).
+- Résolution dédiée dans `email_processing/delivery_time_resolver.py`, branchée dans l'ingress Gmail Push et l'orchestrateur IMAP.
+- Une cible hors de `[window_start, window_end)` est reportée à `09h00` le jour ouvré suivant ; le samedi est ouvré, le dimanche est exclu.
+- Les livraisons en journée, les sujets `URGENCE`, les fenêtres absentes/invalides et les autres détecteurs restent inchangés.
+- La date de réception utilisée est celle de l'email (ISO côté Apps Script, RFC 2822 côté IMAP), convertie en `Europe/Paris`.
 
 ## Questions Ouvertes
-- Rétention : conservation indéfinie des fichiers détail ; prévoir une purge si > 1 000 lots.
-- Déploiement manuel des fichiers PHP (dossier `deployment/` ignoré par Git).
+- Aucune.
 
 ## Prochaine Étape
-- Uploader `src/EmailStorageLogger.php`, `public_html/email_proxy.php` et `src/WebhookHandler.php` sur l'hôte.
-- Vérifier le premier lot réel via `GET /email_proxy.php`.
+- Surveiller les prochains lots nocturnes (`00hxx`) et vérifier la valeur `delivery_time` dans les logs webhook.

@@ -15,6 +15,20 @@ Les entrées de plus de 90 jours sont archivées par trimestre dans `/memory-ban
 
 ## Terminé
 
+[2026-11-13 09:13:50] - Ajustement des livraisons « Missions Recadrage » hors fenêtre horaire
+- **Objectif** : Éviter que l'auto-réponse confirme un créneau de livraison nocturne hors de la plage d'activité (lots 113 à 117 : `21h00`, `00h25`, `00h30`, `00h40`, `00h55`).
+- **Analyse amont** : `check_media_solution_pattern` extrait la cible brute (`HHhMM` ou `le DD/MM/YYYY à HHhMM`) ; l'ingress et l'orchestrateur construisent `payload_for_webhook["delivery_time"]` sans contrôle de plage ; PHP concatène directement la valeur dans `"OK merci, je m'en occupe pour {$safeDelivery}."`.
+- **Décision** : Résoudre le créneau au moment du payload, via un module pur, sans toucher au fenêtrage de réception ni au PHP. Report au prochain matin ouvré à `09h00`, samedi ouvré, dimanche exclu, fériés non gérés.
+- **Actions réalisées** :
+  * `email_processing/delivery_time_resolver.py` : parsing ISO 8601/RFC 2822 de la date de réception, détection `URGENCE`, résolution soirée/nuit, gestion du rollover et du dimanche.
+  * `services/ingress_service.py` : helper `_resolve_recadrage_delivery_time` appelé avant la construction du payload Gmail Push.
+  * `email_processing/orchestrator.py` : helper `_resolve_out_of_window_delivery_time` appelé avant `_build_webhook_payload` (flux IMAP legacy).
+  * `tests/email_processing/test_recadrage_delivery_window.py` : 32 tests (fixtures réelles 113-117, bornes, urgence, rollover, dimanche, fenêtres invalides, câblage).
+  * `tests/routes/test_api_ingress.py` : test de bout en bout du payload ajusté.
+  * `docs/processing/pattern-matching.md` : section « Ajustement des livraisons recadrage hors fenêtre ».
+- **Validation** : suite complète **432 passed, 7 skipped** ; `delivery_time_resolver.py` couvert à 100 % ; aucun changement PHP requis.
+- **Statut** : Terminé avec succès.
+
 [2026-11-11 20:30:00] - Archive des emails « Missions Recadrage » (stockage hybride PHP + proxy)
 - **Objectif** : Persister les corps complets des emails de recadrage et les exposer via une API HTTP légère, sans dégrader les performances ni la fiabilité du webhook.
 - **Analyse amont** : `scripts/google_script.js` envoie déjà `body` (`getBody()`/`getPlainBody()`) ; `IngressService` transmet `email_content` sans troncature ; `_prepare_payload()` ne modifie pas le corps. Aucun changement Apps Script/Flask.

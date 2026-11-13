@@ -9,6 +9,17 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 
 ## Décisions récentes (90 jours)
 
+- **[2026-11-13] Report automatique des livraisons recadrage hors fenêtre au prochain matin ouvré**
+  - **Décision** : Résoudre `delivery_time` au moment de construire le payload. Une cible hors de `[window_start, window_end)` est reportée à `09h00` le jour ouvré suivant ; le samedi est ouvré, le dimanche est exclu, les jours fériés ne sont pas gérés. Les sujets `URGENCE`, les cibles en journée et les autres détecteurs restent inchangés.
+  - **Raisons** : Les lots 113 à 117 demandaient des livraisons à `21h00` ou `00h25`-`00h55` pour une fenêtre `09h30-19h00`. L'auto-réponse promettait un créneau nocturne alors que l'email avait été reçu en journée. Le flux d'envoi est immédiat : seule la formule d'engagement devait être corrigée.
+  - **Changements clés** :
+    1. `email_processing/delivery_time_resolver.py` : resolver pur (parsing ISO 8601/RFC 2822, fenêtre, urgence, chronologie, dimanche), sans dépendance externe.
+    2. `services/ingress_service.py` : branchement dans `_handle_allowed_email` avec la date de réception du payload Gmail.
+    3. `email_processing/orchestrator.py` : branchement avant `_build_webhook_payload` avec le `Date` IMAP.
+    4. Tests : fixtures `.eml` réelles 113-117, bornes `09h30`/`19h00`, urgence, rollover `31/12/2026 → 01/01/2027`, vendredi/samedi/dimanche, fenêtres absentes ou traversant minuit.
+  - **Impacts** : Payload `delivery_time` ajusté avant l'envoi PHP ; aucun changement de `WebhookHandler.php` ni de `EmailStorageLogger.php` (la valeur stockée est déjà ajustée). Suite complète **432 passed, 7 skipped** ; resolver couvert à 100 %.
+  - **Alternatives écartées** : Recalcul dans PHP (dupliquerait la fenêtre et le fuseau, déploiement manuel du dossier `deployment/`) ; ajustement dans `check_media_solution_pattern` (couplerait l'extraction à la configuration) ; report à `window_start` 09h30 (le brief impose 09h00) ; gestion des jours fériés (contredirait l'attendu `01/01/2027 à 09h00`).
+
 - **[2026-11-11] Archive des emails « Missions Recadrage » : stockage hybride fichier-par-lot + index**
   - **Décision** : Stocker chaque email de recadrage dans un fichier JSON individuel (`deployment/data/emails/recadrage_lot_<num>_<date>.json`) et maintenir un index léger plafonné (`deployment/data/emails_recadrage_index.json`). Exposer le tout via un proxy read-only `public_html/email_proxy.php`.
   - **Raisons** : Un JSON unique atteindrait 10 à 30 Mo après quelques centaines de lots, avec un `json_decode()` complet à chaque lecture et un risque de corruption lors des réécritures concurrentes. Le stockage par fichier donne une lecture O(1), des écritures isolées et un index de quelques dizaines de Ko.

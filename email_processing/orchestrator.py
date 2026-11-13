@@ -32,6 +32,11 @@ from services.deduplication_service import DeduplicationService
 from services.rate_limit_service import RateLimitService
 from services.webhook_logger_service import WebhookLoggerService
 from email_processing import imap_client
+from email_processing.delivery_time_resolver import (
+    is_urgent_subject,
+    parse_received_datetime,
+    resolve_recadrage_delivery_time,
+)
 
 
 from email import message_from_bytes
@@ -735,6 +740,37 @@ def _infer_detectors(subject: str, text: str, logger) -> tuple[str | None, str |
     return detector_val, delivery_time_val, desabo_is_urgent
 
 
+def _resolve_out_of_window_delivery_time(
+    detector_val: str | None,
+    delivery_time_val: str | None,
+    subject: str | None,
+    date_raw: str | None,
+    s_str: str,
+    e_str: str,
+    now_local: datetime,
+    logger,
+) -> str | None:
+    """Ajuste le créneau recadrage hors fenêtre au prochain matin ouvré."""
+    if detector_val != 'recadrage' or not delivery_time_val:
+        return delivery_time_val
+
+    received_dt = parse_received_datetime(date_raw, now_local.tzinfo, now_local)
+    adjusted = resolve_recadrage_delivery_time(
+        delivery_time_val,
+        received_dt=received_dt,
+        window_start=parse_time_hhmm(s_str),
+        window_end=parse_time_hhmm(e_str),
+        is_urgent=is_urgent_subject(subject),
+    )
+    if adjusted != delivery_time_val:
+        logger.info(
+            "RECADRAGE: Delivery time outside window (%s), adjusted to next morning: %s",
+            delivery_time_val,
+            adjusted,
+        )
+    return adjusted
+
+
 def _build_webhook_payload(
     email_id: str,
     subject: str,
@@ -910,6 +946,10 @@ def check_new_emails_and_trigger_webhook() -> int:
                 if not _enforce_time_window(detector_val, desabo_is_urgent, now_local, s_str, e_str, within, email_id, mail, num, logger):
                     continue
 
+                delivery_time_val = _resolve_out_of_window_delivery_time(
+                    detector_val, delivery_time_val, subject, email_data['date_raw'],
+                    s_str, e_str, now_local, logger,
+                )
                 payload = _build_webhook_payload(
                     email_id, subject, email_data['date_raw'], msg.get('From', ''), sender_addr, combined_text,
                     s_str, e_str, within, detector_val, delivery_time_val, desabo_is_urgent, now_local, s_t, _w_tw

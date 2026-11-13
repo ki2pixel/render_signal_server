@@ -28,6 +28,11 @@ if TYPE_CHECKING:
 from email_processing import link_extraction
 from email_processing import orchestrator as email_orchestrator
 from email_processing import pattern_matching
+from email_processing.delivery_time_resolver import (
+    is_urgent_subject,
+    parse_received_datetime,
+    resolve_recadrage_delivery_time,
+)
 from utils.text_helpers import mask_sensitive_data
 from utils.time_helpers import is_within_time_window_local, parse_time_hhmm, get_polling_timezone
 from config import settings
@@ -262,6 +267,37 @@ class IngressService:
             pass
         return detector_val, delivery_time_val, desabo_is_urgent
 
+    def _resolve_recadrage_delivery_time(
+        self,
+        delivery_time_val: str,
+        *,
+        subject: str,
+        email_date: str,
+        now_local: datetime,
+    ) -> str:
+        """Reporte une livraison recadrage hors fenêtre au prochain matin ouvré."""
+        s_str, e_str = "", ""
+        try:
+            s_str, e_str = email_orchestrator._load_webhook_global_time_window()
+        except Exception:
+            pass
+
+        received_dt = parse_received_datetime(email_date, now_local.tzinfo, now_local)
+        adjusted = resolve_recadrage_delivery_time(
+            delivery_time_val,
+            received_dt=received_dt,
+            window_start=parse_time_hhmm(s_str),
+            window_end=parse_time_hhmm(e_str),
+            is_urgent=is_urgent_subject(subject),
+        )
+        if adjusted != delivery_time_val:
+            self._logger.info(
+                "RECADRAGE: Delivery time outside window (%s), adjusted to next morning: %s",
+                delivery_time_val,
+                adjusted,
+            )
+        return adjusted if adjusted is not None else delivery_time_val
+
     def _evaluate_time_window(self, now_local: datetime) -> Tuple[bool, Optional[str], str]:
         s_str, e_str = "", ""
         try:
@@ -425,6 +461,13 @@ class IngressService:
         )
         if early_exit is not None:
             return early_exit
+        if detector_val == "recadrage" and delivery_time_val:
+            delivery_time_val = self._resolve_recadrage_delivery_time(
+                delivery_time_val,
+                subject=subject,
+                email_date=email_date,
+                now_local=now_local,
+            )
         delivery_links = link_extraction.extract_provider_links_from_text(body)
         self._maybe_enrich_delivery_links_with_r2(delivery_links or [], email_id)
         payload_for_webhook: Dict[str, Any] = {

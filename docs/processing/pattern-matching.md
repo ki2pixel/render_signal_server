@@ -312,6 +312,21 @@ if detector == "desabonnement_journee_tarifs":
     payload_for_webhook["is_urgent"] = is_urgent
 ```
 
+### Ajustement des livraisons recadrage hors fenêtre
+
+**TL;DR** : une cible `delivery_time` hors de la fenêtre globale (ex: `21h00` ou `00h25` pour `09h30-19h00`) est reportée au prochain matin ouvré à `09h00`. Le samedi est ouvré, le dimanche est exclu.
+
+`check_media_solution_pattern` continue d'extraire la cible brute. La résolution intervient au moment de construire le payload, dans `IngressService._handle_allowed_email` (Gmail Push) et `email_processing.orchestrator._resolve_out_of_window_delivery_time` (IMAP) :
+
+| Cible extraite | Reçue | Payload envoyé |
+| --- | --- | --- |
+| `21h00` | lundi après-midi | `le 10/11/2026 à 09h00` |
+| `le 10/11/2026 à 00h25` | lundi après-midi | `le 10/11/2026 à 09h00` |
+| `16h00` | lundi matin | `16h00` (inchangé) |
+| `21h00` + sujet `URGENCE` | lundi après-midi | `21h00` (inchangé) |
+
+Règles : fenêtre absente, invalide ou traversant minuit → aucun ajustement ; le jour suivant exclut uniquement le dimanche ; les jours fériés ne sont pas gérés.
+
 ---
 
 ## Tests et validation
