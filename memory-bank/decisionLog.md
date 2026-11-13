@@ -16,8 +16,8 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
     1. `email_processing/delivery_time_resolver.py` : resolver pur (parsing ISO 8601/RFC 2822, fenêtre, urgence, chronologie, dimanche), sans dépendance externe.
     2. `services/ingress_service.py` : branchement dans `_handle_allowed_email` avec la date de réception du payload Gmail.
     3. `email_processing/orchestrator.py` : branchement avant `_build_webhook_payload` avec le `Date` IMAP.
-    4. Tests : fixtures `.eml` réelles 113-117, bornes `09h30`/`19h00`, urgence, rollover `31/12/2026 → 01/01/2027`, vendredi/samedi/dimanche, fenêtres absentes ou traversant minuit.
-  - **Impacts** : Payload `delivery_time` ajusté avant l'envoi PHP ; aucun changement de `WebhookHandler.php` ni de `EmailStorageLogger.php` (la valeur stockée est déjà ajustée). Suite complète **432 passed, 7 skipped** ; resolver couvert à 100 %.
+    4. Tests : extraits représentatifs des lots 113-117 embarqués en inline (les `.eml` de `debug/mails/` sont ignorés par Git), bornes `09h30`/`19h00`, urgence, rollover `31/12/2026 → 01/01/2027`, vendredi/samedi/dimanche, fenêtres absentes ou traversant minuit.
+  - **Impacts** : Payload `delivery_time` ajusté avant l'envoi PHP ; aucun changement de `WebhookHandler.php` ni de `EmailStorageLogger.php` (la valeur stockée est déjà ajustée). Suite complète **432 passed, 7 skipped** ; resolver couvert à 100 % ; commande CI `--cov-fail-under=70` validée (couverture 72.21 %).
   - **Alternatives écartées** : Recalcul dans PHP (dupliquerait la fenêtre et le fuseau, déploiement manuel du dossier `deployment/`) ; ajustement dans `check_media_solution_pattern` (couplerait l'extraction à la configuration) ; report à `window_start` 09h30 (le brief impose 09h00) ; gestion des jours fériés (contredirait l'attendu `01/01/2027 à 09h00`).
 
 - **[2026-11-11] Archive des emails « Missions Recadrage » : stockage hybride fichier-par-lot + index**

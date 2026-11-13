@@ -23,10 +23,11 @@ Les entrées de plus de 90 jours sont archivées par trimestre dans `/memory-ban
   * `email_processing/delivery_time_resolver.py` : parsing ISO 8601/RFC 2822 de la date de réception, détection `URGENCE`, résolution soirée/nuit, gestion du rollover et du dimanche.
   * `services/ingress_service.py` : helper `_resolve_recadrage_delivery_time` appelé avant la construction du payload Gmail Push.
   * `email_processing/orchestrator.py` : helper `_resolve_out_of_window_delivery_time` appelé avant `_build_webhook_payload` (flux IMAP legacy).
-  * `tests/email_processing/test_recadrage_delivery_window.py` : 32 tests (fixtures réelles 113-117, bornes, urgence, rollover, dimanche, fenêtres invalides, câblage).
+  * `tests/email_processing/test_recadrage_delivery_window.py` : 32 tests (cas réels 113-117 embarqués en inline, bornes, urgence, rollover, dimanche, fenêtres invalides, câblage).
   * `tests/routes/test_api_ingress.py` : test de bout en bout du payload ajusté.
   * `docs/processing/pattern-matching.md` : section « Ajustement des livraisons recadrage hors fenêtre ».
 - **Validation** : suite complète **432 passed, 7 skipped** ; `delivery_time_resolver.py` couvert à 100 % ; aucun changement PHP requis.
+- **Correctif CI** : les `.eml` de `debug/mails/` étant ignorés par Git, les tests utilisent désormais des extraits inline. Commande CI exacte validée (`--cov-fail-under=70`) : 432 passed, 7 skipped, couverture **72.21 %**.
 - **Statut** : Terminé avec succès.
 
 [2026-11-11 20:30:00] - Archive des emails « Missions Recadrage » (stockage hybride PHP + proxy)

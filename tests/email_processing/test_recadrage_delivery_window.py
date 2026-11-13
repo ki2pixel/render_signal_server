@@ -6,11 +6,7 @@ l'ingress Gmail Push et l'orchestrateur IMAP.
 """
 from __future__ import annotations
 
-import email
 from datetime import datetime, time
-from email import policy
-from email.utils import parsedate_to_datetime
-from pathlib import Path
 from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
@@ -24,25 +20,55 @@ from email_processing.delivery_time_resolver import (
     resolve_recadrage_delivery_time,
 )
 
-MAILS_DIR = Path(__file__).resolve().parents[2] / "debug" / "mails"
 TZ = ZoneInfo("Europe/Paris")
 WINDOW_START = time(9, 30)
 WINDOW_END = time(19, 0)
 RECEIVED_AFTERNOON = datetime(2026, 11, 9, 15, 0, tzinfo=TZ)
 
-
-def _load_eml(filename: str) -> tuple[str, str, datetime]:
-    """Charge un email réel et retourne (sujet, corps texte, date de réception locale)."""
-    raw = (MAILS_DIR / filename).read_bytes()
-    message = email.message_from_bytes(raw, policy=policy.default)
-    subject = message.get("Subject") or ""
-    body = "\n".join(
-        part.get_content()
-        for part in message.walk()
-        if part.get_content_type() in ("text/plain", "text/html")
-    )
-    received = parsedate_to_datetime(message.get("Date")).astimezone(TZ)
-    return subject, body, received
+# Les .eml de debug/mails/ sont ignorés par Git : on embarque les extraits
+# représentatifs des lots 113 à 117 pour que la CI reste hermétique.
+_RECADRAGE_CASES = [
+    pytest.param(
+        "Média Solution - Missions Recadrage - Lot 113",
+        "Bonjour,\nÀ faire pour 21h00 (aujourd'hui 09/11) :\n"
+        "https://www.dropbox.com/scl/fo/abc123",
+        datetime(2026, 11, 9, 14, 17, 30, tzinfo=TZ),
+        "21h00",
+        id="lot-113-21h00",
+    ),
+    pytest.param(
+        "Média Solution - Missions Recadrage - Lot 114",
+        "Bonjour,\nÀ faire pour le 10/11/2026 à 00h25 :\n"
+        "https://www.dropbox.com/scl/fo/abc123",
+        datetime(2026, 11, 9, 15, 6, 37, tzinfo=TZ),
+        "le 10/11/2026 à 00h25",
+        id="lot-114-00h25",
+    ),
+    pytest.param(
+        "Média Solution - Missions Recadrage - Lot 115",
+        "Bonjour,\nÀ faire pour le 10/11/2026 à 00h40 :\n"
+        "https://www.dropbox.com/scl/fo/abc123",
+        datetime(2026, 11, 9, 15, 6, 51, tzinfo=TZ),
+        "le 10/11/2026 à 00h40",
+        id="lot-115-00h40",
+    ),
+    pytest.param(
+        "Média Solution - Missions Recadrage - Lot 116",
+        "Bonjour,\nÀ faire pour le 10/11/2026 à 00h30 :\n"
+        "https://www.dropbox.com/scl/fo/abc123",
+        datetime(2026, 11, 9, 15, 7, 7, tzinfo=TZ),
+        "le 10/11/2026 à 00h30",
+        id="lot-116-00h30",
+    ),
+    pytest.param(
+        "Média Solution - Missions Recadrage - Lot 117",
+        "Bonjour,\nÀ faire pour le 10/11/2026 à 00h55 :\n"
+        "https://www.dropbox.com/scl/fo/abc123",
+        datetime(2026, 11, 9, 15, 7, 21, tzinfo=TZ),
+        "le 10/11/2026 à 00h55",
+        id="lot-117-00h55",
+    ),
+]
 
 
 def _resolve(
@@ -63,38 +89,15 @@ def _resolve(
 
 
 @pytest.mark.unit
-def test_lot_113_evening_delivery_is_reported_to_next_morning(mock_logger):
-    # Given: le lot 113, reçu le 09/11 après-midi, demande une livraison à 21h00
-    subject, body, received = _load_eml("Média Solution - Missions Recadrage - Lot 113.eml")
+@pytest.mark.parametrize(("subject", "body", "received", "expected_raw"), _RECADRAGE_CASES)
+def test_real_recadrage_lots_are_adjusted(subject, body, received, expected_raw, mock_logger):
+    # Given: un email recadrage représentatif des lots réels 113 à 117
     extracted = pattern_matching.check_media_solution_pattern(subject, body, TZ, mock_logger)
 
     # When: le créneau est résolu pour la fenêtre 09h30-19h00
     adjusted = _resolve(extracted["delivery_time"], received)
 
-    # Then: l'engagement est reporté au mardi 10/11 à 09h00
-    assert extracted["delivery_time"] == "21h00"
-    assert adjusted == "le 10/11/2026 à 09h00"
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    ("filename", "expected_raw"),
-    [
-        ("Média Solution - Missions Recadrage - Lot 114.eml", "le 10/11/2026 à 00h25"),
-        ("Média Solution - Missions Recadrage - Lot 115.eml", "le 10/11/2026 à 00h40"),
-        ("Média Solution - Missions Recadrage - Lot 116.eml", "le 10/11/2026 à 00h30"),
-        ("Média Solution - Missions Recadrage - Lot 117.eml", "le 10/11/2026 à 00h55"),
-    ],
-)
-def test_lots_114_to_117_night_deliveries_keep_target_date(filename, expected_raw, mock_logger):
-    # Given: les lots 114 à 117 demandent une livraison nocturne le 10/11/2026
-    subject, body, received = _load_eml(filename)
-    extracted = pattern_matching.check_media_solution_pattern(subject, body, TZ, mock_logger)
-
-    # When: le créneau est résolu pour la fenêtre 09h30-19h00
-    adjusted = _resolve(extracted["delivery_time"], received)
-
-    # Then: la date cible est conservée, l'heure est ramenée à 09h00
+    # Then: la date cible est conservée et l'heure est ramenée au matin ouvré
     assert extracted["delivery_time"] == expected_raw
     assert adjusted == "le 10/11/2026 à 09h00"
 
