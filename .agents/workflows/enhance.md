@@ -37,6 +37,7 @@ Affiche uniquement ce bloc. Si tu écris du texte en dehors, tu as échoué.
 
       # CONTRAINTES & STANDARDS
       - Respecter codingstandards.md
+      - Respecter .agents/rules/test-strategy.md
       - Ne pas casser l'architecture existante
       - [Contrainte spécifique issue des règles lues]
       ```

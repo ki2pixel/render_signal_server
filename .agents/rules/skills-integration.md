@@ -1,6 +1,6 @@
 ---
 trigger: model_decision
-description: Automatic skill detection and routing matrix for workflow_mediapipe based on pattern matching and priority hierarchy
+description: Automatic skill detection and routing matrix for render_signal_server based on pattern matching and priority hierarchy
 globs: 
 ---
 

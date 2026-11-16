@@ -9,6 +9,20 @@ Les périodes antérieures sont archivées dans `/memory-bank/archive/` :
 
 ## Décisions récentes (90 jours)
 
+- **[2026-11-16] Remédiation de la saturation de tokens des règles Antigravity et indexation projet**
+  - **Décision** : Résoudre l'erreur « You have exceeded the maximum token limit for this file » de l'IDE Antigravity par la création de `.antigravityignore` et la densification normative des règles dépassant le seuil de ~700-750 mots / ~5,5 Ko.
+  - **Raisons** : 4 règles excédaient massivement le plafond individuel Antigravity (`codingstandards.md` à 11,9 Ko, `v5.md` à 11,6 Ko, `prompt-injection-guard.md` à 9,6 Ko, `test-strategy.md` à 5,8 Ko). De plus, l'absence de `.antigravityignore` provoquait l'indexation non désirée de `node_modules/` et `.venv/`.
+  - **Changements clés** :
+    1. `.antigravityignore` : créé à la racine pour exclure `.venv/`, `node_modules/`, caches python/test, `static/dist/`, `htmlcov/`, `.env`, dumps debug.
+    2. `.agents/rules/codingstandards.md` : condensé de 11,9 Ko à 4,2 Ko (511 mots), élimination des doublons avec `AGENTS.md` et de la liste de descriptions de skills redondante avec `<skills>`, basculé en `trigger: model_decision`.
+    3. `.agents/rules/v5.md` : condensé de 11,6 Ko à 2,5 Ko (331 mots), fusion §1/§3 et recentrage sur les directives clés de codage.
+    4. `.agents/rules/prompt-injection-guard.md` : condensé de 9,6 Ko à 2,5 Ko (323 mots), consolidation de la règle "Warning-Then-Stop" et protocole destructif.
+    5. `.agents/rules/test-strategy.md` : ramené de 5,8 Ko à 2,5 Ko (361 mots), préservation 100% des exigences (Given/When/Then, table de perspectives, échecs $\ge$ nominaux, couverture 100%).
+    6. `.agents/rules/skills-integration.md` : correction du nom du repo (`render_signal_server`).
+    7. `.agents/workflows/enhance.md` & `enhance_complex.md` : ajout de la référence systématique à `test-strategy.md`.
+  - **Impacts** : 100% des règles sous 4,9 Ko (< 610 mots), élimination des alertes de token limit, réduction de 42% du volume total de règles dans le prompt, tests unitaires au vert (31 passed).
+  - **Alternatives écartées** : Conserver `codingstandards.md` verbeux (provoquait l'alerte rouge permanente dans l'éditeur et saturait la fenêtre de contexte) ; supprimer des sections normatives (tous les invariants ont été conservés intégralement).
+
 - **[2026-11-13] Report automatique des livraisons recadrage hors fenêtre au prochain matin ouvré**
   - **Décision** : Résoudre `delivery_time` au moment de construire le payload. Une cible hors de `[window_start, window_end)` est reportée à `09h00` le jour ouvré suivant ; le samedi est ouvré, le dimanche est exclu, les jours fériés ne sont pas gérés. Les sujets `URGENCE`, les cibles en journée et les autres détecteurs restent inchangés.
   - **Raisons** : Les lots 113 à 117 demandaient des livraisons à `21h00` ou `00h25`-`00h55` pour une fenêtre `09h30-19h00`. L'auto-réponse promettait un créneau nocturne alors que l'email avait été reçu en journée. Le flux d'envoi est immédiat : seule la formule d'engagement devait être corrigée.

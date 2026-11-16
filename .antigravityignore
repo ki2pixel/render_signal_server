@@ -1,0 +1,49 @@
+# Dependencies & Virtual Environments
+.venv/
+venv/
+node_modules/
+
+# Python cache & test artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# Build & bundle outputs
+dist/
+build/
+*.egg-info/
+static/dist/
+
+# Secrets & credentials
+.env
+*.pem
+*.key
+*.crt
+*.p12
+*.p8
+*.cert
+*_rsa
+*_dsa
+*_ed25519
+*_ecdsa
+
+# Logs & temporary debug files
+*.log
+debug/*.json
+!debug/magic_link_tokens.json
+
+# IDE & system
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+

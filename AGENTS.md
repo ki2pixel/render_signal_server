@@ -42,3 +42,11 @@ feat: Add sender allowlist validation for Gmail ingress
 Prefixes: `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`, `style`, `revert`. No period at end of summary. Branch naming: `feature/<slug>` or `fix/<slug>`.
 
 **PRs** use the same prefix in the title. Body requires **Overview** and **Changes** sections; **Test Content** and **Related Issues** are recommended.
+
+## MCP fast-filesystem — absolute paths required
+
+- **All `fast_*` tools** (`fast_read_file`, `fast_search_files`, `fast_get_directory_tree`, `fast_list_directory`, `fast_read_multiple_files`, `fast_write_file`) require an **absolute path** under `/home/kidpixel/`.
+- **Forbidden**: `"."`, `"./..."`, `"../..."`, or any relative path. The `fast-filesystem` daemon is shared across projects; a relative path is resolved against its own `cwd`, not this repository, and may silently read another project.
+- **Targeted edits**: use `filesystem-agent.edit_file` (a separate server), not `fast-filesystem`, with an absolute path.
+- **Sanity check**: if a `fast_*` result appears to come from another repository, stop, inspect the `path` field, and retry with an absolute path.
+- **Expected errors**: `-32602 RELATIVE_PATH_UNSUPPORTED`, `-32602 RELATIVE_PATH_ESCAPES_WORKSPACE`, `-32000 PATH_OUTSIDE_ALLOWED_ROOT`.

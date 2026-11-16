@@ -15,6 +15,22 @@ Les entrées de plus de 90 jours sont archivées par trimestre dans `/memory-ban
 
 ## Terminé
 
+[2026-11-16 21:46:00] - Audit et remédiation de la saturation de tokens des règles Antigravity et indexation projet
+- **Objectif** : Éliminer les alertes « You have exceeded the maximum token limit for this file » dans l'IDE Antigravity et empêcher l'indexation non désirée des dossiers lourds (`node_modules/`, `.venv/`, caches).
+- **Actions réalisées** :
+  * `.antigravityignore` : créé à la racine avec règles d'exclusion pour `.venv/`, `node_modules/`, caches python (`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`), builds `static/dist/`, `htmlcov/`, `.env` et dumps de debug.
+  * `.agents/rules/codingstandards.md` : densification normative ramenant la taille de 11,9 Ko (1 466 mots) à **4,2 Ko (511 mots)**, basculement en `trigger: model_decision`, élimination des redondances avec `AGENTS.md` et de la liste verbeuse de descriptions de skills.
+  * `.agents/rules/v5.md` : fusion des sections §1 et §3, condensation de la politique d'outils, ramené de 11,6 Ko (1 587 mots) à **2,5 Ko (331 mots)**.
+  * `.agents/rules/prompt-injection-guard.md` : condensation de la règle "Warning-Then-Stop" et du protocole destructif, ramené de 9,6 Ko (1 309 mots) à **2,5 Ko (323 mots)**.
+  * `.agents/rules/test-strategy.md` : simplification des exemples et répétitions, ramené de 5,8 Ko (819 mots) à **2,5 Ko (361 mots)**.
+  * `.agents/rules/skills-integration.md` : correction du nom du repo (`workflow_mediapipe` $\rightarrow$ `render_signal_server`).
+  * `.agents/workflows/enhance.md` et `enhance_complex.md` : ajout de la référence contractuelle à `test-strategy.md`.
+- **Validation** :
+  * 100 % des règles du projet `.agents/rules/*.md` sont désormais sous **4,9 Ko (< 610 mots)**, éliminant totalement le risque de dépassement de plafond IDE (~5,5 Ko / ~750 mots).
+  * Validation syntaxique des frontmatters YAML réussie (`yaml.safe_load`).
+  * Suite de tests de non-régression au vert (31 passed).
+- **Statut** : Terminé avec succès.
+
 [2026-11-13 09:13:50] - Ajustement des livraisons « Missions Recadrage » hors fenêtre horaire
 - **Objectif** : Éviter que l'auto-réponse confirme un créneau de livraison nocturne hors de la plage d'activité (lots 113 à 117 : `21h00`, `00h25`, `00h30`, `00h40`, `00h55`).
 - **Analyse amont** : `check_media_solution_pattern` extrait la cible brute (`HHhMM` ou `le DD/MM/YYYY à HHhMM`) ; l'ingress et l'orchestrateur construisent `payload_for_webhook["delivery_time"]` sans contrôle de plage ; PHP concatène directement la valeur dans `"OK merci, je m'en occupe pour {$safeDelivery}."`.

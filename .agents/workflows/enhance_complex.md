@@ -25,6 +25,7 @@ Tu transformes une demande complexe en une stratégie d'exécution multi-étapes
 ## Phase 1 : Compréhension du contexte
 1. **Lire le contexte actif** : Utiliser `fast_read_file` sur `memory-bank/activeContext.md`
 2. **Analyser l'état actuel** : Vérifier les tâches existantes avec outil `list_tasks`
+3. **Consulter les standards** : Lire `codingstandards.md` et `test-strategy.md` si des tests ou du code sont concernés
 
 ## Phase 2 : Planification avec Shrimp Task Manager
 1. **Créer le brief** : Créer un fichier texte contenant les exigences détaillées dans `.shrimp_task_manager/plan/`
@@ -56,6 +57,7 @@ Tu transformes une demande complexe en une stratégie d'exécution multi-étapes
 
 # CONTRAINTES
 - Respecter codingstandards.md
+- Respecter .agents/rules/test-strategy.md
 - Ne pas casser l'architecture existante
 - Utiliser uniquement les skills activés
 ```
