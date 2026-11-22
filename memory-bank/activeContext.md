@@ -1,9 +1,16 @@
 # Contexte Actif
 
 ## Tâche en cours
-- Audit et remédiation de la saturation de tokens des règles Antigravity et de l'indexation projet.
+- Aucune tâche active (Backfill 30 jours `email_proxy.php` déployé et vérifié en production).
 
 ## Décisions récentes
+- **Backfill Rétro-Actif 30 Jours `email_proxy.php` [2026-11-22]** :
+  - Extraction de 62 missions entrantes de recadrage depuis `debug/mails/a_exporter.mbox` couvrant la fenêtre 23/10/2026 -> 12/11/2026 (dont le Lot 115 du 09/11).
+  - Déduplication par paire `(lot, mois calendaire)` pour préserver la distinction entre les lots recyclés d'un mois sur l'autre (ex: Lot 268 octobre et Lot 268 novembre).
+  - Fusion avec les 42 missions live de `https://webhook.kidpixel.fr/email_proxy.php` pour un index total de 104 entrées triées par `received_at` décroissant.
+  - Enrichissement R2 automatique (54/62 missions avec URL R2 et nom de zip).
+  - Zéro rejeu vers `index.php` (aucun envoi d'email au client).
+  - Création de `scripts/backfill_recadrage_emails.py`, `tests/test_backfill_recadrage.py` (37 tests) et des packages dans `deployment/dist/`.
 - **Remédiation Antigravity (Règles & Indexation) [2026-11-16]** :
   - Création de `.antigravityignore` à la racine (exclusion `.venv/`, `node_modules/`, caches pytest/mypy, `static/dist/`, `htmlcov/`, `.env`).
   - Densification normative et condensation de 4 règles en dépassement de plafond Antigravity (~5,5 Ko / ~750 mots) :

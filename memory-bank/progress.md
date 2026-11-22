@@ -15,6 +15,16 @@ Les entrées de plus de 90 jours sont archivées par trimestre dans `/memory-ban
 
 ## Terminé
 
+[2026-11-22 13:45:00] - Enrichissement rétro-actif 30 jours du proxy email (email_proxy.php)
+- **Objectif** : Alimenter le proxy public `email_proxy.php` (sur `webhook.kidpixel.fr`) avec les missions des 30 derniers jours (dont le Lot 115 du 09/11/2026) à partir du mbox `debug/mails/a_exporter.mbox`.
+- **Actions réalisées** :
+  * Script d'extraction Python `scripts/backfill_recadrage_emails.py` : extraction mbox, parsing dates/deadlines, enrichissement liens R2 via `webhook_links.json`, déduplication par `(lot, mois calendaire)`.
+  * Génération des 62 fichiers JSON individuels et fusion avec les 42 entrées live de production -> index de 104 entrées triées chronologiquement (`received_at` DESC).
+  * Génération des packages de déploiement dans `deployment/dist/` (`backfill_recadrage_30d.tar.gz` 29 Ko, `backfill_recadrage_30d.zip` 75 Ko, `backfill_payloads_30d.json` 207 Ko).
+  * Outil de migration serveur PHP `deployment/tools/import_retroactive_missions.php` sous `flock(LOCK_EX)` avec mode `--dry-run`.
+  * Tests automatisés dédiés dans `tests/test_backfill_recadrage.py` : 37 tests (100 % passants), 0 régression sur `tests/test_services.py` (31 tests passants).
+- **Statut** : Prêt pour déploiement serveur par l'utilisateur.
+
 [2026-11-16 21:46:00] - Audit et remédiation de la saturation de tokens des règles Antigravity et indexation projet
 - **Objectif** : Éliminer les alertes « You have exceeded the maximum token limit for this file » dans l'IDE Antigravity et empêcher l'indexation non désirée des dossiers lourds (`node_modules/`, `.venv/`, caches).
 - **Actions réalisées** :
