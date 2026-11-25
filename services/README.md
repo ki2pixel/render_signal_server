@@ -8,7 +8,7 @@
 
 ## 📋 Vue d'Ensemble
 
-Le dossier `services/` contient 8 services professionnels qui encapsulent la logique métier de l'application. Ces services fournissent des interfaces cohérentes et testables pour accéder aux fonctionnalités clés.
+Le dossier `services/` contient 12 services qui encapsulent la logique métier de l'application. Ces services fournissent des interfaces cohérentes et testables pour accéder aux fonctionnalités clés.
 
 ### Philosophie
 
@@ -24,14 +24,19 @@ Le dossier `services/` contient 8 services professionnels qui encapsulent la log
 
 ```
 services/
-├── __init__.py                    # Module principal - exports all services
+├── __init__.py                    # Module principal - exports
 ├── config_service.py              # Configuration centralisée
+├── auth_service.py                # Authentification unifiée
+├── ingress_service.py             # Ingestion Gmail Push (Singleton)
 ├── runtime_flags_service.py       # Flags runtime avec cache (Singleton)
 ├── webhook_config_service.py      # Webhooks + validation (Singleton)
-├── auth_service.py                # Authentification unifiée
-├── deduplication_service.py       # Déduplication emails/subject groups
+├── routing_rules_service.py       # Règles de routage dynamiques (Singleton)
+├── deduplication_service.py       # Déduplication emails/subject groups (Singleton)
 ├── magic_link_service.py          # Magic links authentification (Singleton)
 ├── r2_transfer_service.py         # Offload Cloudflare R2 (Singleton)
+├── rate_limit_service.py          # Limitation du débit webhook (Singleton)
+├── runtime_metrics_service.py     # Métriques runtime (Singleton)
+├── webhook_logger_service.py      # Journal des webhooks (Singleton)
 └── README.md                      # Ce fichier
 ```
 
@@ -226,16 +231,13 @@ def test_endpoint():
 **Usage:**
 ```python
 from services import DeduplicationService, ConfigService
-from config.polling_config import PollingConfigService
 
 config = ConfigService()
-polling_config = PollingConfigService()
 
-dedup = DeduplicationService(
+dedup = DeduplicationService.get_instance(
     redis_client=redis_client,  # None = fallback mémoire
     logger=app.logger,
     config_service=config,
-    polling_config_service=polling_config,
 )
 
 # Email ID dedup
@@ -276,8 +278,8 @@ _config_service = ConfigService()
 _runtime_flags_service = RuntimeFlagsService.get_instance(...)
 _webhook_service = WebhookConfigService.get_instance(...)
 _auth_service = AuthService(_config_service)
-_polling_service = PollingConfigService(settings)
-_dedup_service = DeduplicationService(...)
+_ingress_service = IngressService.get_instance(_config_service)
+_dedup_service = DeduplicationService.get_instance(...)
 _magic_link_service = MagicLinkService.get_instance(...)
 _r2_transfer_service = R2TransferService.get_instance(...)
 ```
@@ -300,44 +302,33 @@ def my_function():
 **Responsabilité:** Génération et validation des magic links pour authentification sans mot de passe
 
 **Fonctionnalités:**
-- Génération tokens HMAC SHA-256 signés
-- Support one-shot (TTL configurable) et permanent
-- Stockage partagé via API PHP ou fallback fichier JSON
-- Nettoyage automatique tokens expirés
-- Validation et consommation sécurisées
+- Génération de tokens HMAC SHA-256 signés (`<id>.<expires>.<signature>`)
+- Support one-shot (TTL configurable) et permanent (`expires = permanent`)
+- Stockage fichier JSON verrouillé, miroir optionnel Redis ou API PHP
+- Marquage des tokens consommés et révocation ciblée
+- Nettoyage des tokens expirés
 
 **Usage:**
 ```python
 from services import MagicLinkService
 
-# Initialisation (automatique via get_instance)
 service = MagicLinkService.get_instance()
 
-# Générer un magic link one-shot
-link_data = service.generate_magic_link(unlimited=False)
-print(f"Lien: {link_data['url']}")
-print(f"Expire: {link_data['expires_at']}")
+# Générer un token one-shot : (token, expires_at)
+token, expires_at = service.generate_token(unlimited=False)
 
-# Générer un magic link permanent
-permanent_link = service.generate_magic_link(unlimited=True)
-print(f"Lien permanent: {permanent_link['url']}")
+# Générer un token permanent : expires_at vaut None
+permanent_token, _ = service.generate_token(unlimited=True)
 
-# Valider un token
-validation = service.validate_magic_link(token)
-if validation['valid']:
-    print(f"Token valide pour: {validation['purpose']}")
+# Consommer un token : (success, username ou message d'erreur)
+ok, message = service.consume_token(token)
+if ok:
+    print(f"Connecté en tant que {message}")
 
-# Consommer un token one-shot
-if service.consume_magic_link(token):
-    print("Token consommé avec succès")
-
-# Révoquer manuellement un token
-if service.revoke_magic_link(token):
-    print("Token révoqué")
-
-# Nettoyer les tokens expirés
-cleaned = service.cleanup_expired_tokens()
-print(f"{cleaned} tokens expirés supprimés")
+# Révoquer un token précis ou tous les tokens
+token_id = token.split(".")[0]
+service.revoke_token(token_id)
+service.revoke_all_tokens()
 ```
 
 ---
@@ -399,54 +390,43 @@ for link in recent_links:
 
 ---
 
-### 8. PollingConfigService
+### 8. IngressService
 
-**Fichier:** `config/polling_config.py`  
-**Pattern:** Standard  
-**Responsabilité:** Configuration du polling IMAP et fenêtres actives
+**Fichier:** `ingress_service.py`
+**Pattern:** Singleton (`get_instance(config_service)`)
+**Responsabilité:** Point d'entrée unique du flux Gmail Push
 
-**Fonctionnalités:**
-- Jours actifs pour polling (0=Lundi à 6=Dimanche)
-- Fenêtres horaires (début/fin)
-- Liste expéditeurs d'intérêt
-- Intervalles polling (actif/inactif)
-- Timezone configuration
-- Flag UI `enable_polling` persisté
+`process_gmail_push(payload)` retourne `(réponse, code_http)` et délègue la validation, la déduplication, la résolution des créneaux, l'enrichissement R2 et l'envoi webhook. L'exécuteur est borné ; `shutdown_executor()` et `reset_instance()` servent aux tests et à l'arrêt propre.
 
-**Usage:**
 ```python
-from config.polling_config import PollingConfigService
+from services import IngressService
 
-# Initialisation
-service = PollingConfigService()
-
-# Jours actifs
-active_days = service.get_active_days()  # [0, 1, 2, 3, 4] (Lundi-Vendredi)
-
-# Fenêtre horaire
-start_hour = service.get_active_start_hour()  # 9
-end_hour = service.get_active_end_hour()  # 17
-
-# Expéditeurs
-senders = service.get_sender_list()  # ["media@example.com", "recadrage@example.com"]
-
-# Intervalles
-active_interval = service.get_email_poll_interval_s()  # 300 (5 minutes)
-inactive_interval = service.get_inactive_check_interval_s()  # 1800 (30 minutes)
-
-# Timezone
-tz = service.get_tz()  # ZoneInfo("Europe/Paris") ou UTC
-
-# Vacances
-if service.is_in_vacation():
-    print("Période de vacances - polling désactivé")
-
-# Flag UI
-if service.get_enable_polling():
-    print("Polling activé via UI")
-else:
-    print("Polling désactivé via UI")
+result, status_code = IngressService.get_instance(config_service).process_gmail_push(payload)
 ```
+
+### 9. RoutingRulesService
+
+**Fichier:** `routing_rules_service.py`
+**Pattern:** Singleton
+**Responsabilité:** Règles de routage dynamiques (Redis-first, cache TTL)
+
+```python
+service = RoutingRulesService.get_instance(app_config_store=store)
+rules = service.get_rules()
+ok, message, payload = service.update_rules(new_rules)
+```
+
+Les conditions sont validées avant écriture ; `reload()` invalide le cache après une modification externe.
+
+### 10. RateLimitService, RuntimeMetricsService, WebhookLoggerService
+
+| Service | Interface principale | Rôle |
+| --- | --- | --- |
+| `RateLimitService` | `allow_send(limit_per_hour)`, `record_event()` | Compteur de débit partagé (Redis) |
+| `RuntimeMetricsService` | `get_process_start_time()`, `get_last_poll_cycle_ts()` | Métriques exposées par `/api/utility` |
+| `WebhookLoggerService` | `append_log(entry)` | Journal webhook Redis-first avec fallback JSON |
+
+Ces trois services suivent le même contrat de singleton : `get_instance()` pour l'usage courant, `reset_instance()` réservé aux tests.
 
 ### Utilisation dans les Routes (Blueprints)
 
@@ -476,21 +456,14 @@ def my_route():
 
 ## ✅ Tests
 
-Tous les services ont des tests unitaires complets :
+Tous les services ont des tests unitaires dédiés :
 
 ```bash
-# Lancer tests des services
 pytest tests/test_services.py -v
-
-# Résultat: 25/25 tests passed (100%)
+pytest tests/test_r2_transfer_service.py tests/test_routing_rules_service.py -v
 ```
 
-**Couverture:**
-- ConfigService: 66.22%
-- RuntimeFlagsService: 86.02%
-- WebhookConfigService: 57.41%
-- AuthService: 49.23%
-- DeduplicationService: 41.22%
+Les taux de couverture évoluent à chaque run ; se référer au rapport `pytest-cov` (`.coveragerc`) plutôt qu'à des chiffres figés ici.
 
 ---
 
@@ -498,10 +471,8 @@ pytest tests/test_services.py -v
 
 | Document | Description |
 |----------|-------------|
-| `SERVICES_USAGE_EXAMPLES.md` | Exemples détaillés d'utilisation |
-| `REFACTORING_ARCHITECTURE_PLAN.md` | Plan architectural complet |
-| `REFACTORING_SERVICES_SUMMARY.md` | Résumé Phase 1 |
-| `REFACTORING_PHASE2_SUMMARY.md` | Résumé Phase 2 |
+| `docs/core/architecture.md` | Rôle des services dans l'architecture |
+| `docs/core/configuration-reference.md` | Variables et stockage de configuration |
 | `tests/test_services.py` | Tests = documentation vivante |
 
 ---
@@ -608,17 +579,16 @@ webhook_service.set_webhook_url(url)  # Peut lever exception
 ## 📞 Support
 
 **Questions ?**  
-Voir les exemples dans `SERVICES_USAGE_EXAMPLES.md`
+Voir les exemples dans `docs/core/architecture.md`
 
 **Bugs ?**  
 Vérifier les logs (préfixe `SVC:`) et les tests
 
 **Améliora tions ?**  
-Suivre le plan dans `REFACTORING_ARCHITECTURE_PLAN.md`
+Suivre les décisions dans `memory-bank/decisionLog.md`
 
 ---
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Status:** ✅ Production Ready  
-**Tests:** 25/25 passed (100%)  
-**Last Update:** 2025-11-17
+**Last Update:** 2026-11-25

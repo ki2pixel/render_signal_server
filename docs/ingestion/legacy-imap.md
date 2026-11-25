@@ -165,7 +165,7 @@ Cette configuration vivait dans Redis sous la clé `polling_config`. Maintenant 
 - Références IMAP remplacées par Gmail Push
 
 ### Phase 7 : Validation finale
-- Tests complets : 356/356 passants
+- Tests complets : plus de 400 fonctions de test recensées
 - Aucun processus polling actif
 - Gmail Push production-ready
 
@@ -305,12 +305,12 @@ IMAP Server → check_new_emails_and_trigger_webhook → Pattern Matching → Ro
 | MEDIA_SOLUTION | Média Solution pattern | Custom | Oui |
 | CUSTOM | Fallback | WEBHOOK_URL | Oui |
 
-### Complexité radon : F (239)
+### Complexité radon : F (43)
 
-Cette fonction a la complexité cyclomatique la plus élevée du codebase :
-- **239 points** : Trop de responsabilités dans une seule fonction
-- **1576 lignes** : Monolithique, difficile à maintenir
-- **Plan d'action** : Extraire les solos Media Solution/DESABO
+Cette fonction reste la plus complexe du codebase, mais elle a été réduite de F (239) à F (43) :
+- **43 points** : plusieurs responsabilités concentrées dans la boucle IMAP
+- **616 lignes** : encore monolithique, difficile à maintenir
+- **Plan d'action** : extraire les branches Media Solution/DESABO
 
 ### ❌ L'ancien monde : fonction monolithique
 
@@ -330,7 +330,7 @@ def check_new_emails_and_trigger_webhook() -> int:
         status, email_ids = imap.search(None, 'UNSEEN')
         
         for email_id in email_ids[0].split():
-            # 1576 lignes de logique complexe...
+            # 616 lignes de logique complexe...
             process_email(email_id)
             
     except Exception as e:
@@ -378,7 +378,7 @@ Gmail Apps Script est stateless. Il pousse les événements quand ils arrivent. 
 
 L'usine de polling IMAP est fermée, démantelée, et morte. Gmail Push est le seul service postal actif. Si vous voyez du code IMAP, c'est soit historique, soit à supprimer. Chaque décision (❌/✅, trade-offs, misconceptions) maintient la propreté du service postal.
 
-Pour l'ingestion actuelle : voir [gmail-push.md](file:///home/kidpixel/render_signal_server-main/docs/ingestion/gmail-push.md).
+Pour l'ingestion actuelle : voir [gmail-push.md](gmail-push.md).
 
 ---
 

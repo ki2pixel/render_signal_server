@@ -15,6 +15,42 @@ Les entrées de plus de 90 jours sont archivées par trimestre dans `/memory-ban
 
 ## Terminé
 
+[2026-11-25 22:18:00] - Vérification de AGENTS.md et .agents/rules/codingstandards.md
+- **Objectif** : Aligner les deux documents de référence sur l'architecture et les pratiques réellement présentes dans le dépôt.
+- **Corrections factuelles** :
+  * Liste des singletons ramenée aux 10 services qui exposent réellement `get_instance()` ; `ConfigService` et `AuthService` reclassés comme services non-singleton du composition root.
+  * Propriété du config store précisée : `RoutingRulesService`, `WebhookConfigService`, `preferences/processing_prefs.py` + `routes/api_processing.py`, `MagicLinkService`. `ConfigService` ne lit que les variables d'environnement.
+  * Marqueurs pytest corrigés : `unit`, `integration`, `e2e`, `slow`, `redis`, `imap`. Les suites R2 et résilience n'ont pas de marqueur et se sélectionnent par fichier.
+  * Règle Given/When/Then limitée aux tests nouveaux ou modifiés (9 fichiers sur 41 la respectent aujourd'hui).
+  * Logging clarifié : webhooks via `app_logging/`, applications via `app.logger`.
+  * R2 : `ALLOWED_REMOTE_FETCH_DOMAINS` + `_validate_remote_fetch_domain()` au lieu d'un `is_allowed_domain()` inexistant.
+  * Déduplication décrite réellement : set Redis, clés TTL, verrou `SET NX EX`.
+  * `innerHTML` interdit pour les données dynamiques, exception statique documentée pour `ConfirmDialog` ; préférence `data-target` avec repli ID legacy.
+- **Corrections annexes** : `README.md` utilise désormais `TRIGGER_PAGE_USER`/`TRIGGER_PAGE_PASSWORD` (et non `DASHBOARD_*`) ; l'anti-pattern de `docs/access/authentication.md` référence le bon nom de setting.
+- **Validation** : noms de services, fonctions R2, marqueurs pytest et chemins de tests vérifiés dans le code ; blocs Markdown équilibrés.
+- **Statut** : Terminé.
+
+[2026-11-25 22:01:13] - Resynchronisation complète de la documentation (workflow docs-updater)
+- **Objectif** : Aligner la documentation sur l'état réel du code après les livraisons du backfill 30 jours et de l'audit frontend, et supprimer les références à des dossiers documentaires disparus.
+- **Audit métrique** :
+  * Périmètre cœur : 57 fichiers Python, 8 346 lignes de code (hors tests, docs, debug, deployment).
+  * Complexité : moyenne C (16,85) sur 59 blocs ; hotspots `check_new_emails_and_trigger_webhook` F (43), `_parse_and_validate_webhook_payload` E (36), `check_media_solution_pattern` E (33), `validate_processing_prefs` E (32), `normalize_source_url` E (31).
+  * Hotspots historiques résolus : `process_gmail_push` B (8), `send_custom_webhook_flow` B (7), `consume_token` A (5).
+- **Actions réalisées** :
+  * `README.md` : index documentaire réparé, arborescence alignée sur le code réel, liste des services complétée, références mortes (`docs/features/`, `docs/configuration/`, `docs/operations/`, `docs/quality/`, `docs/integrations/`, `docs/refactoring-*.md`) supprimées.
+  * `docs/core/architecture.md` : table de complexité recalculée, lien Magic Links corrigé, tables de services (Ingress, Dedup, RateLimit, Metrics, Logger) actualisées, arbre frontend réel, section `delivery_time_resolver.py`.
+  * `docs/ingestion/gmail-push.md` : diagramme de séquence Mermaid du flux complet, étape 5 bis de résolution du créneau, compteur de tests ingress porté à 14.
+  * `docs/processing/pattern-matching.md` : interface du résolveur, appel réel `IngressService._resolve_recadrage_delivery_time`, compteurs 30 + 19 tests.
+  * `docs/access/dashboard-ui.md` : modules ES6 réels, API `TabManager` corrigée, sections ConfirmDialog, toasts et auto-save/rollback. Les exemples inventés (`loadTabContent`, `LogTimeline`, services instanciés, suites Jest) ont été remplacés par le code réel (services statiques, panneaux déjà présents, polling 30 s, Vitest).
+  * `docs/access/authentication.md` : réécriture sur l'API réelle (`generate_token`/`consume_token`, format `<id>.<expires>.<signature>`, `permanent`, route `/login/magic/<token>`, fallback mot de passe en clair à temps constant, 3 tests magic link).
+  * `docs/ops/monitoring.md` : réécriture sur `/health` minimal, `/api/diag/runtime`, `WebhookLoggerService`, limites mémoire/timeouts réelles et verrou in-flight de 15 min.
+  * `docs/ops/backfill-recadrage.md` : nouvelle note d'exploitation (garantie sans rejeu vers `index.php`, options CLI, sorties, limites, 37 tests).
+  * `services/README.md` : 12 services, sections Ingress/Routing/RateLimit/Metrics/Logger, références mortes supprimées.
+  * `tests/README.md` : arborescence réelle et lien mort `docs/testing.md` remplacé.
+  * `README.md` et `docs/README.md` : suppression des promesses fausses (lazy loading, mobile-first, conditional logging), correction du payload `/health`, du format des magic links et des statuts Gmail Push (`queued`, verrou 15 min).
+- **Validation** : liens Markdown contrôlés (hors documentation Cline importée et faux positifs de regex) ; blocs de code équilibrés ; 422 tests Python recensés, 38 tests Vitest ; aucune modification de `debug/*.json`, aucun code applicatif touché.
+- **Statut** : Terminé avec succès.
+
 [2026-11-25 21:09:22] - Audit frontend UX/accessibilité et refonte de la page Outils
 - **Objectif** : Réduire la charge cognitive du dashboard (surtout « Outils ») et corriger les lacunes WCAG AA de façon transverse plutôt qu'au cas par cas.
 - **Actions réalisées** :

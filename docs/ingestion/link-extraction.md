@@ -261,7 +261,7 @@ except Exception:
 ### Couverture complète d'extraction
 
 ```bash
-pytest tests/email_processing/test_link_extraction.py -v
+pytest tests/test_email_processing_link_extraction.py -v
 # 8 tests couvrant tous les scénarios
 ```
 

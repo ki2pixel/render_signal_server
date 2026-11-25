@@ -81,6 +81,49 @@ function pushEmailToIngress(subject, sender, body, date) {
 Apps Script Gmail → POST /api/ingress/gmail → AuthService → Pattern Matching → Routing Rules → Webhooks
 ```
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant GS as Apps Script
+    participant R as routes/api_ingress.py
+    participant IS as IngressService
+    participant DD as DeduplicationService
+    participant BG as _process_in_background
+    participant PM as pattern_matching
+    participant DR as delivery_time_resolver
+    participant R2 as R2TransferService
+    participant WH as Webhook cible
+
+    GS->>R: POST /api/ingress/gmail (Bearer)
+    R->>R: Vérification token (AuthService)
+    R->>IS: process_gmail_push(payload)
+    IS->>IS: Validation + runtime flag
+    IS->>DD: is_email_processed(email_id)
+    alt Déjà traité
+        DD-->>IS: true
+        IS-->>R: 200 already_processed
+    else Nouvel email
+        IS->>IS: Allowlist + envoi webhook activé
+        IS->>DD: acquire_email_inflight_lock
+        alt Verrou occupé
+            IS-->>R: 200 already_processing
+        else Verrou acquis
+            IS->>BG: submit(_process_in_background)
+            IS-->>R: 200 queued
+            BG->>PM: Détection recadrage / DESABO
+            PM-->>BG: detector, delivery_time, is_urgent
+            BG->>DR: Report hors fenêtre (recadrage)
+            DR-->>BG: delivery_time ajusté ou inchangé
+            BG->>R2: Enrichissement des liens (best-effort)
+            BG->>WH: Envoi webhook (rate limit + journal)
+            BG->>DD: mark_email_processed + release lock
+        end
+    end
+    R-->>GS: Réponse JSON
+```
+
+Le chemin nominal répond `200 queued` avant l'envoi webhook : le traitement continue dans l'exécuteur borné de `IngressService`. Si l'acquisition du verrou lève une exception, `process_gmail_push` bascule en synchrone via `_process_fresh_email`.
+
 ### 1. Contrôleur Flask mince
 
 ```python
@@ -145,7 +188,7 @@ def _compute_email_id(self, subject: str, sender: str, date: str) -> str:
     return hashlib.md5(unique_str.encode("utf-8")).hexdigest()
 ```
 
-L'idempotence s'appuie sur `DeduplicationService` avec un verrou "in-flight" Redis à TTL court (10s par défaut) pour intercepter les doubles requêtes POST simultanées :
+L'idempotence s'appuie sur `DeduplicationService` avec un verrou "in-flight" Redis (15 minutes par défaut, `EMAIL_ID_INFLIGHT_LOCK_TTL_SECONDS`) pour intercepter les doubles requêtes POST simultanées :
 
 ```python
 # services/ingress_service.py (IngressService.process_gmail_push)
@@ -189,6 +232,22 @@ def _check_sender_allowlist(self, sender_email: str) -> bool:
 detector_val, delivery_time_val, desabo_is_urgent = self._get_detector_and_time(subject, body, tz_for_polling)
 within, start_payload_val, e_str = self._evaluate_time_window(now_local)
 ```
+
+### 5 bis. Résolution du créneau de livraison (recadrage)
+
+Une cible `delivery_time` hors de la fenêtre globale est reportée au prochain matin ouvré à `09h00`. La décision est prise avant la construction du payload, dans `IngressService._handle_allowed_email` :
+
+```python
+# services/ingress_service.py
+delivery_time_val = self._resolve_recadrage_delivery_time(
+    delivery_time_val,
+    subject=subject,
+    email_date=email_date,
+    now_local=now_local,
+)
+```
+
+Le calcul vit dans `email_processing/delivery_time_resolver.py` et sert aussi le chemin IMAP legacy. Le samedi est ouvré, le dimanche est exclu ; les jours fériés ne sont pas gérés. Détail des règles et exemples : [pattern-matching.md](../processing/pattern-matching.md#ajustement-des-livraisons-recadrage-hors-fenêtre).
 
 ### 6. Routing dynamique avant envoi
 
@@ -323,19 +382,18 @@ Authorization: Bearer <PROCESS_API_TOKEN>
 
 | Code | Status | Quand |
 |------|--------|-------|
-| 200 | processed | Email traité avec succès |
+| 200 | queued | Email accepté, traitement dans l'exécuteur borné (cas nominal) |
+| 200 | processed | Traitement synchrone terminé (repli si le verrou in-flight n'a pas pu être pris) |
 | 200 | already_processed | Doublon détecté (déduplication) |
 | 200 | already_processing | Double POST en cours (verrou in-flight) |
 | 200 | skipped_sender_not_allowed | Expéditeur non autorisé |
-| 200 | skipped_outside_time_window | Hors fenêtre (RECADRAGE) |
-| 200 | stopped_by_routing_rule | Règle routing avec stop_processing |
-| 400 | Invalid JSON payload | JSON invalide |
-| 400 | Missing field | Champs obligatoires manquants |
-| 401 | Unauthorized | Token invalide |
-| 409 | Webhook sending disabled | Webhooks désactivés |
-| 409 | Gmail ingress disabled | Toggle `gmail_ingress_enabled`=false |
-| 409 | Outside time window | Hors fenêtre (autres cas) |
-| 500 | Internal error | Erreur serveur |
+| 200 | skipped_outside_time_window | Hors fenêtre (recadrage non urgent) |
+| 400 | message explicite | JSON invalide ou champ obligatoire manquant |
+| 401 | Unauthorized | Token Bearer invalide |
+| 409 | Webhook sending disabled | Envoi webhook désactivé |
+| 409 | Gmail ingress disabled | Toggle `gmail_ingress_enabled` = false |
+| 409 | Outside time window | Hors fenêtre (DESABO urgent ou autre cas bloquant) |
+| 500 | Internal error / WEBHOOK_URL not configured | Erreur serveur ou cible absente |
 
 ---
 
@@ -460,7 +518,7 @@ logger.error(f"GMAIL_PUSH: Pattern matching error: {error}")
 
 ## Tests : couverture complète
 
-### Tests unitaires (9 tests)
+### Tests unitaires (14 tests)
 
 ```python
 def test_ingress_gmail_unauthorized():

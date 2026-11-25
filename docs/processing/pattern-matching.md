@@ -261,30 +261,27 @@ def safe_pattern_check(subject, body, logger):
 ### Flux de décision : pattern → routing
 
 ```python
-# email_processing/orchestrator.py (MÉTHODE LEGACY IMAP)
-def check_new_emails_and_trigger_webhook(email_data):
-    # 1. Pattern matching
-    ms_result = pattern_matching.check_media_solution_pattern(
-        email_data['subject'], email_data['body'], tz, logger
-    )
-    if ms_result['matches']:
-        detector = "recadrage"
-        delivery_time = ms_result['delivery_time']
-    
-    desabo_result = pattern_matching.check_desabo_conditions(
-        email_data['subject'], email_data['body'], logger
-    )
-    if desabo_result['matches']:
-        detector = "desabonnement_journee_tarifs"
-        is_urgent = desabo_result['is_urgent']
-    
-    # 2. Routing basé sur le pattern détecté
-    if detector:
-        return route_by_detector(detector, delivery_time, is_urgent, email_data)
-    
-    # 3. Fallback routing normal
-    return route_by_default(email_data)
+# services/ingress_service.py (IngressService._get_detector_and_time)
+ms_res = pattern_matching.check_media_solution_pattern(
+    subject, body, tz_for_polling, self._logger
+)
+if ms_res.get("matches"):
+    return "recadrage", ms_res.get("delivery_time"), False
+
+des_res = pattern_matching.check_desabo_conditions(subject, body, self._logger)
+if des_res.get("matches"):
+    return "desabonnement_journee_tarifs", None, bool(des_res.get("is_urgent"))
+
+samedi_res = pattern_matching.check_media_solution_samedi_conditions(
+    subject, body, self._logger
+)
+if samedi_res.get("matches"):
+    return "desabonnement_journee_tarifs", None, False
+
+return None, None, False
 ```
+
+L'ordre est volontaire : un email « Média Solution » est traité comme recadrage avant d'être testé comme désabonnement. Le template « vidéos du samedi » retombe sur la famille DESABO sans marquer d'urgence.
 
 ### ✅ Méthode actuelle : Gmail Push Integration
 
@@ -316,7 +313,13 @@ if detector == "desabonnement_journee_tarifs":
 
 **TL;DR** : une cible `delivery_time` hors de la fenêtre globale (ex: `21h00` ou `00h25` pour `09h30-19h00`) est reportée au prochain matin ouvré à `09h00`. Le samedi est ouvré, le dimanche est exclu.
 
-`check_media_solution_pattern` continue d'extraire la cible brute. La résolution intervient au moment de construire le payload, dans `IngressService._handle_allowed_email` (Gmail Push) et `email_processing.orchestrator._resolve_out_of_window_delivery_time` (IMAP) :
+`check_media_solution_pattern` continue d'extraire la cible brute. La résolution est centralisée dans `email_processing/delivery_time_resolver.py`, appelée par `IngressService._resolve_recadrage_delivery_time` (Gmail Push, depuis `_handle_allowed_email`) et par `email_processing.orchestrator._resolve_out_of_window_delivery_time` (IMAP) :
+
+| Fonction du résolveur | Rôle |
+| --- | --- |
+| `parse_received_datetime` | Convertit la date brute (ISO 8601 ou RFC 2822) dans le fuseau de polling |
+| `is_urgent_subject` | Détecte `URGENCE` avec la même règle que le pattern matching |
+| `resolve_recadrage_delivery_time` | Reporte la cible hors fenêtre au prochain matin ouvré |
 
 | Cible extraite | Reçue | Payload envoyé |
 | --- | --- | --- |
@@ -334,32 +337,31 @@ Règles : fenêtre absente, invalide ou traversant minuit → aucun ajustement ;
 ### Couverture des scénarios critiques
 
 ```bash
-pytest tests/email_processing/test_pattern_matching.py -v
-# 12 tests couvrant tous les patterns et edge cases
+pytest tests/test_email_processing_pattern_matching.py -v
+# 30 tests couvrant les patterns et edge cases
+pytest tests/email_processing/test_recadrage_delivery_window.py -v
+# 19 tests dédiés au report des créneaux hors fenêtre
 ```
 
 ### Tests représentatifs
 
 ```python
-def test_media_solution_urgence_override():
-    """URGENCE doit overrider tout horaire existant"""
-    subject = "URGENCE Média Solution Lot 123"
-    body = "À faire pour 15h30 https://dropbox.com/scl/fo/abc"
-    
-    result = check_media_solution_pattern(subject, body, tz, logger)
-    
-    # Doit matcher ET ignorer l'horaire du corps
-    assert result["matches"] == True
-    assert result["delivery_time"] == "14h35"  # now + 1h (exemple)
+def test_urgence_overrides_time(mock_logger):
+    """URGENCE dans le sujet écrase l'heure du corps"""
+    subject = "Média Solution - Missions Recadrage - Lot 5 - URGENCE"
+    body = "À faire pour 14h30. https://www.dropbox.com/scl/fo/abc123"
 
-def test_desabo_forbidden_keywords():
-    """Mots interdits doivent invalider le match"""
-    body = "désabonnement journée tarifs habituels facture"
-    
-    result = check_desabo_conditions("test", body, logger)
-    
-    # "facture" présent = pas de match
-    assert result["matches"] == False
+    result = check_media_solution_pattern(subject, body, tz, mock_logger)
+
+    assert result["matches"] is True
+    assert result["delivery_time"] is not None
+    assert len(result["delivery_time"]) == 5   # format HHhMM
+
+def test_desabo_with_accents(mock_logger):
+    """Les accents ne bloquent pas la détection"""
+    result = check_desabo_conditions("Désabonnement", "journée et tarifs habituels", mock_logger)
+
+    assert result["matches"] is True
 ```
 
 ---

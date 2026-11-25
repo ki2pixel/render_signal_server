@@ -330,7 +330,7 @@ all_flags = runtime_flags.get_all_flags()  # Charge tout le cache
 ### Suite complète de tests
 
 ```bash
-pytest tests/services/test_runtime_flags_service.py -v
+pytest tests/test_config_runtime_flags.py -v
 # 15 tests couvrant tous les scénarios
 ```
 

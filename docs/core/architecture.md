@@ -82,8 +82,13 @@ Gmail Apps Script fait tout le travail : webhook, authentification, formatage. C
 | `RuntimeFlagsService` | Chef d'orchestre (tempo, directions) | Partagé par toute l'application, cache 60s |
 | `WebhookConfigService` | Section cuivres (messages sortants) | Évite les relectures disque, centralise la validation |
 | `RoutingRulesService` | Section cordes (routage complexe) | Cache TTL 30s, Redis-first |
+| `IngressService` | Salle d'arrivée (Gmail Push) | Un seul point d'entrée, exécuteur borné et déduplication partagée |
+| `DeduplicationService` | Mémoire collective (Redis + fallback) | Verrou in-flight partagé entre workers |
 | `MagicLinkService` | Porte d'entrée (billets) | Partage entre instances, stockage JSON verrouillé |
 | `R2TransferService` | Section percussions (transferts lourds) | Connexions réutilisées, normalisation Dropbox |
+| `RateLimitService` | Métronome (débit sortant) | Compteur partagé entre workers |
+| `RuntimeMetricsService` | Tableau de bord (mesures) | Agrégats cohérents entre requêtes |
+| `WebhookLoggerService` | Enregistreur de vol | Journal centralisé Redis + fichier |
 
 ### Musiciens autonomes (stateless)
 
@@ -91,7 +96,6 @@ Gmail Apps Script fait tout le travail : webhook, authentification, formatage. C
 |---------|------|-----------|
 | `ConfigService` | Variables ENV + accordeur | Injecté dans `app_render.py` |
 | `AuthService` | Contrôle d'accès salle | Initialisé au démarrage |
-| `DeduplicationService` | Mémoire collective (Redis + fallback) | Injecté dans l'orchestrateur |
 
 ---
 
@@ -166,6 +170,18 @@ def ingest_gmail() -> tuple[Response, int] | Response:
 
 **Le gain** : la route est désormais un contrôleur extrêmement mince. Toute la complexité d'ingestion (validation, déduplication, fenêtres horaires et offload R2) est déléguée à la classe singleton `IngressService` (dans `services/ingress_service.py`), respectant le principe de responsabilité unique.
 
+### Résolution des créneaux hors fenêtre
+
+`email_processing/delivery_time_resolver.py` centralise le report des missions « Média Solution – Missions Recadrage » dont l'heure cible tombe hors de la fenêtre globale. La cible brute reste produite par `check_media_solution_pattern` ; la résolution intervient au moment de construire le payload.
+
+| Fonction | Contrat |
+| --- | --- |
+| `parse_received_datetime(raw, tz, fallback)` | Convertit une date ISO 8601 ou RFC 2822 dans le fuseau de polling |
+| `is_urgent_subject(subject)` | Détecte `URGENCE` avec la même règle que le pattern matching |
+| `resolve_recadrage_delivery_time(value, *, received_dt, window_start, window_end, target_morning_time="09h00", is_urgent=False)` | Reporte la cible au prochain matin ouvré ; retourne la chaîne d'origine si la fenêtre est absente/invalide, si le format est inconnu ou si le sujet est urgent |
+
+Les deux chemins d'ingestion partagent ce module : `IngressService._resolve_recadrage_delivery_time` (Gmail Push) et `orchestrator._resolve_out_of_window_delivery_time` (IMAP legacy). Le samedi est ouvré, le dimanche est exclu, les jours fériés ne sont pas gérés.
+
 ---
 
 ## Frontend modulaire : du soliste JavaScript à l'orchestre ES6
@@ -180,17 +196,28 @@ Tout était mélangé : appels API, gestion DOM, logs, états UI. Ajouter une fo
 static/
 ├── services/
 │   ├── ApiService.js           # Client HTTP centralisé
-│   ├── WebhookService.js       # Config + logs webhooks  
+│   ├── WebhookService.js       # Config + logs webhooks
 │   ├── LogService.js           # Timer intelligent + timeline
-│   └── RoutingRulesService.js  # Builder de règles drag-drop
+│   ├── RoutingRulesService.js  # Builder de règles + rendu Redis
+│   ├── autosave.js             # Auto-save debounced + rollback
+│   ├── config_io.js            # Import/export et flags runtime
+│   ├── deploy.js               # Déploiement Render
+│   ├── magic_link.js           # Génération/copie des magic links
+│   ├── panels.js               # État replié/déplié des panneaux
+│   └── status_banner.js        # Bandeau de statut accessible
 ├── components/
-│   └── TabManager.js           # Accessibilité WCAG AA
+│   ├── TabManager.js           # Onglets accessibles (ARIA, deep-linking)
+│   ├── ConfirmDialog.js        # Modale de confirmation (role=alertdialog)
+│   └── JsonViewer.js           # Visualiseur JSON
 ├── utils/
-│   └── MessageHelper.js        # Messages + validation
-└── dashboard.js                # Orchestrateur ~600 lignes
+│   ├── MessageHelper.js        # Messages, toasts, erreurs
+│   ├── DOMHelper.js            # Construction DOM sécurisée
+│   ├── debounce.js             # Debounce partagé
+│   └── listenerRegistry.js     # Cycle de vie des listeners
+└── dashboard.js                # Orchestrateur (237 lignes)
 ```
 
-**Impact** : -60% de lignes dans le fichier principal, +40% de maintenabilité, et chaque musicien a une responsabilité unique.
+**Impact** : `dashboard.js` est passé de 1488 à 237 lignes ; chaque module porte une responsabilité unique et l'accessibilité (onglets, confirmation, toasts) est centralisée.
 
 ---
 
@@ -246,16 +273,18 @@ def upload_to_r2(self, source_url):
 
 | Musicien | Complexité radon | Statut | Plan d'action | Documentation |
 |-----------|------------------|--------|---------------|---------------|
-| `orchestrator.py::check_new_emails_and_trigger_webhook` | F (239) | ❌ Legacy | Extraire les solos Media Solution/DESABO | [docs/ingestion/legacy-imap.md](../ingestion/legacy-imap.md) |
-| `services/ingress_service.py::IngressService.process_gmail_push` | F (42) | ✅ Actif | Découpé et délégué via des helpers et singletons | [docs/ingestion/gmail-push.md](../ingestion/gmail-push.md) |
-| `email_processing/orchestrator.py::send_custom_webhook_flow` | E (22) | ✅ Actif | Isoler la logique de routing et enrichissement | [docs/processing/webhooks-outbound.md](../processing/webhooks-outbound.md) |
-| `preferences/processing_prefs.py::validate_processing_prefs` | E (22) | ✅ Actif | Simplifier la validation par schéma | [docs/processing/routing-engine.md](../processing/routing-engine.md) |
-| `services/routing_rules_service.py::_normalize_rules` | D (17) | ✅ Actif | Extraire la normalisation des URLs | [docs/processing/routing-engine.md](../processing/routing-engine.md) |
+| `orchestrator.py::check_new_emails_and_trigger_webhook` | F (43) | ❌ Legacy | Isoler les branches Media Solution/DESABO | [docs/ingestion/legacy-imap.md](../ingestion/legacy-imap.md) |
+| `routes/api_webhooks.py::_parse_and_validate_webhook_payload` | E (36) | ✅ Actif | Extraire les validateurs par champ | [docs/processing/webhooks-outbound.md](../processing/webhooks-outbound.md) |
+| `email_processing/pattern_matching.py::check_media_solution_pattern` | E (33) | ✅ Actif | Séparer urgence / date-heure / heure seule | [docs/processing/pattern-matching.md](../processing/pattern-matching.md) |
+| `preferences/processing_prefs.py::validate_processing_prefs` | E (32) | ✅ Actif | Simplifier la validation par schéma | [docs/processing/routing-engine.md](../processing/routing-engine.md) |
 | `services/r2_transfer_service.py::normalize_source_url` | E (31) | ✅ Actif | Stratégie par fournisseur | [docs/processing/file-offload.md](../processing/file-offload.md) |
-| `services/webhook_config_service.py::update_config` | C (18) | ✅ Actif | Nettoyage de la logique de cache | [docs/processing/webhooks-outbound.md](../processing/webhooks-outbound.md) |
-| `services/magic_link_service.py::consume_token` | C (18) | ✅ Actif | Simplifier la validation HMAC | [docs/access/magic-links.md](../access/magic-links.md) |
+| `services/ingress_service.py::IngressService._process_single_delivery_link` | D (21) | ✅ Actif | Isoler le fetch R2 et son fallback | [docs/ingestion/gmail-push.md](../ingestion/gmail-push.md) |
+| `services/webhook_config_service.py::WebhookConfigService.update_config` | D (21) | ✅ Actif | Nettoyer la logique de cache | [docs/processing/webhooks-outbound.md](../processing/webhooks-outbound.md) |
+| `services/ingress_service.py::IngressService.process_gmail_push` | B (8) | ✅ Actif | Résolu : délégué aux helpers et singletons | [docs/ingestion/gmail-push.md](../ingestion/gmail-push.md) |
+| `email_processing/orchestrator.py::send_custom_webhook_flow` | B (7) | ✅ Actif | Résolu : routage et enrichissement isolés | [docs/processing/webhooks-outbound.md](../processing/webhooks-outbound.md) |
+| `services/magic_link_service.py::MagicLinkService.consume_token` | A (5) | ✅ Actif | Résolu : validation HMAC simplifiée | [docs/core/magic-link-auth.md](magic-link-auth.md) |
 
-**Moyenne actuelle** : D (23.14) sur 44 blocs analysés
+**Moyenne actuelle** : C (16.85) sur 59 blocs analysés (`radon cc` hors tests).
 
 **La règle** : aucun solo ne doit dépasser 40 lignes logiques. Si c'est le cas, on extrait.
 
@@ -263,15 +292,16 @@ def upload_to_r2(self, source_url):
 
 Les fonctions F/E concentrent la logique métier et les points de défaillance :
 
-- **`process_gmail_push (F)`** : Service d'orchestration de l'ingestion qui gère validation, routing, R2 et envoi webhook via helpers et injection de dépendances. Une erreur ici bloque toute l'ingestion.
-- **`send_custom_webhook_flow (E)`** : Orchestrateur qui mélange pattern matching, routing, et construction payload. Difficile à tester unitairement.
-- **`validate_processing_prefs (E)`** : Validation monolithique qui mélange schéma et logique métier.
+- **`check_new_emails_and_trigger_webhook (F)`** : boucle IMAP legacy qui porte encore pattern matching, routing et envoi. Une erreur ici bloque le poller de secours.
+- **`_parse_and_validate_webhook_payload (E)`** : validation monolithique de la configuration webhook (URL, SSL, fenêtres, absence).
+- **`check_media_solution_pattern (E)`** : extraction urgence/date/heure dans une seule fonction, difficile à couvrir exhaustivement.
+- **`validate_processing_prefs (E)`** : validation qui mélange schéma et règles métier.
 
 ### ✅ Stratégie de refactoring en cours
 
-1. **Extraction des helpers** : `process_gmail_push` a été scindée en méthodes privées (`_validate_payload()`, `_evaluate_time_window()`, `_maybe_enrich_delivery_links_with_r2()`).
-2. **Isolation des responsabilités** : `send_custom_webhook_flow` → `PatternMatcher`, `RoutingEvaluator`, `PayloadBuilder`
-3. **Validation par schéma** : Remplacer `validate_processing_prefs` par Pydantic models
+1. **Extraction des helpers** : `process_gmail_push` (B) a été scindée en méthodes privées (`_validate_payload()`, `_evaluate_time_window_policy()`, `_resolve_recadrage_delivery_time()`, `_maybe_enrich_delivery_links_with_r2()`).
+2. **Isolation des responsabilités** : `send_custom_webhook_flow` (B) délègue le routage et l'enrichissement ; les validateurs webhook restent à extraire.
+3. **Validation par schéma** : remplacer `validate_processing_prefs` par une validation déclarative.
 
 ---
 
@@ -306,14 +336,14 @@ CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app_render:app"]
 
 ```
 CFG WEBHOOK: Custom webhook URL configured          # Startup OK
-API INGRESS: Gmail push processed successfully     # Ingestion OK  
+INGRESS: gmail payload received (email_id=..., sender=..., subject=...)  # Ingestion OK  
 PROCESS: SIGTERM received                         # Arrêt propre
-R2_TRANSFER: Successfully transferred Dropbox link # Offload OK
+R2_TRANSFER: Successfully transferred <provider> link to R2  # Offload OK
 ```
 
 ### Alertes recommandées
 
-- **Aucun `API INGRESS`** depuis 15 minutes → Gmail Apps Script down
+- **Aucun `INGRESS: gmail payload received`** depuis 15 minutes → Gmail Apps Script down
 - **`WARNING` ou `ERROR`** répétés → problème de configuration
 - **`R2_TRANSFER: failed`** > 5/heure → Worker R2 down
 

@@ -1,6 +1,6 @@
 # Render Signal Server
 
-**TL;DR**: Middleware d'ingestion email haute performance avec Gmail Push, routing dynamique, et offload R2. Architecture orientée services, monitoring complet, et authentification sans mot de passe.
+**TL;DR**: Middleware d'ingestion email haute performance avec Gmail Push, routing dynamique, et offload R2. Architecture orientée services, monitoring complet, et magic links en alternative au mot de passe.
 
 ---
 
@@ -32,7 +32,7 @@ Email Gmail Push → Tour de contrôle (Orchestrator) → Routing Rules → Pist
 - **Gmail Push Ingress** : Ingestion temps réel via Apps Script
 - **Routing Dynamique** : Configuration UI des règles de traitement sans redéploiement
 - **Offload R2** : Transfert automatique des fichiers volumineux vers Cloudflare R2
-- **Magic Links** : Authentification sécurisée sans mot de passe
+- **Magic Links** : Authentification par lien signé, en complément du mot de passe
 - **Monitoring** : Health checks, logs structurés, métriques temps réel
 
 ---
@@ -68,12 +68,18 @@ Chaque service est un spécialiste dans la tour de contrôle :
 
 | Service | Rôle | Caractéristiques |
 |---------|------|----------------|
-| `ConfigService` | Gestion configuration centralisée | Singleton, cache TTL 60s |
+| `ConfigService` | Accès centralisé à la configuration | Sans état, lit `config.settings` |
 | `AuthService` | Authentification et autorisation | Flask-Login + Magic Links |
+| `IngressService` | Ingestion Gmail Push | Singleton, exécuteur borné, dédup + R2 + webhook |
 | `WebhookConfigService` | Configuration webhooks | Singleton, validation HTTPS |
-| `RoutingRulesService` | Moteur de routage dynamique | Builder visuel + validation |
+| `RoutingRulesService` | Moteur de routage dynamique | Builder visuel + validation, Redis-first |
+| `DeduplicationService` | Verrou in-flight et mémoire Redis | Fallback mémoire si Redis indisponible |
+| `RuntimeFlagsService` | Flags d'exécution | Cache 60s, Redis + fichier |
 | `R2TransferService` | Offload Cloudflare R2 | Timeout adaptatifs, fallback garanti |
 | `MagicLinkService` | Tokens HMAC signés | TTL configurable, stockage partagé |
+| `RateLimitService` | Limitation du débit webhook | Compteur partagé entre workers |
+| `RuntimeMetricsService` | Métriques runtime | Métriques exposées par `/api/utility` |
+| `WebhookLoggerService` | Journal des webhooks | Redis-first, fallback JSON |
 
 ### ❌ L'ancien monde : polling IMAP chaotique
 
@@ -90,32 +96,18 @@ while True:
 
 ### ✅ Le nouveau monde : tour de contrôle orchestrée
 
-```python
-# email_processing/orchestrator.py — traitement et envoi unifié
-def process_incoming_email(email_data):
-    # 1. Ingestion temps réel (Apps Script Ingress)
-    # 2. Pattern matching (Media Solution, DESABO)
-    detector = _detect_email_type(email_data)
-    
-    # 3. Routing dynamique (Redis-first)
-    matched_rule = _find_matching_routing_rule(routing_rules, **email_data)
-    
-    # 4. Enrichissement Cloudflare R2 (best-effort)
-    delivery_links = _maybe_enrich_delivery_links_with_r2(delivery_links, email_id)
-    
-    # 5. Envoi résilient avec retry, fallback 415 et logs de diagnostic
-    send_custom_webhook_flow(
-        email_id=email_id,
-        payload_for_webhook=payload_for_webhook,
-        delivery_links=delivery_links,
-        webhook_url=matched_rule.get("webhook_url", ar.WEBHOOK_URL),
-        webhook_ssl_verify=True,
-        # Callbacks d'intégration passés à la fonction
-        rate_limit_allow_send=ar._rate_limit_allow_send,
-        record_send_event=ar._record_send_event,
-        append_webhook_log=ar._append_webhook_log
-    )
-```
+Le chemin Gmail Push tient en une méthode publique, `IngressService.process_gmail_push(payload)`, qui retourne `(réponse, code HTTP)` :
+
+| Étape | Responsable | Détail |
+| --- | --- | --- |
+| 1. Validation | `IngressService._validate_payload` | Champs obligatoires, types, taille du corps |
+| 2. Barrières | `_check_ingress_enabled`, `_check_preconditions` | Runtime flag, allowlist, envoi webhook activé |
+| 3. Idempotence | `DeduplicationService` | `is_email_processed`, puis `acquire_email_inflight_lock` |
+| 4. Traitement | `_process_in_background` ou `_process_fresh_email` | Pattern matching, routing, résolution du créneau |
+| 5. Enrichissement | `_maybe_enrich_delivery_links_with_r2` | Best-effort, URL source conservée si R2 échoue |
+| 6. Envoi | `send_custom_webhook_flow` | Rate limit, fallback 415, journal webhook |
+
+`send_custom_webhook_flow` reçoit explicitement ses dépendances (callbacks de rate limit, d'enregistrement d'événement, de journalisation et de marquage de déduplication). Rien n'est lu depuis un module global implicite : le chemin IMAP et le chemin Gmail Push peuvent l'appeler avec leurs propres implémentations.
 
 **Le gain** : latence quasi nulle, zéro email perdu, et monitoring complet comme une tour de contrôle moderne.
 
@@ -227,78 +219,53 @@ R2_BUCKET_NAME=render-signal-media
 
 ### Tokens HMAC signés
 
+Un token a la forme `<token_id>.<expires>.<signature>` : l'identifiant et l'expiration sont signés ensemble en HMAC SHA-256 avec `FLASK_SECRET_KEY`. Un token permanent utilise la chaîne `permanent` à la place du timestamp.
+
 ```python
-# Génération de token
-def generate_magic_link(unlimited=False):
-    token_id = secrets.token_urlsafe(32)
-    created_at = time.time()
-    payload = f"{token_id}:{created_at}"
-    signature = hmac.new(
-        FLASK_SECRET_KEY.encode(),
-        payload.encode(),
-        hashlib.sha256
-    ).hexdigest()
-    
-    expires_at = None if unlimited else created_at + TTL_SECONDS
-    
-    return {
-        'magic_link': f"https://domain.com/dashboard/magic-link/{token_id}:{signature}",
-        'expires_at': datetime.fromtimestamp(expires_at).isoformat() if expires_at else None,
-        'single_use': not unlimited
-    }
+# services/magic_link_service.py
+token_id = secrets.token_urlsafe(16)
+expires_component = "permanent" if unlimited else str(int(expires_at.timestamp()))
+signature = self._sign_components(token_id, expires_component)
+token = f"{token_id}.{expires_component}.{signature}"
 ```
 
-### Stockage partagé
+`consume_token(token)` vérifie la signature, contrôle l'expiration, puis marque le token comme consommé. Une signature invalide et un token déjà utilisé produisent deux messages distincts.
 
-- **Redis-first** : Tokens permanents stockés dans Redis
-- **Fallback fichier** : `magic_link_tokens.json` si Redis indisponible
-- **API PHP** : `config_api.php` pour le multi-conteneurs Render
+### Génération et consommation
+
+- `POST /api/auth/magic-link` (session requise) : corps `{"unlimited": false}`, réponse `201` avec `magic_link`, `expires_at`, `unlimited`.
+- Le lien pointe vers la route de consommation du blueprint `dashboard`, qui valide le token puis ouvre la session.
+- **Stockage** : fichier JSON verrouillé (`MAGIC_LINK_TOKENS_FILE`), avec miroir optionnel vers Redis ou l'API PHP `config_api.php` quand `REDIS_URL` ou `EXTERNAL_CONFIG_BASE_URL` + `CONFIG_API_TOKEN` sont définis.
+- **Nettoyage** : les tokens expirés sont purgés au chargement et après consommation.
 
 ---
 
 ## Monitoring et Observabilité
 
-### Health check complet
+### Health check
+
+`GET /health` répond volontairement de façon minimale, pour rester compatible avec les sondes Render :
 
 ```json
-{
-  "status": "ok",
-  "timestamp": "2026-02-04T10:30:00Z",
-  "version": "v2.0.0",
-  "uptime": 86400,
-  "services": {
-    "redis": {"status": "ok", "connected": true},
-    "background_tasks": {"status": "running", "lock_acquired": true}
-  },
-  "metrics": {
-    "memory_usage_mb": 256,
-    "error_rate_24h": 2.5,
-    "active_webhooks": 42,
-    "last_webhook": "2026-02-04T10:25:00Z"
-  }
-}
+{"status": "ok"}
 ```
+
+Les métriques détaillées sont exposées par `GET /api/utility` : démarrage du process, uptime, dernier cycle de polling, dernier webhook envoyé, état du poller legacy. `GET /api/utility/diag/runtime` fournit le même type d'information pour le diagnostic local.
 
 ### Logs structurés
 
-```python
-# Logs avec contexte et métriques
-webhook_logger.info("Webhook sent", 
-    webhook_url=mask_url(webhook_url),
-    email_id=email_id,
-    status="success",
-    duration_ms=1234,
-    delivery_links_count=2
-)
+Le journal webhook est centralisé par `WebhookLoggerService.append_log(entry)` : Redis si disponible, sinon fichier `debug/webhook_logs.json`. Les entrées sont aussi écrites dans les logs applicatifs avec le préfixe `WEBHOOK:`.
 
-r2_logger.info("File transferred to R2",
-    provider=provider,
-    source_url=mask_url(source_url),
-    r2_url=r2_url,
-    file_size_mb=26.5,
-    duration_ms=45000
-)
+```python
+WebhookLoggerService.get_instance().append_log({
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+    "status": "success",
+    "webhook_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
+    "email_id": email_id,
+})
 ```
+
+Les URL de webhook sont tronquées à 50 caractères avant journalisation. Les emails, identifiants et sujets sensibles passent par `mask_sensitive_data` dans les logs applicatifs.
 
 ---
 
@@ -358,9 +325,9 @@ ENABLE_BACKGROUND_TASKS=false  # Un seul conteneur actif
 
 ### Couverture de tests
 
-- **Tests unitaires** : 356/356 passants (100%)
-- **Couverture code** : 67.73% (objectif : 80%+)
-- **Tests résilience** : Marqueurs `@pytest.mark.redis`/`@pytest.mark.r2`/`@pytest.mark.resilience`
+- **Suite** : `pytest` (marqueurs `unit`, `integration`, `e2e`, `slow`, `redis`, `imap`, `r2`, `resilience`)
+- **Couverture** : générée par `pytest-cov` (configuration dans `.coveragerc`)
+- **État de référence** : se référer au dernier run CI ; la suite recense plus de 400 fonctions de test
 
 ### Tests de résilience
 
@@ -406,6 +373,7 @@ def test_r2_fallback_on_worker_failure():
 - **Magic Links** : `docs/core/magic-link-auth.md`
 - **Runtime Flags** : `docs/ops/runtime-flags.md`
 - **Dashboard UI** : `docs/access/dashboard-ui.md`
+- **Backfill recadrage 30 jours** : `docs/ops/backfill-recadrage.md`
 
 ### Communauté
 
@@ -422,4 +390,4 @@ Le système est une tour de contrôle où Gmail Push est le radar, les services 
 
 ---
 
-*Pour commencer : voir [architecture.md](file:///home/kidpixel/render_signal_server-main/docs/core/architecture.md) ; pour le déploiement : voir [deployment.md](file:///home/kidpixel/render_signal_server-main/docs/ops/deployment.md) ; pour le dépannage : voir [troubleshooting.md](file:///home/kidpixel/render_signal_server-main/docs/ops/troubleshooting.md).*
+*Pour commencer : voir [architecture.md](core/architecture.md) ; pour le déploiement : voir [deployment.md](ops/deployment.md) ; pour le dépannage : voir [troubleshooting.md](ops/troubleshooting.md).*

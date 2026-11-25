@@ -321,34 +321,41 @@ logger.info("MAGIC_LINK: all tokens revoked")
 
 ## Tests : couverture sécurité
 
-### 12 tests couvrant tous les scénarios
+### 3 tests couvrant le service
 
 ```bash
-pytest tests/ -k "magic_link" -v
-# test_magic_link_service.py: 8 tests
-# test_api_auth.py: 4 tests
+pytest tests/test_services.py -k "magic_link" -v
+# test_magic_link_service_unlimited_token_is_reusable
+# test_magic_link_service_external_store_shares_state_across_instances
+# test_magic_link_service_legacy_external_store_signature_supported
 ```
 
-### Tests de sécurité critiques
+Les routes `/api/auth/magic-link` et `/login/magic/<token>` n'ont pas encore de test dédié.
+
+### Test représentatif
 
 ```python
-def test_token_signature_validation():
-    """Signature HMAC ne peut pas être forgée"""
-    # Token avec signature modifiée
-    tampered_token = original_token.replace(signature, "fake")
-    success, msg = service.consume_token(tampered_token)
-    assert success == False
-    assert "Signature invalide" in msg
+def test_magic_link_service_unlimited_token_is_reusable(temp_json_file):
+    """Un token illimité ne doit pas être consommé (réutilisable)."""
+    service = MagicLinkService(
+        secret_key="test-secret",
+        storage_path=temp_json_file,
+        ttl_seconds=60,
+        config_service=ConfigService(),
+    )
 
-def test_single_use_enforcement():
-    """Token ne peut être utilisé qu'une fois"""
-    success1, _ = service.consume_token(valid_token)
-    success2, msg = service.consume_token(valid_token)
-    
-    assert success1 == True
-    assert success2 == False
-    assert "déjà utilisé" in msg
+    token, expires_at = service.generate_token(unlimited=True)
+    assert expires_at is None
+
+    ok, username1 = service.consume_token(token)
+    assert ok is True
+
+    ok, username2 = service.consume_token(token)
+    assert ok is True
+    assert username2 == username1
 ```
+
+La falsification de signature et le non-rejeu d'un token à usage unique sont implémentés dans `_verify_token_validity` et `_process_token_consumption`, mais ne disposent pas encore de test dédié.
 
 ---
 
@@ -361,13 +368,13 @@ def test_single_use_enforcement():
 FLASK_SECRET_KEY=your-256-bit-secret-key-here
 
 # Optionnel (défauts dans settings.py)
-MAGIC_LINK_TTL_SECONDS=3600  # 1 heure
+MAGIC_LINK_TTL_SECONDS=900  # 15 minutes
 MAGIC_LINK_TOKENS_FILE=/path/to/tokens.json
 ```
 
 ### Permissions système
 
-- **Redis** : `config:magic_link_tokens` (lecture/écriture)
+- **Redis** : clé `r:ss:config:magic_link_tokens` (préfixe `CONFIG_STORE_REDIS_PREFIX`), lecture/écriture
 - **Fichier** : Écriture dans répertoire data
 - **Lock** : `fcntl` disponible (Linux/Unix)
 

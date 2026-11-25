@@ -688,4 +688,4 @@ Le livreur Cloudflare récupère les colis depuis les expéditeurs et les stocke
 
 ---
 
-*Pour les détails du livreur : voir [worker.js](file:///home/kidpixel/render_signal_server-main/deployment/cloudflare-worker/worker.js) ; pour la configuration : voir [configuration-reference.md](file:///home/kidpixel/render_signal_server-main/docs/core/configuration-reference.md).*
+*Pour les détails du livreur : voir [worker.js](../../deployment/cloudflare-worker/worker.js) ; pour la configuration : voir [configuration-reference.md](../core/configuration-reference.md).*

@@ -651,4 +651,4 @@ Les livraisons sont envoyées avec retry (3 tentatives), suivi persistant dans R
 
 ---
 
-*Pour les détails de configuration : voir [configuration-reference.md](file:///home/kidpixel/render_signal_server-main/docs/core/configuration-reference.md) ; pour l'offload R2 : voir [file-offload.md](file:///home/kidpixel/render_signal_server-main/docs/processing/file-offload.md).*
+*Pour les détails de configuration : voir [configuration-reference.md](../core/configuration-reference.md) ; pour l'offload R2 : voir [file-offload.md](file-offload.md).*

@@ -1,710 +1,203 @@
 # Monitoring
 
-**TL;DR**: On surveille la performance avec des health checks, logs structurés, et métriques temps réel. Le frontend utilise la Visibility API pour optimiser le polling, et le backend a des timeouts robustes, anti-OOM, et fallbacks garantis pour la résilience.
+**TL;DR** : `/health` reste volontairement minimal (`{"status": "ok"}`) pour les sondes Render. Les métriques détaillées vivent dans `/api/diag/runtime`, les logs webhook dans `WebhookLoggerService`, et le dashboard rafraîchit les logs toutes les 30 secondes en pause quand l'onglet est masqué.
 
 ---
 
-## Le problème : le monitoring inexistant qui nous rendait aveugles
+## Le problème : un service qui tombe sans prévenir
 
-J'ai découvert qu'on avait aucune visibilité sur la santé du système en production. Les logs étaient éparpillés, pas de métriques, et les pannes n'étaient détectées que lorsqu'un utilisateur se plaignait.
+Le serveur pouvait perdre des webhooks sans que personne ne le sache. Les symptômes classiques :
 
-Les problèmes concrets :
-- **Pas de health checks** : On ne savait pas si le service était vivant
-- **Logs non structurés** : Impossible de filtrer ou analyser
-- **Pas de métriques** : On ne pouvait pas mesurer la performance
-- **Alertes tardives** : Les problèmes étaient détectés trop tard
+- Render redémarre le service, aucune alerte ne part.
+- Le poller IMAP legacy meurt, les emails s'accumulent.
+- Un webhook échoue en boucle, noyé dans des logs non structurés.
+- Le dashboard affiche « opérationnel » alors que le dernier envoi date de trois jours.
+
+Un `/health` qui répond `ok` ne prouve rien d'autre que « Flask est vivant ». Il faut distinguer trois questions : le process tourne-t-il, le pipeline a-t-il traité quelque chose récemment, et l'interface voit-elle la même chose que le serveur.
 
 ---
 
-## La solution : tour de contrôle avec système de surveillance
+## La solution : trois couches, pas une
 
-Pensez au monitoring comme une tour de contrôle avec système de surveillance : les health checks sont les radars qui détectent les problèmes, les logs structurés sont les rapports de vol détaillés, et les métriques sont les instruments de bord qui surveillent la performance en temps réel. Le polling intelligent optimise les ressources comme un système de détection automatique.
-
-### ❌ L'ancien monde : rapports manuscrits
+### ❌ L'ancien monde : logs et espoir
 
 ```python
-# ANTI-PATTERN - logging.py
-import logging
-
-logger.info("Processing email...")
-logger.error("Failed to send webhook")
-# Pas de structure, pas de contexte, pas de filtrage
+print("webhook envoyé")
+# Pas de timestamp, pas d'identifiant, pas de statut
 ```
 
-### ✅ Le nouveau monde : système de surveillance automatisé
-
-```python
-# app_logging/logger.py
-import structlog
-import logging
-
-# Logger structuré avec contexte
-logger = structlog.get_logger("webhook")
-logger.info("Webhook sent", 
-    webhook_url=mask_url(webhook_url),
-    email_id=email_id,
-    status="success",
-    duration_ms=duration_ms
-)
-
-# Health check endpoint
-@bp.route("/health")
-def health_check():
-    checks = {
-        "status": "ok",
-        "timestamp": datetime.utcnow().isoformat(),
-        "services": {
-            "redis": check_redis_health(),
-            "database": check_database_health(),
-            "background_tasks": check_background_tasks()
-        },
-        "metrics": get_current_metrics()
-    }
-    return jsonify(checks)
-```
-
-**Le gain** : tour de contrôle complète, alertes proactives, et surveillance de la performance.
-
----
-
-## Idées reçues sur la tour de contrôle
-
-### ❌ "Le monitoring alourdit l'application"
-Les health checks sont légers (<10ms) et les logs structurés sont asynchrones. La tour de contrôle ne ralentit pas les opérations, elle les observe seulement.
-
-### ❌ "Les métriques sont compliquées à maintenir"
-Les métriques sont collectées automatiquement par des observateurs passifs. C'est comme des instruments qui fonctionnent seuls sans intervention manuelle.
-
-### ❌ "Les alertes créent du bruit"
-Les alertes ont des seuils intelligents (10% d'erreur, 80% mémoire) et sont envoyées uniquement quand nécessaire. La tour de contrôle signale seulement les vrais problèmes.
-
----
-
-## Tableau comparatif des approches de monitoring
-
-| Approche | Visibilité | Performance impact | Maintenance | Alertes proactives | Coût |
-|----------|-----------|-------------------|--------------|-------------------|------|
-| Aucun monitoring | Nulle | Nul | Nulle | Nulle | Nul |
-| Logs manuels | Faible | Faible | Élevée | Tardives | Faible |
-| Tour de contrôle | Complète | Très faible | Faible | Immédiates | Moyen |
-| Monitoring avancé | Très complète | Variable | Très faible | Prédictives | Élevé |
-
----
-
-## Radars de santé : monitoring de la santé du système
-
-### Radar principal `/health`
+### ✅ Le nouveau monde : santé, métriques, journal
 
 ```python
 # routes/health.py
-@bp.route("/health")
-def health_check():
-    """Health check endpoint pour Render et monitoring externe"""
-    
-    checks = {
-        "status": "ok",
-        "timestamp": datetime.utcnow().isoformat(),
-        "version": get_app_version(),
-        "uptime": get_uptime_seconds(),
-        "services": {}
-    }
-    
-    # Vérification Redis
-    if redis_client:
-        try:
-            redis_client.ping()
-            checks["services"]["redis"] = {
-                "status": "ok",
-                "url": mask_redis_url(os.environ.get("REDIS_URL", "")),
-                "connected": True
-            }
-        except Exception as e:
-            checks["services"]["redis"] = {
-                "status": "error",
-                "error": str(e),
-                "connected": False
-            }
-            checks["status"] = "degraded"
-    else:
-        checks["services"]["redis"] = {
-            "status": "not_configured",
-            "connected": False
-        }
-    
-    # Vérification tâches de fond
-    checks["services"]["background_tasks"] = check_background_tasks()
-    
-    # Métriques de performance
-    checks["metrics"] = {
-        "memory_usage": get_memory_usage(),
-        "active_webhooks": get_active_webhook_count(),
-        "error_rate_24h": get_error_rate_24h(),
-        "last_webhook": get_last_webhook_timestamp()
-    }
-    
-    status_code = 200 if checks["status"] == "ok" else 503
-    return jsonify(checks), status_code
-
-def check_background_tasks():
-    """Vérifie l'état des tâches de fond"""
-    tasks = {}
-    
-    # Vérification du poller IMAP (legacy)
-    if os.environ.get('ENABLE_BACKGROUND_TASKS') == 'true':
-        try:
-            lock_status = check_imap_lock()
-            tasks["imap_poller"] = {
-                "status": "running" if lock_status else "stopped",
-                "lock_acquired": lock_status,
-                "last_check": datetime.utcnow().isoformat()
-            }
-        except Exception as e:
-            tasks["imap_poller"] = {
-                "status": "error",
-                "error": str(e)
-            }
-    else:
-        tasks["imap_poller"] = {"status": "disabled"}
-    
-    # Vérification du watcher Make (legacy)
-    if os.environ.get('MAKECOM_API_KEY'):
-        tasks["make_watcher"] = {
-            "status": "running",
-            "last_check": datetime.utcnow().isoformat()
-        }
-    
-    return tasks
-
-def check_imap_lock():
-    """Vérifie si le verrou IMAP est acquis"""
-    if redis_client:
-        return bool(redis_client.get("render_signal:poller_lock"))
-    return False
+@bp.route("/health", methods=["GET"])
+def health() -> Response | tuple[Response, int]:
+    return jsonify({"status": "ok"}), 200
 ```
 
-### Surveillance externe
+Le endpoint public est minimal par choix. Il ne touche ni Redis, ni le disque, ni le réseau : une panne de dépendance ne provoque pas de redémarrage en boucle du conteneur.
+
+Les détails sont sur `/api/diag/runtime` (protégé par session) :
+
+```python
+{
+    "process_start_time": "2026-11-25T20:58:00+00:00",
+    "uptime_sec": 2490,
+    "last_poll_cycle_ts": null,
+    "last_webhook_sent_ts": null,
+    "bg_poller_thread_alive": false,
+    "make_watcher_thread_alive": false,
+    "enable_background_tasks": false,
+    "server_time_utc": "2026-11-25T21:39:00+00:00"
+}
+```
+
+`process_start_time` est posé à l'initialisation du singleton. `last_poll_cycle_ts` et `last_webhook_sent_ts` restent `null` tant qu'aucun code ne renseigne les setters ou le global correspondant : le champ existe, mais il n'est pas encore alimenté.
+
+Ces valeurs viennent de `RuntimeMetricsService` et des globals de `app_render` (threads legacy, dernier envoi). Elles sont assemblées par `_get_runtime_metrics_payload`.
+
+---
+
+## Endpoints de diagnostic
+
+| Endpoint | Authentification | Réponse |
+| --- | --- | --- |
+| `GET /health` | Aucune | `{"status": "ok"}` |
+| `GET /api/ping` | Aucune | `{"status": "pong", "timestamp_utc": ...}` |
+| `GET /api/diag/runtime` | Session Flask-Login | Métriques de process et d'uptime |
+| `GET /api/check_trigger` | Session Flask-Login | Présence d'un fichier de déclenchement local |
+| `GET /api/get_local_status` | Session Flask-Login | Snapshot minimal pour l'UI distante |
+| `GET /api/webhook_logs?days=7&limit=50` | Session Flask-Login | Journal webhook filtré |
+
+`/api/ping` sert aux sondes qui ont besoin d'un timestamp ; `/health` sert à Render, qui ne lit que le code HTTP.
+
+---
+
+## Journal webhook
+
+### Stockage
+
+`WebhookLoggerService.append_log(entry)` écrit dans deux backend :
+
+1. Redis, dans la liste `webhook_logs`, si le client est disponible ;
+2. fichier `debug/webhook_logs.json`, sinon.
+
+La liste est bornée à 500 entrées (`DEFAULT_MAX_ENTRIES`). Au-delà, les plus anciennes sont supprimées.
+
+```python
+WebhookLoggerService.get_instance().append_log({
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+    "status": "success",
+    "webhook_url": (webhook_url[:50] + "...") if len(webhook_url) > 50 else webhook_url,
+    "email_id": email_id,
+})
+```
+
+### Ce qu'on y trouve
+
+| Champ | Usage |
+| --- | --- |
+| `timestamp` | Reconstruction de la chronologie |
+| `status` | `success` ou `error` |
+| `webhook_url` | Cible, tronquée à 50 caractères |
+| `email_id` | Corrélation avec les logs applicatifs |
+| `error_message` | Cause d'échec côté réception |
+
+### Lecture
+
+`GET /api/webhook_logs?days=7&limit=50` borne `days` entre 1 et 30. Le dashboard utilise le même endpoint via `LogService.loadAndRenderLogs`.
+
+---
+
+## Logs applicatifs
+
+Les logs passent par `app.logger`, avec un préfixe par domaine. Les préfixes réellement utilisés incluent :
+
+| Préfixe | Domaine |
+| --- | --- |
+| `CFG`, `CFG WEBHOOK`, `CFG REDIS` | Configuration et démarrage |
+| `SVC` | Initialisation des services |
+| `INGRESS` | Gmail Push |
+| `DEDUP`, `DEDUP_EMAIL`, `DEDUP_GROUP` | Déduplication |
+| `PATTERN_MATCH`, `RECADRAGE`, `DESABO` | Détection |
+| `ROUTING_RULES` | Routage dynamique |
+| `CUSTOM_WEBHOOK`, `WEBHOOK` | Envoi sortant |
+| `R2_TRANSFER` | Offload Cloudflare |
+| `MAGIC_LINK` | Authentification |
+| `POLLER`, `IMAP` | Poller legacy |
+| `PROCESS` | Cycle de vie du process |
+
+Les emails, identifiants et sujets sensibles passent par `mask_sensitive_data` avant journalisation. Les URL de webhook sont tronquées, jamais écrites en entier.
+
+### Chercher une panne
 
 ```bash
-# Health check depuis monitoring externe
-curl -s https://your-domain.onrender.com/health | jq '.status'
+# Dernier envoi réussi
+grep "CUSTOM_WEBHOOK:.*success" render.log | tail -5
 
-# Vérification détaillée
-curl -s https://your-domain.onrender.com/health | jq '.'
+# Erreurs d'ingestion
+grep -E "INGRESS|DEDUP" render.log | grep -i error | tail -20
 
-# Monitoring avec UptimeRobot
-# URL : https://your-domain.onrender.com/health
-# Intervalle : ≤ 5 minutes pour maintenir le service "warm"
+# Redémarrages
+grep "PROCESS: SIGTERM" render.log
 ```
+
+Les logs Render sont éphémères. Pour un historique, il faut un collecteur externe ou exporter `debug/webhook_logs.json`.
 
 ---
 
-## Rapports de vol : visibilité complète
+## Dashboard : ce que voit l'utilisateur
 
-### Système de reporting structuré
+`static/services/status_banner.js` calcule un statut à partir des logs :
 
-```python
-# app_logging/logger.py
-import structlog
+| Indicateur | Fenêtre | Règle |
+| --- | --- | --- |
+| Dernière exécution | Tous les logs | Date du log le plus récent, formatée en relatif |
+| Incidents récents | 24 h | Nombre de logs en erreur |
+| Erreurs critiques | 1 h | Nombre de logs en erreur |
+| Webhooks actifs | 1 h | Nombre total d'envois |
 
-# Configuration des loggers
-structlog.configure(
-    processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        structlog.processors.TimeStamper(fmt="ISO"),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.UnicodeDecoder(),
-    ],
-    context_class=dict,
-    wrapper_class=structlog.stdlib.LoggerFactory(),
-    logger_factory=structlog.stdlib.LoggerFactory(),
-    cache_logger_on_first_use=True,
-)
+Statut global :
 
-# Loggers spécialisés
-webhook_logger = structlog.get_logger("webhook")
-imap_logger = structlog.get_logger("imap")
-r2_logger = structlog.get_logger("r2_transfer")
-performance_logger = structlog.get_logger("performance")
-```
+- `error` si au moins une erreur critique sur l'heure ;
+- `warning` si des incidents existent sur 24 h ;
+- `success` sinon.
 
-### Rapports par domaine
+L'icône porte `role="img"` et un `aria-label` explicite (`Statut : opérationnel`, `dégradé`, `critique`). Le bandeau réutilise les caches de `LogService` et `WebhookService` quand ils ont moins de 60 secondes, sinon il interroge l'API.
 
-```python
-# Logs webhooks structurés
-webhook_logger.info("Webhook sent successfully", 
-    webhook_url=mask_url(webhook_url),
-    email_id=email_id,
-    status="success",
-    duration_ms=duration_ms,
-    delivery_links_count=len(delivery_links)
-)
-
-# Logs R2 avec métriques
-r2_logger.info("File transferred to R2",
-    provider=provider,
-    source_url=mask_url(source_url),
-    r2_url=r2_url,
-    file_size_bytes=file_size,
-    duration_ms=duration_ms,
-    original_filename=original_filename
-)
-
-# Logs performance
-performance_logger.info("Request processed",
-    endpoint=endpoint,
-    method=method,
-    status_code=status_code,
-    duration_ms=duration_ms,
-    memory_usage_mb=get_memory_usage_mb()
-)
-```
-
-### Filtrage et recherche de rapports
-
-```python
-# utils/log_utils.py
-def filter_logs(logs, level=None, service=None, since=None):
-    """Filtre les logs selon critères"""
-    filtered = logs
-    
-    if level:
-        filtered = [log for log in filtered if log.get("level") == level]
-    
-    if service:
-        filtered = [log for log in filtered if log.get("service") == service]
-    
-    if since:
-        since_dt = datetime.fromisoformat(since)
-        filtered = [log for log in filtered 
-                   if datetime.fromisoformat(log["timestamp"]) > since_dt]
-    
-    return filtered
-
-def search_logs(logs, query):
-    """Recherche dans les logs"""
-    query_lower = query.lower()
-    return [log for log in logs 
-            if query_lower in log.get("message", "").lower()]
-```
+`LogService` rafraîchit la timeline toutes les 30 secondes. Le polling est coupé quand `document.hidden` passe à `true` et relancé au retour. Il n'y a pas de websocket ni de server-sent events : le dashboard est un client passif.
 
 ---
 
-## Instruments de bord : monitoring performance frontend
+## Limites mémoire et timeouts
 
-### Navigation optimisée
+| Protection | Valeur | Emplacement |
+| --- | --- | --- |
+| Troncature HTML | 1 Mo | `email_processing/orchestrator.py` (`MAX_HTML_BYTES`) |
+| Timeout IMAP | 30 s | `email_processing/imap_client.py` |
+| Timeout R2 standard | 30 s | `R2TransferService.request_remote_fetch` |
+| Timeout R2 Dropbox `/scl/fo/` | 120 s | `IngressService._process_single_delivery_link` |
+| Timeout R2 Gmail Push standard | 15 s | `IngressService._process_single_delivery_link` |
+| Verrou in-flight par email | 15 min | `EMAIL_ID_INFLIGHT_LOCK_TTL_SECONDS` |
+| Verrou poller IMAP legacy | 5 min | `render_signal:poller_lock` |
 
-```javascript
-// static/utils/PerformanceMonitor.js
-class PerformanceMonitor {
-    constructor() {
-        this.metrics = {};
-        this.observers = [];
-    }
-    
-    startMonitoring() {
-        // Observer Performance API
-        if ('PerformanceObserver' in window) {
-            const observer = new PerformanceObserver((list) => {
-                list.getEntries().forEach(entry => {
-                    this.recordMetric(entry);
-                });
-            });
-            
-            observer.observe({ entryTypes: ['navigation', 'resource', 'paint'] });
-            this.observers.push(observer);
-        }
-        
-        // Monitoring temps de chargement
-        window.addEventListener('load', () => {
-            const loadTime = performance.now();
-            this.recordMetric({
-                name: 'page_load',
-                value: loadTime,
-                timestamp: Date.now()
-            });
-        });
-    }
-    
-    recordMetric(metric) {
-        this.metrics[metric.name] = {
-            value: metric.value,
-            timestamp: metric.timestamp,
-            type: metric.type || 'custom'
-        };
-        
-        // Logging en développement seulement
-        if (window.location.hostname === 'localhost') {
-            console.log(`[PERFORMANCE] ${metric.name}: ${metric.value}ms`);
-        }
-    }
-    
-    getMetrics() {
-        return this.metrics;
-    }
-    
-    // Nettoyage des observers
-    cleanup() {
-        this.observers.forEach(observer => observer.disconnect());
-        this.observers = [];
-    }
-}
-```
-
-### Système de détection intelligent
-
-```javascript
-// static/services/LogService.js
-class LogService {
-    constructor(apiService) {
-        this.apiService = apiService;
-        this.timer = null;
-        this.isVisible = true;
-        this.setupVisibilityAPI();
-    }
-    
-    setupVisibilityAPI() {
-        // Pause/resume automatique du polling
-        document.addEventListener('visibilitychange', () => {
-            this.isVisible = !document.hidden;
-            
-            if (this.isVisible) {
-                this.startPolling();
-                console.log('[PERFORMANCE] Page visible - resuming polling');
-            } else {
-                this.stopPolling();
-                console.log('[PERFORMANCE] Page hidden - pausing polling');
-            }
-        });
-        
-        // Pause quand on perd le focus
-        window.addEventListener('blur', () => {
-            if (this.isVisible) {
-                this.stopPolling();
-            }
-        });
-        
-        window.addEventListener('focus', () => {
-            if (!document.hidden && this.isVisible) {
-                this.startPolling();
-            }
-        });
-    }
-    
-    startPolling(intervalMs = 30000) {
-        if (this.timer) {
-            clearInterval(this.timer);
-        }
-        
-        this.timer = setInterval(async () => {
-            if (this.isVisible) {
-                try {
-                    await this.refreshLogs();
-                } catch (error) {
-                    console.error('[PERFORMANCE] Polling error:', error);
-                }
-            }
-        }, intervalMs);
-        
-        console.log(`[PERFORMANCE] Started polling with ${intervalMs}ms interval`);
-    }
-    
-    stopPolling() {
-        if (this.timer) {
-            clearInterval(this.timer);
-            this.timer = null;
-            console.log('[PERFORMANCE] Stopped polling');
-        }
-    }
-}
-```
+Ces valeurs sont des garde-fous, pas des objectifs de performance. Un timeout R2 déclenche le fallback vers l'URL source ; un timeout IMAP laisse le cycle suivant reprendre.
 
 ---
 
-## Tableau de bord backend : métriques et alertes
+## Alertes recommandées
 
-### Instruments de performance
+Il n'existe pas de gestionnaire d'alertes interne. Les alertes se configurent à l'extérieur :
 
-```python
-# utils/metrics.py
-class MetricsCollector:
-    def __init__(self):
-        self.start_time = time.time()
-        self.metrics = {}
-    
-    def collect_system_metrics(self):
-        """Collecte les métriques système"""
-        import psutil
-        
-        return {
-            "cpu_percent": psutil.cpu_percent(),
-            "memory_mb": psutil.virtual_memory().used / 1024 / 1024,
-            "disk_usage_gb": psutil.disk_usage('/').used / 1024 / 1024 / 1024,
-            "network_io": psutil.net_io_counters(),
-            "process_count": len(psutil.pids())
-        }
-    
-    def collect_application_metrics(self):
-        """Collecte les métriques applicatives"""
-        return {
-            "uptime_seconds": time.time() - self.start_time,
-            "active_webhooks": self.get_active_webhook_count(),
-            "error_rate_24h": self.calculate_error_rate_24h(),
-            "last_webhook_timestamp": self.get_last_webhook_timestamp(),
-            "redis_connected": self.check_redis_connection(),
-            "background_tasks_running": self.check_background_tasks()
-        }
-    
-    def get_active_webhook_count(self):
-        """Compte les webhooks actifs des dernières 24h"""
-        try:
-            logs = webhook_logs_service.get_logs(days=1)
-            return len([log for log in logs if log.get('status') == 'success'])
-        except:
-            return 0
-    
-    def calculate_error_rate_24h(self):
-        """Calcule le taux d'erreur des 24 dernières heures"""
-        try:
-            logs = webhook_logs_service.get_logs(days=1)
-            total = len(logs)
-            errors = len([log for log in logs if log.get('status') == 'error'])
-            return (errors / total * 100) if total > 0 else 0
-        except:
-            return 0
-```
+1. **Sonde HTTP** sur `/health`, toutes les 5 minutes. Deux échecs consécutifs déclenchent une alerte.
+2. **Absence de trafic** : alerter si aucun log `INGRESS: gmail payload received` ou `CUSTOM_WEBHOOK` n'apparaît pendant 15 minutes en heures ouvrées.
+3. **Erreurs répétées** : alerter si plus de 5 logs `status="error"` sur 15 minutes.
+4. **Tokens magic link** : surveiller les pics de génération permanente et les signatures invalides.
 
-### Système d'alertes automatique
-
-```python
-# utils/alerts.py
-class AlertManager:
-    def __init__(self):
-        self.thresholds = {
-            "error_rate": 10,  # %
-            "memory_usage": 80,  # %
-            "disk_usage": 85,  # %
-            "cpu_usage": 90   # %
-        }
-    
-    def check_and_alert(self, metrics):
-        """Vérifie les seuils et envoie des alertes"""
-        alerts = []
-        
-        # Taux d'erreur
-        error_rate = metrics.get("error_rate_24h", 0)
-        if error_rate > self.thresholds["error_rate"]:
-            alerts.append({
-                "type": "error_rate",
-                "severity": "warning",
-                "message": f"High error rate: {error_rate:.1f}% (threshold: {self.thresholds['error_rate']}%)",
-                "value": error_rate
-            })
-        
-        # Usage mémoire
-        memory_usage = metrics.get("memory_mb", 0)
-        memory_percent = (memory_usage / 512) * 100  # 512MB = 100%
-        if memory_percent > self.thresholds["memory_usage"]:
-            alerts.append({
-                "type": "memory_usage",
-                "severity": "critical",
-                "message": f"High memory usage: {memory_percent:.1f}% ({memory_usage:.1f}MB)",
-                "value": memory_percent
-            })
-        
-        # Envoi les alertes
-        for alert in alerts:
-            self.send_alert(alert)
-    
-    def send_alert(self, alert):
-        """Envoie une alerte (log + webhook si configuré)"""
-        # Log structuré
-        logger.error("ALERT", 
-            type=alert["type"],
-            severity=alert["severity"],
-            message=alert["message"],
-            value=alert["value"]
-        )
-        
-        # Webhook d'alerte si configuré
-        webhook_url = os.environ.get("ALERT_WEBHOOK_URL")
-        if webhook_url:
-            try:
-                requests.post(webhook_url, json=alert, timeout=10)
-            except Exception as e:
-                logger.error(f"Failed to send alert webhook: {e}")
-```
+Le dashboard ne remplace pas une sonde externe : si le serveur est down, il ne s'affiche pas non plus.
 
 ---
 
-## Protection anti-surcharge : garde-fous mémoire
+## La Golden Rule : mesurer le pipeline, pas seulement le processus
 
-### Parsing HTML sécurisé
-
-```python
-# email_processing/html_parser.py
-MAX_HTML_BYTES = 1024 * 1024  # 1MB limite stricte
-
-def extract_text_from_html(html_content: str) -> str:
-    """Extrait le texte du HTML avec protection anti-OOM"""
-    
-    if len(html_content.encode('utf-8')) > MAX_HTML_BYTES:
-        logger.warning(
-            "HTML content truncated (exceeded 1MB limit)",
-            original_size=len(html_content),
-            truncated_size=MAX_HTML_BYTES
-        )
-        html_content = html_content[:MAX_HTML_BYTES]
-    
-    try:
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html_content, 'html.parser')
-        text = soup.get_text(separator=' ', strip=True)
-        return text
-    except Exception as e:
-        logger.error(f"HTML parsing failed: {e}")
-        return html_content[:500]  # Fallback minimal
-```
-
-### Surveillance de la mémoire
-
-```python
-# utils/memory_monitor.py
-def get_memory_usage():
-    """Surveille l'utilisation mémoire"""
-    try:
-        import psutil
-        process = psutil.Process()
-        memory_info = process.memory_info()
-        
-        return {
-            "rss_mb": memory_info.rss / 1024 / 1024,
-            "vms_mb": memory_info.vms / 1024 / 1024,
-            "percent": process.memory_percent(),
-            "available_mb": (psutil.virtual_memory().available / 1024 / 1024)
-        }
-    except Exception as e:
-        logger.error(f"Failed to get memory usage: {e}")
-        return {"error": str(e)}
-
-def check_memory_threshold():
-    """Vérifie les seuils de mémoire"""
-    memory_info = get_memory_usage()
-    
-    if "error" not in memory_info:
-        memory_percent = memory_info["percent"]
-        
-        if memory_percent > 80:
-            logger.warning(
-                f"High memory usage: {memory_percent:.1f}%",
-                rss_mb=memory_info["rss_mb"],
-                vms_mb=memory_info["vms_mb"]
-            )
-        
-        if memory_percent > 90:
-            # Alerte critique
-            alert_manager.send_alert({
-                "type": "memory_usage",
-                "severity": "critical",
-                "message": f"Critical memory usage: {memory_percent:.1f}%",
-                "value": memory_percent
-            })
-```
-
----
-
-## Gardiens anti-zombie : timeouts robustes
-
-### Gardien IMAP
-
-```python
-# email_processing/imap_client.py
-class IMAPClient:
-    def __init__(self, timeout=30):
-        self.timeout = timeout
-        self.socket_timeout = timeout
-    
-    def create_connection(self, server, username, password, use_ssl=True):
-        """Crée une connexion IMAP avec timeout anti-zombie"""
-        try:
-            if use_ssl:
-                imap = imaplib.IMAP4_SSL(server, timeout=self.socket_timeout)
-            else:
-                imap = imaplib.IMAP4(server, timeout=self.socket_timeout)
-            
-            imap.login(username, password)
-            logger.info(f"IMAP: Connected to {server}")
-            return imap
-            
-        except (socket.timeout, imaplib.IMAP4.error) as e:
-            logger.error(f"IMAP: Connection failed: {e}")
-            raise IMAPConnectionError(f"Cannot connect to {server}: {e}")
-    
-    def select_inbox(self, imap):
-        """Sélection de boîte de réception avec timeout"""
-        try:
-            return imap.select('INBOX')
-        except (socket.timeout, imaplib.IMAP4.error) as e:
-            logger.error(f"IMAP: Select failed: {e}")
-            self._reconnect(imap)
-            raise
-    
-    def _reconnect(self, imap):
-        """Reconnexion automatique"""
-        try:
-            imap.close()
-            logger.info("IMAP: Reconnecting...")
-            return self.create_connection(
-                self.server, self.username, self.password, self.use_ssl
-            )
-        except Exception as e:
-            logger.error(f"IMAP: Reconnection failed: {e}")
-            raise
-```
-
-### Timeouts adaptatifs pour livraison
-
-```python
-# services/r2_transfer_service.py
-def get_timeout_for_provider(self, provider, source_url):
-    """Retourne le timeout adaptatif par fournisseur"""
-    if provider == 'dropbox' and '/scl/fo/' in source_url:
-        return 120  # Dossiers partagés Dropbox
-    elif provider in ['fromsmash', 'swisstransfer']:
-        return 30   # Fichiers simples
-    else:
-        return 15   # Défaut
-    
-def request_remote_fetch(self, source_url, provider, email_id=None):
-    """Requête R2 avec timeout adaptatif"""
-    timeout = self.get_timeout_for_provider(provider, source_url)
-    
-    try:
-        response = requests.post(
-            self.endpoint,
-            json=payload,
-            headers={
-                'X-R2-FETCH-TOKEN': self.token,
-                'User-Agent': 'RenderSignalServer/1.0'
-            },
-            timeout=timeout
-        )
-        return self._process_response(response)
-    except requests.exceptions.Timeout:
-        logger.warning(f"R2_TRANSFER: Timeout for {provider} after {timeout}s")
-        return None
-    except Exception as e:
-        logger.error(f"R2_TRANSFER: Error for {provider}: {e}")
-        return None
-```
-
----
-
-## La Golden Rule : Tour de contrôle avec radars, rapports structurés, surveillance temps réel
-
-Le système utilise des radars (`/health`) pour la surveillance externe, des rapports de vol structurés avec structlog pour la visibilité, et des instruments de bord temps réel pour la performance. Le polling intelligent optimise les ressources, et les gardiens anti-zombie protègent la production avec timeouts robustes, anti-OOM, et fallbacks garantis.
-
----
-
-*Pour la configuration complète : voir [configuration-reference.md](file:///home/kidpixel/render_signal_server-main/docs/core/configuration-reference.md) ; pour le déploiement : voir [deployment.md](file:///home/kidpixel/render_signal_server-main/docs/ops/deployment.md).*
+Un process qui répond `ok` peut avoir arrêté de traiter des emails depuis une heure. La santé se lit sur trois plans : le process est vivant, le dernier traitement est récent, et l'interface montre le même état que le serveur. `/health` répond à la première question, `/api/diag/runtime` et les logs répondent aux deux autres.

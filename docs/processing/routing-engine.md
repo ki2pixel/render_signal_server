@@ -494,13 +494,13 @@ def _build_backend_fallback_rules():
 
 ## Tests : couverture complète du système de tri
 
-### 12 tests couvrant tous les scénarios de tri
+### 8 tests couvrant les règles de routage
 
 ```bash
 # Service (3 tests)
 pytest tests/test_routing_rules_service.py -v
 
-# API (3 tests) 
+# API (5 tests)
 pytest tests/routes/test_api_routing_rules.py -v
 
 # Orchestrateur (6 tests)
@@ -577,4 +577,4 @@ Pour modifier : déverrouiller → éditer → sauvegarder → auto-verrouillage
 
 ---
 
-*Pour les détails d'API : voir [configuration-reference.md](file:///home/kidpixel/render_signal_server-main/docs/core/configuration-reference.md) ; pour l'architecture générale : voir [architecture.md](file:///home/kidpixel/render_signal_server-main/docs/core/architecture.md).*
+*Pour les détails d'API : voir [configuration-reference.md](../core/configuration-reference.md) ; pour l'architecture générale : voir [architecture.md](../core/architecture.md).*

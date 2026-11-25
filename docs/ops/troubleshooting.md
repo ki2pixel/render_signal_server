@@ -233,7 +233,7 @@ grep "already_processing" render.log
 1. **Solution moderne (Gmail Push)** : Le verrou "in-flight" est automatique
    - Aucune configuration requise
    - Status `already_processing` normal pour double POST
-   - Documentation : [docs/ingestion/gmail-push.md](../ingestion/gmail-push.md#3-idempotence-verrou-in-flight-pour-double-post)
+   - Documentation : [docs/ingestion/gmail-push.md](../ingestion/gmail-push.md#3-déduplication-et-verrou-in-flight-ingressservice)
 
 2. **Solution legacy (IMAP)** : Configurer `REDIS_URL` pour le verrou distribué
    - `REDIS_URL=redis://user:pass@host:port/db`
@@ -403,4 +403,4 @@ Chaque problème inclut des symptômes clairs, des diagnostics précis, et des s
 
 ---
 
-*Pour la configuration complète : voir [configuration-reference.md](file:///home/kidpixel/render_signal_server-main/docs/core/configuration-reference.md) ; pour le déploiement : voir [deployment.md](file:///home/kidpixel/render_signal_server-main/docs/ops/deployment.md).*
+*Pour la configuration complète : voir [configuration-reference.md](../core/configuration-reference.md) ; pour le déploiement : voir [deployment.md](deployment.md).*

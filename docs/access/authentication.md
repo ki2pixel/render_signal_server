@@ -1,632 +1,323 @@
-# Authentication
+# Authentification
 
-**TL;DR**: On utilise des magic links signés HMAC pour l'accès sans mot de passe. Les tokens peuvent être à usage unique (15min par défaut) ou permanents, avec stockage partagé entre workers Render.
-
----
-
-## Le problème : les mots de passe qui ne sont pas pratiques
-
-J'ai hérité d'un système avec authentification par mot de passe. Les problèmes étaient multiples :
-
-- **Support** : Les utilisateurs oublient leurs mots de passe
-- **Sécurité** : Mots de passe faibles ou partagés
-- **Maintenance** : Réinitialisation fréquente des mots de passe
-- **UX** : Champ de mot de passe dans le formulaire de login
-
-Pire encore : sur Render multi-conteneurs, chaque instance avait sa propre session, rendant l'authentification incohérente.
+**TL;DR** : le dashboard accepte deux portes : le couple utilisateur/mot de passe (haché) et un magic link signé HMAC. Un lien à usage unique expire après 15 minutes par défaut ; un lien permanent reste réutilisable jusqu'à révocation. Les tokens sont stockés dans un fichier JSON verrouillé, avec un miroir optionnel vers Redis ou l'API PHP de configuration.
 
 ---
 
-## La solution : badges d'accès cryptographiques
+## Le problème : un mot de passe partagé et des sessions locales
 
-Pensez aux magic links comme des badges d'accès temporaires ou permanents pour un bâtiment sécurisé. Chaque badge est signé cryptographiquement, peut être à usage unique (visiteur) ou permanent (résident), et fonctionne sur toutes les entrées (multi-conteneurs).
+Le dashboard était protégé par un mot de passe unique, souvent partagé entre plusieurs personnes. Deux conséquences :
 
-### ❌ L'ancien monde : clés physiques partagées
+- Impossible de révoquer l'accès d'une seule personne sans changer le mot de passe de tout le monde.
+- Sur Render multi-conteneurs, chaque instance gardait sa propre session : une connexion réussie sur un worker pouvait être ignorée par le suivant.
+
+Le magic link répond au premier point : un lien nominatif, à durée limitée, peut être révoqué ou simplement expiré. Le stockage partagé répond au second : tous les workers lisent le même état.
+
+---
+
+## La solution : deux portes, un même utilisateur Flask-Login
+
+### ❌ L'ancien monde : comparaison en clair
 
 ```python
-# ANTI-PATTERN - login.html
-<form method="post">
-  <input type="password" name="password" placeholder="Mot de passe">
-  <button type="submit">Se connecter</button>
-</form>
-
-# ANTI-PATTERN - auth/user.py
-class User(UserMixin):
-    def verify_password(self, password):
-        return password == stored_password  # Comparaison en clair !
+# ANTI-PATTERN
+if password == settings.TRIGGER_PAGE_PASSWORD:
+    login_user(User(username))
 ```
 
-### ✅ Le nouveau monde : badges HMAC signés
+### ✅ Le nouveau monde : vérification hachée et token signé
 
 ```python
-# services/magic_link_service.py
-class MagicLinkService:
-    def generate_magic_link(self, unlimited=False) -> dict:
-        """Génère un token signé HMAC"""
-        token_id = secrets.token_urlsafe(32)
-        created_at = time.time()
-        expires_at = created_at + (TTL_INFINITE if unlimited else self.ttl_seconds)
-        
-        # Signature HMAC SHA-256
-        payload = f"{token_id}:{created_at}"
-        signature = hmac.new(
-            FLASK_SECRET_KEY.encode(),
-            payload.encode(),
-            hashlib.sha256
-        ).hexdigest()
-        
-        return {
-            'magic_link': f"https://domain.com/dashboard/magic-link/{token_id}:{signature}",
-            'expires_at': datetime.fromtimestamp(expires_at).isoformat() if expires_at else None,
-            'single_use': not unlimited,
-            'created_at': datetime.fromtimestamp(created_at).isoformat()
-        }
-    
-    def validate_magic_link(self, token: str) -> dict:
-        """Valide un token HMAC"""
-        try:
-            token_id, created_at, signature = token.split(':')
-            payload = f"{token_id}:{created_at}"
-            expected_signature = hmac.new(
-                FLASK_SECRET_KEY.encode(),
-                payload.encode(),
-                hashlib.sha256
-            ).hexdigest()
-            
-            is_valid = hmac.compare_digest(signature.encode(), expected_signature.encode())
-            created_at_timestamp = float(created_at)
-            
-            # Validation TTL
-            if not self.unlimited and created_at_timestamp < time.time():
-                return {'valid': False, 'error': 'Token expired'}
-            
-            return {'valid': is_valid, 'token_id': token_id}
-            
-        except (ValueError, IndexError) as e:
-            return {'valid': False, 'error': f'Invalid token format: {e}'}
+# routes/dashboard.py
+if magic_token:
+    success, message = _magic_link_service.consume_token(magic_token.strip())
+    if success:
+        return _complete_login(message, request.args.get("next"))
+    error_message = message or "Token invalide."
+else:
+    user_obj = _auth_service.create_user_from_credentials(username, password)
+    if user_obj is not None:
+        return _complete_login(user_obj.id, request.args.get("next"))
 ```
 
-**Le gain** : zéro mot de passe, badges sécurisés, et accès multi-entrées comme dans un bâtiment moderne.
+`AuthService.create_user_from_credentials` délègue à `ConfigService.verify_dashboard_credentials`. La vérification accepte deux formats :
+
+- mot de passe haché (Werkzeug, bcrypt ou scrypt) : `check_password_hash` ;
+- mot de passe en clair historique : comparaison à temps constant avec `hmac.compare_digest`.
+
+Le second format n'existe que pour la migration. Un mot de passe stocké en clair reste un risque : le hash est la cible.
+
+La route `POST /login` accepte donc deux corps possibles :
+
+| Champ | Effet |
+| --- | --- |
+| `username` + `password` | Vérification des identifiants du dashboard |
+| `magic_token` | Consommation d'un magic link, puis ouverture de session |
+
+Le formulaire HTML actuel n'expose que les champs utilisateur/mot de passe. Un magic token peut être soumis par POST direct ou consommé via l'URL `/login/magic/<token>`.
+
+`POST /login` est limité à 5 tentatives par 5 minutes via `Flask-Limiter`.
 
 ---
 
-## Architecture : badges avec système de contrôle central
+## Anatomie d'un magic link
 
-### Flux complet
+Un token a trois segments séparés par des points :
 
 ```
-Dashboard UI → MagicLinkService → Badge Store → Flask-Login → Accès Dashboard
+<token_id>.<expires>.<signature>
 ```
 
-### 1. MagicLinkService (Singleton)
+| Segment | Valeur | Rôle |
+| --- | --- | --- |
+| `token_id` | `secrets.token_urlsafe(16)` | Identifiant opaque du token |
+| `expires` | timestamp Unix, ou `permanent` | Date d'expiration encodée |
+| `signature` | HMAC-SHA-256 hexadécimal | Signature de `token_id.expires` avec `FLASK_SECRET_KEY` |
 
 ```python
 # services/magic_link_service.py
-class MagicLinkService:
-    def __init__(self):
-        self.ttl_seconds = int(os.environ.get('MAGIC_LINK_TTL_SECONDS', 900))  # 15min
-        self.tokens_file = os.environ.get('MAGIC_LINK_TOKENS_FILE', './magic_link_tokens.json')
-        self.external_config_base_url = os.environ.get('EXTERNAL_CONFIG_BASE_URL')
-        self.config_api_token = os.environ.get('CONFIG_API_TOKEN')
-        self.config_api_storage_dir = os.environ.get('CONFIG_API_STORAGE_DIR')
-        
-        # Verrouillage du fichier de tokens
-        self._ensure_tokens_file_locked()
-    
-    def _ensure_tokens_file_locked(self):
-        """Crée et verrouille le fichier de tokens"""
-        if not os.path.exists(self.tokens_file):
-            with open(self.tokens_file, 'w') as f:
-                json.dump({}, f)
-        
-        # Verrouillage via fcntl
-        with open(self.tokens_file, 'r+') as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            try:
-                existing = json.load(f)
-                json.dump(existing, f)
-            finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+token_id = secrets.token_urlsafe(16)
+expires_component = "permanent" if unlimited else str(int(expires_at.timestamp()))
+signature = self._sign_components(token_id, expires_component)
+token = f"{token_id}.{expires_component}.{signature}"
 ```
 
-### 2. Stockage partagé via API PHP
+La signature couvre l'identifiant **et** l'expiration : modifier l'un ou l'autre invalide le token. La comparaison utilise `hmac.compare_digest`, ce qui évite les fuites par timing.
 
-```php
-// deployment/config/config_api.php
-class ConfigAPI {
-    private function get_magic_link_tokens(): array {
-        $file = $this->storage_dir . '/magic_link_tokens.json';
-        if (!file_exists($file)) {
-            return [];
-        }
-        return json_decode(file_get_contents($file), true);
-    }
-    
-    private function save_magic_link_tokens(array $tokens): void {
-        $file = $this->storage_dir . '/magic_link_tokens.json';
-        $json = json_encode($tokens, JSON_PRETTY_PRINT);
-        file_put_contents($file, $json, LOCK_EX);
-    }
-    
-    // Endpoint POST /config_api.php?action=get&key=magic_link_tokens
-    public function handle_get_magic_link_tokens(): array {
-        return $this->get_magic_link_tokens();
-    }
-    
-    // Endpoint POST /config_api.php?action=set&key=magic_link_tokens
-    public function handle_set_magic_link_tokens(array $tokens): bool {
-        $this->save_magic_link_tokens($tokens);
-        return true;
-    }
-}
+### Cycle de vie
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as Dashboard
+    participant API as routes/api_auth.py
+    participant S as MagicLinkService
+    participant Store as Fichier JSON / store externe
+    participant L as routes/dashboard.py
+
+    UI->>API: POST /api/auth/magic-link {unlimited}
+    API->>S: generate_token(unlimited)
+    S->>Store: enregistre token_id + expiration
+    S-->>API: token, expires_at
+    API-->>UI: 201 {magic_link, expires_at, unlimited}
+
+    UI->>L: GET /login/magic/<token>
+    L->>S: consume_token(token)
+    S->>S: vérifie format + signature + expiration
+    S->>Store: marque consommé si usage unique
+    S-->>L: (True, username)
+    L-->>UI: session Flask-Login + redirection
 ```
 
-### 3. Intégration Flask-Login
+Un token inconnu, mal formé, expiré ou déjà consommé produit un message distinct (`Token inconnu ou déjà consommé.`, `Token expiré.`, `Signature de token invalide.`).
+
+---
+
+## Modes d'utilisation
+
+| Mode | Durée | Réutilisable | Usage |
+| --- | --- | --- | --- |
+| Usage unique | `MAGIC_LINK_TTL_SECONDS` (900 s par défaut) | Non | Partage ponctuel, support, accès mobile |
+| Permanent | Aucune expiration | Oui, jusqu'à révocation | Accès administrateur régulier |
 
 ```python
-# auth/helpers.py
-@login_required
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated:
-            flash('Please log in to access this page.', 'warning')
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
+# Usage unique
+token, expires_at = service.generate_token(unlimited=False)
+
+# Permanent
+token, expires_at = service.generate_token(unlimited=True)  # expires_at = None
 ```
+
+Un token permanent reste un secret bearer : quiconque possède l'URL peut ouvrir une session. Il doit être traité comme un mot de passe, pas comme un lien public.
 
 ---
 
-## Configuration : variables essentielles
+## API et routes
 
-### Variables obligatoires
-
-```bash
-# Clé secrète pour signatures HMAC (64+ caractères recommandé)
-FLASK_SECRET_KEY=votre-clé-secrète-très-robuste
-
-# Durée de vie par défaut (15 minutes)
-MAGIC_LINK_TTL_SECONDS=900
-```
-
-### Variables optionnelles (stockage partagé)
-
-```bash
-# API PHP pour stockage partagé entre workers
-EXTERNAL_CONFIG_BASE_URL=https://votre-domaine.tld
-CONFIG_API_TOKEN=token-hmac-partagé-entre-Render-et-PHP
-CONFIG_API_STORAGE_DIR=/home/user/data/app_config
-
-# Fichier local fallback
-MAGIC_LINK_TOKENS_FILE=./magic_link_tokens.json
-```
-
----
-
-## Idées reçues sur les badges d'accès
-
-### ❌ "Les tokens permanents sont moins sûrs"
-Les badges permanents utilisent la même signature HMAC que les badges temporaires. La différence est seulement l'absence d'expiration, pas une moindre sécurité cryptographique.
-
-### ❌ "Le TTL par défaut de 15 minutes est trop court"
-Le TTL est configurable via `MAGIC_LINK_TTL_SECONDS`. 15 minutes est un équilibre entre sécurité et UX pour les accès temporaires (support, mobile).
-
-### ❌ "L'API PHP complique la sécurité"
-L'API PHP utilise le même token `CONFIG_API_TOKEN` que toutes les autres configurations. C'est une extension du système de stockage partagé, pas une surface d'attaque supplémentaire.
-
----
-
-## Tableau des modes d'accès
-
-| Mode | TTL | Usage idéal | Risques | Stockage | Révocation |
-|------|-----|-------------|----------|----------|------------|
-| One-shot | 15min (configurable) | Support, mobile ponctuel | Faible (auto-expiration) | Volatil | Automatique |
-| Permanent | Illimité | Admin, accès fréquent | Moyen (révocation manuelle) | Persistant | Manuelle |
-| Session Flask | Variable | Navigation continue | Faible (session side) | Session | Déconnexion |
-
----
-
-## Modes d'utilisation : visiteur vs résident
-
-### Badges visiteur (One-Shot)
-
-**Idéal pour** :
-- Accès temporaires
-- Partages ponctuels
-- Support technique
-- Accès mobile sécurisé
-
-```python
-# Génération badge visiteur
-token_data = magic_link_service.generate_magic_link(unlimited=False)
-
-# URL générée
-# https://domain.com/dashboard/magic-link/abc123def456:signature
-
-# Auto-révocation après 15 minutes
-# Le badge expire automatiquement
-```
-
-### Badges résident (Permanents)
-
-**Idéal pour** :
-- Accès fréquents
-- Administrateurs système
-- Accès depuis mobile permanent
-- Intégrations continues
-
-```python
-# Génération badge résident
-token_data = magic_link_service.generate_magic_link(unlimited=True)
-
-# URL permanente
-# https://domain.com/dashboard/magic-link/xyz789uvw:signature
-
-# Pas d'expiration
-# Le badge reste valide jusqu'à révocation manuelle
-```
-
----
-
-## Sécurité cryptographique
-
-### Signature HMAC SHA-256
-
-```python
-import hmac
-import hashlib
-import time
-import secrets
-
-def generate_hmac_signature():
-    """Génère une signature HMAC SHA-256"""
-    token_id = secrets.token_urlsafe(32)
-    created_at = time.time()
-    payload = f"{token_id}:{created_at}"
-    
-    signature = hmac.new(
-        FLASK_SECRET_KEY.encode(),
-        payload.encode(),
-        hashlib.sha256
-    ).hexdigest()
-    
-    return f"{payload}:{signature}"
-```
-
-### Validation stricte
-
-```python
-def validate_hmac_signature(token, expected_signature):
-    """Validation timing-attack resistant"""
-    try:
-        token_id, created_at, signature = token.split(':')
-        payload = f"{token_id}:{created_at}"
-        expected = hmac.new(
-            FLASK_SECRET_KEY.encode(),
-            payload.encode(),
-            hashlib.sha256
-        ).hexdigest()
-        
-        # Constant-time comparison
-        return hmac.compare_digest(signature.encode(), expected.encode())
-    except (ValueError, IndexError):
-        return False
-    
-    return True
-```
-
-### Protection contre les attaques
-
-- **Timing attacks** : Comparaison constante temps (`hmac.compare_digest`)
-- **Replay attacks** : Timestamp dans la payload
-- **Brute force** : Entropie des tokens 32 octets
-- **Key rotation** : Changer `FLASK_SECRET_KEY` régulièrement
-
----
-
-## Intégration UI : dashboard et login
-
-### Dashboard : génération de magic links
-
-```html
-<!-- dashboard.html -->
-<div class="magic-link-section">
-    <h3>✨ Accès Rapide</h3>
-    
-    <div class="form-check">
-        <input type="checkbox" id="unlimitedLink">
-        <label for="unlimitedLink">Lien permanent (illimité)</label>
-    </div>
-    
-    <button id="generateMagicLink" class="btn btn-primary">
-        ✨ Générer un magic link
-    </button>
-    
-    <div id="magicLinkResult" class="mt-3"></div>
-</div>
-```
-
-### JavaScript : orchestration ES6
-
-```javascript
-// static/dashboard.js
-import { ApiService } from './services/ApiService.js';
-
-class MagicLinkManager {
-    async generateMagicLink(unlimited = false) {
-        const response = await ApiService.post('/api/auth/magic-link', {
-            unlimited
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            this.copyToClipboard(data.magic_link);
-            this.showSuccessMessage('Magic link copié !');
-        }
-    }
-    
-    copyToClipboard(text) {
-        navigator.clipboard.writeText(text).then(() => {
-            this.showSuccessMessage('Lien copié dans le presse-papiers');
-        }).catch(err => {
-            this.showErrorMessage('Erreur de copie');
-        });
-    }
-    
-    showSuccessMessage(message) {
-        // Affiche le message de succès
-        const toast = document.createElement('div');
-        toast.textContent = message;
-        toast.className = 'toast success';
-        document.body.appendChild(toast);
-        
-        setTimeout(() => {
-            toast.remove();
-        }, 3000);
-    }
-}
-```
-
-### Login page : champ magic token
-
-```html
-<!-- login.html -->
-<div class="magic-link-section">
-    <p>✨ Ou utilisez un magic link</p>
-    <div class="form-group">
-        <label for="magicToken">✨ Magic Token</label>
-        <input type="text" id="magicToken" placeholder="Collez votre magic link ici">
-        <button id="useMagicLink">Utiliser</button>
-    </div>
-</div>
-```
-
----
-
-## API REST : endpoints sécurisés
-
-### Génération de magic link
+### Génération
 
 ```http
 POST /api/auth/magic-link
-Authorization: Session Flask-Login requis
 Content-Type: application/json
+Cookie: session=<session Flask-Login>
 
+{"unlimited": false}
+```
+
+Réponse `201` :
+
+```json
 {
+  "success": true,
+  "magic_link": "https://<hôte>/login/magic/<token_id>.<expires>.<signature>",
+  "expires_at": "2026-11-25T21:45:00+00:00",
   "unlimited": false
 }
 ```
 
-**Réponse** :
-```json
-{
-  "success": true,
-  "magic_link": "https://domain.com/dashboard/magic-link/abc123def456:signature",
-  "expires_at": "2026-02-04T12:15:00Z",
-  "single_use": true
-}
-```
+L'endpoint exige une session déjà authentifiée (`@login_required`). Un utilisateur anonyme ne peut pas générer de lien.
 
-### Consommation de magic link
+### Consommation
 
-```http
-GET /dashboard/magic-link/abc123def456:signature
-```
+| Route | Méthode | Comportement |
+| --- | --- | --- |
+| `/login/magic/<token>` | GET | Valide le token, ouvre la session, redirige vers le dashboard |
+| `/login` | POST | Accepte `magic_token` ou `username` + `password` |
 
-**Comportement** :
-- Validation du token
-- Vérification TTL (si usage unique)
-- Création session Flask-Login
-- Redirection vers dashboard
+En cas d'échec, la route de consommation redirige vers `/login` avec le message d'erreur en paramètre.
 
 ---
 
-## Stockage partagé : multi-workers Render
+## Stockage : fichier verrouillé, miroir optionnel
 
-### Architecture Redis-first
+`MagicLinkService` est un singleton configuré au démarrage avec `secret_key`, `storage_path`, `ttl_seconds`, `ConfigService` et un `external_store` optionnel.
 
-```python
-# config/app_config_store.py
-class AppConfigStore:
-    def get_magic_link_tokens(self) -> list:
-        # 1. Essai Redis
-        if self._redis_client:
-            try:
-                data = self._redis_client.get("r:ss:magic_link_tokens:v1")
-                if data:
-                    return json.loads(data)
-            except RedisError:
-                logger.warning("Redis unavailable for magic link tokens, using file fallback")
-        
-        # 2. Fallback API PHP
-        if self.external_config_base_url:
-            try:
-                response = requests.post(
-                    f"{self.external_config_base_url}/config_api.php",
-                    json={"action": "get", "key": "magic_link_tokens"},
-                    headers={"X-API-Token": self.config_api_token},
-                    timeout=10
-                )
-                if response.status_code == 200:
-                    return response.json()
-            except Exception as e:
-                logger.error(f"Failed to fetch magic link tokens from API: {e}")
-        
-        # 3. Fallback fichier local
-        return self._load_from_file("magic_link_tokens.json")
-```
+### Fichier local
 
-### Synchronisation automatique
+- Chemin : `MAGIC_LINK_TOKENS_FILE` (valeur par défaut dans `config/settings.py`).
+- Écriture atomique : fichier temporaire puis `os.replace`.
+- Verrou `RLock` en mémoire et verrou fichier pour les accès concurrents.
+- Nettoyage des tokens expirés au chargement et après consommation.
+
+### Miroir externe
+
+Quand `REDIS_URL` est défini, ou quand `EXTERNAL_CONFIG_BASE_URL` et `CONFIG_API_TOKEN` sont définis, l'état est aussi écrit dans le config store partagé. La lecture privilégie ce store, puis retombe sur le fichier local.
 
 ```python
 # services/magic_link_service.py
-def save_magic_link_token(token_data):
-    """Sauvegarde un token avec synchronisation"""
-    
-    # 1. Persistance locale
-    self._save_token_to_file(token_data)
-    
-    # 2. Synchronisation API PHP si disponible
-    if self.external_config_base_url:
-        try:
-            current_tokens = self._load_tokens_from_file()
-            requests.post(
-                f"{self.external_config_base_url}/config_api.php",
-                json={"action": "set", "key": "magic_link_tokens", "tokens": current_tokens},
-                headers={"X-API-Token": self.config_api_token},
-                timeout=10
-            )
-        except Exception as e:
-            logger.warning(f"Failed to sync magic link tokens to API: {e}")
+external_store_ok = self._save_state_to_external_store(serializable)
+try:
+    self._save_state_to_file(serializable)
+except Exception:
+    if not external_store_ok:
+        raise
 ```
+
+Conséquence pratique : le fichier reste la source de secours, mais un déploiement multi-workers doit avoir Redis ou l'API PHP pour partager les tokens en temps réel.
+
+### Révocation
+
+| Méthode | Effet |
+| --- | --- |
+| `revoke_token(token_id)` | Supprime un token précis |
+| `revoke_all_tokens()` | Vide l'état local et le miroir externe |
+
+Changer `FLASK_SECRET_KEY` invalide toutes les signatures d'un coup. C'est une révocation globale, mais elle déconnecte aussi les liens déjà distribués.
 
 ---
 
-## Monitoring : logs et métriques
-
-### Logs structurés
+## Configuration
 
 ```bash
-# Logs avec préfixe MAGIC_LINK
-MAGIC_LINK: Generated one-shot token for user admin (expires: 2026-02-04T12:15:00Z)
-MAGIC_LINK: Generated permanent token for user admin
-MAGIC_LINK: Consumed one-shot token abc123def456 (user: admin)
-MAGIC_LINK: Validated permanent token xyz789uvw (user: admin)
-MAGIC_LINK: Revoked token abc123def456 (user: admin)
-MAGIC_LINK: Cleaned up 5 expired tokens
+# Obligatoire
+FLASK_SECRET_KEY=<chaîne longue et aléatoire>
+
+# Durée de vie des liens à usage unique (secondes)
+MAGIC_LINK_TTL_SECONDS=900
+
+# Fichier local
+MAGIC_LINK_TOKENS_FILE=./debug/magic_link_tokens.json
+
+# Miroir Redis (optionnel)
+REDIS_URL=redis://...
+
+# Miroir API PHP (optionnel)
+EXTERNAL_CONFIG_BASE_URL=https://votre-domaine.tld
+CONFIG_API_TOKEN=<token partagé>
 ```
 
-### Métriques à surveiller
+Un TTL inférieur à 60 secondes est ramené à 60 secondes par le service. Un `FLASK_SECRET_KEY` vide fait échouer l'initialisation.
 
-| Métrique | Seuil | Action |
-|----------|-------|--------|
-| Taux d'échec validation | > 10% | Vérifier `FLASK_SECRET_KEY` |
-| Tokens permanents créés | > 5/jour | Vérifier politique d'usage |
-| Durée vie moyenne | < 5min | Vérifier TTL par défaut |
+---
 
-### Alertes recommandées
+## Intégration UI
+
+### Dashboard
+
+Le panneau Outils contient :
+
+- `magicLinkUnlimitedToggle` : case « Mode illimité », préférence conservée dans `localStorage` ;
+- `generateMagicLinkBtn` : déclenche la génération ;
+- `magicLinkOutput` : affiche le lien et son expiration.
+
+```javascript
+// static/services/magic_link.js
+const data = await ApiService.post('/api/auth/magic-link', { unlimited });
+output.textContent = `${data.magic_link} (exp. ${expiresText})`;
+
+try {
+    await navigator.clipboard.writeText(data.magic_link);
+    MessageHelper.showToast('Magic link copié dans le presse-papiers');
+} catch {
+    MessageHelper.showToast('Magic link généré — copie manuelle requise', 'info');
+}
+```
+
+Le bouton passe par `MessageHelper.setButtonLoading` pour éviter les doubles clics, et le résultat est annoncé dans une zone `aria-live="polite"`.
+
+### Login
+
+`login.html` expose uniquement les champs `username` et `password`. La route `POST /login` accepte néanmoins un champ `magic_token`, et l'URL `/login/magic/<token>` consomme directement le lien. Il n'y a pas de champ « coller un magic link » dans l'interface actuelle : c'est une limite connue, pas un oubli de documentation.
+
+---
+
+## Sécurité : ce qui est couvert, ce qui ne l'est pas
+
+| Risque | Protection |
+| --- | --- |
+| Falsification du token | Signature HMAC-SHA-256 sur `token_id.expires` |
+| Comparaison timing | `hmac.compare_digest` |
+| Mot de passe en clair | Fallback à temps constant, migration vers un hash recommandée |
+| Rejeu d'un lien à usage unique | `consumed` marqué en stockage |
+| Expiration | Timestamp signé, vérifié à chaque consommation |
+| Force brute sur le login | `Flask-Limiter`, 5 tentatives / 5 minutes |
+| Fuite dans les logs | `mask_sensitive_data` sur l'identifiant et l'utilisateur |
+
+Limites assumées :
+
+- Un magic link circule dans l'URL : il peut apparaître dans l'historique du navigateur, un proxy ou un journal d'accès. Le mode usage unique réduit la fenêtre d'exposition.
+- Un lien permanent est un secret durable. Sa révocation est manuelle.
+- Il n'y a pas de rotation automatique de `FLASK_SECRET_KEY`.
+
+---
+
+## Monitoring
+
+Les événements sont journalisés avec le préfixe `MAGIC_LINK:` :
+
+```text
+MAGIC_LINK: token generated (expires_at=2026-11-25T21:45:00+00:00)
+MAGIC_LINK: token <masqué> consommé par <utilisateur masqué>
+MAGIC_LINK: token <masqué> invalidated (expired)
+MAGIC_LINK: all tokens revoked
+```
+
+À surveiller :
+
+- pics de génération de liens permanents ;
+- taux élevé de `Signature de token invalide.` (clé changée ou tentative de falsification) ;
+- croissance anormale du fichier de tokens (nettoyage en échec).
+
+---
+
+## Tests
+
+Les tests du service vivent dans `tests/test_services.py` :
 
 ```bash
-# Alerte si génération excessive
-if [ $(curl -s https://render-signal-server-latest.onrender.com/api/webhook_logs?days=1 | jq '.logs | grep -c "MAGIC_LINK.*Generated" | wc -l) -gt 10 ]; then
-    echo "ALERT: Excessive magic link generation detected"
-fi
-
-# Alerte si taux d'échec > 50%
-error_rate=$(curl -s https://render-signal-server-latest.onrender.com/api/webhook_logs?days=1 | jq '.logs | grep '"status":"error"' | wc -l | tail -n | jq '.logs | length | wc -l') / total * 100)
-if ((error_rate > 50)); then
-    echo "ALERT: High webhook error rate detected: ${error_rate}%"
-fi
+pytest tests/test_services.py -k magic_link -v
 ```
+
+Trois scénarios couvrent le service :
+
+- un token permanent reste réutilisable ;
+- deux instances partagent l'état via un store externe ;
+- l'ancienne signature d'initialisation du store externe reste acceptée.
+
+Les routes `/api/auth/magic-link`, `/login/magic/<token>` et le formulaire de login ne disposent pas encore de tests dédiés. Toute modification de ces routes doit être vérifiée manuellement ou accompagnée d'un nouveau test.
 
 ---
 
-## Tests : couverture complète
+## La Golden Rule : un lien est un mot de passe
 
-### Tests unitaires
-
-```python
-# tests/test_magic_link_service.py
-def test_generate_magic_link_one_shot():
-    """Test génération token usage unique"""
-    service = MagicLinkService()
-    result = service.generate_magic_link(unlimited=False)
-    
-    assert 'magic_link' in result
-    assert result['single_use'] is True
-    assert 'expires_at' in result
-
-def test_generate_magic_link_permanent():
-    """Test génération token permanent"""
-    service = MagicLinkService()
-    result = service.generate_magic_link(unlimited=True)
-    
-    assert result['single_use'] is False
-    assert 'expires_at' is None
-
-def test_validate_magic_link():
-    """Test validation HMAC"""
-    service = MagicLinkService()
-    
-    # Token valide
-    valid_token = service.generate_magic_link()
-    token = valid_token['magic_link'].split(':')[-1]
-    validation = service.validate_magic_link(token)
-    
-    assert validation['valid'] is True
-    
-    # Token invalide
-    invalid_token = "invalid_token_format"
-    validation = service.validate_magic_link(invalid_token)
-    assert validation['valid'] is False
-```
-
-### Tests d'intégration
-
-```python
-# tests/test_auth_magic_link.py
-def test_magic_link_flow_complete():
-    """Test flux complet : génération → validation → consommation"""
-    service = MagicLinkService()
-    
-    # 1. Génération
-    token_data = service.generate_magic_link(unlimited=False)
-    token = token_data['magic_link'].split(':')[-1]
-    
-    # 2. Validation
-    validation = service.validate_magic_link(token)
-    assert validation['valid'] is True
-    
-    # 3. Consommation
-    success = service.consume_magic_link(token)
-    assert success is True
-    
-    # 4. Double consommation doit échouer
-    success2 = service.consume_magic_link(token)
-    assert success2 is False
-```
-
-### Commande d'exécution
-
-```bash
-# Tests magic link complets
-pytest tests/test_magic_link_service.py tests/test_auth_magic_link.py -v
-
-# Tests avec marqueur webhook
-pytest -m "webhook" -v
-
-# Tests résilience Redis
-pytest -m "resilience" -v
-```
-
----
-
-## La Golden Rule : Badges HMAC signés, stockage partagé, fallback garanti
-
-Les magic links sont des badges d'accès cryptographiques signés HMAC avec `FLASK_SECRET_KEY`. Le stockage est partagé entre workers via API PHP avec fallback fichier local. Les badges peuvent être visiteur (15min TTL par défaut) ou résident (permanent). La validation est timing-attack resistant avec `hmac.compare_digest`. Chaque décision (❌/✅, trade-offs, misconceptions) maintient la sécurité du bâtiment.
-
----
-
-*Pour les détails d'API : voir [configuration-reference.md](file:///home/kidpixel/render_signal_server-main/docs/core/configuration-reference.md) ; pour l'intégration UI : voir [dashboard-ui.md](file:///home/kidpixel/render_signal_server-main/docs/access/dashboard-ui.md).*
+Un magic link n'est pas un identifiant public, c'est un secret bearer. Signé, daté, à usage unique par défaut, stocké de façon partagée et révocable : chaque propriété doit rester vraie. Dès qu'un lien fuit, la seule réponse fiable est la révocation, pas l'espoir que personne ne le trouve.
