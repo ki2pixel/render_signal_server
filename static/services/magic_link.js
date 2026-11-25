@@ -6,7 +6,29 @@ import { DOMHelper } from '../utils/DOMHelper.js';
  * Génère un magic link et le copie dans le presse-papiers
  */
 
-let _copiedToastTimer = null;
+const _unlimitedPrefKey = 'dashboard_magic_link_unlimited';
+
+/**
+ * Persiste l'état du toggle "mode illimité" (préférence locale).
+ */
+export function initMagicLinkPreference() {
+    const toggle = DOMHelper.getElement('magicLinkUnlimitedToggle');
+    if (!toggle) return;
+
+    try {
+        toggle.checked = localStorage.getItem(_unlimitedPrefKey) === 'true';
+    } catch {
+        // localStorage indisponible — ignorer
+    }
+
+    toggle.addEventListener('change', () => {
+        try {
+            localStorage.setItem(_unlimitedPrefKey, String(toggle.checked));
+        } catch {
+            // ignorer
+        }
+    });
+}
 
 export async function generateMagicLink() {
     const btn = DOMHelper.getElement('generateMagicLinkBtn');
@@ -30,9 +52,9 @@ export async function generateMagicLink() {
             try {
                 await navigator.clipboard.writeText(data.magic_link);
                 output.textContent += ' — Copié dans le presse-papiers';
-                showCopiedFeedback();
-            } catch (clipboardError) {
-                // Silently fail clipboard copy
+                MessageHelper.showToast('Magic link copié dans le presse-papiers');
+            } catch {
+                MessageHelper.showToast('Magic link généré — copie manuelle requise', 'info');
             }
         } else {
             output.textContent = data.message || 'Impossible de générer le magic link.';
@@ -48,28 +70,4 @@ export async function generateMagicLink() {
             if (output) output.className = 'status-msg';
         }, 7000);
     }
-}
-
-/**
- * Affiche un toast de feedback après copie
- */
-export function showCopiedFeedback() {
-    if (_copiedToastTimer) {
-        clearTimeout(_copiedToastTimer);
-    }
-    let toast = document.querySelector('.copied-feedback');
-    if (!toast) {
-        toast = document.createElement('div');
-        toast.className = 'copied-feedback';
-        toast.setAttribute('role', 'status');
-        toast.setAttribute('aria-live', 'polite');
-        toast.textContent = '🔗 Magic link copié dans le presse-papiers !';
-        document.body.appendChild(toast);
-    }
-    toast.classList.add('show');
-    
-    _copiedToastTimer = setTimeout(() => {
-        toast.classList.remove('show');
-        _copiedToastTimer = null;
-    }, 3000);
 }

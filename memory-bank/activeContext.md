@@ -1,9 +1,16 @@
 # Contexte Actif
 
 ## Tâche en cours
-- Aucune tâche active (Backfill 30 jours `email_proxy.php` déployé et vérifié en production).
+- Aucune tâche active (audit frontend UX/accessibilité livré et vérifié le 25/11/2026).
 
 ## Décisions récentes
+- **Audit frontend UX & accessibilité [2026-11-25]** :
+  - Page Outils scindée en 3 groupes (Actions fréquentes / Configuration / Débogage repliable par défaut) ; Déploiement et Ingestion Gmail Push remontés et visuellement prioritaires.
+  - Gmail Push sauvegardé immédiatement (auto-save + rollback visuel en cas d'échec) ; les flags debug restants demeurent dans le panneau replié.
+  - Navigation onglets : `aria-current`, deep-linking `#sec-*`, restauration de l'onglet via sessionStorage, focus géré ; `tabindex` retiré des tabpanels.
+  - Confirmation accessible (`static/components/ConfirmDialog.js`) remplace `confirm()` ; toasts unifiés (`MessageHelper.showToast`), `role=status`/`aria-busy`, anti double-soumis, erreurs serveur contextualisées (`describeError`).
+  - Découplage `handleConfigVerification` → événement `configverification:routing` consommé par `RoutingRulesService._renderRedisInspect` ; utilitaires partagés `utils/debounce.js` et `utils/listenerRegistry.js`.
+  - Détail complet : `memory-bank/progress.md` (entrée du 2026-11-25).
 - **Backfill Rétro-Actif 30 Jours `email_proxy.php` [2026-11-22]** :
   - Extraction de 62 missions entrantes de recadrage depuis `debug/mails/a_exporter.mbox` couvrant la fenêtre 23/10/2026 -> 12/11/2026 (dont le Lot 115 du 09/11).
   - Déduplication par paire `(lot, mois calendaire)` pour préserver la distinction entre les lots recyclés d'un mois sur l'autre (ex: Lot 268 octobre et Lot 268 novembre).
@@ -29,3 +36,4 @@
 
 ## Prochaine Étape
 - Surveiller les prochains lots nocturnes (`00hxx`) et vérifier la valeur `delivery_time` dans les logs webhook.
+- Vérifier visuellement en production le rendu du nouvel onglet Outils (hiérarchie des 3 groupes, mémorisation du repli du panneau Débogage) sur desktop et mobile.

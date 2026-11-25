@@ -4,7 +4,6 @@
  * Ce fichier ne contient aucune logique métier. Il importe les modules
  * spécialisés et orchestre le cycle de vie de la page (init → bind → load → cleanup).
  */
-import { ApiService } from './services/ApiService.js';
 import { WebhookService } from './services/WebhookService.js';
 import { LogService } from './services/LogService.js';
 import { MessageHelper } from './utils/MessageHelper.js';
@@ -13,9 +12,10 @@ import { RoutingRulesService } from './services/RoutingRulesService.js';
 import { DOMHelper } from './utils/DOMHelper.js';
 
 // Modules extraits
-import { generateMagicLink } from './services/magic_link.js';
+import { generateMagicLink, initMagicLinkPreference } from './services/magic_link.js';
 import { handleDeployApplication, openDownloadPage } from './services/deploy.js';
 import { updateGlobalStatus } from './services/status_banner.js';
+import { debounce } from './utils/debounce.js';
 import {
     initializeCollapsiblePanels,
     initializeManualFieldsTracking,
@@ -35,6 +35,7 @@ import {
     saveGlobalWebhookTimeWindow,
     loadRuntimeFlags,
     saveRuntimeFlags,
+    saveRuntimeFlag,
     loadProcessingPrefsFromServer,
     saveProcessingPrefsToServer,
     loadLocalPreferences,
@@ -70,6 +71,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         initializeManualFieldsTracking();
         initializeDataLossPrevention(hasUnsavedChanges);
+        initMagicLinkPreference();
         
         await loadInitialData();
         
@@ -129,6 +131,22 @@ function bindEvents() {
     // Runtime flags & processing prefs
     bindElement('runtimeFlagsSaveBtn', 'click', saveRuntimeFlags);
     bindElement('processingPrefsSaveBtn', 'click', saveProcessingPrefsToServer);
+
+    // Ingestion Gmail Push : sauvegarde immédiate avec rollback en cas d'échec
+    const gmailToggle = DOMHelper.getElement('gmailIngressEnabledToggle');
+    if (gmailToggle) {
+        gmailToggle.addEventListener('change', async () => {
+            const previous = !gmailToggle.checked;
+            const ok = await saveRuntimeFlag(
+                'gmail_ingress_enabled',
+                gmailToggle.checked,
+                'gmailIngressMsg'
+            );
+            if (!ok) {
+                gmailToggle.checked = previous;
+            }
+        });
+    }
     
     // Config import/export
     bindElement('exportConfigBtn', 'click', exportAllConfig);
@@ -140,9 +158,11 @@ function bindEvents() {
     }
     
     // Validation & preview
-    bindElement('testWebhookUrl', 'input', validateWebhookUrlFromInput);
+    bindElement('testWebhookUrl', 'input', debounce(validateWebhookUrlFromInput, 400));
+    bindElement('validateWebhookUrlBtn', 'click', validateWebhookUrlFromInput);
+    bindElement('buildPayloadPreviewBtn', 'click', buildPayloadPreview);
     ['previewSubject', 'previewSender', 'previewBody'].forEach(id => {
-        bindElement(id, 'input', buildPayloadPreview);
+        bindElement(id, 'input', debounce(buildPayloadPreview, 200));
     });
     
     // Status
@@ -168,15 +188,12 @@ function bindEvents() {
         });
     
     // Deployment & admin
-    bindElement('restartServerBtn', 'click', handleDeployApplication);
+    bindElement('deployApplicationBtn', 'click', handleDeployApplication);
     bindElement('migrateConfigsBtn', 'click', handleConfigMigration);
     bindElement('verifyConfigStoreBtn', 'click', handleConfigVerification);
     
-    // Download page (previously inert button)
+    // Download page
     bindElement('openDownloadPageBtn', 'click', openDownloadPage);
-    
-    // Webhook URL validation button
-    bindElement('validateWebhookUrlBtn', 'click', validateWebhookUrlFromInput);
 }
 
 /**

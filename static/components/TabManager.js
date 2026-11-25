@@ -5,6 +5,7 @@ export class TabManager {
         this.tabButtons = [];
         this.tabContents = [];
         this._abortController = null;
+        this._storageKey = 'dashboard_active_tab';
     }
 
     /**
@@ -14,6 +15,7 @@ export class TabManager {
         this._abortController = new AbortController();
         this.findTabElements();
         this.bindEvents();
+        this.bindHashChange();
         this.showInitialTab();
     }
 
@@ -48,33 +50,97 @@ export class TabManager {
             button.addEventListener('click', (e) => {
                 e.preventDefault();
                 const targetId = button.dataset.target;
-                this.showTab(targetId);
+                this.showTab(targetId, { focus: true });
             }, { signal });
         });
     }
 
     /**
-     * Affiche l'onglet initial (premier onglet ou celui marqué comme actif)
+     * Affiche l'onglet initial.
+     * Priorité : location.hash → sessionStorage → .active HTML → premier onglet.
      */
     showInitialTab() {
-        const activeButton = document.querySelector('.tab-btn.active');
-        if (activeButton) {
-            const targetId = activeButton.dataset.target;
-            this.showTab(targetId);
+        const hashTarget = this._resolveTabSelector(globalThis.location?.hash);
+        if (hashTarget) {
+            this.showTab(hashTarget, { focus: false });
             return;
         }
-        
-        if (this.tabs.length > 0) {
-            const firstTab = this.tabs[0];
-            this.showTab(`#${firstTab.id}`);
+
+        const stored = this._readStoredTab();
+        if (stored) {
+            this.showTab(stored, { focus: false });
+            return;
         }
+
+        const activeButton = document.querySelector('.tab-btn.active');
+        if (activeButton) {
+            this.showTab(activeButton.dataset.target, { focus: false });
+            return;
+        }
+
+        if (this.tabs.length > 0) {
+            this.showTab(`#${this.tabs[0].id}`, { focus: false });
+        }
+    }
+
+    /**
+     * Résout un sélecteur d'onglet ("#sec-x") depuis un id brut ou un hash.
+     * @param {string|null} raw - Hash ou id de panneau
+     * @returns {string|null} Sélecteur valide pour data-target, sinon null
+     */
+    _resolveTabSelector(raw) {
+        if (!raw) return null;
+        const selector = raw.startsWith('#') ? raw : `#${raw}`;
+        const exists = Array.from(this.tabButtons).some(btn => btn.dataset.target === selector);
+        return exists ? selector : null;
+    }
+
+    /**
+     * Lit l'onglet mémorisé en sessionStorage.
+     * @returns {string|null} Sélecteur d'onglet ou null
+     */
+    _readStoredTab() {
+        try {
+            return this._resolveTabSelector(sessionStorage.getItem(this._storageKey));
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Mémorise l'onglet actif et met à jour le hash sans scroll.
+     * @param {string} targetId - Sélecteur d'onglet (ex: "#sec-tools")
+     */
+    _persistActiveTab(targetId) {
+        try {
+            sessionStorage.setItem(this._storageKey, targetId);
+        } catch {
+            // stockage indisponible — ignorer
+        }
+        if (globalThis.history?.replaceState && globalThis.location?.hash !== targetId) {
+            globalThis.history.replaceState(null, '', targetId);
+        }
+    }
+
+    /**
+     * Réagit aux changements de hash (lien partagé, précédent/suivant).
+     */
+    bindHashChange() {
+        const signal = this._abortController?.signal;
+        globalThis.addEventListener('hashchange', () => {
+            const targetId = this._resolveTabSelector(globalThis.location?.hash);
+            if (targetId && targetId !== `#${this.activeTab}`) {
+                this.showTab(targetId, { focus: false });
+            }
+        }, { signal });
     }
 
     /**
      * Affiche un onglet spécifique
      * @param {string} targetId - ID de la cible (ex: "#sec-overview")
+     * @param {{focus?: boolean}} [options] - Placer le focus sur le bouton activé
      */
-    showTab(targetId) {
+    showTab(targetId, options = {}) {
         this.tabContents.forEach(content => {
             content.classList.remove('active');
             content.style.display = 'none';
@@ -83,6 +149,7 @@ export class TabManager {
         this.tabButtons.forEach(button => {
             button.classList.remove('active');
             button.setAttribute('aria-selected', 'false');
+            button.setAttribute('aria-current', 'false');
             button.setAttribute('tabindex', '-1');
         });
         
@@ -96,10 +163,15 @@ export class TabManager {
         if (targetButton) {
             targetButton.classList.add('active');
             targetButton.setAttribute('aria-selected', 'true');
+            targetButton.setAttribute('aria-current', 'true');
             targetButton.setAttribute('tabindex', '0');
+            if (options.focus) {
+                targetButton.focus();
+            }
         }
         
         this.activeTab = targetId.replace('#', '');
+        this._persistActiveTab(targetId);
         
         this.dispatchTabChange(targetId);
     }
@@ -147,7 +219,8 @@ export class TabManager {
         this.tabButtons.forEach((button) => {
             button.setAttribute('role', 'tab');
             button.setAttribute('aria-controls', button.dataset.target.replace('#', ''));
-            button.setAttribute('aria-selected', button.classList.contains('active'));
+            button.setAttribute('aria-selected', String(button.classList.contains('active')));
+            button.setAttribute('aria-current', String(button.classList.contains('active')));
             button.setAttribute('tabindex', button.classList.contains('active') ? '0' : '-1');
         });
         
@@ -198,7 +271,7 @@ export class TabManager {
                 if (targetButton) {
                     targetButton.focus();
                     const targetId = targetButton.dataset.target;
-                    this.showTab(targetId);
+                    this.showTab(targetId, { focus: true });
                 }
             }, { signal });
         });

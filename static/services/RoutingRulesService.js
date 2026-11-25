@@ -1,6 +1,7 @@
 import { ApiService } from './ApiService.js';
 import { MessageHelper } from '../utils/MessageHelper.js';
 import { DOMHelper } from '../utils/DOMHelper.js';
+import { JsonViewer } from '../components/JsonViewer.js';
 
 const FIELD_OPTIONS = [
     { value: 'sender', label: 'Expéditeur' },
@@ -233,6 +234,85 @@ export class RoutingRulesService {
         ];
     }
 
+    /**
+     * Rend le résultat d'inspection Redis de la clé routing_rules
+     * (émis par handleConfigVerification via l'événement configverification:routing).
+     * @param {{pending?: boolean, entry?: object|null, includeRaw?: boolean, error?: unknown}} detail
+     */
+    _renderRedisInspect(detail) {
+        const msgEl = DOMHelper.getElement('routingRulesRedisInspectMsg');
+        const logEl = DOMHelper.getElement('routingRulesRedisInspectLog');
+        const viewer = DOMHelper.getElement('routingRulesRedisInspectViewer');
+
+        if (detail.pending) {
+            if (msgEl) {
+                msgEl.textContent = '';
+                msgEl.className = 'status-msg';
+            }
+            if (logEl) {
+                logEl.style.display = 'none';
+                logEl.textContent = '';
+            }
+            if (viewer) {
+                viewer.style.display = 'none';
+                viewer.textContent = '';
+            }
+            return;
+        }
+
+        if (detail.error) {
+            if (msgEl) {
+                MessageHelper.showError(
+                    'routingRulesRedisInspectMsg',
+                    MessageHelper.describeError(detail.error)
+                );
+            }
+            return;
+        }
+
+        const { entry = null, includeRaw = false } = detail;
+        const includeJson = Boolean(includeRaw);
+
+        if (msgEl) {
+            if (!entry) {
+                MessageHelper.showInfo(
+                    'routingRulesRedisInspectMsg',
+                    'Routage Dynamique: aucune entrée trouvée dans la vérification (clé routing_rules absente).'
+                );
+            } else if (entry.valid) {
+                MessageHelper.showSuccess(
+                    'routingRulesRedisInspectMsg',
+                    'Routage Dynamique: configuration persistée OK.'
+                );
+            } else {
+                MessageHelper.showError(
+                    'routingRulesRedisInspectMsg',
+                    `Routage Dynamique: INVALID (${entry.message || 'inconnu'}).`
+                );
+            }
+        }
+
+        if (logEl) {
+            if (!entry || includeJson) {
+                logEl.textContent = '';
+                logEl.style.display = 'none';
+            } else {
+                logEl.textContent = entry.summary || '<vide>';
+                logEl.style.display = 'block';
+            }
+        }
+
+        if (viewer) {
+            if (!entry || !includeJson || !entry.payload) {
+                viewer.textContent = '';
+                viewer.style.display = 'none';
+            } else {
+                JsonViewer.render(viewer, entry.payload, { collapseDepth: 1 });
+                viewer.style.display = 'block';
+            }
+        }
+    }
+
     _bindEvents() {
         if (this.addButton) {
             this.addButton.addEventListener('click', () => this._handleAddRule());
@@ -243,6 +323,9 @@ export class RoutingRulesService {
         if (this.lockButton) {
             this.lockButton.addEventListener('click', () => this._toggleLock());
         }
+        document.addEventListener('configverification:routing', (event) => {
+            this._renderRedisInspect(event.detail || {});
+        });
         if (!this.container) return;
 
         this.container.addEventListener('input', () => this._markDirty());

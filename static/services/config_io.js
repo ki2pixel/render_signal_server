@@ -3,6 +3,7 @@ import { WebhookService } from './WebhookService.js';
 import { MessageHelper } from '../utils/MessageHelper.js';
 import { DOMHelper } from '../utils/DOMHelper.js';
 import { JsonViewer } from '../components/JsonViewer.js';
+import { confirm as confirmDialog } from '../components/ConfirmDialog.js';
 
 // -------------------- Fenêtre Horaire --------------------
 
@@ -130,7 +131,7 @@ export async function saveTimeWindow(updatePanelStatusFn, updatePanelIndicatorFn
             return false;
         }
     } catch (e) {
-        MessageHelper.showError('timeWindowMsg', 'Erreur de communication avec le serveur.');
+        MessageHelper.showError('timeWindowMsg', MessageHelper.describeError(e));
         updatePanelStatusFn('time-window', false);
         return false;
     }
@@ -234,7 +235,7 @@ export async function saveGlobalWebhookTimeWindow(updatePanelStatusFn, updatePan
             return false;
         }
     } catch (e) {
-        MessageHelper.showError('globalWebhookTimeMsg', 'Erreur de communication avec le serveur.');
+        MessageHelper.showError('globalWebhookTimeMsg', MessageHelper.describeError(e));
         updatePanelStatusFn('time-window', false);
         return false;
     }
@@ -279,6 +280,35 @@ export async function loadRuntimeFlags() {
 }
 
 /**
+ * Sauvegarde un flag de runtime individuel (pour les toggles à sauvegarde immédiate)
+ * @param {string} key - Clé du flag (ex: gmail_ingress_enabled)
+ * @param {boolean} value - Valeur du flag
+ * @param {string} [msgId] - ID de l'élément message cible (optionnel)
+ * @returns {Promise<boolean>} Succès
+ */
+export async function saveRuntimeFlag(key, value, msgId) {
+    try {
+        const response = await ApiService.post('/api/update_runtime_flags', { [key]: value });
+        if (response.success) {
+            if (msgId) {
+                MessageHelper.showSuccess(msgId, 'Flag enregistré.');
+            }
+            return true;
+        }
+        if (msgId) {
+            MessageHelper.showError(msgId, response.message || 'Erreur lors de la sauvegarde.');
+        }
+        return false;
+    } catch (e) {
+        console.error(`saveRuntimeFlag ${key} error`, e);
+        if (msgId) {
+            MessageHelper.showError(msgId, MessageHelper.describeError(e));
+        }
+        return false;
+    }
+}
+
+/**
  * Sauvegarde les flags de runtime
  */
 export async function saveRuntimeFlags() {
@@ -290,15 +320,11 @@ export async function saveRuntimeFlags() {
     try {
         const disableDedup = DOMHelper.getElement('disableEmailIdDedupToggle');
         const allowCustom = DOMHelper.getElement('allowCustomWithoutLinksToggle');
-        const gmailIngressEnabled = DOMHelper.getElement('gmailIngressEnabledToggle');
 
-        const payload = {
+        const data = await ApiService.post('/api/update_runtime_flags', {
             disable_email_id_dedup: disableDedup?.checked ?? false,
             allow_custom_webhook_without_links: allowCustom?.checked ?? false,
-            gmail_ingress_enabled: gmailIngressEnabled?.checked ?? true,
-        };
-
-        const data = await ApiService.post('/api/update_runtime_flags', payload);
+        });
         
         if (data.success) {
             MessageHelper.showSuccess(msgId, 'Flags de débogage enregistrés avec succès !');
@@ -306,7 +332,7 @@ export async function saveRuntimeFlags() {
             MessageHelper.showError(msgId, data.message || 'Erreur lors de la sauvegarde.');
         }
     } catch (e) {
-        MessageHelper.showError(msgId, 'Erreur de communication avec le serveur.');
+        MessageHelper.showError(msgId, MessageHelper.describeError(e));
     } finally {
         MessageHelper.setButtonLoading(btn, false);
     }
@@ -442,7 +468,7 @@ export async function saveProcessingPrefsToServer() {
             MessageHelper.showError(msgId, data.message || 'Erreur lors de la sauvegarde.');
         }
     } catch (e) {
-        MessageHelper.showError(msgId, 'Erreur de communication avec le serveur.');
+        MessageHelper.showError(msgId, MessageHelper.describeError(e));
     } finally {
         MessageHelper.setButtonLoading(btn, false);
     }
@@ -675,7 +701,10 @@ export async function handleConfigMigration() {
         return;
     }
 
-    const confirmed = globalThis.confirm('Lancer la migration des configurations vers Redis ?');
+    const confirmed = await confirmDialog(
+        'Le script migrate_configs_to_redis.py sera rejoué avec les variables d\'environnement de production.',
+        'Migrer les configurations vers Redis ?'
+    );
     if (!confirmed) {
         return;
     }
@@ -703,7 +732,7 @@ export async function handleConfigMigration() {
         }
     } catch (error) {
         console.error('Erreur migration configs:', error);
-        MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
+        MessageHelper.showError(messageId, MessageHelper.describeError(error));
     } finally {
         MessageHelper.setButtonLoading(button, false);
     }
@@ -717,9 +746,6 @@ export async function handleConfigVerification() {
     const messageId = 'verifyConfigStoreMsg';
     const logEl = DOMHelper.getElement('verifyConfigStoreLog');
     const logViewer = DOMHelper.getElement('verifyConfigStoreViewer');
-    const routingRulesMsgEl = DOMHelper.getElement('routingRulesRedisInspectMsg');
-    const routingRulesLogEl = DOMHelper.getElement('routingRulesRedisInspectLog');
-    const routingRulesViewer = DOMHelper.getElement('routingRulesRedisInspectViewer');
     const rawToggle = DOMHelper.getElement('verifyConfigStoreRawToggle');
     const includeRaw = Boolean(rawToggle?.checked);
 
@@ -727,6 +753,8 @@ export async function handleConfigVerification() {
         MessageHelper.showError(messageId, 'Bouton de vérification introuvable.');
         return;
     }
+
+    dispatchRoutingInspect({ pending: true });
 
     MessageHelper.setButtonLoading(button, true, '⏳ Vérification en cours...');
     MessageHelper.showInfo(messageId, 'Vérification des données Redis en cours...');
@@ -737,18 +765,6 @@ export async function handleConfigVerification() {
     if (logViewer) {
         logViewer.style.display = 'none';
         logViewer.textContent = '';
-    }
-    if (routingRulesMsgEl) {
-        routingRulesMsgEl.textContent = '';
-        routingRulesMsgEl.className = 'status-msg';
-    }
-    if (routingRulesLogEl) {
-        routingRulesLogEl.style.display = 'none';
-        routingRulesLogEl.textContent = '';
-    }
-    if (routingRulesViewer) {
-        routingRulesViewer.style.display = 'none';
-        routingRulesViewer.textContent = '';
     }
 
     try {
@@ -808,53 +824,21 @@ export async function handleConfigVerification() {
         const routingEntry = (response?.results || []).find(
             (entry) => entry && entry.key === 'routing_rules'
         );
-
-        if (routingRulesMsgEl) {
-            if (!routingEntry) {
-                MessageHelper.showInfo(
-                    'routingRulesRedisInspectMsg',
-                    'Routage Dynamique: aucune entrée trouvée dans la vérification (clé routing_rules absente).'
-                );
-            } else if (routingEntry.valid) {
-                MessageHelper.showSuccess(
-                    'routingRulesRedisInspectMsg',
-                    'Routage Dynamique: configuration persistée OK.'
-                );
-            } else {
-                MessageHelper.showError(
-                    'routingRulesRedisInspectMsg',
-                    `Routage Dynamique: INVALID (${routingEntry.message || 'inconnu'}).`
-                );
-            }
-        }
-
-        if (routingRulesLogEl && !includeRaw) {
-            if (!routingEntry) {
-                routingRulesLogEl.textContent = '';
-                routingRulesLogEl.style.display = 'none';
-            } else {
-                routingRulesLogEl.textContent = routingEntry.summary || '<vide>';
-                routingRulesLogEl.style.display = 'block';
-            }
-        }
-
-        if (routingRulesViewer) {
-            if (!routingEntry || !includeRaw || !routingEntry.payload) {
-                routingRulesViewer.textContent = '';
-                routingRulesViewer.style.display = 'none';
-            } else {
-                JsonViewer.render(routingRulesViewer, routingEntry.payload, { collapseDepth: 1 });
-                routingRulesViewer.style.display = 'block';
-            }
-        }
+        dispatchRoutingInspect({ entry: routingEntry ?? null, includeRaw });
     } catch (error) {
         console.error('Erreur vérification config store:', error);
-        MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
-
-        if (routingRulesMsgEl) {
-            MessageHelper.showError('routingRulesRedisInspectMsg', 'Erreur de communication avec le serveur.');
-        }
+        MessageHelper.showError(messageId, MessageHelper.describeError(error));
+        dispatchRoutingInspect({ error });
     } finally {
         MessageHelper.setButtonLoading(button, false);
     }
+}
+
+/**
+ * Émet le résultat d'inspection de la clé routing_rules.
+ * Le panneau Routage Dynamique écoute cet événement et rend son propre DOM.
+ * @param {object} detail - { pending?, entry?, includeRaw?, error? }
+ */
+function dispatchRoutingInspect(detail) {
+    document.dispatchEvent(new CustomEvent('configverification:routing', { detail }));
 }

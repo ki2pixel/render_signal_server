@@ -77,11 +77,20 @@
   transition: all var(--transition-slow) ease;
 }
 
+/* Le panneau de débogage contient plusieurs cartes : hauteur étendue */
+.collapsible-panel[data-panel="tools-debug"] .panel-content {
+  max-height: 8000px;
+}
+
 .panel-content.collapsed {
   max-height: 0;
   padding: 0 16px;
   opacity: 0;
   overflow: hidden;
+}
+
+.collapsible-panel[data-panel="tools-debug"] .panel-content.collapsed {
+  max-height: 0;
 }
 
 .panel-actions {
@@ -161,25 +170,47 @@
   background: rgba(26, 188, 156, 0.02);
 }
 
-/* Toast Notification */
-.copied-feedback {
+/* Toast Notification (région + unité unifiée) */
+.toast-region {
   position: fixed;
-  top: 20px;
-  right: 20px;
-  background: var(--cork-success);
-  color: white;
-  padding: 12px 20px;
-  border-radius: var(--radius-md);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  transform: translateX(400px);
-  transition: transform var(--transition-slow) ease;
+  top: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   z-index: var(--z-toast);
-  font-weight: 500;
+  pointer-events: none;
 }
 
-.copied-feedback.show {
-  transform: translateX(0);
+.toast {
+  position: relative;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  color: white;
+  font-weight: 500;
+  font-size: 0.9rem;
+  pointer-events: auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transform: translateY(-20px);
+  opacity: 0;
+  animation: toastIn 0.3s ease forwards;
 }
+
+@keyframes toastIn {
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.toast--hide {
+  animation: toastOut 0.3s ease forwards;
+}
+
+@keyframes toastOut {
+  to { transform: translateY(-20px); opacity: 0; }
+}
+
+.toast--success { background: var(--cork-success); }
+.toast--error   { background: var(--cork-danger); }
+.toast--info    { background: var(--cork-info); }
 
 /* Responsive */
 @media (max-width: 768px) {
@@ -203,14 +234,9 @@
 }
 
 @media (max-width: 480px) {
-  .copied-feedback {
-    right: 10px;
+  .toast-region {
     top: 10px;
+    right: 10px;
     left: 10px;
-    transform: translateY(-100px);
-  }
-
-  .copied-feedback.show {
-    transform: translateY(0);
   }
 }

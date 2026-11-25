@@ -159,13 +159,13 @@
 .log-entry.success::before {
   content: "✓";
   background: rgba(26,188,156,0.18);
-  color: #1abc9c;
+  color: var(--cork-success);
 }
 
 .log-entry.error::before {
   content: "⚠";
   background: rgba(231,81,90,0.18);
-  color: #e7515a;
+  color: var(--cork-danger);
 }
 
 .log-entry.success {

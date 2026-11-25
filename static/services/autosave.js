@@ -1,25 +1,9 @@
 import { ApiService } from './ApiService.js';
 import { DOMHelper } from '../utils/DOMHelper.js';
+import { debounce } from '../utils/debounce.js';
+import { createListenerRegistry } from '../utils/listenerRegistry.js';
 
-const _registeredHandlers = [];
-
-/**
- * Fonction de debounce pour limiter les appels
- * @param {Function} func - Fonction à débouncer
- * @param {number} wait - Temps d'attente en ms
- * @returns {Function} Fonction débouncée
- */
-export function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
+const _listeners = createListenerRegistry();
 
 /**
  * Enregistre un gestionnaire d'événement traçable
@@ -28,8 +12,7 @@ export function debounce(func, wait) {
  * @param {Function} handler
  */
 function _addTrackedListener(el, type, handler) {
-    el.addEventListener(type, handler);
-    _registeredHandlers.push({ el, type, handler });
+    _listeners.add(el, type, handler);
 }
 
 /**
@@ -80,7 +63,10 @@ export function initializeAutoSave() {
 async function handleAutoSaveChange(fieldId) {
     try {
         markSectionAsModified(fieldId);
-        
+
+        const section = getFieldSection(fieldId);
+        if (section) updateSectionIndicator(section, 'Sauvegarde…');
+
         const prefsData = collectPreferencesData();
         const result = await ApiService.post('/api/processing_prefs', prefsData);
         
@@ -274,16 +260,12 @@ export function initializeDataLossPrevention(hasUnsavedChangesFn) {
             e.returnValue = '';
         }
     };
-    globalThis.addEventListener('beforeunload', handler);
-    _registeredHandlers.push({ el: globalThis, type: 'beforeunload', handler });
+    _listeners.add(globalThis, 'beforeunload', handler);
 }
 
 /**
  * Nettoie tous les listeners d'auto-sauvegarde enregistrés.
  */
 export function destroy() {
-    _registeredHandlers.forEach(({ el, type, handler }) => {
-        el.removeEventListener(type, handler);
-    });
-    _registeredHandlers.length = 0;
+    _listeners.removeAll();
 }

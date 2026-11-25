@@ -92,7 +92,16 @@ export function updateStatusBanner(statusData, config) {
     const statusIcon = DOMHelper.getElement('globalStatusIcon');
     if (!statusIcon) return;
 
-    statusIcon.className = 'status-icon ' + statusData.status;
+    const labels = {
+        success: 'Statut : opérationnel',
+        warning: 'Statut : dégradé',
+        error: 'Statut : critique'
+    };
+
+    statusIcon.setAttribute('role', 'img');
+    statusIcon.setAttribute('aria-label', labels[statusData.status] || labels.success);
+    statusIcon.classList.remove('success', 'warning', 'error');
+    statusIcon.classList.add(statusData.status);
     
     switch (statusData.status) {
         case 'success':

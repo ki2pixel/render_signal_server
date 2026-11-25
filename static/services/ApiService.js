@@ -14,7 +14,18 @@ export class ApiService {
             throw new Error('Accès refusé');
         }
         if (res.status >= 500) {
-            throw new Error('Erreur serveur');
+            let detail = '';
+            try {
+                if (typeof res.clone === 'function') {
+                    const body = await res.clone().json();
+                    detail = body?.message || body?.error || '';
+                }
+            } catch {
+                // corps non JSON — garder le message générique
+            }
+            const error = new Error(detail || 'Erreur serveur');
+            error.status = res.status;
+            throw error;
         }
         return res;
     }

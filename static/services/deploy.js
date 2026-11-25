@@ -1,31 +1,36 @@
 import { ApiService } from './ApiService.js';
 import { MessageHelper } from '../utils/MessageHelper.js';
 import { DOMHelper } from '../utils/DOMHelper.js';
+import { confirm as confirmDialog } from '../components/ConfirmDialog.js';
 
 /**
  * Gère le déploiement de l'application via l'API admin
  */
 export async function handleDeployApplication() {
-    const button = DOMHelper.getElement('restartServerBtn');
-    const messageId = 'restartMsg';
+    const button = DOMHelper.getElement('deployApplicationBtn');
+    const messageId = 'deployMsg';
     
     if (!button) {
         MessageHelper.showError(messageId, 'Bouton de déploiement introuvable.');
         return;
     }
     
-    const confirmed = globalThis.confirm("Confirmez-vous le déploiement de l'application ? Elle peut être indisponible pendant quelques secondes.");
+    const confirmed = await confirmDialog(
+        "Le service peut être indisponible pendant quelques secondes.",
+        "Déployer l'application ?"
+    );
     if (!confirmed) {
         return;
     }
     
-    button.disabled = true;
+    MessageHelper.setButtonLoading(button, true, '⏳ Déploiement...');
     MessageHelper.showInfo(messageId, 'Déploiement en cours...');
     
     try {
         const response = await ApiService.post('/api/deploy_application');
         if (response?.success) {
             MessageHelper.showSuccess(messageId, response.message || 'Déploiement planifié. Vérification du service…');
+            updateDeployLastRun();
             try {
                 await pollHealthCheck({ attempts: 12, intervalMs: 1500, timeoutMs: 30000 });
                 globalThis.location.reload();
@@ -38,10 +43,20 @@ export async function handleDeployApplication() {
         }
     } catch (error) {
         console.error('Erreur déploiement application:', error);
-        MessageHelper.showError(messageId, 'Erreur de communication avec le serveur.');
+        MessageHelper.showError(messageId, MessageHelper.describeError(error));
     } finally {
-        button.disabled = false;
+        MessageHelper.setButtonLoading(button, false);
     }
+}
+
+/**
+ * Affiche la date du dernier déploiement déclenché depuis cette session.
+ */
+function updateDeployLastRun() {
+    const el = DOMHelper.getElement('deployLastRun');
+    if (!el) return;
+    const now = new Date();
+    el.textContent = `Dernier déploiement déclenché: ${now.toLocaleString('fr-FR')}`;
 }
 
 /**

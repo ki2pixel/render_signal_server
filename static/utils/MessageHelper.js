@@ -12,6 +12,9 @@ export class MessageHelper {
         const el = DOMHelper.getElement(elementId);
         if (!el) return; // Safe-guard: element may be absent in some contexts
         
+        if (!el.getAttribute('role')) el.setAttribute('role', 'status');
+        if (!el.getAttribute('aria-live')) el.setAttribute('aria-live', 'polite');
+        
         el.textContent = message;
         el.className = 'status-msg ' + type;
         
@@ -52,14 +55,62 @@ export class MessageHelper {
         if (!button) return;
         
         if (loading) {
+            if (button.disabled) return; // garde anti double-soumis
             button.dataset.originalText = button.textContent;
             button.textContent = loadingText;
             button.disabled = true;
+            button.setAttribute('aria-busy', 'true');
         } else {
             button.textContent = button.dataset.originalText || button.textContent;
             button.disabled = false;
+            button.removeAttribute('aria-busy');
             delete button.dataset.originalText;
         }
+    }
+
+    /**
+     * Affiche un toast global accessible (file d'attente limitée).
+     * @param {string} message - Message à afficher
+     * @param {string} [type='success'] - Type (success, error, info)
+     * @param {number} [duration=5000] - Durée d'affichage en ms
+     */
+    static showToast(message, type = 'success', duration = 5000) {
+        let region = document.getElementById('toastRegion');
+        if (!region) {
+            region = document.createElement('div');
+            region.id = 'toastRegion';
+            region.className = 'toast-region';
+            region.setAttribute('role', 'status');
+            region.setAttribute('aria-live', 'polite');
+            document.body.appendChild(region);
+        }
+
+        while (region.children.length >= 3) {
+            region.firstElementChild.remove();
+        }
+
+        const toast = document.createElement('div');
+        toast.className = `toast toast--${type}`;
+        toast.textContent = message;
+        region.appendChild(toast);
+
+        setTimeout(() => {
+            toast.classList.add('toast--hide');
+            setTimeout(() => toast.remove(), 400);
+        }, duration);
+    }
+
+    /**
+     * Extrait un message lisible d'une erreur (message serveur si disponible).
+     * @param {unknown} error - Erreur levée
+     * @param {string} fallback - Message par défaut
+     * @returns {string} Message à afficher
+     */
+    static describeError(error, fallback = 'Erreur de communication avec le serveur.') {
+        if (error && typeof error.status === 'number' && error.message) {
+            return error.message;
+        }
+        return fallback;
     }
 
     /**

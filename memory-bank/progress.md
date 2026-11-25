@@ -15,6 +15,21 @@ Les entrées de plus de 90 jours sont archivées par trimestre dans `/memory-ban
 
 ## Terminé
 
+[2026-11-25 21:09:22] - Audit frontend UX/accessibilité et refonte de la page Outils
+- **Objectif** : Réduire la charge cognitive du dashboard (surtout « Outils ») et corriger les lacunes WCAG AA de façon transverse plutôt qu'au cas par cas.
+- **Actions réalisées** :
+  * `dashboard.html` : page Outils réorganisée en 3 groupes (Actions fréquentes : Déploiement + Ingestion Gmail Push ; Configuration : Import/Export + Magic Link ; Outils de Débogage repliable par défaut) ; toggles reliés via `aria-labelledby` ; `tabindex` retiré des tabpanels.
+  * `static/components/ConfirmDialog.js` : modale accessible (`role=alertdialog`, focus trap, Échap, retour du focus) remplaçant `confirm()` (déploiement, migration Redis).
+  * `static/components/TabManager.js` : `aria-current`, deep-linking par hash `#sec-*`, persistance sessionStorage de l'onglet, focus sur l'onglet activé, gestion `hashchange`.
+  * `static/services/panels.js` : état replié/déplié mémorisé en localStorage ; garde anti double-soumis et état de chargement sur les sauvegardes de panneaux.
+  * `static/services/config_io.js` : `saveRuntimeFlag()` pour l'auto-save immédiat de Gmail Push (rollback UI en cas d'échec) ; erreurs serveur remontées via `MessageHelper.describeError` ; `handleConfigVerification` découplé du DOM routage via l'événement `configverification:routing` consommé par `RoutingRulesService._renderRedisInspect`.
+  * `static/utils/MessageHelper.js` : toast unifié (`showToast`, région `role=status`, pile max 3), `role=status` garanti, `aria-busy` dans `setButtonLoading`, garde anti double-soumis.
+  * `static/utils/debounce.js` + `static/utils/listenerRegistry.js` : utilitaires partagés (déduplication panels/autosave) ; debounce 400 ms sur la validation d'URL et 200 ms sur la preview payload.
+  * `static/services/status_banner.js` + CSS : icône de statut `role=img` + `aria-label` dynamique, couleurs en dur migrées vers variables CSS (`--json-*`, timeline), ancien toast `.copied-feedback` supprimé.
+  * Bouton mort `buildPayloadPreviewBtn` rendu fonctionnel ; préférence « mode illimité » magic link persistée ; `restartServerBtn`/`restartMsg` renommés `deployApplicationBtn`/`deployMsg`.
+- **Validation** : ESLint 0 erreur (22 warnings préexistants), vitest 38/38, `vite build` OK, rendu Jinja du dashboard validé (`tests/test_routes_dashboard_unit.py` 5/5).
+- **Référence** : plan d'audit `~/.commandcode/plans/audit-frontend-ux-accessibilite.md`.
+
 [2026-11-22 13:45:00] - Enrichissement rétro-actif 30 jours du proxy email (email_proxy.php)
 - **Objectif** : Alimenter le proxy public `email_proxy.php` (sur `webhook.kidpixel.fr`) avec les missions des 30 derniers jours (dont le Lot 115 du 09/11/2026) à partir du mbox `debug/mails/a_exporter.mbox`.
 - **Actions réalisées** :

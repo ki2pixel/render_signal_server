@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { debounce } from '../services/autosave.js';
+import { debounce } from '../utils/debounce.js';
 
 describe('debounce', () => {
     it('should delay execution by the specified wait time', async () => {

@@ -14,6 +14,13 @@
   --cork-info: #2196f3;
   --cork-border-color: #191e3a;
 
+  /* Syntaxe JSON (contrastes AA sur fond sombre) */
+  --json-string: #5df08a;
+  --json-number: #7deeff;
+  --json-boolean: #ffc487;
+  --json-null: #ff93cf;
+  --json-undefined: #cbaefc;
+
   /* Animation Durations */
   --transition-fast: 0.15s ease;
   --transition-normal: 0.2s ease;

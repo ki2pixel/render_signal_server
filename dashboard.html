@@ -73,7 +73,7 @@
       </div>
 
       <!-- Section: Webhooks (panneaux pliables) -->
-      <div id="sec-webhooks" data-target="sec-webhooks" class="section-panel config" role="tabpanel" aria-labelledby="tab-webhooks" tabindex="0">
+      <div id="sec-webhooks" data-target="sec-webhooks" class="section-panel config" role="tabpanel" aria-labelledby="tab-webhooks">
         <!-- Panneau 1: URLs & SSL -->
         <div class="collapsible-panel" data-panel="urls-ssl">
           <div class="panel-header">
@@ -93,17 +93,17 @@
             </div>
             <div class="toggle-row mt-15">
               <label class="toggle-switch">
-                <input type="checkbox" id="sslVerifyToggle" data-target="sslVerifyToggle">
+                <input type="checkbox" id="sslVerifyToggle" data-target="sslVerifyToggle" aria-labelledby="sslVerifyToggleLabel">
                 <span class="toggle-slider"></span>
               </label>
-              <span class="toggle-row-text">Vérification SSL (WEBHOOK_SSL_VERIFY)</span>
+              <span class="toggle-row-text" id="sslVerifyToggleLabel">Vérification SSL (WEBHOOK_SSL_VERIFY)</span>
             </div>
             <div class="toggle-row mt-12">
               <label class="toggle-switch">
-                <input type="checkbox" id="webhookSendingToggle" data-target="webhookSendingToggle">
+                <input type="checkbox" id="webhookSendingToggle" data-target="webhookSendingToggle" aria-labelledby="webhookSendingToggleLabel">
                 <span class="toggle-slider"></span>
               </label>
-              <span class="toggle-row-text">Activer l'envoi des webhooks (global)</span>
+              <span class="toggle-row-text" id="webhookSendingToggleLabel">Activer l'envoi des webhooks (global)</span>
             </div>
             <div class="form-group mt-15">
               <label for="webhookDeliveryMode">Mode d'envoi HTTP</label>
@@ -115,10 +115,10 @@
             </div>
             <div class="toggle-row mt-12">
               <label class="toggle-switch">
-                <input type="checkbox" id="webhookFallbackOn415Toggle" data-target="webhookFallbackOn415Toggle">
+                <input type="checkbox" id="webhookFallbackOn415Toggle" data-target="webhookFallbackOn415Toggle" aria-labelledby="webhookFallbackOn415ToggleLabel">
                 <span class="toggle-slider"></span>
               </label>
-              <span class="toggle-row-text">Activer le fallback automatique en cas de 415</span>
+              <span class="toggle-row-text" id="webhookFallbackOn415ToggleLabel">Activer le fallback automatique en cas de 415</span>
             </div>
             <div class="panel-actions">
               <button class="panel-save-btn" data-panel="urls-ssl">💾 Enregistrer</button>
@@ -143,10 +143,10 @@
           <div class="panel-content">
             <div class="toggle-row mb-12">
               <label class="toggle-switch">
-                <input type="checkbox" id="absencePauseToggle" data-target="absencePauseToggle">
+                <input type="checkbox" id="absencePauseToggle" data-target="absencePauseToggle" aria-labelledby="absencePauseToggleLabel">
                 <span class="toggle-slider"></span>
               </label>
-              <span class="toggle-row-text fw-600">Activer l'absence globale (stop emails)</span>
+              <span class="toggle-row-text fw-600" id="absencePauseToggleLabel">Activer l'absence globale (stop emails)</span>
             </div>
             <div class="small-text mb-10">
               Lorsque activé, <strong>aucun email</strong> ne sera envoyé (ni DESABO ni Média Solution, urgent ou non) pour les jours sélectionnés ci-dessous.
@@ -271,7 +271,7 @@
 
 
       <!-- Section: Préférences (filtres + fiabilité) -->
-      <div id="sec-preferences" data-target="sec-preferences" class="section-panel" role="tabpanel" aria-labelledby="tab-preferences" tabindex="0">
+      <div id="sec-preferences" data-target="sec-preferences" class="section-panel" role="tabpanel" aria-labelledby="tab-preferences">
         <div class="card">
           <div class="card-title">🔍 Filtres Email Avancés</div>
           <div class="form-group">
@@ -328,10 +328,10 @@
           </div>
           <div class="toggle-row mt-8">
             <label class="toggle-switch">
-              <input type="checkbox" id="notifyOnFailureToggle" data-target="notifyOnFailureToggle">
+              <input type="checkbox" id="notifyOnFailureToggle" data-target="notifyOnFailureToggle" aria-labelledby="notifyOnFailureToggleLabel">
               <span class="toggle-slider"></span>
             </label>
-            <span class="toggle-row-text">Notifications d'échec par email (UI-only)</span>
+            <span class="toggle-row-text" id="notifyOnFailureToggleLabel">Notifications d'échec par email (UI-only)</span>
           </div>
           <div class="mt-12">
             <button id="processingPrefsSaveBtn" data-target="processingPrefsSaveBtn" class="btn btn-primary">💾 Enregistrer Préférences de Traitement</button>
@@ -341,7 +341,7 @@
       </div>
 
       <!-- Section: Vue d'ensemble (logs) -->
-      <div id="sec-overview" data-target="sec-overview" class="section-panel monitoring active" role="tabpanel" aria-labelledby="tab-overview" tabindex="0">
+      <div id="sec-overview" data-target="sec-overview" class="section-panel monitoring active" role="tabpanel" aria-labelledby="tab-overview">
         <div class="logs-container">
           <div class="card-title">📜 Historique des Webhooks (7 derniers jours)</div>
           <div class="mb-15">
@@ -354,8 +354,41 @@
       </div>
 
       <!-- Section: Outils (config mgmt + outils de test) -->
-      <div id="sec-tools" data-target="sec-tools" class="section-panel" role="tabpanel" aria-labelledby="tab-tools" tabindex="0">
-        <div class="card">
+      <div id="sec-tools" data-target="sec-tools" class="section-panel" role="tabpanel" aria-labelledby="tab-tools">
+
+        <!-- GROUPE 1 : Actions fréquentes -->
+        <h2 class="tools-group-title">Actions fréquentes</h2>
+
+        <div class="card mt-12">
+          <div class="card-title">🚀 Déploiement de l'application</div>
+          <div class="form-group">
+            <p class="small-text">Certaines modifications (paramètres applicatifs, configuration reverse proxy) nécessitent un déploiement pour être pleinement appliquées.</p>
+          </div>
+          <div class="inline-group mb-10">
+            <button id="deployApplicationBtn" data-target="deployApplicationBtn" class="btn btn-success">🚀 Déployer l'application</button>
+          </div>
+          <div id="deployMsg" data-target="deployMsg" class="status-msg" aria-live="polite"></div>
+          <div id="deployLastRun" data-target="deployLastRun" class="small-text"></div>
+          <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
+        </div>
+
+        <div class="card mt-12">
+          <div class="card-title">📥 Ingestion Gmail Push</div>
+          <div class="form-group mt-10">
+            <label id="gmailIngressToggleLabel">Activer l'ingestion Gmail Push</label>
+            <label class="toggle-switch toggle-switch--inline">
+              <input type="checkbox" id="gmailIngressEnabledToggle" data-target="gmailIngressEnabledToggle" aria-labelledby="gmailIngressToggleLabel">
+              <span class="toggle-slider"></span>
+            </label>
+            <div class="small-text">Quand désactivé, <strong>le serveur refusera</strong> les appels du Google Apps Script sur <code>/api/ingress/gmail</code> (409) et les emails resteront en attente.</div>
+          </div>
+          <div id="gmailIngressMsg" data-target="gmailIngressMsg" class="status-msg" aria-live="polite"></div>
+        </div>
+
+        <!-- GROUPE 2 : Configuration -->
+        <h2 class="tools-group-title">Configuration</h2>
+
+        <div class="card mt-12">
           <div class="card-title">💾 Gestion des Configurations</div>
           <div class="inline-group mb-10">
             <button id="exportConfigBtn" data-target="exportConfigBtn" class="btn btn-primary">⬇️ Exporter</button>
@@ -365,49 +398,17 @@
           <div id="configMgmtMsg" data-target="configMgmtMsg" class="status-msg" aria-live="polite"></div>
           <div class="small-text">L'export inclut la configuration serveur (webhooks, polling, fenêtre horaire) + préférences UI locales (filtres, fiabilité). L'import applique automatiquement ce qui est supporté par les endpoints existants.</div>
         </div>
-        <div class="card mt-20">
-          <div class="card-title">🚀 Déploiement de l'application</div>
-          <div class="form-group">
-            <p class="small-text">Certaines modifications (ex: paramètres applicatifs, configuration reverse proxy) nécessitent un déploiement pour être pleinement appliquées.</p>
-          </div>
-          <div class="inline-group mb-10">
-            <button id="restartServerBtn" data-target="restartServerBtn" class="btn btn-success">🚀 Déployer l'application</button>
-          </div>
-          <div id="restartMsg" data-target="restartMsg" class="status-msg" aria-live="polite"></div>
-          <div class="small-text">Cette action déclenche un déploiement côté serveur (commande configurée). L'application peut être momentanément indisponible.</div>
-        </div>
-        <div class="card mt-20">
-          <div class="card-title">🗂️ Migration configs → Redis</div>
-          <p>Rejouez le script <code>migrate_configs_to_redis.py</code> directement sur le serveur Render avec toutes les variables d'environnement de production.</p>
-          <div class="inline-group mb-10">
-            <button id="migrateConfigsBtn" data-target="migrateConfigsBtn" class="btn btn-warning">📦 Migrer les configurations</button>
-          </div>
-          <div id="migrateConfigsMsg" data-target="migrateConfigsMsg" class="status-msg" aria-live="polite"></div>
-          <pre id="migrateConfigsLog" data-target="migrateConfigsLog" class="code-block small-text mt-12" hidden></pre>
-          <hr class="divider">
-          <p class="mb-10">Vérifiez l'état des données persistées dans Redis (structures JSON, attributs requis, dates de mise à jour).</p>
-          <div class="inline-group mb-10">
-            <button id="verifyConfigStoreBtn" data-target="verifyConfigStoreBtn" class="btn btn-info">🔍 Vérifier les données en Redis</button>
-          </div>
-          <label for="verifyConfigStoreRawToggle" class="small-text checkbox-row">
-            <input type="checkbox" id="verifyConfigStoreRawToggle" data-target="verifyConfigStoreRawToggle">
-            <span>Inclure le JSON complet dans le log pour faciliter le debug.</span>
-          </label>
-          <div id="verifyConfigStoreMsg" data-target="verifyConfigStoreMsg" class="status-msg" aria-live="polite"></div>
-          <pre id="verifyConfigStoreLog" data-target="verifyConfigStoreLog" class="code-block small-text mt-12" hidden></pre>
-          <div id="verifyConfigStoreViewer" data-target="verifyConfigStoreViewer" class="json-viewer-container" hidden></div>
-        </div>
-        <div class="card mt-20">
+
+        <div class="card mt-12">
           <div class="card-title">🔐 Accès Magic Link</div>
           <p>Générez un lien pré-authentifié à usage unique pour ouvrir rapidement le dashboard sans retaper vos identifiants. Le lien est automatiquement copié.</p>
           <div class="inline-group mb-12">
-            <label class="toggle-switch">
-              <input type="checkbox" id="magicLinkUnlimitedToggle" data-target="magicLinkUnlimitedToggle">
+            <label id="magicLinkUnlimitedLabel">Mode illimité</label>
+            <label class="toggle-switch toggle-switch--inline">
+              <input type="checkbox" id="magicLinkUnlimitedToggle" data-target="magicLinkUnlimitedToggle" aria-labelledby="magicLinkUnlimitedLabel">
               <span class="toggle-slider"></span>
             </label>
-            <span class="ml-10">
-              Mode illimité (désactivé = lien one-shot avec expiration)
-            </span>
+            <span class="ml-10">(désactivé = lien one-shot avec expiration)</span>
           </div>
           <button id="generateMagicLinkBtn" data-target="generateMagicLinkBtn" class="btn btn-primary">✨ Générer un magic link</button>
           <div id="magicLinkOutput" data-target="magicLinkOutput" class="status-msg mt-12" aria-live="polite"></div>
@@ -417,68 +418,110 @@
             En mode illimité, aucun délai mais vous devez révoquer manuellement en cas de fuite.
           </div>
         </div>
-        <div class="card mt-20">
-          <div class="card-title">🧪 Outils de Test</div>
-          <div class="grid grid-2col">
-            <div class="form-group">
-              <label for="testWebhookUrl">Valider une URL de webhook</label>
-              <input id="testWebhookUrl" data-target="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
-              <button id="validateWebhookUrlBtn" data-target="validateWebhookUrlBtn" class="btn btn-primary mt-8">Valider</button>
-              <div id="webhookUrlValidationMsg" data-target="webhookUrlValidationMsg" class="status-msg" aria-live="polite"></div>
+
+        <!-- GROUPE 3 : Débogage (replié par défaut) -->
+        <div class="collapsible-panel" data-panel="tools-debug">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>🐞</span>
+              <span>Outils de Débogage</span>
             </div>
-            <div class="form-group">
-              <label>Prévisualiser un payload</label>
-              <input id="previewSubject" data-target="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
-              <input id="previewSender" data-target="previewSender" type="email" class="mt-6" placeholder="Expéditeur (ex: media@solution.fr)">
-              <textarea id="previewBody" data-target="previewBody" rows="4" class="mt-6" placeholder="Corps de l'email (coller du texte)"></textarea>
-              <button id="buildPayloadPreviewBtn" data-target="buildPayloadPreviewBtn" class="btn btn-primary mt-8">Générer</button>
-              <pre id="payloadPreview" data-target="payloadPreview" class="preformatted"></pre>
+            <div class="panel-toggle">
+              <span class="panel-status" id="tools-debug-status" data-target="tools-debug-status">Débogage</span>
+              <span class="toggle-icon rotated">▼</span>
             </div>
           </div>
-          <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
-        </div>
-        <div class="card mt-20">
-          <div class="card-title">🔗 Ouvrir une page de téléchargement</div>
-          <div class="form-group">
-            <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
-            <input id="downloadPageUrl" data-target="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
-            <button id="openDownloadPageBtn" data-target="openDownloadPageBtn" class="btn btn-primary mt-8">Ouvrir la page</button>
-            <div id="openDownloadMsg" data-target="openDownloadMsg" class="status-msg" aria-live="polite"></div>
-            <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
-          </div>
-        </div>
-        <div class="card mt-20">
-          <div class="card-title"> Flags Runtime (Debug)</div>
-          <div class="form-group">
-            <label>Bypass déduplication par ID d'email (debug)</label>
-            <label class="toggle-switch toggle-switch--inline">
-              <input type="checkbox" id="disableEmailIdDedupToggle" data-target="disableEmailIdDedupToggle">
-              <span class="toggle-slider"></span>
-            </label>
-            <div class="small-text">Quand activé, ignore la déduplication par ID d'email. À utiliser uniquement pour des tests.
+          <div class="panel-content collapsed">
+            <div class="card mt-12">
+              <div class="card-title">🗂️ Migration configs → Redis</div>
+              <p>Rejouez le script <code>migrate_configs_to_redis.py</code> directement sur le serveur Render avec toutes les variables d'environnement de production.</p>
+              <div class="inline-group mb-10">
+                <button id="migrateConfigsBtn" data-target="migrateConfigsBtn" class="btn btn-warning">📦 Migrer les configurations</button>
+              </div>
+              <div id="migrateConfigsMsg" data-target="migrateConfigsMsg" class="status-msg" aria-live="polite"></div>
+              <pre id="migrateConfigsLog" data-target="migrateConfigsLog" class="code-block small-text mt-12" hidden></pre>
+            </div>
+
+            <hr class="divider">
+
+            <div class="card mt-12">
+              <div class="card-title">🔍 Vérifier les données en Redis</div>
+              <div class="inline-group mb-10">
+                <button id="verifyConfigStoreBtn" data-target="verifyConfigStoreBtn" class="btn btn-info">🔍 Vérifier les données en Redis</button>
+              </div>
+              <label for="verifyConfigStoreRawToggle" class="small-text checkbox-row">
+                <input type="checkbox" id="verifyConfigStoreRawToggle" data-target="verifyConfigStoreRawToggle">
+                <span>Inclure le JSON complet dans le log pour faciliter le debug.</span>
+              </label>
+              <div id="verifyConfigStoreMsg" data-target="verifyConfigStoreMsg" class="status-msg" aria-live="polite"></div>
+              <pre id="verifyConfigStoreLog" data-target="verifyConfigStoreLog" class="code-block small-text mt-12" hidden></pre>
+              <div id="verifyConfigStoreViewer" data-target="verifyConfigStoreViewer" class="json-viewer-container" hidden></div>
+            </div>
+
+            <hr class="divider">
+
+            <div class="card mt-12">
+              <div class="card-title">🧪 Outils de Test</div>
+              <div class="grid grid-2col">
+                <div class="form-group">
+                  <label for="testWebhookUrl">Valider une URL de webhook</label>
+                  <input id="testWebhookUrl" data-target="testWebhookUrl" type="text" placeholder="https://hook.eu2.make.com/<token> ou <token>@hook.eu2.make.com">
+                  <button id="validateWebhookUrlBtn" data-target="validateWebhookUrlBtn" class="btn btn-primary mt-8">Valider</button>
+                  <div id="webhookUrlValidationMsg" data-target="webhookUrlValidationMsg" class="status-msg" aria-live="polite"></div>
+                </div>
+                <div class="form-group">
+                  <label>Prévisualiser un payload</label>
+                  <input id="previewSubject" data-target="previewSubject" type="text" placeholder="Sujet d'email (ex: Média Solution - Lot 123)">
+                  <input id="previewSender" data-target="previewSender" type="email" class="mt-6" placeholder="Expéditeur (ex: media@solution.fr)">
+                  <textarea id="previewBody" data-target="previewBody" rows="4" class="mt-6" placeholder="Corps de l'email (coller du texte)"></textarea>
+                  <button id="buildPayloadPreviewBtn" data-target="buildPayloadPreviewBtn" class="btn btn-primary mt-8">Générer</button>
+                  <pre id="payloadPreview" data-target="payloadPreview" class="preformatted"></pre>
+                </div>
+              </div>
+              <div class="small-text">Le test de connectivité IMAP en temps réel nécessitera un endpoint serveur dédié (non inclus pour l'instant).</div>
+            </div>
+
+            <hr class="divider">
+
+            <div class="card mt-12">
+              <div class="card-title">🔗 Ouvrir une page de téléchargement</div>
+              <div class="form-group">
+                <label for="downloadPageUrl">URL de la page de téléchargement (Dropbox / FromSmash / SwissTransfer)</label>
+                <input id="downloadPageUrl" data-target="downloadPageUrl" type="url" placeholder="https://www.swisstransfer.com/d/<uuid> ou https://fromsmash.com/<id>">
+                <button id="openDownloadPageBtn" data-target="openDownloadPageBtn" class="btn btn-primary mt-8">Ouvrir la page</button>
+                <div id="openDownloadMsg" data-target="openDownloadMsg" class="status-msg" aria-live="polite"></div>
+                <div class="small-text">Note: L'application n'essaie plus d'extraire des liens de téléchargement directs. Utilisez ce bouton pour ouvrir la page d'origine et télécharger manuellement.</div>
+              </div>
+            </div>
+
+            <hr class="divider">
+
+            <div class="card mt-12">
+              <div class="card-title">⚙️ Flags Runtime</div>
+              <div class="form-group">
+                <label id="disableEmailIdDedupLabel">Bypass déduplication par ID d'email (debug)</label>
+                <label class="toggle-switch toggle-switch--inline">
+                  <input type="checkbox" id="disableEmailIdDedupToggle" data-target="disableEmailIdDedupToggle" aria-labelledby="disableEmailIdDedupLabel">
+                  <span class="toggle-slider"></span>
+                </label>
+                <div class="small-text">Quand activé, ignore la déduplication par ID d'email. À utiliser uniquement pour des tests.</div>
+              </div>
+              <div class="form-group mt-10">
+                <label id="allowCustomWithoutLinksLabel">Autoriser envoi CUSTOM sans liens de livraison</label>
+                <label class="toggle-switch toggle-switch--inline">
+                  <input type="checkbox" id="allowCustomWithoutLinksToggle" data-target="allowCustomWithoutLinksToggle" aria-labelledby="allowCustomWithoutLinksLabel">
+                  <span class="toggle-slider"></span>
+                </label>
+                <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu'aucun lien (Dropbox/FromSmash/SwissTransfer) n'est détecté, pour éviter les 422.</div>
+              </div>
+              <div class="mt-12">
+                <button id="runtimeFlagsSaveBtn" data-target="runtimeFlagsSaveBtn" class="btn btn-primary">Enregistrer Flags Runtime</button>
+                <div id="runtimeFlagsMsg" data-target="runtimeFlagsMsg" class="status-msg" aria-live="polite"></div>
+              </div>
             </div>
           </div>
-          <div class="form-group mt-10">
-            <label>Autoriser envoi CUSTOM sans liens de livraison</label>
-            <label class="toggle-switch toggle-switch--inline">
-              <input type="checkbox" id="allowCustomWithoutLinksToggle" data-target="allowCustomWithoutLinksToggle">
-              <span class="toggle-slider"></span>
-            </label>
-            <div class="small-text">Si désactivé (recommandé), l'envoi CUSTOM est ignoré lorsqu'aucun lien (Dropbox/FromSmash/SwissTransfer) n'est détecté, pour éviter les 422.</div>
-          </div>
-          <div class="form-group mt-10">
-            <label>Activer l'ingestion Gmail Push</label>
-            <label class="toggle-switch toggle-switch--inline">
-              <input type="checkbox" id="gmailIngressEnabledToggle" data-target="gmailIngressEnabledToggle">
-              <span class="toggle-slider"></span>
-            </label>
-            <div class="small-text">Quand désactivé, <strong>le serveur refusera</strong> les appels du Google Apps Script sur <code>/api/ingress/gmail</code> (409) et les emails resteront en attente.</div>
-          </div>
-          <div class="mt-12">
-            <button id="runtimeFlagsSaveBtn" data-target="runtimeFlagsSaveBtn" class="btn btn-primary"> Enregistrer Flags Runtime</button>
-            <div id="runtimeFlagsMsg" data-target="runtimeFlagsMsg" class="status-msg" aria-live="polite"></div>
-          </div>
         </div>
+
       </div>
     </div>
     <!-- Chargement des modules JavaScript -->

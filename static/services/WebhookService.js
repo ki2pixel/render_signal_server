@@ -123,7 +123,7 @@ export class WebhookService {
                 return false;
             }
         } catch (e) {
-            MessageHelper.showError('configMsg', 'Erreur de communication avec le serveur.');
+            MessageHelper.showError('configMsg', MessageHelper.describeError(e));
             return false;
         }
     }
